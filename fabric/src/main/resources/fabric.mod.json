@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "the_emerald_standard",
+  "version": "${version}",
+  "name": "The Emerald Standard",
+  "description": "A persistent villager banking and investment economy. Players invest emeralds, never borrow them.",
+  "authors": ["Andrew Chedid"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": { "main": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabric"] },
+  "depends": { "fabricloader": ">=0.19.3", "minecraft": "=26.2", "java": ">=25", "fabric-api": "*" }
+}
