@@ -3,10 +3,22 @@
   "id": "the_emerald_standard",
   "version": "${version}",
   "name": "The Emerald Standard",
-  "description": "A persistent villager banking and investment economy. Players invest emeralds, never borrow them.",
+  "description": "A persistent villager banking and investment economy. Players invest emeralds and can never borrow or enter debt.",
   "authors": ["Andrew Chedid"],
+  "contact": {
+    "homepage": "https://github.com/chedidandrew/The_Emerald_Standard",
+    "sources": "https://github.com/chedidandrew/The_Emerald_Standard",
+    "issues": "https://github.com/chedidandrew/The_Emerald_Standard/issues"
+  },
   "license": "MIT",
   "environment": "*",
-  "entrypoints": { "main": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabric"] },
-  "depends": { "fabricloader": ">=0.19.3", "minecraft": "=26.2", "java": ">=25", "fabric-api": "*" }
+  "entrypoints": {
+    "main": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabric"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "=26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
 }

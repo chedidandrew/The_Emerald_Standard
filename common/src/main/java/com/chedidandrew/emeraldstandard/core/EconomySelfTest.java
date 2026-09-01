@@ -1,2 +1,25 @@
 package com.chedidandrew.emeraldstandard.core;
-public final class EconomySelfTest { public static void main(String[] args){ long seed=42; var r=EconomyEngine.initialRegime(seed); double p=100; for(int d=1;d<=365*100;d++){r=EconomyEngine.nextRegime(r,seed,d);p*=1+EconomyEngine.marketReturn(r,seed,d);if(!(p>0)||Double.isNaN(p))throw new AssertionError("bad price");} double cagr=Math.pow(p/100.0,1.0/100)-1; System.out.printf("100y VILX CAGR %.2f%% final %.2f%n",cagr*100,p); if(cagr<.02||cagr>.22)throw new AssertionError("implausible CAGR"); System.out.println("PASS deterministic economy smoke test");}}
+
+/** Minimal standalone smoke test. The full suite lives under common/src/test. */
+public final class EconomySelfTest {
+    private EconomySelfTest() {
+    }
+
+    public static void main(String[] args) {
+        long seed = 42L;
+        EconomyEngine.Regime regime = EconomyEngine.initialRegime(seed);
+        double price = 100.0;
+        for (long day = 1L; day <= 100L * EconomyEngine.DAYS_PER_YEAR; day++) {
+            regime = EconomyEngine.nextRegime(regime, seed, day);
+            price *= 1.0 + EconomyEngine.marketReturn(regime, seed, day);
+            if (!Double.isFinite(price) || price <= 0.0) {
+                throw new AssertionError("Invalid VILX price");
+            }
+        }
+        double cagr = Math.pow(price / 100.0, 1.0 / 100.0) - 1.0;
+        if (cagr < 0.02 || cagr > 0.22) {
+            throw new AssertionError("Implausible VILX CAGR: " + cagr);
+        }
+        System.out.printf("PASS 100-year VILX smoke test, CAGR %.2f%%%n", cagr * 100.0);
+    }
+}

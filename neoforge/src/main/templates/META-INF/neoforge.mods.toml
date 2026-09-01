@@ -1,16 +1,23 @@
 license="${mod_license}"
+issueTrackerURL="https://github.com/chedidandrew/The_Emerald_Standard/issues"
+
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
+displayURL="https://github.com/chedidandrew/The_Emerald_Standard"
 authors="Andrew Chedid"
-description='''Persistent villager banking and investments. Players invest emeralds and can never borrow or go into debt.'''
+description='''
+A persistent villager banking and investment economy. Players provide emerald capital to villagers and can never borrow or enter debt.
+'''
+
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"
 versionRange="[${neo_version},)"
 ordering="NONE"
 side="BOTH"
+
 [[dependencies.${mod_id}]]
 modId="minecraft"
 type="required"
