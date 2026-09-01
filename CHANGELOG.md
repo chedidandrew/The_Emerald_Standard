@@ -40,6 +40,8 @@ All notable changes to The Emerald Standard are documented here.
 - Tests for partial-day restarts, bounded catch-up, catch-up transaction blocking, inventory journals, future-format rejection, trading friction, save retry backoff, and term-by-term villager lending economics.
 - Dedicated transaction-recovery documentation.
 - Dedicated-server smoke-test script and CI log artifacts.
+- Verified Java 25 Fabric and NeoForge 26.2 builds plus both dedicated-server startup smoke tests in GitHub Actions run `33461667400`.
+- Commit-specific alpha.2 artifact IDs, ZIP digests, and SHA-256 JAR checksums under `release/ARTIFACTS-09307b13.md`.
 
 ## 0.1.0-alpha.1 - 2026-08-31
 
