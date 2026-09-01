@@ -109,7 +109,7 @@ public final class BankTransactionCoordinator {
     }
 
     private static boolean savePlayer(ServerPlayer player) {
-        MinecraftServer server = player.serverLevel().getServer();
+        MinecraftServer server = player.level().getServer();
         if (server == null) {
             return false;
         }
