@@ -8,7 +8,7 @@ Fabric and NeoForge provide loader lifecycle hooks, menu registration, interacti
 
 ## Player interaction
 
-Banker villagers are ordinary vanilla villagers carrying the persistent scoreboard tag `the_emerald_standard_banker`. Right-click interaction is intercepted server-side and opens a custom `BankerMenu`.
+Banker villagers are vanilla librarian villagers carrying the persistent scoreboard tag `the_emerald_standard_banker`. Right-click interaction is intercepted server-side and opens a custom `BankerMenu`. The menu remains valid only while the player is alive and within eight blocks of the Banker interaction point.
 
 The menu uses vanilla `ContainerData` synchronization and container-button packets. All financial actions execute on the server against `EconomyService`; the client screen never owns balances or decides transaction outcomes.
 
@@ -16,9 +16,9 @@ The screen receives bounded snapshots rather than the complete world-account map
 
 ## Village banks
 
-`VillageBankManager` scans loaded overworld villages at a low frequency. One generated-bank marker is stored per 256-block region.
+`VillageBankManager` scans loaded overworld villages at a configurable low frequency. One generated-bank marker and packed Banker anchor are stored per configurable region. Players in the same region are deduplicated during each scan.
 
-The manager first attempts a safe automatic bank placement. If no suitable plot exists, it marks or spawns a Banker inside the village. This discovery-based approach supports existing worlds and avoids invasive vanilla jigsaw-pool replacement.
+The manager first attempts a safe automatic bank placement. If no suitable plot exists, it marks or spawns a Banker inside the village. Bankers receive a home restriction around the persisted anchor. This discovery-based approach supports existing worlds and avoids invasive vanilla jigsaw-pool replacement.
 
 ## World state
 
@@ -28,7 +28,7 @@ The economy seed is generated from secure random data on first creation, mixed w
 
 ## Unified economic clock
 
-Format 4 stores:
+Format 5 stores:
 
 - `lastWallClockMs`
 - `lastGameTicks`
@@ -44,7 +44,7 @@ Startup advances at most 2,000 economic days before the server opens. Remaining 
 
 One emerald equals 1,000,000 micro-emeralds. Cash, savings, CDs, villager lending, transaction deltas, and commodity proceeds use integer micro-emerald balances. Shares remain fractional doubles in this alpha and are validated as finite and nonnegative.
 
-## Persistent data format 4
+## Persistent data format 5
 
 The current format contains:
 
@@ -54,13 +54,18 @@ The current format contains:
 - Market and commodity prices
 - Up to 180 history points per investment
 - Economic regime and day
+- Last market event and its economic day
 - Unified partial clock progress
-- Generated village-bank regions
+- Generated village-bank regions and Banker anchors
 - Player accounts
 - CD and villager-lending state
 - Pending inventory transactions
 
-Formats 1, 2, and 3 are migrated when loaded. Saves with a future format number are rejected without falling back to an older backup.
+Formats 1, 2, 3, and 4 are migrated when loaded. Saves with a future format number are rejected without falling back to an older backup.
+
+## World configuration
+
+`the_emerald_standard-config.properties` is created in the world's `data` directory. Values are bounded and parsed strictly. It controls village-bank enablement, scan interval, region size, Banker restriction radius, and transaction cooldown. `/emerald config reload` atomically replaces the active in-memory settings after validation.
 
 ## Save process
 
@@ -87,4 +92,5 @@ Deposits, withdrawals, and resource exchanges use durable `PREPARED` and `BANK_C
 - 60 synchronized chart samples per open Banker menu
 - Runtime village-discovery generation rather than direct jigsaw-pool injection
 - Share quantities use floating-point values pending a fixed-point holdings migration
-- Synchronous account mutations still rewrite the world bank file, which will need partitioning or an append-only ledger for very large public servers
+- Synchronous account mutations snapshot only the affected account and transaction journal, but still rewrite the world bank file; very large public servers will eventually need partitioning or an append-only ledger
+- Vanilla exposes only an all-online-player public save path, so completed inventory-linked transactions still flush all connected player data before their journal is cleared

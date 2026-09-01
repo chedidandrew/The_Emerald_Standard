@@ -2,6 +2,40 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## 0.2.0-alpha.2 - 2026-09-01
+
+### Added
+
+- World-local configuration for village-bank generation, scan frequency, region size, Banker home radius, and transaction cooldown.
+- `/emerald config show` and `/emerald config reload` administrator commands.
+- Sector labels, rare market news events, company- and commodity-specific event shocks, and weighted `VILX` constituent behavior.
+- Chart scale labels, a midpoint guide, bounded visual scaling, and hover values.
+- Rate and risk tooltips plus confirmation clicks for sell-all, early CD closure, and funding villager lending.
+- Persistent bank-counter anchors and migration coverage for replacement Bankers.
+
+### Changed
+
+- Bankers now use the vanilla librarian profession and lectern behavior while retaining their Banker identity.
+- Bankers receive a configurable home restriction around their bank or fallback village anchor.
+- Player mutations now snapshot only the affected account and journal instead of cloning the entire world economy before each transaction.
+- Recovery retains items in the durable journal when inventory space is unavailable instead of spawning recoverable value into the world.
+- Bumped Fabric and NeoForge versions to `0.2.0-alpha.2`.
+- Bumped the persistent data format from 4 to 5.
+- Added pinned Gradle 9.5.1 wrappers to both loader projects and switched CI to use them.
+
+### Fixed
+
+- Moved generated Bankers out of the lectern block and behind the counter.
+- Prevented multiple players in the same village region from triggering duplicate work during one scan.
+- Persisted the exact generation anchor so lost Bankers are replaced at the bank instead of near whichever player revisits the region.
+- Checked chunk availability before terrain height queries and corrected the center lantern to use its hanging state.
+- Closed the Banker menu when a player dies, is removed, or moves out of interaction range.
+- Rebuilt action buttons after server state updates so CD and lending controls no longer remain stale.
+- Added a configurable action cooldown and handled worlds whose game time moves backward.
+- Avoided redundant full player-data flushes during successful journal recovery.
+- Rejected malformed boolean configuration values instead of silently treating them as disabled.
+- Made dedicated-server smoke tests fail on fatal log entries even if normal startup markers also appear.
+
 ## 0.2.0-alpha.1 - 2026-09-01
 
 ### Added

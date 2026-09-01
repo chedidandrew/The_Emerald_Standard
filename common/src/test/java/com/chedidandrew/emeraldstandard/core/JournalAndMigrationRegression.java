@@ -3,6 +3,7 @@ package com.chedidandrew.emeraldstandard.core;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.PLAYER;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.baseProperties;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.readProperties;
+import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.refreshChecksum;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.require;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.requireValidationFailure;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.writeProperties;
@@ -22,6 +23,8 @@ final class JournalAndMigrationRegression {
         testLegacyMigration(root.resolve("legacy"));
         testFormatTwoMigration(root.resolve("format-two"));
         testFormatThreeClockMigration(root.resolve("format-three"));
+        testFormatFourMigration(root.resolve("format-four"));
+        testMarketEventPersistence(root.resolve("market-event"));
         testFutureFormatRejectedWithoutBackup(root.resolve("future"));
         testFutureFormatNeverFallsBack(root.resolve("future-with-backup"));
         testHistoryAndBankRegionPersistence(root.resolve("history-bank"));
@@ -135,7 +138,7 @@ final class JournalAndMigrationRegression {
                 "Format 2 cash did not migrate");
         require(migrated.pendingInventoryTransactions.isEmpty()
                         && migrated.pendingEconomicMillis == 0L,
-                "Format 2 migration invented format 4 state");
+                "Format 2 migration invented newer state");
     }
 
     private static void testFormatThreeClockMigration(Path directory) throws Exception {
@@ -150,6 +153,46 @@ final class JournalAndMigrationRegression {
         require(migrated.pendingEconomicMillis
                         == EconomyService.MILLIS_PER_MINECRAFT_DAY / 2L,
                 "Format 3 clock migration summed overlapping clocks");
+    }
+
+    private static void testFormatFourMigration(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 88L, 0L, 0L);
+        require(service.deposit(PLAYER, 12L), "Format 4 fixture deposit failed");
+
+        Path save = directory.resolve("the_emerald_standard.properties");
+        Properties properties = readProperties(save);
+        properties.setProperty("format", "4");
+        properties.remove("event");
+        properties.remove("event.day");
+        properties.stringPropertyNames().stream()
+                .filter(key -> key.startsWith("bank.anchor."))
+                .toList()
+                .forEach(properties::remove);
+        refreshChecksum(properties);
+        writeProperties(save, properties);
+
+        EconomyState migrated = EconomyState.load(save, 999L, 0L, 0L);
+        require(migrated.account(PLAYER).cashMicro == 12L * EconomyState.MICRO,
+                "Format 4 account did not migrate");
+        require(migrated.lastMarketEvent == EconomyEngine.MarketEvent.NONE
+                        && migrated.lastMarketEventDay == 0L
+                        && migrated.generatedBankAnchors.isEmpty(),
+                "Format 4 migration invented format 5 state");
+    }
+
+    private static void testMarketEventPersistence(Path directory) throws Exception {
+        Path save = directory.resolve("the_emerald_standard.properties");
+        EconomyState state = EconomyState.fresh(91L, 0L, 0L);
+        state.economicDay = 42L;
+        state.lastMarketEvent = EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS;
+        state.lastMarketEventDay = 40L;
+        state.save(save);
+
+        EconomyState loaded = EconomyState.load(save, 999L, 0L, 0L);
+        require(loaded.lastMarketEvent == EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS
+                        && loaded.lastMarketEventDay == 40L,
+                "Market event did not survive format 5 persistence");
     }
 
     private static void testFutureFormatRejectedWithoutBackup(Path directory) throws Exception {
@@ -197,7 +240,8 @@ final class JournalAndMigrationRegression {
                     "History advance failed");
         }
         long region = 0x12345678ABCDEF01L;
-        require(service.markGeneratedBankRegion(region), "Bank region marker failed");
+        long anchor = 0x1020304050607080L;
+        require(service.markGeneratedBankRegion(region, anchor), "Bank region marker failed");
         require(service.saveNowAt(
                         25L * EconomyService.TICKS_PER_MINECRAFT_DAY,
                         25L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
@@ -213,5 +257,7 @@ final class JournalAndMigrationRegression {
                 "Chart history did not survive reload");
         require(reload.hasGeneratedBankRegion(region),
                 "Generated bank region did not survive reload");
+        require(Long.valueOf(anchor).equals(reload.generatedBankAnchor(region)),
+                "Generated bank anchor did not survive reload");
     }
 }

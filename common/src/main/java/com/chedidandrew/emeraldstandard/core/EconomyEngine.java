@@ -17,6 +17,7 @@ public final class EconomyEngine {
     private static final long MARKET_JUMP_SALT = 0x53484F434BL;
     private static final long COMMODITY_SALT = 0x434F4D4D4F444954L;
     private static final long LOAN_SALT = 0x4C4F414E4F555443L;
+    private static final long EVENT_SALT = 0x4556454E544E4557L;
 
     public enum Regime {
         EXPANSION(0.145, 0.13),
@@ -47,6 +48,7 @@ public final class EconomyEngine {
     public record Asset(
             String ticker,
             String name,
+            String sector,
             double beta,
             double annualAlpha,
             double annualIdiosyncraticVolatility) {
@@ -56,15 +58,15 @@ public final class EconomyEngine {
     }
 
     public static final List<Asset> ASSETS = List.of(
-            new Asset("VILX", "Villager Exchange Index", 1.00, 0.000, 0.00),
-            new Asset("RSDN", "Redstone Dynamics", 1.30, 0.015, 0.22),
-            new Asset("DPMN", "Deepdelve Mining", 1.15, 0.005, 0.24),
-            new Asset("NSPC", "Nether Spice Company", 1.25, 0.012, 0.28),
-            new Asset("ENDR", "Ender Freight & Logistics", 1.05, 0.008, 0.19),
-            new Asset("GLDH", "Golden Harvest Cooperative", 0.70, 0.000, 0.13),
-            new Asset("POTN", "Potionworks Laboratories", 0.95, 0.006, 0.18),
-            new Asset("IRNG", "Iron Golem Security", 0.75, 0.001, 0.14),
-            new Asset("MCRT", "Minecart Transit", 0.85, 0.002, 0.15));
+            new Asset("VILX", "Villager Exchange Index", "Diversified", 1.00, 0.000, 0.00),
+            new Asset("RSDN", "Redstone Dynamics", "Redstone Technology", 1.30, 0.015, 0.22),
+            new Asset("DPMN", "Deepdelve Mining", "Mining", 1.15, 0.005, 0.24),
+            new Asset("NSPC", "Nether Spice Company", "Nether Trade", 1.25, 0.012, 0.28),
+            new Asset("ENDR", "Ender Freight & Logistics", "Transportation", 1.05, 0.008, 0.19),
+            new Asset("GLDH", "Golden Harvest Cooperative", "Agriculture", 0.70, 0.000, 0.13),
+            new Asset("POTN", "Potionworks Laboratories", "Alchemy", 0.95, 0.006, 0.18),
+            new Asset("IRNG", "Iron Golem Security", "Village Services", 0.75, 0.001, 0.14),
+            new Asset("MCRT", "Minecart Transit", "Transportation", 0.85, 0.002, 0.15));
 
     public record Commodity(String id, String name, double anchorPrice, double annualVolatility) {
     }
@@ -79,6 +81,33 @@ public final class EconomyEngine {
         REPAID,
         PARTIAL_DEFAULT,
         FULL_DEFAULT
+    }
+
+    public enum MarketEvent {
+        NONE("Village Markets", "No extraordinary market event is active."),
+        REDSTONE_REVOLUTION("Redstone Revolution", "Automation demand lifted redstone businesses."),
+        NETHER_SUPPLY_CRISIS("Nether Supply Crisis", "Nether goods surged as trade routes tightened."),
+        GOLDEN_HARVEST("Golden Harvest", "A strong harvest supported village agriculture."),
+        END_EXPEDITION_BOOM("End Expedition Boom", "New expeditions boosted exotic freight demand."),
+        CREEPER_CATASTROPHE("Creeper Catastrophe", "Damage raised security demand and disrupted transit."),
+        VILLAGER_CREDIT_SCARE("Villager Credit Scare", "Risk assets fell as village lenders turned cautious."),
+        DEEPVEIN_DISCOVERY("Deepvein Discovery", "A major ore discovery reshaped mining expectations.");
+
+        private final String title;
+        private final String detail;
+
+        MarketEvent(String title, String detail) {
+            this.title = title;
+            this.detail = detail;
+        }
+
+        public String title() {
+            return title;
+        }
+
+        public String detail() {
+            return detail;
+        }
     }
 
     public record LoanResolution(LoanOutcome outcome, double recoveryRate, double defaultProbability) {
@@ -162,6 +191,99 @@ public final class EconomyEngine {
         return StrictMath.expm1(clamp(assetLogReturn, -0.70, 0.50));
     }
 
+    public static MarketEvent marketEvent(long seed, long day, Regime regime) {
+        double draw = unit(mix(seed, day, EVENT_SALT));
+        double probability = switch (regime) {
+            case BOOM, CRASH -> 0.0030;
+            case BULL, RECESSION, RECOVERY -> 0.0020;
+            default -> 0.0012;
+        };
+        if (draw >= probability) {
+            return MarketEvent.NONE;
+        }
+        MarketEvent[] events = {
+                MarketEvent.REDSTONE_REVOLUTION,
+                MarketEvent.NETHER_SUPPLY_CRISIS,
+                MarketEvent.GOLDEN_HARVEST,
+                MarketEvent.END_EXPEDITION_BOOM,
+                MarketEvent.CREEPER_CATASTROPHE,
+                MarketEvent.VILLAGER_CREDIT_SCARE,
+                MarketEvent.DEEPVEIN_DISCOVERY
+        };
+        int index = Math.min(
+                events.length - 1,
+                (int) (unit(mix(seed, day, EVENT_SALT ^ 0x4944454E54495459L))
+                        * events.length));
+        return events[index];
+    }
+
+    public static double eventAssetReturn(MarketEvent event, String ticker) {
+        return switch (event) {
+            case NONE -> 0.0;
+            case REDSTONE_REVOLUTION -> switch (ticker) {
+                case "RSDN" -> 0.10;
+                case "MCRT" -> 0.025;
+                case "VILX" -> 0.018;
+                default -> 0.0;
+            };
+            case NETHER_SUPPLY_CRISIS -> switch (ticker) {
+                case "NSPC" -> 0.09;
+                case "ENDR" -> -0.035;
+                case "VILX" -> 0.006;
+                default -> 0.0;
+            };
+            case GOLDEN_HARVEST -> switch (ticker) {
+                case "GLDH" -> 0.075;
+                case "VILX" -> 0.010;
+                default -> 0.0;
+            };
+            case END_EXPEDITION_BOOM -> switch (ticker) {
+                case "ENDR" -> 0.085;
+                case "POTN" -> 0.020;
+                case "VILX" -> 0.014;
+                default -> 0.0;
+            };
+            case CREEPER_CATASTROPHE -> switch (ticker) {
+                case "IRNG" -> 0.070;
+                case "MCRT" -> -0.055;
+                case "VILX" -> -0.008;
+                default -> -0.006;
+            };
+            case VILLAGER_CREDIT_SCARE -> ticker.equals("VILX") ? -0.035 : -0.050;
+            case DEEPVEIN_DISCOVERY -> switch (ticker) {
+                case "DPMN" -> 0.085;
+                case "VILX" -> 0.012;
+                default -> 0.0;
+            };
+        };
+    }
+
+    public static double eventCommodityReturn(MarketEvent event, String commodityId) {
+        return switch (event) {
+            case NETHER_SUPPLY_CRISIS -> commodityId.equals("netherite") ? 0.12 : 0.0;
+            case GOLDEN_HARVEST -> commodityId.equals("gold") ? -0.025 : 0.0;
+            case CREEPER_CATASTROPHE -> commodityId.equals("gold") ? 0.035 : 0.0;
+            case VILLAGER_CREDIT_SCARE -> commodityId.equals("gold") ? 0.060 : -0.025;
+            case DEEPVEIN_DISCOVERY -> commodityId.equals("diamond") ? -0.070 : 0.0;
+            default -> 0.0;
+        };
+    }
+
+    /** Constituent weights for the player-facing VILX fund. */
+    public static double vilxWeight(String ticker) {
+        return switch (ticker) {
+            case "RSDN" -> 0.22;
+            case "DPMN" -> 0.15;
+            case "NSPC" -> 0.10;
+            case "ENDR" -> 0.12;
+            case "GLDH" -> 0.10;
+            case "POTN" -> 0.10;
+            case "IRNG" -> 0.08;
+            case "MCRT" -> 0.13;
+            default -> 0.0;
+        };
+    }
+
     public static double savingsAnnualRate(Regime regime) {
         return switch (regime) {
             case EXPANSION -> 0.031;
@@ -203,6 +325,26 @@ public final class EconomyEngine {
             case RECOVERY -> 0.015;
         };
         return clamp(termRate + regimePremium, 0.04, 0.25);
+    }
+
+    /** Opening estimate before future recession/crash stress is known. */
+    public static double estimatedLoanDefaultProbability(Regime regime, int termDays) {
+        double baseProbability = switch (termDays) {
+            case 30 -> 0.006;
+            case 90 -> 0.018;
+            case 180 -> 0.035;
+            case 365 -> 0.055;
+            default -> throw new IllegalArgumentException("Unsupported loan term: " + termDays);
+        };
+        double regimeAdjustment = switch (regime) {
+            case EXPANSION, BULL -> 0.0;
+            case BOOM -> 0.002;
+            case STAGNATION -> 0.006;
+            case RECESSION -> 0.018;
+            case CRASH -> 0.050;
+            case RECOVERY -> 0.008;
+        };
+        return clamp(baseProbability + regimeAdjustment, 0.002, 0.35);
     }
 
     public static double loanStressIncrement(Regime regime) {

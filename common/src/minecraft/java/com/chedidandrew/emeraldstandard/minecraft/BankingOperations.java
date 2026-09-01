@@ -2,11 +2,15 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Items;
 
 /** Shared, server-authoritative banking actions used by the graphical Banker menu. */
 final class BankingOperations {
+    private static final Map<UUID, Long> LAST_ACTION_TICK = new HashMap<>();
     static final int READY = 0;
     static final int DEPOSITED = 1;
     static final int WITHDREW = 2;
@@ -71,10 +75,13 @@ final class BankingOperations {
         }
         if (!economy.commitPreparedInventoryCredit(
                 player.getUUID(), transaction.transactionId)) {
-            BankInventory.giveOrDrop(player, Items.EMERALD, amount);
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
-            return PERSISTENCE_FAILED;
+            int remainder = BankInventory.restoreItems(player, Items.EMERALD, amount);
+            if (remainder == 0) {
+                economy.cancelPreparedInventoryTransaction(
+                        player.getUUID(), transaction.transactionId);
+                return PERSISTENCE_FAILED;
+            }
+            return RECOVERY_PENDING;
         }
         return BankTransactionCoordinator.savePlayerAndComplete(
                         player, economy, transaction.transactionId)
@@ -279,10 +286,13 @@ final class BankingOperations {
         }
         if (!economy.commitPreparedInventoryCredit(
                 player.getUUID(), transaction.transactionId)) {
-            BankInventory.giveOrDrop(player, resource.item(), amount);
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
-            return PERSISTENCE_FAILED;
+            int remainder = BankInventory.restoreItems(player, resource.item(), amount);
+            if (remainder == 0) {
+                economy.cancelPreparedInventoryTransaction(
+                        player.getUUID(), transaction.transactionId);
+                return PERSISTENCE_FAILED;
+            }
+            return RECOVERY_PENDING;
         }
         return BankTransactionCoordinator.savePlayerAndComplete(
                         player, economy, transaction.transactionId)
@@ -296,7 +306,20 @@ final class BankingOperations {
         if (recovery.found() && !recovery.recovered()) {
             return PERSISTENCE_FAILED;
         }
-        return economy.transactionBlockReason(player.getUUID()).isBlank() ? READY : BUSY;
+        if (!economy.transactionBlockReason(player.getUUID()).isBlank()) {
+            return BUSY;
+        }
+        int cooldown = EmeraldConfig.current().transactionCooldownTicks();
+        long now = player.level().getGameTime();
+        Long previous = LAST_ACTION_TICK.get(player.getUUID());
+        if (cooldown > 0
+                && previous != null
+                && now >= previous
+                && now - previous < cooldown) {
+            return BUSY;
+        }
+        LAST_ACTION_TICK.put(player.getUUID(), now);
+        return READY;
     }
 
     private static int cappedInventoryAmount(int requested, long available) {

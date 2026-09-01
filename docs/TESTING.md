@@ -12,6 +12,7 @@ The suite verifies:
 
 - Gaussian distribution and deterministic replay
 - VILX and individual-company long-run calibration
+- Deterministic market-event frequency, targeted impacts, and VILX constituent weights
 - Regime persistence and crash behavior
 - Villager-lending defaults and term-by-term expected returns
 - Commodity movement and resource quotes
@@ -20,10 +21,10 @@ The suite verifies:
 - Mixed wall-clock and game-tick progress without double counting
 - Bounded catch-up and banking lockout
 - Save and reload equality
-- Format 1, 2, and 3 migration
+- Format 1, 2, 3, and 4 migration
 - Future-format rejection with and without a valid older backup
 - Required-field and checksum corruption recovery
-- Market history and village-bank region persistence
+- Market history, last market event, village-bank region, and Banker-anchor persistence
 - Inventory journal lifecycle
 - Backup preservation, rollback, save retry backoff, spread, caps, and no-debt invariants
 
@@ -53,9 +54,12 @@ Before a public prerelease:
 - Visit a village and confirm one bank or fallback Banker appears.
 - Right-click the Banker and verify all four GUI pages.
 - Confirm chart rendering at several GUI scales and window sizes.
+- Confirm chart hover values, high/low labels, market news, sectors, and tooltips.
 - Test every amount preset.
+- Confirm sell-all, early CD closure, and lending funding require a second click.
 - Test deposit, withdrawal, savings, buying, selling, CD, lending, and exchange actions.
 - Fill the inventory and test a withdrawal.
+- Force a recovery with insufficient inventory space; confirm no item entities drop and the remainder completes after space is freed.
 - Close the game during prepared and committed journal test states and verify recovery.
 
 ### NeoForge
@@ -71,6 +75,8 @@ Repeat the complete Fabric client checklist using NeoForge 26.2.
 - Confirm normal players can use Banker villagers without command permission.
 - Confirm one village region does not generate duplicate banks.
 - Confirm a lost Banker is replaced when the village is revisited.
+- Confirm a generated Banker remains behind the counter and the dashboard closes outside eight blocks.
+- Edit each world configuration setting, run `/emerald config reload`, and verify invalid values are rejected without replacing the active configuration.
 
 ## Publication gate
 

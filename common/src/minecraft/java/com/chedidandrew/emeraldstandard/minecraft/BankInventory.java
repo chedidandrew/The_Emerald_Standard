@@ -143,15 +143,9 @@ final class BankInventory {
         return remaining;
     }
 
-    static void giveOrDrop(ServerPlayer player, Item item, int count) {
-        int remaining = insertItems(player, item, count);
-        int maxStack = new ItemStack(item).getMaxStackSize();
-        while (remaining > 0) {
-            int dropped = Math.min(maxStack, remaining);
-            player.drop(new ItemStack(item, dropped), false);
-            remaining -= dropped;
-        }
-        player.containerMenu.broadcastChanges();
+    /** Restores as many items as fit and returns the remainder; recovery never drops entities. */
+    static int restoreItems(ServerPlayer player, Item item, int count) {
+        return insertItems(player, item, count);
     }
 
     static int countItems(ServerPlayer player, Item item) {

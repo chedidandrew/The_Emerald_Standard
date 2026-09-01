@@ -1,10 +1,15 @@
 package com.chedidandrew.emeraldstandard.core;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.UUID;
 
 final class RegressionTestSupport {
@@ -39,6 +44,23 @@ final class RegressionTestSupport {
         try (var output = Files.newOutputStream(path)) {
             properties.store(output, "regression test");
         }
+    }
+
+    static void refreshChecksum(Properties properties) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        TreeMap<String, String> sorted = new TreeMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.equals("checksum")) {
+                sorted.put(key, properties.getProperty(key));
+            }
+        }
+        for (Map.Entry<String, String> entry : sorted.entrySet()) {
+            digest.update(entry.getKey().getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '=');
+            digest.update(entry.getValue().getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '\n');
+        }
+        properties.setProperty("checksum", HexFormat.of().formatHex(digest.digest()));
     }
 
     static Properties readProperties(Path path) throws IOException {

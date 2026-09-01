@@ -11,6 +11,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.io.IOException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,6 +25,7 @@ final class EmeraldCommandHandlers {
     static int help(CommandContext<CommandSourceStack> context) {
         success(context, "The Emerald Standard alpha commands");
         success(context, "/emerald open | market | commodities | portfolio | recover");
+        success(context, "/emerald config show|reload");
         success(context, "/emerald deposit <emeralds> | withdraw <emeralds>");
         success(context, "/emerald savings deposit|withdraw <emeralds>");
         success(context, "/emerald buy <ticker> <emeralds> | sell <ticker> <shares>");
@@ -32,6 +34,19 @@ final class EmeraldCommandHandlers {
         success(context, "/emerald exchange <resource> <count>");
         success(context, "Players fund villager businesses. Players can never borrow or enter debt.");
         return 1;
+    }
+
+    static int showConfig(CommandContext<CommandSourceStack> context) {
+        return success(context, "Configuration: " + EmeraldConfig.current().summary());
+    }
+
+    static int reloadConfig(CommandContext<CommandSourceStack> context) {
+        try {
+            EmeraldConfig config = EmeraldConfig.reload();
+            return success(context, "Reloaded configuration: " + config.summary());
+        } catch (IOException exception) {
+            return failure(context, "Configuration reload failed: " + exception.getMessage());
+        }
     }
 
     static int open(
@@ -214,11 +229,16 @@ final class EmeraldCommandHandlers {
         }
         if (!economy.commitPreparedInventoryCredit(
                 player.getUUID(), transaction.transactionId)) {
-            BankInventory.giveOrDrop(player, Items.EMERALD, amount);
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
+            int remainder = BankInventory.restoreItems(player, Items.EMERALD, amount);
+            if (remainder == 0) {
+                economy.cancelPreparedInventoryTransaction(
+                        player.getUUID(), transaction.transactionId);
+            }
             return failure(context,
-                    "Deposit failed and your emeralds were restored. " + errorSuffix(economy));
+                    remainder == 0
+                            ? "Deposit failed and your emeralds were restored. " + errorSuffix(economy)
+                            : "Deposit failed; " + remainder
+                                    + " emerald(s) remain protected by recovery until inventory space is available.");
         }
         if (!BankTransactionCoordinator.savePlayerAndComplete(
                 player, economy, transaction.transactionId)) {
@@ -471,11 +491,16 @@ final class EmeraldCommandHandlers {
         }
         if (!economy.commitPreparedInventoryCredit(
                 player.getUUID(), transaction.transactionId)) {
-            BankInventory.giveOrDrop(player, resource.item(), count);
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
+            int remainder = BankInventory.restoreItems(player, resource.item(), count);
+            if (remainder == 0) {
+                economy.cancelPreparedInventoryTransaction(
+                        player.getUUID(), transaction.transactionId);
+            }
             return failure(context,
-                    "Exchange failed and your resources were restored. " + errorSuffix(economy));
+                    remainder == 0
+                            ? "Exchange failed and your resources were restored. " + errorSuffix(economy)
+                            : "Exchange failed; " + remainder
+                                    + " item(s) remain protected by recovery until inventory space is available.");
         }
         if (!BankTransactionCoordinator.savePlayerAndComplete(
                 player, economy, transaction.transactionId)) {

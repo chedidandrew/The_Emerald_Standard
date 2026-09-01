@@ -24,9 +24,9 @@ The global economy transitions between expansion, bull, boom, stagnation, recess
 
 Actual worlds vary because transitions are seeded and probabilistic.
 
-## VILX and company returns
+## VILX, company returns, and events
 
-VILX is the common market factor. Each company combines:
+The hidden broad-economy return is the common market factor. Each company combines:
 
 ```text
 risk-free return
@@ -37,19 +37,21 @@ risk-free return
 
 The Gaussian generator independently mixes both Box-Muller uniform inputs. Rare market jumps add fat tails, while future outcomes remain deterministic from the private economy seed and economic day. Deterministic transcendental calculations use `StrictMath` to improve replay consistency across platforms.
 
+VILX is a player-facing index built from 85 percent broad-economy exposure and 15 percent of a rebalanced weighted basket of the eight displayed companies. Rare named events—such as a Redstone Revolution, Nether Supply Crisis, or Villager Credit Scare—apply targeted shocks to affected companies and commodities and appear as dashboard news. Their selection and effects remain deterministic for a given private seed and economic day.
+
 The committed regression suite evaluates 250 independent 75-year histories. Current calibration results are approximately:
 
 | Investment | Mean long-run CAGR |
 |---|---:|
-| VILX | 9.7% |
-| RSDN | 10.9% |
-| DPMN | 8.2% |
-| NSPC | 8.7% |
-| ENDR | 9.0% |
-| GLDH | 6.6% |
-| POTN | 8.4% |
-| IRNG | 7.0% |
-| MCRT | 7.6% |
+| VILX | 10.1% |
+| RSDN | 11.3% |
+| DPMN | 8.4% |
+| NSPC | 9.0% |
+| ENDR | 8.9% |
+| GLDH | 6.7% |
+| POTN | 8.0% |
+| IRNG | 7.2% |
+| MCRT | 6.8% |
 
 Across those simulations, roughly 27% of VILX years are negative. Severe crashes and unusually strong recoveries occur, but none of these figures is a guarantee for a particular world.
 

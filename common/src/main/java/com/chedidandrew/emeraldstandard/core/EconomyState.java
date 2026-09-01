@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 4;
+    public static final int FORMAT_VERSION = 5;
     public static final int HISTORY_DAYS = 180;
     public static final long MICRO = 1_000_000L;
     public static final int MAX_PENDING_INVENTORY_ITEMS = 100_000;
@@ -25,11 +25,15 @@ public final class EconomyState {
     public long lastGameTicks;
     public long pendingEconomicMillis;
     public EconomyEngine.Regime regime;
+    public EconomyEngine.MarketEvent lastMarketEvent = EconomyEngine.MarketEvent.NONE;
+    public long lastMarketEventDay;
 
     public final Map<String, Double> prices = new LinkedHashMap<>();
     public final Map<String, Double> commodityPrices = new LinkedHashMap<>();
     public final Map<String, List<Double>> priceHistory = new LinkedHashMap<>();
     public final Set<Long> generatedBankRegions = new HashSet<>();
+    /** Packed BlockPos anchors for generated banks or fallback Banker gathering points. */
+    public final Map<Long, Long> generatedBankAnchors = new HashMap<>();
     public final Map<UUID, Account> accounts = new HashMap<>();
     public final Map<UUID, PendingInventoryTransaction> pendingInventoryTransactions =
             new HashMap<>();
@@ -181,11 +185,14 @@ public final class EconomyState {
         copy.lastGameTicks = lastGameTicks;
         copy.pendingEconomicMillis = pendingEconomicMillis;
         copy.regime = regime;
+        copy.lastMarketEvent = lastMarketEvent;
+        copy.lastMarketEventDay = lastMarketEventDay;
         copy.prices.putAll(prices);
         copy.commodityPrices.putAll(commodityPrices);
         priceHistory.forEach((ticker, values) ->
                 copy.priceHistory.put(ticker, new ArrayList<>(values)));
         copy.generatedBankRegions.addAll(generatedBankRegions);
+        copy.generatedBankAnchors.putAll(generatedBankAnchors);
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             copy.accounts.put(entry.getKey(), entry.getValue().copy());
         }
@@ -200,20 +207,45 @@ public final class EconomyState {
         economicDay++;
         regime = EconomyEngine.nextRegime(regime, seed, economicDay);
         double marketReturn = EconomyEngine.marketReturn(regime, seed, economicDay);
-
-        for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
-            double current = prices.getOrDefault(asset.ticker(), 100.0);
-            double next = current * (1.0 + EconomyEngine.assetReturn(
-                    asset, marketReturn, seed, economicDay));
-            prices.put(asset.ticker(), boundedPrice(next));
+        EconomyEngine.MarketEvent event = EconomyEngine.marketEvent(seed, economicDay, regime);
+        if (event != EconomyEngine.MarketEvent.NONE) {
+            lastMarketEvent = event;
+            lastMarketEventDay = economicDay;
         }
+
+        Map<String, Double> constituentReturns = new HashMap<>();
+        for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+            if (asset.ticker().equals("VILX")) {
+                continue;
+            }
+            double current = prices.getOrDefault(asset.ticker(), 100.0);
+            double baseReturn = EconomyEngine.assetReturn(
+                    asset, marketReturn, seed, economicDay);
+            double eventReturn = EconomyEngine.eventAssetReturn(event, asset.ticker());
+            double realizedReturn = (1.0 + baseReturn) * (1.0 + eventReturn) - 1.0;
+            double next = current * (1.0 + realizedReturn);
+            prices.put(asset.ticker(), boundedPrice(next));
+            constituentReturns.put(asset.ticker(), realizedReturn);
+        }
+        double constituentReturn = constituentReturns.entrySet().stream()
+                .mapToDouble(entry -> EconomyEngine.vilxWeight(entry.getKey()) * entry.getValue())
+                .sum();
+        // VILX is rebalanced from its displayed constituents while the hidden broad-economy
+        // factor supplies diversification that no eight-company sample can provide alone.
+        double vilxReturn = 0.85 * marketReturn
+                + 0.15 * constituentReturn
+                + EconomyEngine.eventAssetReturn(event, "VILX");
+        double currentVilx = prices.getOrDefault("VILX", 100.0);
+        prices.put("VILX", boundedPrice(currentVilx * (1.0 + vilxReturn)));
         normalizeHighPrices();
         recordCurrentPrices();
 
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
             double current = commodityPrices.getOrDefault(commodity.id(), commodity.anchorPrice());
-            commodityPrices.put(commodity.id(), EconomyEngine.nextCommodityPrice(
-                    commodity, current, regime, seed, economicDay));
+            double next = EconomyEngine.nextCommodityPrice(
+                    commodity, current, regime, seed, economicDay);
+            next *= 1.0 + EconomyEngine.eventCommodityReturn(event, commodity.id());
+            commodityPrices.put(commodity.id(), boundedPrice(next));
         }
 
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
@@ -246,11 +278,15 @@ public final class EconomyState {
 
     public void validate() throws IOException {
         if (regime == null
+                || lastMarketEvent == null
                 || economicDay < 0L
                 || lastWallClockMs < 0L
                 || lastGameTicks < 0L
                 || pendingEconomicMillis < 0L) {
             throw new IOException("Economy clock or regime is invalid");
+        }
+        if (lastMarketEventDay < 0L || lastMarketEventDay > economicDay) {
+            throw new IOException("Economy market-event day is invalid");
         }
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
             validatePrice("asset " + asset.ticker(), prices.get(asset.ticker()));
@@ -259,6 +295,11 @@ public final class EconomyState {
             validatePrice("commodity " + commodity.id(), commodityPrices.get(commodity.id()));
         }
         validateHistory();
+        for (Long region : generatedBankAnchors.keySet()) {
+            if (region == null || !generatedBankRegions.contains(region)) {
+                throw new IOException("Bank anchor exists without a generated region marker");
+            }
+        }
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             validateAccount(entry.getKey(), entry.getValue(), economicDay);
         }

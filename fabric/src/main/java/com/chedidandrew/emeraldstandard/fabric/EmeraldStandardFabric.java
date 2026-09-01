@@ -6,6 +6,7 @@ import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
+import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -40,6 +41,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
+                EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
                 ECONOMY.start(
                         server.getWorldPath(LevelResource.DATA),
                         server.overworld().getSeed(),
@@ -78,7 +80,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 return InteractionResult.PASS;
             }
             if (!level.isClientSide() && player instanceof ServerPlayer serverPlayer) {
-                BankerAccess.open(serverPlayer, ECONOMY);
+                BankerAccess.open(serverPlayer, ECONOMY, entity);
             }
             return InteractionResult.SUCCESS;
         });

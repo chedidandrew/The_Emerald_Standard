@@ -4,7 +4,7 @@
 
 The bank account is stored in `the_emerald_standard.properties`, while Minecraft saves a player's inventory in separate player data. A process can stop after one file is committed but before the other file is written. Without reconciliation, that timing window can duplicate or destroy emeralds and exchanged resources.
 
-Alpha.2 uses a durable journal that survives restart and records enough information to repair either side.
+The mod uses a durable journal that survives restart and records enough information to repair either side.
 
 ## Deposit and resource exchange
 
@@ -35,9 +35,13 @@ Recovery behavior:
 - If the inventory already contains the expected delivered quantity, clear the journal without adding more.
 - A full inventory leaves undelivered emeralds in bank cash.
 
+If any rollback or committed recovery cannot fit all protected items, the mod inserts only what fits, saves that partial restoration, and retains the journal for the exact remainder. It never drops recovery items into the world where despawning, lava, other players, or chunk unloading could destroy the guarantee. Free inventory space and interact again or run `/emerald recover` to continue.
+
 ## Idempotence and blocking
 
 Reconciliation may safely run on login, logout, `/emerald recover`, or before another bank command. The journal is retained until both sides are confirmed. Normal account mutations are blocked while a pending inventory transaction exists, preventing a second financial action from obscuring recovery.
+
+GUI financial actions also use a short configurable game-tick cooldown to absorb duplicate button packets and click spam. This is independent from the journal and does not change balances by itself.
 
 The recovery comparison is intentionally capped by the original transaction quantity. It never removes or grants more than the journaled amount.
 

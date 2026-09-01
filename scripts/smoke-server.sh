@@ -15,8 +15,9 @@ LOG_FILE="$LOG_DIR/$LOADER.log"
 rm -rf "$RUN_DIR"
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 printf 'eula=true\n' > "$RUN_DIR/eula.txt"
+printf 'online-mode=false\nserver-port=0\n' > "$RUN_DIR/server.properties"
 
-command=(gradle --no-daemon -p "$ROOT/$LOADER" runServer)
+command=(bash "$ROOT/$LOADER/gradlew" --no-daemon -p "$ROOT/$LOADER" runServer)
 if [[ "$LOADER" == "fabric" ]]; then
     command+=(--args=--nogui)
 fi
@@ -33,6 +34,11 @@ cleanup() {
 trap cleanup EXIT
 
 for _ in $(seq 1 360); do
+    if grep -Eq '\[[^]]+/(ERROR|FATAL)\]|Exception in thread|A fatal error has been detected|Failed to start the minecraft server' "$LOG_FILE"; then
+        echo "$LOADER server logged a fatal startup error" >&2
+        cat "$LOG_FILE" >&2
+        exit 1
+    fi
     if grep -Fq "The Emerald Standard economy started" "$LOG_FILE" \
             && grep -Eq 'Done \([^)]*s\)!' "$LOG_FILE"; then
         echo "PASS $LOADER dedicated-server smoke test"

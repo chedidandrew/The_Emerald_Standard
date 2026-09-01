@@ -23,6 +23,7 @@ The Overview page presents only the information a casual player needs first:
 - Invested value
 - Physical emeralds in the inventory
 - Current economic day and market regime
+- Recent market-event headline or current regime bulletin
 - A chart for the currently selected investment
 - Direct Deposit, Withdraw, Save, and Recover buttons
 
@@ -34,11 +35,12 @@ The Market page lists the nine available investments as short ticker buttons. Se
 - Current price
 - 180-day chart
 - Change over the visible chart period
+- Sector
 - Risk label
 - Shares held
 - Current holding value
 
-Players buy a chosen emerald amount or sell 25 percent or all of a holding. The existing 0.25 percent per-side spread remains in effect.
+Players buy a chosen emerald amount or sell 25 percent or all of a holding. Sell-all requires a second confirmation click. Charts use a minimum scale range so small moves are not visually exaggerated, show high and low values, and expose sampled prices on hover. The existing 0.25 percent per-side spread remains in effect.
 
 ### Banking
 
@@ -49,6 +51,7 @@ The Banking page separates lower-risk and higher-risk choices:
 - 30, 90, 180, and 365-day villager business lending
 
 The interface explicitly states that lending can lose principal but can never create player debt.
+Term tooltips show the offered CD rate or villager-lending yield and estimated opening default risk. Funding lending requires confirmation. Closing an immature CD also requires confirmation and explains the 1 percent principal penalty and forfeited interest.
 
 ### Exchange
 
@@ -88,14 +91,18 @@ Generation is discovery-based instead of injected into vanilla jigsaw pools. Thi
 - Fabric and NeoForge use the same placement rules.
 - The mod avoids broad village-pool compatibility conflicts with other world-generation mods.
 
-Generated 256-block village regions are stored in the economy save so they are not processed repeatedly.
+Generated village regions and exact Banker counter anchors are stored in the economy save so they are not processed repeatedly. The default region size is 256 blocks and can be changed in the world configuration.
 
 ## Natural Banker fallback
 
 If terrain or nearby structures leave no safe plot, the mod designates the nearest adult villager as the local Banker. If no adult villager is available, it spawns a persistent Banker at a safe village surface position.
 
-A generated bank whose Banker is later lost will receive a replacement when a player returns to the village region.
+A generated bank whose Banker is later lost will receive a librarian-backed replacement at the stored counter when a player returns to the village region. Bankers are assigned a configurable home restriction to keep them near the service point.
+
+## Configuration
+
+The world `data/the_emerald_standard-config.properties` file controls whether village banks are generated, scan interval, region size, Banker restriction radius, and the transaction cooldown. Administrators can use `/emerald config show` and `/emerald config reload` to inspect or apply edits.
 
 ## Administrative access
 
-The `/emerald` command tree requires permission level 2. `/emerald open` is retained as an administrator and development shortcut for opening the dashboard without locating a Banker.
+The `/emerald` command tree requires permission level 2. `/emerald open` is retained as an administrator and development shortcut for opening the dashboard without locating a Banker. This shortcut intentionally omits the Banker-distance check.

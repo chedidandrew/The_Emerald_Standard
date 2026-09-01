@@ -6,6 +6,7 @@ import com.chedidandrew.emeraldstandard.core.EconomyState;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -85,7 +86,9 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_SELECTED_CHANGE_BPS = 36;
     private static final int DATA_CD_ACTIVE = 37;
     private static final int DATA_LENDING_ACTIVE = 38;
-    private static final int DATA_ASSET_PRICE_BASE = 39;
+    private static final int DATA_MARKET_EVENT = 39;
+    private static final int DATA_MARKET_EVENT_AGE = 40;
+    private static final int DATA_ASSET_PRICE_BASE = 41;
     private static final int DATA_ASSET_HOLDING_BASE = DATA_ASSET_PRICE_BASE + 9;
     private static final int DATA_HISTORY_COUNT = DATA_ASSET_HOLDING_BASE + 9;
     private static final int DATA_HISTORY_BASE = DATA_HISTORY_COUNT + 1;
@@ -94,6 +97,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     private final Inventory inventory;
     private final EconomyService economy;
     private final ServerPlayer serverPlayer;
+    private final BlockPos accessPoint;
     private final ContainerData data;
 
     private int selectedAssetIndex;
@@ -129,6 +133,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int selectedChangeBps;
     private int cdActive;
     private int lendingActive;
+    private int marketEventOrdinal;
+    private int marketEventAge;
     private final int[] assetPricesCenti = new int[9];
     private final int[] assetHoldingsCenti = new int[9];
     private final int[] historyCenti = new int[HISTORY_POINTS];
@@ -136,7 +142,7 @@ public final class BankerMenu extends AbstractContainerMenu {
 
     /** Client-side constructor used by the menu registry. */
     public BankerMenu(int containerId, Inventory inventory) {
-        this(containerId, inventory, null, null);
+        this(containerId, inventory, null, null, null);
     }
 
     /** Server-side constructor used when a player interacts with a Banker. */
@@ -145,10 +151,20 @@ public final class BankerMenu extends AbstractContainerMenu {
             Inventory inventory,
             EconomyService economy,
             ServerPlayer player) {
+        this(containerId, inventory, economy, player, null);
+    }
+
+    public BankerMenu(
+            int containerId,
+            Inventory inventory,
+            EconomyService economy,
+            ServerPlayer player,
+            BlockPos accessPoint) {
         super(BankerMenus.type(), containerId);
         this.inventory = inventory;
         this.economy = economy;
         this.serverPlayer = player;
+        this.accessPoint = accessPoint;
         this.data = economy == null
                 ? new SimpleContainerData(DATA_COUNT)
                 : new BankerContainerData(this);
@@ -249,7 +265,15 @@ public final class BankerMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return player.isAlive() && !player.isRemoved();
+        if (!player.isAlive() || player.isRemoved()) {
+            return false;
+        }
+        return accessPoint == null
+                || player.distanceToSqr(
+                                accessPoint.getX() + 0.5,
+                                accessPoint.getY() + 0.5,
+                                accessPoint.getZ() + 0.5)
+                        <= 64.0;
     }
 
     public long economicDay() {
@@ -379,6 +403,16 @@ public final class BankerMenu extends AbstractContainerMenu {
         return data.get(DATA_LENDING_ACTIVE) != 0;
     }
 
+    public EconomyEngine.MarketEvent lastMarketEvent() {
+        int ordinal = clampIndex(
+                data.get(DATA_MARKET_EVENT), EconomyEngine.MarketEvent.values().length);
+        return EconomyEngine.MarketEvent.values()[ordinal];
+    }
+
+    public int marketEventAge() {
+        return Math.max(0, data.get(DATA_MARKET_EVENT_AGE));
+    }
+
     public double selectedAssetPrice() {
         return Math.max(0, data.get(DATA_SELECTED_PRICE_CENTI)) / 100.0;
     }
@@ -486,6 +520,9 @@ public final class BankerMenu extends AbstractContainerMenu {
         pendingTransaction = portfolio.pendingTransaction() == null ? 0 : 1;
         cdActive = account.hasCd() ? 1 : 0;
         lendingActive = account.hasLoan() ? 1 : 0;
+        marketEventOrdinal = market.lastMarketEvent().ordinal();
+        marketEventAge = saturatingInt(Math.max(
+                0L, market.economicDay() - market.lastMarketEventDay()));
 
         for (int index = 0; index < EconomyEngine.ASSETS.size(); index++) {
             String ticker = EconomyEngine.ASSETS.get(index).ticker();
@@ -575,6 +612,8 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (index == DATA_SELECTED_CHANGE_BPS) return selectedChangeBps;
         if (index == DATA_CD_ACTIVE) return cdActive;
         if (index == DATA_LENDING_ACTIVE) return lendingActive;
+        if (index == DATA_MARKET_EVENT) return marketEventOrdinal;
+        if (index == DATA_MARKET_EVENT_AGE) return marketEventAge;
         if (index >= DATA_ASSET_PRICE_BASE && index < DATA_ASSET_PRICE_BASE + 9) {
             return assetPricesCenti[index - DATA_ASSET_PRICE_BASE];
         }

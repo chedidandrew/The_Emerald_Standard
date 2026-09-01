@@ -2,7 +2,9 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -12,6 +14,7 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
@@ -22,8 +25,6 @@ import net.minecraft.world.phys.AABB;
  * without replacing vanilla village pools or requiring a new world.</p>
  */
 public final class VillageBankManager {
-    private static final int SCAN_INTERVAL_TICKS = 200;
-    private static final int REGION_SIZE = 256;
     private static final int BANK_WIDTH = 11;
     private static final int BANK_DEPTH = 9;
     private static final int BANK_HEIGHT = 6;
@@ -32,20 +33,35 @@ public final class VillageBankManager {
     }
 
     public static void tick(MinecraftServer server, EconomyService economy) {
+        EmeraldConfig config = EmeraldConfig.current();
+        if (!config.villageBanksEnabled()) {
+            return;
+        }
         ServerLevel level = server.overworld();
         long gameTime = level.getGameTime();
-        if (gameTime % SCAN_INTERVAL_TICKS != 0L) {
+        if (gameTime % config.villageScanIntervalTicks() != 0L) {
             return;
         }
 
+        Set<Long> processedRegions = new HashSet<>();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (player.level() != level || !level.isVillage(player.blockPosition())) {
                 continue;
             }
             BlockPos villagePosition = player.blockPosition();
-            long regionKey = regionKey(villagePosition);
+            long regionKey = regionKey(villagePosition, config.villageRegionSize());
+            if (!processedRegions.add(regionKey)) {
+                continue;
+            }
             if (economy.hasGeneratedBankRegion(regionKey)) {
-                ensureBanker(level, villagePosition);
+                Long packedAnchor = economy.generatedBankAnchor(regionKey);
+                BlockPos anchor = packedAnchor == null
+                        ? villagePosition
+                        : BlockPos.of(packedAnchor);
+                if (packedAnchor == null) {
+                    economy.markGeneratedBankRegion(regionKey, anchor.asLong());
+                }
+                ensureBanker(level, anchor, packedAnchor != null);
                 continue;
             }
 
@@ -53,45 +69,65 @@ public final class VillageBankManager {
             boolean completed;
             if (bankOrigin != null) {
                 buildBank(level, bankOrigin);
-                completed = spawnBanker(
-                        level,
-                        bankOrigin.offset(BANK_WIDTH / 2, 1, BANK_DEPTH - 3));
+                BlockPos bankerPosition = bankOrigin.offset(
+                        BANK_WIDTH / 2, 1, BANK_DEPTH - 2);
+                completed = economy.markGeneratedBankRegion(
+                        regionKey, bankerPosition.asLong());
+                if (completed) {
+                    ensureBanker(level, bankerPosition, true);
+                }
             } else {
-                completed = ensureBanker(level, villagePosition);
-            }
-            if (completed) {
-                economy.markGeneratedBankRegion(regionKey);
+                completed = ensureBanker(level, villagePosition, false)
+                        && economy.markGeneratedBankRegion(
+                                regionKey, villagePosition.asLong());
             }
         }
     }
 
-    private static boolean ensureBanker(ServerLevel level, BlockPos villagePosition) {
-        AABB search = new AABB(villagePosition).inflate(72.0, 24.0, 72.0);
+    private static boolean ensureBanker(
+            ServerLevel level, BlockPos bankerAnchor, boolean generatedStructure) {
+        AABB search = new AABB(bankerAnchor).inflate(48.0, 20.0, 48.0);
         List<Villager> villagers = level.getEntitiesOfClass(
                 Villager.class,
                 search,
                 villager -> villager.isAlive() && !villager.isBaby());
-        if (villagers.stream().anyMatch(BankerAccess::isBanker)) {
+        Villager existing = villagers.stream()
+                .filter(BankerAccess::isBanker)
+                .min(Comparator.comparingDouble(villager ->
+                        villager.distanceToSqr(
+                                bankerAnchor.getX() + 0.5,
+                                bankerAnchor.getY() + 0.5,
+                                bankerAnchor.getZ() + 0.5)))
+                .orElse(null);
+        if (existing != null) {
+            BankerAccess.markBanker(existing);
+            existing.setHomeTo(bankerAnchor, EmeraldConfig.current().bankerRestrictionRadius());
             return true;
         }
 
-        Villager candidate = villagers.stream()
+        Villager candidate = generatedStructure ? null : villagers.stream()
                 .min(Comparator.comparingDouble(villager ->
                         villager.distanceToSqr(
-                                villagePosition.getX() + 0.5,
-                                villagePosition.getY() + 0.5,
-                                villagePosition.getZ() + 0.5)))
+                                bankerAnchor.getX() + 0.5,
+                                bankerAnchor.getY() + 0.5,
+                                bankerAnchor.getZ() + 0.5)))
                 .orElse(null);
         if (candidate != null) {
             BankerAccess.markBanker(candidate);
+            candidate.setHomeTo(
+                    bankerAnchor, EmeraldConfig.current().bankerRestrictionRadius());
             return true;
         }
 
-        int y = level.getHeight(
-                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                villagePosition.getX(),
-                villagePosition.getZ());
-        return spawnBanker(level, new BlockPos(villagePosition.getX(), y, villagePosition.getZ()));
+        BlockPos spawnPosition = bankerAnchor;
+        if (!generatedStructure) {
+            int y = level.getHeight(
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    bankerAnchor.getX(),
+                    bankerAnchor.getZ());
+            spawnPosition = new BlockPos(bankerAnchor.getX(), y, bankerAnchor.getZ());
+        }
+        return spawnBanker(level, spawnPosition, generatedStructure);
     }
 
     private static BlockPos findBankPlot(
@@ -125,10 +161,12 @@ public final class VillageBankManager {
             for (int z = centerZ - BANK_DEPTH / 2 - 1;
                     z <= centerZ + BANK_DEPTH / 2 + 1;
                     z++) {
+                if (!level.hasChunk(Math.floorDiv(x, 16), Math.floorDiv(z, 16))) {
+                    return null;
+                }
                 int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
                 BlockPos ground = new BlockPos(x, surface - 1, z);
-                if (!level.hasChunkAt(ground)
-                        || level.getBlockState(ground).isAir()
+                if (level.getBlockState(ground).isAir()
                         || !level.getFluidState(ground).isEmpty()) {
                     return null;
                 }
@@ -249,24 +287,30 @@ public final class VillageBankManager {
                 3);
         level.setBlock(
                 origin.offset(BANK_WIDTH / 2, 4, BANK_DEPTH / 2),
-                Blocks.LANTERN.defaultBlockState(),
+                Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true),
                 3);
     }
 
-    private static boolean spawnBanker(ServerLevel level, BlockPos position) {
-        Villager banker = EntityTypes.VILLAGER.create(level, EntitySpawnReason.NATURAL);
+    private static boolean spawnBanker(
+            ServerLevel level, BlockPos position, boolean generatedStructure) {
+        Villager banker = EntityTypes.VILLAGER.create(
+                level,
+                generatedStructure
+                        ? EntitySpawnReason.STRUCTURE
+                        : EntitySpawnReason.NATURAL);
         if (banker == null) {
             return false;
         }
         banker.teleportTo(position.getX() + 0.5, position.getY(), position.getZ() + 0.5);
         BankerAccess.markBanker(banker);
+        banker.setHomeTo(position, EmeraldConfig.current().bankerRestrictionRadius());
         banker.setCustomName(Component.translatable("entity.the_emerald_standard.banker"));
         return level.addFreshEntity(banker);
     }
 
-    private static long regionKey(BlockPos position) {
-        int regionX = Math.floorDiv(position.getX(), REGION_SIZE);
-        int regionZ = Math.floorDiv(position.getZ(), REGION_SIZE);
+    private static long regionKey(BlockPos position, int regionSize) {
+        int regionX = Math.floorDiv(position.getX(), regionSize);
+        int regionZ = Math.floorDiv(position.getZ(), regionSize);
         return ((long) regionX << 32) ^ (regionZ & 0xFFFFFFFFL);
     }
 }

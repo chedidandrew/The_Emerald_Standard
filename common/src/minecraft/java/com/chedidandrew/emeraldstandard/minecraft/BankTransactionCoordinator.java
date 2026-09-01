@@ -56,8 +56,16 @@ public final class BankTransactionCoordinator {
                     transaction.itemCount,
                     Math.max(0, transaction.inventoryCountBefore - current));
             if (missing > 0) {
-                BankInventory.giveOrDrop(player, item, missing);
-                corrected = missing;
+                int remainder = BankInventory.restoreItems(player, item, missing);
+                corrected = missing - remainder;
+                if (remainder > 0) {
+                    if (!savePlayer(player)) {
+                        return RecoveryResult.failed(
+                                "Could not save player data after a partial inventory restoration");
+                    }
+                    return RecoveryResult.failed(
+                            remainder + " item(s) remain protected by the journal; free inventory space and recover again");
+                }
             }
             if (!savePlayer(player)) {
                 return RecoveryResult.failed(
@@ -87,8 +95,16 @@ public final class BankTransactionCoordinator {
         } else {
             int missing = Math.min(transaction.itemCount, Math.max(0, expected - current));
             if (missing > 0) {
-                BankInventory.giveOrDrop(player, item, missing);
-                corrected = missing;
+                int remainder = BankInventory.restoreItems(player, item, missing);
+                corrected = missing - remainder;
+                if (remainder > 0) {
+                    if (!savePlayer(player)) {
+                        return RecoveryResult.failed(
+                                "Could not save player data after a partial inventory restoration");
+                    }
+                    return RecoveryResult.failed(
+                            remainder + " item(s) remain protected by the journal; free inventory space and recover again");
+                }
             }
         }
 

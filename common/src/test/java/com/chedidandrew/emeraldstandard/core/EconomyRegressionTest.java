@@ -14,12 +14,38 @@ public final class EconomyRegressionTest {
         testGaussian();
         testDeterminism();
         testMarketAndAssets();
+        testMarketEvents();
         testRegimeDuration();
         testLoanRisk();
         testLoanTermEconomics();
         testCommodities();
         testResourceQuotes();
         System.out.println("PASS EconomyRegressionTest");
+    }
+
+    private static void testMarketEvents() {
+        long seed = 0x4556454E54544553L;
+        int events = 0;
+        for (long day = 1; day <= 100_000L; day++) {
+            EconomyEngine.MarketEvent first = EconomyEngine.marketEvent(
+                    seed, day, EconomyEngine.Regime.EXPANSION);
+            EconomyEngine.MarketEvent second = EconomyEngine.marketEvent(
+                    seed, day, EconomyEngine.Regime.EXPANSION);
+            require(first == second, "Market events are not deterministic");
+            events += first == EconomyEngine.MarketEvent.NONE ? 0 : 1;
+        }
+        require(events > 70 && events < 180,
+                "Market-event frequency is outside target: " + events);
+        require(EconomyEngine.eventAssetReturn(
+                        EconomyEngine.MarketEvent.REDSTONE_REVOLUTION, "RSDN") > 0.0,
+                "Redstone Revolution does not affect Redstone Dynamics");
+        require(EconomyEngine.eventCommodityReturn(
+                        EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS, "netherite") > 0.0,
+                "Nether crisis does not affect netherite");
+        double weight = EconomyEngine.ASSETS.stream()
+                .mapToDouble(asset -> EconomyEngine.vilxWeight(asset.ticker()))
+                .sum();
+        require(Math.abs(weight - 1.0) < 1.0e-9, "VILX constituent weights do not sum to one");
     }
 
     private static void testGaussian() {
@@ -69,30 +95,34 @@ public final class EconomyRegressionTest {
         double bestYear = Double.NEGATIVE_INFINITY;
 
         for (int seed = 0; seed < seeds; seed++) {
-            EconomyEngine.Regime regime = EconomyEngine.initialRegime(seed);
-            double[] prices = new double[EconomyEngine.ASSETS.size()];
-            Arrays.fill(prices, 100.0);
+            EconomyState state = EconomyState.fresh(seed, 0L, 0L);
+            UUID indexHolder = new UUID(0x56494C58L, seed);
+            EconomyState.Account splitAdjusted = state.account(indexHolder);
+            for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+                splitAdjusted.shares.put(asset.ticker(), 1.0);
+            }
             for (int year = 0; year < years; year++) {
-                double openingVilx = prices[0];
+                double openingVilx = state.prices.get("VILX")
+                        * splitAdjusted.shares.get("VILX");
                 for (int day = 1; day <= EconomyEngine.DAYS_PER_YEAR; day++) {
-                    long economicDay = (long) year * EconomyEngine.DAYS_PER_YEAR + day;
-                    regime = EconomyEngine.nextRegime(regime, seed, economicDay);
-                    double marketReturn = EconomyEngine.marketReturn(regime, seed, economicDay);
-                    for (int asset = 0; asset < prices.length; asset++) {
-                        prices[asset] *= 1.0 + EconomyEngine.assetReturn(
-                                EconomyEngine.ASSETS.get(asset), marketReturn, seed, economicDay);
-                        require(Double.isFinite(prices[asset]) && prices[asset] > 0.0,
+                    state.advanceOneDay();
+                    for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+                        double price = state.prices.get(asset.ticker());
+                        require(Double.isFinite(price) && price > 0.0,
                                 "Invalid asset price");
                     }
                 }
-                double annual = prices[0] / openingVilx - 1.0;
+                double annual = state.prices.get("VILX")
+                        * splitAdjusted.shares.get("VILX") / openingVilx - 1.0;
                 negativeYears += annual < 0.0 ? 1 : 0;
                 totalYears++;
                 worstYear = Math.min(worstYear, annual);
                 bestYear = Math.max(bestYear, annual);
             }
-            for (int asset = 0; asset < prices.length; asset++) {
-                double cagr = StrictMath.pow(prices[asset] / 100.0, 1.0 / years) - 1.0;
+            for (int asset = 0; asset < EconomyEngine.ASSETS.size(); asset++) {
+                String ticker = EconomyEngine.ASSETS.get(asset).ticker();
+                double value = state.prices.get(ticker) * splitAdjusted.shares.get(ticker);
+                double cagr = StrictMath.pow(value / 100.0, 1.0 / years) - 1.0;
                 cagrTotals[asset] += cagr;
                 if (asset == 0) {
                     vilxCagrs[seed] = cagr;

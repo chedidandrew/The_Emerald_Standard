@@ -131,6 +131,8 @@ final class EconomyPersistence {
         properties.setProperty("ticks", Long.toString(state.lastGameTicks));
         properties.setProperty("pending.economic_ms", Long.toString(state.pendingEconomicMillis));
         properties.setProperty("regime", state.regime.name());
+        properties.setProperty("event", state.lastMarketEvent.name());
+        properties.setProperty("event.day", Long.toString(state.lastMarketEventDay));
 
         state.prices.forEach((key, value) ->
                 properties.setProperty("price." + key, Double.toString(value)));
@@ -141,6 +143,10 @@ final class EconomyPersistence {
         state.generatedBankRegions.forEach(region ->
                 properties.setProperty(
                         "bank.region." + Long.toUnsignedString(region, 16), "true"));
+        state.generatedBankAnchors.forEach((region, anchor) ->
+                properties.setProperty(
+                        "bank.anchor." + Long.toUnsignedString(region, 16),
+                        Long.toString(anchor)));
 
         for (Map.Entry<UUID, EconomyState.Account> entry : state.accounts.entrySet()) {
             writeAccount(properties, entry.getKey(), entry.getValue());
@@ -254,6 +260,11 @@ final class EconomyPersistence {
                         : pendingTicks * EconomyService.MILLIS_PER_GAME_TICK;
                 state.pendingEconomicMillis = Math.max(pendingWall, pendingGameMs);
             }
+            if (format >= 5) {
+                state.lastMarketEvent = EconomyEngine.MarketEvent.valueOf(
+                        requireValue(properties, "event"));
+                state.lastMarketEventDay = requiredLong(properties, "event.day");
+            }
 
             for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
                 double price = format >= 2
@@ -279,6 +290,9 @@ final class EconomyPersistence {
             }
             if (format >= 4) {
                 loadGeneratedBankRegions(state, properties);
+            }
+            if (format >= 5) {
+                loadGeneratedBankAnchors(state, properties);
             }
 
             if (format >= 2) {
@@ -516,6 +530,27 @@ final class EconomyPersistence {
                 state.generatedBankRegions.add(Long.parseUnsignedLong(encoded, 16));
             } catch (NumberFormatException exception) {
                 throw new IOException("Invalid bank region key " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadGeneratedBankAnchors(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.anchor.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                long anchor = Long.parseLong(properties.getProperty(key));
+                if (!state.generatedBankRegions.contains(region)) {
+                    throw new IOException("Bank anchor has no matching region " + encoded);
+                }
+                state.generatedBankAnchors.put(region, anchor);
+            } catch (NumberFormatException exception) {
+                throw new IOException("Invalid bank anchor " + encoded, exception);
             }
         }
     }

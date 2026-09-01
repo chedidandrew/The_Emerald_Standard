@@ -6,6 +6,7 @@ import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
+import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -53,6 +54,7 @@ public final class EmeraldStandardNeoForge {
     public void onServerStarted(ServerStartedEvent event) {
         try {
             var server = event.getServer();
+            EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
             ECONOMY.start(
                     server.getWorldPath(LevelResource.DATA),
                     server.overworld().getSeed(),
@@ -105,7 +107,7 @@ public final class EmeraldStandardNeoForge {
         }
         if (!event.getEntity().level().isClientSide()
                 && event.getEntity() instanceof ServerPlayer player) {
-            BankerAccess.open(player, ECONOMY);
+            BankerAccess.open(player, ECONOMY, event.getTarget());
         }
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);

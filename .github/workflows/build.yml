@@ -37,10 +37,8 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.5.1'
       - name: Build ${{ matrix.loader }}
-        run: gradle --no-daemon -p "${{ matrix.loader }}" build --stacktrace
+        run: bash "${{ matrix.loader }}/gradlew" --no-daemon -p "${{ matrix.loader }}" build --stacktrace
       - uses: actions/upload-artifact@v7
         with:
           name: the-emerald-standard-${{ matrix.loader }}-${{ github.sha }}
@@ -63,8 +61,6 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.5.1'
       - name: Launch Minecraft server and verify mod startup
         run: bash scripts/smoke-server.sh "${{ matrix.loader }}"
       - uses: actions/upload-artifact@v7

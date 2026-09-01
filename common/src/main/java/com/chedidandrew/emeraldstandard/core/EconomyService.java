@@ -147,6 +147,8 @@ public final class EconomyService {
         return new MarketSnapshot(
                 state.economicDay,
                 state.regime,
+                state.lastMarketEvent,
+                state.lastMarketEventDay,
                 Map.copyOf(state.prices),
                 Map.copyOf(state.commodityPrices),
                 copyHistory(state.priceHistory),
@@ -186,7 +188,15 @@ public final class EconomyService {
         return state != null && state.generatedBankRegions.contains(regionKey);
     }
 
+    public synchronized Long generatedBankAnchor(long regionKey) {
+        return state == null ? null : state.generatedBankAnchors.get(regionKey);
+    }
+
     public synchronized boolean markGeneratedBankRegion(long regionKey) {
+        return markGeneratedBankRegion(regionKey, null);
+    }
+
+    public synchronized boolean markGeneratedBankRegion(long regionKey, Long packedAnchor) {
         if (state == null || path == null) {
             lastError = "Economy service has not started";
             return false;
@@ -194,7 +204,13 @@ public final class EconomyService {
         EconomyState before = state.copy();
         boolean dirtyBefore = dirty;
         try {
-            if (!state.generatedBankRegions.add(regionKey)) {
+            boolean changed = state.generatedBankRegions.add(regionKey);
+            if (packedAnchor != null
+                    && !Objects.equals(state.generatedBankAnchors.put(regionKey, packedAnchor),
+                            packedAnchor)) {
+                changed = true;
+            }
+            if (!changed) {
                 return true;
             }
             state.save(path);
@@ -696,11 +712,18 @@ public final class EconomyService {
             return false;
         }
 
-        EconomyState before = state.copy();
+        EconomyState.Account existingAccount = state.existingAccount(playerId);
+        EconomyState.Account accountBefore = existingAccount == null
+                ? null
+                : existingAccount.copy();
+        EconomyState.PendingInventoryTransaction existingTransaction =
+                state.pendingInventoryTransactions.get(playerId);
+        EconomyState.PendingInventoryTransaction transactionBefore =
+                existingTransaction == null ? null : existingTransaction.copy();
         boolean dirtyBefore = dirty;
         try {
             if (!mutation.apply(state)) {
-                state = before;
+                restorePlayerState(playerId, accountBefore, transactionBefore);
                 dirty = dirtyBefore;
                 lastError = "";
                 return false;
@@ -711,11 +734,27 @@ public final class EconomyService {
             lastError = "";
             return true;
         } catch (IOException | RuntimeException exception) {
-            state = before;
+            restorePlayerState(playerId, accountBefore, transactionBefore);
             dirty = dirtyBefore;
             lastError = message(exception);
             scheduleSaveRetry(now);
             return false;
+        }
+    }
+
+    private void restorePlayerState(
+            UUID playerId,
+            EconomyState.Account account,
+            EconomyState.PendingInventoryTransaction transaction) {
+        if (account == null) {
+            state.accounts.remove(playerId);
+        } else {
+            state.accounts.put(playerId, account);
+        }
+        if (transaction == null) {
+            state.pendingInventoryTransactions.remove(playerId);
+        } else {
+            state.pendingInventoryTransactions.put(playerId, transaction);
         }
     }
 
@@ -820,6 +859,8 @@ public final class EconomyService {
     public record MarketSnapshot(
             long economicDay,
             EconomyEngine.Regime regime,
+            EconomyEngine.MarketEvent lastMarketEvent,
+            long lastMarketEventDay,
             Map<String, Double> prices,
             Map<String, Double> commodityPrices,
             Map<String, java.util.List<Double>> priceHistory,

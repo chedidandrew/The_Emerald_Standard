@@ -42,6 +42,11 @@ public final class EmeraldCommands {
                         .executes(context -> EmeraldCommandHandlers.portfolio(context, economy)))
                 .then(Commands.literal("recover")
                         .executes(context -> EmeraldCommandHandlers.recover(context, economy)))
+                .then(Commands.literal("config")
+                        .then(Commands.literal("show")
+                                .executes(EmeraldCommandHandlers::showConfig))
+                        .then(Commands.literal("reload")
+                                .executes(EmeraldCommandHandlers::reloadConfig)))
                 .then(Commands.literal("deposit")
                         .then(Commands.argument(
                                         "amount",

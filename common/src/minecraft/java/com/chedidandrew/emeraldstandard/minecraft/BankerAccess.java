@@ -3,6 +3,9 @@ package com.chedidandrew.emeraldstandard.minecraft;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.villager.Villager;
@@ -23,13 +26,30 @@ public final class BankerAccess {
         villager.setCustomName(Component.translatable("entity.the_emerald_standard.banker"));
         villager.setCustomNameVisible(true);
         villager.setPersistenceRequired();
+        BuiltInRegistries.VILLAGER_PROFESSION.get(VillagerProfession.LIBRARIAN)
+                .ifPresent(profession -> villager.setVillagerData(
+                        villager.getVillagerData().withProfession(profession).withLevel(1)));
+        villager.setVillagerDataFinalized(true);
+        if (villager.level() instanceof ServerLevel level) {
+            villager.refreshBrain(level);
+        }
     }
 
     public static boolean open(ServerPlayer player, EconomyService economy) {
+        return open(player, economy, null);
+    }
+
+    public static boolean open(
+            ServerPlayer player, EconomyService economy, Entity banker) {
         BankTransactionCoordinator.reconcile(player, economy);
         return player.openMenu(new SimpleMenuProvider(
                         (containerId, inventory, ignored) ->
-                                new BankerMenu(containerId, inventory, economy, player),
+                                new BankerMenu(
+                                        containerId,
+                                        inventory,
+                                        economy,
+                                        player,
+                                        banker == null ? null : banker.blockPosition()),
                         Component.translatable("gui.the_emerald_standard.banker.title")))
                 .isPresent();
     }

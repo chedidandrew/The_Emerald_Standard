@@ -1,52 +1,41 @@
-# Build status for 0.2.0-alpha.1
+# Build status for 0.2.0-alpha.2
 
-## Verified common core
+## Locally verified on 2026-09-01
 
-- Java compilation: PASS
-- Existing market calibration and no-debt model: PASS and unchanged
-- Unified mixed-clock regression: PASS
-- Format 1, 2, and 3 migration regression: PASS
-- Current-format checksum corruption recovery: PASS
-- Empty-primary backup recovery: PASS
-- Future-format primary rejection with an older backup present: PASS
-- Chart-history persistence: PASS
-- Generated-bank region persistence: PASS
+- Common Java 21 compilation: PASS
+- Economy calibration, deterministic event, VILX weighting, lending, and no-debt regressions: PASS
+- Format 1 through 4 migration into format 5: PASS
+- Checksum, backup, future-format, clock, catch-up, journal, rollback, and retry regressions: PASS
+- Market history, last-event, generated-bank region, and Banker-anchor persistence: PASS
+- Fabric 26.2 Gradle build with Java 25: PASS
+- NeoForge 26.2 Gradle build with Java 25: PASS
+- Fabric 26.2 dedicated-server development startup: PASS
+- NeoForge 26.2 dedicated-server development startup: PASS
 
-## Implemented player experience
+## Implemented hardening and player experience
 
-- Casual four-page Banker GUI: IMPLEMENTED
-- Interactive persistent market charts: IMPLEMENTED
-- GUI deposits, withdrawals, savings, investing, CDs, lending, exchange, and recovery: IMPLEMENTED
-- Automatic village-bank placement on safe plots: IMPLEMENTED
-- Persistent Banker inside generated banks: IMPLEMENTED
-- Natural fallback Banker in loaded villages: IMPLEMENTED
-- Normal-player command dependency removed: IMPLEMENTED
-- `/emerald` restricted to administrators: IMPLEMENTED
+- Banker spawn point moved behind the counter, with persisted replacement anchors: IMPLEMENTED
+- Vanilla librarian profession and configurable home restriction: IMPLEMENTED
+- Same-scan region deduplication and safe chunk-before-height checks: IMPLEMENTED
+- Server-authoritative interaction-distance validation: IMPLEMENTED
+- Risky-action confirmations, rate/risk tooltips, and live control refresh: IMPLEMENTED
+- Chart scale labels, hover inspection, sectors, news, and real market events: IMPLEMENTED
+- Weighted VILX behavior and targeted company/commodity event shocks: IMPLEMENTED
+- Journal-protected inventory overflow with no world item drops: IMPLEMENTED
+- Account-local rollback snapshots and configurable transaction cooldown: IMPLEMENTED
+- Strict world-local configuration with administrator show/reload commands: IMPLEMENTED
 
-## Verified CI and dedicated-server startup
+## GitHub verification
 
-GitHub Actions run `33466544807` built and launched source commit `5379f4c9890fb121a33b3b3a1938fb0b5f7abba0` using Java 25.
-
-- Common regression job: PASS
-- Fabric 26.2 Gradle build: PASS
-- NeoForge 26.2 Gradle build: PASS
-- Fabric artifact upload: PASS
-- NeoForge artifact upload: PASS
-- Fabric dedicated-server development launch: PASS
-- NeoForge dedicated-server development launch: PASS
-- Fabric mod startup message observed: PASS
-- NeoForge mod startup message observed: PASS
-- Minecraft server-ready message observed for both loaders: PASS
-
-Artifact IDs, ZIP digests, and exact JAR checksums are recorded in `release/ARTIFACTS-5379f4c9.md`.
+The `Build, test, and launch` workflow is the source of truth for the pushed commit. It runs the common regression suite, both loader builds, both dedicated-server development launches, startup-log checks, and artifact uploads. Exact artifact provenance should be recorded only for a release candidate chosen after that workflow passes.
 
 ## Manual publication gate
 
 - Fabric client launch and GUI visual test: PENDING
 - NeoForge client launch and GUI visual test: PENDING
-- Packaged dedicated-server launch test outside the development environment: PENDING
+- Packaged dedicated-server launch outside the development environment: PENDING
 - Village bank visual review across village biomes and difficult terrain: PENDING
 - Two-player GUI and account-isolation test: PENDING
-- Full journal recovery test using real player inventories: PENDING
+- Full live-inventory journal recovery and no-drop overflow test: PENDING
 
-The economy, persistence, GUI source, loader builds, and automated dedicated-server startup checks are green. No formal public release should be created until both client builds complete the checklist in `docs/TESTING.md`.
+No formal public release should be created until both client builds complete the checklist in `docs/TESTING.md`.
