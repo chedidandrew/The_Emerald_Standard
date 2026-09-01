@@ -15,6 +15,7 @@ All notable changes to The Emerald Standard are documented here.
 - Made valuable-resource exchange prices dynamic and regime-sensitive.
 - Updated Fabric to the official Minecraft 26.2 Loom configuration without the unavailable explicit Mojang mappings layer.
 - Updated CI to run common tests first and build Fabric and NeoForge independently with `fail-fast: false`.
+- Consolidated duplicated Fabric and NeoForge command behavior into a shared Minecraft-facing source set.
 
 ### Added
 
@@ -26,8 +27,10 @@ All notable changes to The Emerald Standard are documented here.
 - Inventory-safe deposit, exchange, and withdrawal recovery behavior.
 - Valuable block and ore exchange forms, including diamond blocks, gold ores, raw-gold blocks, netherite blocks, and emerald blocks.
 - Backup preservation that refuses to overwrite a known-good backup with a corrupt primary save.
-- Statistical, persistence, maturity, clock, and no-debt regression suites.
+- Statistical, persistence, maturity, clock, resource-quote, and no-debt regression suites.
 - Architecture, economy, testing, and publication-gate documentation.
+- Verified Java 25 Fabric and NeoForge 26.2 JAR builds from GitHub Actions run `33455350158`.
+- Commit-specific artifact provenance and SHA-256 checksums under `release/`.
 
 ## 0.0.1-prototype - 2026-08-31
 
