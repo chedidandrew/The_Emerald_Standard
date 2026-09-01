@@ -29,13 +29,14 @@ All notable changes to The Emerald Standard are documented here.
 - Changed command errors to Brigadier failures and added ticker, term, and resource suggestions.
 - Added lightweight market and portfolio snapshots so ordinary reads no longer clone every account.
 - Updated CI to launch Fabric and NeoForge dedicated-server development environments after successful builds.
+- Used vanilla's public online-player data flush before clearing completed inventory journals because the single-player save method is protected.
 
 ### Added
 
 - Durable `PREPARED` and `BANK_COMMITTED` inventory transaction journal stages.
 - Automatic transaction reconciliation on Fabric and NeoForge player login and logout.
 - `/emerald recover` for manual reconciliation.
-- Player-specific synchronous saves before a completed inventory transaction journal is cleared.
+- Synchronous online-player data flushes before a completed inventory transaction journal is cleared.
 - Tests for partial-day restarts, bounded catch-up, catch-up transaction blocking, inventory journals, future-format rejection, trading friction, save retry backoff, and term-by-term villager lending economics.
 - Dedicated transaction-recovery documentation.
 - Dedicated-server smoke-test script and CI log artifacts.
