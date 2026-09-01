@@ -1,0 +1,55 @@
+name: Align Banker milestone with Minecraft 26.2 APIs
+
+on:
+  push:
+    branches:
+      - feature/banker-gui-village-banks
+    paths:
+      - '.github/workflows/fix-mc26-api.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Apply Minecraft 26.2 API corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          village = Path('common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageBankManager.java')
+          text = village.read_text()
+          text = text.replace('import net.minecraft.world.entity.EntityType;\n', 'import net.minecraft.world.entity.EntityTypes;\n')
+          text = text.replace('Blocks.GREEN_STAINED_GLASS_PANE.defaultBlockState()', 'Blocks.STAINED_GLASS_PANE.green().defaultBlockState()')
+          text = text.replace('EntityType.VILLAGER.create(level, EntitySpawnReason.NATURAL)', 'EntityTypes.VILLAGER.create(level, EntitySpawnReason.NATURAL)')
+          village.write_text(text)
+
+          commands = Path('common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/EmeraldCommands.java')
+          text = commands.read_text()
+          text = text.replace('import net.minecraft.commands.SharedSuggestionProvider;\n', 'import net.minecraft.commands.SharedSuggestionProvider;\nimport net.minecraft.server.permissions.Permissions;\n')
+          text = text.replace('.requires(source -> source.hasPermission(2))', '.requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER))')
+          commands.write_text(text)
+
+          access = Path('common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/BankerAccess.java')
+          access.write_text(access.read_text().replace('entity.getTags().contains(BANKER_TAG)', 'entity.entityTags().contains(BANKER_TAG)'))
+
+          changelog = Path('CHANGELOG.md')
+          text = changelog.read_text()
+          line = '- Aligned the Banker milestone with the Minecraft 26.2 entity, permissions, colored-block, and entity-tag APIs.\n'
+          if line not in text:
+              marker = '### Fixed\n\n'
+              text = text.replace(marker, marker + line, 1)
+          changelog.write_text(text)
+          PY
+          rm -f .github/workflows/fix-mc26-api.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Align Banker milestone with Minecraft 26.2 APIs'
+          git push origin HEAD:feature/banker-gui-village-banks
