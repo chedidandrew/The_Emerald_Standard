@@ -19,6 +19,8 @@ java {
 
 sourceSets.main.java.srcDir('../common/src/main/java')
 sourceSets.main.java.srcDir('../common/src/minecraft/java')
+sourceSets.main.java.srcDir('../common/src/client/java')
+sourceSets.main.resources.srcDir('../common/src/main/resources')
 sourceSets.main.resources.srcDir('src/generated/resources')
 
 neoForge {

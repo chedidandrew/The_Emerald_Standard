@@ -2,15 +2,20 @@ package com.chedidandrew.emeraldstandard.core;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 3;
+    public static final int FORMAT_VERSION = 4;
+    public static final int HISTORY_DAYS = 180;
     public static final long MICRO = 1_000_000L;
     public static final int MAX_PENDING_INVENTORY_ITEMS = 100_000;
 
@@ -18,12 +23,13 @@ public final class EconomyState {
     public long economicDay;
     public long lastWallClockMs;
     public long lastGameTicks;
-    public long pendingWallClockMs;
-    public long pendingGameTicks;
+    public long pendingEconomicMillis;
     public EconomyEngine.Regime regime;
 
     public final Map<String, Double> prices = new LinkedHashMap<>();
     public final Map<String, Double> commodityPrices = new LinkedHashMap<>();
+    public final Map<String, List<Double>> priceHistory = new LinkedHashMap<>();
+    public final Set<Long> generatedBankRegions = new HashSet<>();
     public final Map<UUID, Account> accounts = new HashMap<>();
     public final Map<UUID, PendingInventoryTransaction> pendingInventoryTransactions =
             new HashMap<>();
@@ -150,6 +156,7 @@ public final class EconomyState {
         state.regime = EconomyEngine.initialRegime(seed);
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
             state.prices.put(asset.ticker(), 100.0);
+            state.priceHistory.put(asset.ticker(), new ArrayList<>(List.of(100.0)));
         }
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
             state.commodityPrices.put(commodity.id(), commodity.anchorPrice());
@@ -172,11 +179,13 @@ public final class EconomyState {
         copy.economicDay = economicDay;
         copy.lastWallClockMs = lastWallClockMs;
         copy.lastGameTicks = lastGameTicks;
-        copy.pendingWallClockMs = pendingWallClockMs;
-        copy.pendingGameTicks = pendingGameTicks;
+        copy.pendingEconomicMillis = pendingEconomicMillis;
         copy.regime = regime;
         copy.prices.putAll(prices);
         copy.commodityPrices.putAll(commodityPrices);
+        priceHistory.forEach((ticker, values) ->
+                copy.priceHistory.put(ticker, new ArrayList<>(values)));
+        copy.generatedBankRegions.addAll(generatedBankRegions);
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             copy.accounts.put(entry.getKey(), entry.getValue().copy());
         }
@@ -199,6 +208,7 @@ public final class EconomyState {
             prices.put(asset.ticker(), boundedPrice(next));
         }
         normalizeHighPrices();
+        recordCurrentPrices();
 
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
             double current = commodityPrices.getOrDefault(commodity.id(), commodity.anchorPrice());
@@ -239,8 +249,7 @@ public final class EconomyState {
                 || economicDay < 0L
                 || lastWallClockMs < 0L
                 || lastGameTicks < 0L
-                || pendingWallClockMs < 0L
-                || pendingGameTicks < 0L) {
+                || pendingEconomicMillis < 0L) {
             throw new IOException("Economy clock or regime is invalid");
         }
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
@@ -249,6 +258,7 @@ public final class EconomyState {
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
             validatePrice("commodity " + commodity.id(), commodityPrices.get(commodity.id()));
         }
+        validateHistory();
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             validateAccount(entry.getKey(), entry.getValue(), economicDay);
         }
@@ -296,11 +306,43 @@ public final class EconomyState {
                 continue;
             }
             prices.put(asset.ticker(), price / 1_000.0);
+            List<Double> history = priceHistory.get(asset.ticker());
+            if (history != null) {
+                history.replaceAll(value -> value / 1_000.0);
+            }
             for (Account account : accounts.values()) {
                 double shares = account.shares.getOrDefault(asset.ticker(), 0.0);
                 if (shares > 0.0) {
                     account.shares.put(asset.ticker(), shares * 1_000.0);
                 }
+            }
+        }
+    }
+
+    private void recordCurrentPrices() {
+        for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+            List<Double> history = priceHistory.computeIfAbsent(
+                    asset.ticker(), ignored -> new ArrayList<>());
+            history.add(prices.get(asset.ticker()));
+            while (history.size() > HISTORY_DAYS) {
+                history.remove(0);
+            }
+        }
+    }
+
+    private void validateHistory() throws IOException {
+        for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+            List<Double> history = priceHistory.get(asset.ticker());
+            if (history == null || history.isEmpty() || history.size() > HISTORY_DAYS) {
+                throw new IOException("Invalid price history for " + asset.ticker());
+            }
+            for (Double value : history) {
+                validatePrice("history " + asset.ticker(), value);
+            }
+        }
+        for (String ticker : priceHistory.keySet()) {
+            if (!knownTicker(ticker)) {
+                throw new IOException("Unknown price-history ticker " + ticker);
             }
         }
     }

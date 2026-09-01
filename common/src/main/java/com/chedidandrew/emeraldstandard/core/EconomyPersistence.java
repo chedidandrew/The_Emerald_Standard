@@ -4,19 +4,29 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /** Versioned, atomic persistence implementation for {@link EconomyState}. */
 final class EconomyPersistence {
+    private static final String MAGIC = "THE_EMERALD_STANDARD";
+    private static final String CHECKSUM_KEY = "checksum";
+
     private EconomyPersistence() {
     }
 
@@ -30,12 +40,17 @@ final class EconomyPersistence {
         }
         try {
             return read(path, fallbackSeed, now, ticks);
+        } catch (UnsupportedFutureFormatException futureFormat) {
+            throw futureFormat;
         } catch (IOException primaryFailure) {
             if (!Files.exists(backup)) {
                 throw primaryFailure;
             }
             try {
                 return read(backup, fallbackSeed, now, ticks);
+            } catch (UnsupportedFutureFormatException futureFormat) {
+                primaryFailure.addSuppressed(futureFormat);
+                throw primaryFailure;
             } catch (IOException backupFailure) {
                 primaryFailure.addSuppressed(backupFailure);
                 throw primaryFailure;
@@ -49,8 +64,10 @@ final class EconomyPersistence {
             Files.createDirectories(path.getParent());
         }
 
-        ByteArrayOutputStream output = new ByteArrayOutputStream(24_576);
-        toProperties(state).store(
+        Properties properties = toProperties(state);
+        properties.setProperty(CHECKSUM_KEY, checksum(properties));
+        ByteArrayOutputStream output = new ByteArrayOutputStream(65_536);
+        properties.store(
                 output, "The Emerald Standard data format " + EconomyState.FORMAT_VERSION);
         ByteBuffer buffer = ByteBuffer.wrap(output.toByteArray());
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
@@ -106,19 +123,24 @@ final class EconomyPersistence {
 
     private static Properties toProperties(EconomyState state) {
         Properties properties = new Properties();
+        properties.setProperty("magic", MAGIC);
         properties.setProperty("format", Integer.toString(EconomyState.FORMAT_VERSION));
         properties.setProperty("seed", Long.toString(state.seed));
         properties.setProperty("day", Long.toString(state.economicDay));
         properties.setProperty("wall", Long.toString(state.lastWallClockMs));
         properties.setProperty("ticks", Long.toString(state.lastGameTicks));
-        properties.setProperty("pending.wall_ms", Long.toString(state.pendingWallClockMs));
-        properties.setProperty("pending.game_ticks", Long.toString(state.pendingGameTicks));
+        properties.setProperty("pending.economic_ms", Long.toString(state.pendingEconomicMillis));
         properties.setProperty("regime", state.regime.name());
 
         state.prices.forEach((key, value) ->
                 properties.setProperty("price." + key, Double.toString(value)));
         state.commodityPrices.forEach((key, value) ->
                 properties.setProperty("commodity." + key, Double.toString(value)));
+        state.priceHistory.forEach((ticker, values) ->
+                properties.setProperty("history." + ticker, encodeHistory(values)));
+        state.generatedBankRegions.forEach(region ->
+                properties.setProperty(
+                        "bank.region." + Long.toUnsignedString(region, 16), "true"));
 
         for (Map.Entry<UUID, EconomyState.Account> entry : state.accounts.entrySet()) {
             writeAccount(properties, entry.getKey(), entry.getValue());
@@ -184,38 +206,79 @@ final class EconomyPersistence {
         }
 
         try {
-            int format = integer(properties, "format", 1);
+            int format = determineFormat(properties);
             if (format < 1) {
                 throw new IOException("Unsupported economy save format " + format);
             }
             if (format > EconomyState.FORMAT_VERSION) {
-                throw new IOException(
+                throw new UnsupportedFutureFormatException(
                         "Economy save format " + format
                                 + " is newer than supported format "
                                 + EconomyState.FORMAT_VERSION);
             }
+            if (format >= 4) {
+                requireValue(properties, "magic");
+                if (!MAGIC.equals(properties.getProperty("magic"))) {
+                    throw new IOException("Economy save magic identifier is invalid");
+                }
+                String expected = requireValue(properties, CHECKSUM_KEY);
+                String actual = checksum(properties);
+                if (!expected.equalsIgnoreCase(actual)) {
+                    throw new IOException("Economy save checksum does not match");
+                }
+            }
 
             EconomyState state = new EconomyState();
-            state.seed = longValue(properties, "seed", fallbackSeed);
-            state.economicDay = longValue(properties, "day", 0L);
-            state.lastWallClockMs = longValue(properties, "wall", now);
-            state.lastGameTicks = longValue(properties, "ticks", ticks);
-            if (format >= 3) {
-                state.pendingWallClockMs = longValue(properties, "pending.wall_ms", 0L);
-                state.pendingGameTicks = longValue(properties, "pending.game_ticks", 0L);
+            if (format >= 2) {
+                state.seed = requiredLong(properties, "seed");
+                state.economicDay = requiredLong(properties, "day");
+                state.lastWallClockMs = requiredLong(properties, "wall");
+                state.lastGameTicks = requiredLong(properties, "ticks");
+                state.regime = EconomyEngine.Regime.valueOf(requireValue(properties, "regime"));
+            } else {
+                state.seed = longValue(properties, "seed", fallbackSeed);
+                state.economicDay = longValue(properties, "day", 0L);
+                state.lastWallClockMs = longValue(properties, "wall", now);
+                state.lastGameTicks = longValue(properties, "ticks", ticks);
+                state.regime = EconomyEngine.Regime.valueOf(
+                        properties.getProperty("regime", EconomyEngine.Regime.EXPANSION.name()));
             }
-            state.regime = EconomyEngine.Regime.valueOf(
-                    properties.getProperty("regime", EconomyEngine.Regime.EXPANSION.name()));
+            if (format >= 4) {
+                state.pendingEconomicMillis = requiredLong(
+                        properties, "pending.economic_ms");
+            } else if (format >= 3) {
+                long pendingWall = longValue(properties, "pending.wall_ms", 0L);
+                long pendingTicks = longValue(properties, "pending.game_ticks", 0L);
+                long pendingGameMs = pendingTicks > Long.MAX_VALUE / EconomyService.MILLIS_PER_GAME_TICK
+                        ? Long.MAX_VALUE
+                        : pendingTicks * EconomyService.MILLIS_PER_GAME_TICK;
+                state.pendingEconomicMillis = Math.max(pendingWall, pendingGameMs);
+            }
 
             for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
-                state.prices.put(asset.ticker(),
-                        doubleValue(properties, "price." + asset.ticker(), 100.0));
+                double price = format >= 2
+                        ? requiredDouble(properties, "price." + asset.ticker())
+                        : doubleValue(properties, "price." + asset.ticker(), 100.0);
+                state.prices.put(asset.ticker(), price);
+                if (format >= 4) {
+                    state.priceHistory.put(
+                            asset.ticker(),
+                            decodeHistory(requireValue(properties, "history." + asset.ticker())));
+                } else {
+                    state.priceHistory.put(asset.ticker(), new ArrayList<>(List.of(price)));
+                }
             }
             for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
-                state.commodityPrices.put(commodity.id(), doubleValue(
-                        properties,
-                        "commodity." + commodity.id(),
-                        commodity.anchorPrice()));
+                double price = format >= 2
+                        ? requiredDouble(properties, "commodity." + commodity.id())
+                        : doubleValue(
+                                properties,
+                                "commodity." + commodity.id(),
+                                commodity.anchorPrice());
+                state.commodityPrices.put(commodity.id(), price);
+            }
+            if (format >= 4) {
+                loadGeneratedBankRegions(state, properties);
             }
 
             if (format >= 2) {
@@ -380,6 +443,107 @@ final class EconomyPersistence {
             account.loanMaturityDay = Math.max(state.economicDay + 1L, account.loanMaturityDay);
             account.loanAnnualRate = EconomyEngine.villagerLoanAnnualYield(state.regime, 180);
             account.loanSerial = 1L;
+        }
+    }
+
+    private static int determineFormat(Properties properties) throws IOException {
+        String raw = properties.getProperty("format");
+        if (raw != null) {
+            return Integer.parseInt(raw);
+        }
+        boolean legacy = properties.stringPropertyNames().stream()
+                .anyMatch(key -> key.startsWith("acct."));
+        if (legacy) {
+            return 1;
+        }
+        throw new IOException("Economy save is missing its format identifier");
+    }
+
+    private static String requireValue(Properties properties, String key) throws IOException {
+        String value = properties.getProperty(key);
+        if (value == null || value.isBlank()) {
+            throw new IOException("Economy save is missing required field " + key);
+        }
+        return value;
+    }
+
+    private static long requiredLong(Properties properties, String key) throws IOException {
+        return Long.parseLong(requireValue(properties, key));
+    }
+
+    private static double requiredDouble(Properties properties, String key) throws IOException {
+        return Double.parseDouble(requireValue(properties, key));
+    }
+
+    private static String encodeHistory(List<Double> values) {
+        StringBuilder builder = new StringBuilder(values.size() * 12);
+        for (int index = 0; index < values.size(); index++) {
+            if (index > 0) {
+                builder.append(',');
+            }
+            builder.append(Double.toString(values.get(index)));
+        }
+        return builder.toString();
+    }
+
+    private static List<Double> decodeHistory(String encoded) throws IOException {
+        String[] pieces = encoded.split(",", -1);
+        if (pieces.length == 0 || pieces.length > EconomyState.HISTORY_DAYS) {
+            throw new IOException("Economy price history length is invalid");
+        }
+        List<Double> values = new ArrayList<>(pieces.length);
+        for (String piece : pieces) {
+            if (piece.isBlank()) {
+                throw new IOException("Economy price history contains a blank value");
+            }
+            values.add(Double.parseDouble(piece));
+        }
+        return values;
+    }
+
+    private static void loadGeneratedBankRegions(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.region.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            if (!Boolean.parseBoolean(properties.getProperty(key))) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                state.generatedBankRegions.add(Long.parseUnsignedLong(encoded, 16));
+            } catch (NumberFormatException exception) {
+                throw new IOException("Invalid bank region key " + encoded, exception);
+            }
+        }
+    }
+
+    private static String checksum(Properties properties) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            TreeMap<String, String> sorted = new TreeMap<>();
+            for (String key : properties.stringPropertyNames()) {
+                if (!CHECKSUM_KEY.equals(key)) {
+                    sorted.put(key, properties.getProperty(key));
+                }
+            }
+            for (Map.Entry<String, String> entry : sorted.entrySet()) {
+                digest.update(entry.getKey().getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) '=');
+                digest.update(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) '\n');
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IOException("SHA-256 is unavailable", impossible);
+        }
+    }
+
+    private static final class UnsupportedFutureFormatException extends IOException {
+        UnsupportedFutureFormatException(String message) {
+            super(message);
         }
     }
 

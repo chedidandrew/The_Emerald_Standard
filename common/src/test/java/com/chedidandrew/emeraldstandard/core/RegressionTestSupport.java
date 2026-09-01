@@ -23,6 +23,10 @@ final class RegressionTestSupport {
         properties.setProperty("wall", "0");
         properties.setProperty("ticks", "0");
         properties.setProperty("regime", fresh.regime.name());
+        if (format >= 3) {
+            properties.setProperty("pending.wall_ms", "0");
+            properties.setProperty("pending.game_ticks", "0");
+        }
         fresh.prices.forEach((ticker, price) ->
                 properties.setProperty("price." + ticker, Double.toString(price)));
         fresh.commodityPrices.forEach((commodity, price) ->
@@ -35,6 +39,14 @@ final class RegressionTestSupport {
         try (var output = Files.newOutputStream(path)) {
             properties.store(output, "regression test");
         }
+    }
+
+    static Properties readProperties(Path path) throws IOException {
+        Properties properties = new Properties();
+        try (var input = Files.newInputStream(path)) {
+            properties.load(input);
+        }
+        return properties;
     }
 
     static void requireValidationFailure(EconomyState state, String message) throws Exception {

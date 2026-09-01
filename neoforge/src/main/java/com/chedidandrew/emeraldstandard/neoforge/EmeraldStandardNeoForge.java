@@ -1,19 +1,31 @@
 package com.chedidandrew.emeraldstandard.neoforge;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
+import com.chedidandrew.emeraldstandard.minecraft.BankerAccess;
+import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
+import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
+import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.mojang.logging.LogUtils;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.storage.LevelResource;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
 
 @Mod(EmeraldStandardNeoForge.MOD_ID)
@@ -22,7 +34,18 @@ public final class EmeraldStandardNeoForge {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final EconomyService ECONOMY = new EconomyService();
 
-    public EmeraldStandardNeoForge() {
+    public static final DeferredRegister<MenuType<?>> MENUS =
+            DeferredRegister.create(BuiltInRegistries.MENU, MOD_ID);
+    public static final DeferredHolder<MenuType<?>, MenuType<BankerMenu>> BANKER_MENU =
+            MENUS.register("banker", () -> {
+                MenuType<BankerMenu> type =
+                        new MenuType<>(BankerMenu::new, FeatureFlags.DEFAULT_FLAGS);
+                BankerMenus.setType(type);
+                return type;
+            });
+
+    public EmeraldStandardNeoForge(IEventBus modEventBus) {
+        MENUS.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
     }
 
@@ -58,6 +81,7 @@ public final class EmeraldStandardNeoForge {
             LOGGER.error("Could not advance or save The Emerald Standard economy: {}",
                     ECONOMY.lastError());
         }
+        VillageBankManager.tick(event.getServer(), ECONOMY);
     }
 
     @SubscribeEvent
@@ -72,6 +96,19 @@ public final class EmeraldStandardNeoForge {
         if (event.getEntity() instanceof ServerPlayer player) {
             recover(player);
         }
+    }
+
+    @SubscribeEvent
+    public void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+        if (!BankerAccess.isBanker(event.getTarget())) {
+            return;
+        }
+        if (!event.getEntity().level().isClientSide()
+                && event.getEntity() instanceof ServerPlayer player) {
+            BankerAccess.open(player, ECONOMY);
+        }
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.SUCCESS);
     }
 
     @SubscribeEvent

@@ -8,7 +8,7 @@ displayName="${mod_name}"
 displayURL="https://github.com/chedidandrew/The_Emerald_Standard"
 authors="Andrew Chedid"
 description='''
-A persistent villager banking and investment economy. Players provide emerald capital to villagers and can never borrow or enter debt.
+A persistent villager banking and investment economy with natural village banks, Banker villagers, charts, and a casual-friendly graphical interface. Players provide emerald capital to villagers and can never borrow or enter debt.
 '''
 
 [[dependencies.${mod_id}]]

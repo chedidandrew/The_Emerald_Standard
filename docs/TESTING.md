@@ -1,6 +1,6 @@
 # Testing and publication gate
 
-## Automated common-core tests
+## Automated common regression suite
 
 Run:
 
@@ -10,88 +10,74 @@ bash scripts/run-common-tests.sh
 
 The suite verifies:
 
-- Gaussian mean, standard deviation, and both tails
-- Exact deterministic replay for equal seeds
-- VILX long-run CAGR and negative-year frequency
-- Every individual company's long-run distribution
-- Severe bear years and strong recovery years
-- Multi-month and multi-year regime persistence
-- Villager-lending default and recovery distributions
-- Expected economics for 30, 90, 180, and 365-day lending terms
-- Dynamic commodity movement and material-equivalent resource quotes
-- Locked CD rates and maturity stopping
-- Villager-lending maturity resolution
+- Gaussian distribution and deterministic replay
+- VILX and individual-company long-run calibration
+- Regime persistence and crash behavior
+- Villager-lending defaults and term-by-term expected returns
+- Commodity movement and resource quotes
+- CD and lending maturity
+- Pure wall-clock and pure game-tick partial progress
+- Mixed wall-clock and game-tick progress without double counting
+- Bounded catch-up and banking lockout
 - Save and reload equality
-- Partial game-day accumulation across repeated restarts
-- Partial wall-clock accumulation across repeated restarts
-- Catch-up cap, startup batch, background batches, and banking pause
-- Inventory transaction journal prepare, commit, reload, adjust, and completion
-- Journal blocking of unrelated account mutations
-- Save-format 1 and 2 compatibility and future-format rejection
-- Primary-save corruption recovery without overwriting the known-good backup
-- Synchronous mutation rollback after a failed save
-- Automatic-save retry backoff without deterministic progress rollback
-- Backward-clock protection
-- Trading spread application
-- No-negative-balance and no-player-debt invariants
-- Fabric and NeoForge version parity
+- Format 1, 2, and 3 migration
+- Future-format rejection with and without a valid older backup
+- Required-field and checksum corruption recovery
+- Market history and village-bank region persistence
+- Inventory journal lifecycle
+- Backup preservation, rollback, save retry backoff, spread, caps, and no-debt invariants
 
-## Loader builds
+## Automated loader verification
 
-GitHub Actions builds Fabric and NeoForge independently with `fail-fast: false`, so one loader failure does not cancel diagnostics for the other.
+GitHub Actions must pass:
 
-Local commands with Java 25 and Gradle installed:
+- Common economy regression tests
+- Fabric 26.2 Gradle build
+- NeoForge 26.2 Gradle build
+- Fabric dedicated-server development launch
+- NeoForge dedicated-server development launch
+- Mod startup log detection
+- Minecraft server-ready log detection
+- Fabric and NeoForge artifact upload
 
-```bash
-gradle --no-daemon -p fabric build --stacktrace
-gradle --no-daemon -p neoforge build --stacktrace
-```
+Both loader builds compile the shared `BankerScreen`, menu, village-bank generator, interaction hooks, and translations.
 
-## Dedicated-server smoke tests
+## Manual client checklist
 
-After both builds pass, CI launches each loader's `runServer` task with an accepted EULA. The smoke script waits for both signals:
+Before a public prerelease:
 
-- `The Emerald Standard economy started`
-- Minecraft's `Done (...)!` server-ready message
+### Fabric
 
-The process is then stopped and its log is uploaded as a workflow artifact. This catches loader entrypoint, dedicated-server classloading, world-path, persistence-startup, and lifecycle registration failures before manual testing.
+- Launch Minecraft 26.2 with Fabric Loader and Fabric API.
+- Open a new world and an existing world.
+- Visit a village and confirm one bank or fallback Banker appears.
+- Right-click the Banker and verify all four GUI pages.
+- Confirm chart rendering at several GUI scales and window sizes.
+- Test every amount preset.
+- Test deposit, withdrawal, savings, buying, selling, CD, lending, and exchange actions.
+- Fill the inventory and test a withdrawal.
+- Close the game during prepared and committed journal test states and verify recovery.
 
-Local smoke commands:
+### NeoForge
 
-```bash
-bash scripts/smoke-server.sh fabric
-bash scripts/smoke-server.sh neoforge
-```
+Repeat the complete Fabric client checklist using NeoForge 26.2.
 
-## Manual Minecraft checklist
+### Multiplayer
 
-1. Launch Minecraft 26.2 with exactly one loader JAR.
-2. Run `/emerald help`, `/emerald market`, and `/emerald commodities`.
-3. Deposit emeralds and verify they leave inventory only after a successful bank transaction.
-4. Fill the inventory, withdraw, and verify no emeralds disappear.
-5. Interrupt a deposit or withdrawal, reconnect, and verify the recovery journal reconciles the exact quantity.
-6. Buy and sell every ticker and verify the spread is applied.
-7. Open a CD, advance past maturity, and verify interest stops.
-8. Close a CD early and verify the documented penalty.
-9. Fund and collect villager business lending across multiple test worlds.
-10. Exchange every accepted resource form.
-11. Play two sessions shorter than 20 minutes whose combined time exceeds 20 minutes and verify one economic day is retained.
-12. Save, quit, wait at least 20 minutes, and verify one or more offline days advance.
-13. Reopen immediately and verify the same market is retained rather than rerolled.
-14. Test two multiplayer accounts and verify private balances with shared market prices.
-15. Confirm a large catch-up backlog temporarily pauses banking and drains in bounded batches.
-16. Launch a dedicated Fabric server outside the development environment.
-17. Launch a dedicated NeoForge server outside the development environment.
+- Connect at least two players to one server.
+- Confirm both see the same prices and regime.
+- Confirm accounts remain UUID-isolated.
+- Confirm only permission-level-2 players can use `/emerald` commands.
+- Confirm normal players can use Banker villagers without command permission.
+- Confirm one village region does not generate duplicate banks.
+- Confirm a lost Banker is replaced when the village is revisited.
 
-## Public release gate
+## Publication gate
 
-A public release may be published only when:
+Do not publish a formal GitHub release, Modrinth release, or CurseForge release until:
 
-- Common regression tests pass.
-- Fabric builds successfully.
-- NeoForge builds successfully.
-- Fabric dedicated-server smoke passes.
-- NeoForge dedicated-server smoke passes.
-- Both release JARs launch in a Minecraft 26.2 client.
-- Deposit, withdrawal, recovery, investment, maturity, save/reload, partial-day, and offline catch-up behavior are manually verified.
-- The release notes and `CHANGELOG.md` describe all changes.
+1. Both automated workflows are green.
+2. Both packaged client JARs reach the title screen and load worlds.
+3. The full GUI transaction checklist passes on both loaders.
+4. Village bank placement is visually reviewed across plains, desert, savanna, snowy, and taiga villages.
+5. Multiplayer and journal-recovery checks pass.

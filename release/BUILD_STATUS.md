@@ -1,43 +1,46 @@
-# Build status for 0.1.0-alpha.2
+# Build status for 0.2.0-alpha.1
 
-## Verified common core
+## Locally verified common core
 
 - Java compilation: PASS
-- Gaussian distribution regression: PASS
-- Deterministic replay: PASS
-- 250-seed x 75-year market and company calibration: PASS
-- VILX mean CAGR: 9.74%
-- VILX negative-year frequency: 27.2%
-- Observed VILX annual range: -60.6% to +124.4%
-- All eight individual companies: positive and plausible mean long-run CAGR
-- Stressed villager-lending distribution: 8.24% default, 0.96% full default, 59.5% conditional recovery
-- Expected annualized returns after defaults: 30-day 6.65%, 90-day 7.46%, 180-day 7.97%, 365-day 12.16%
-- Save/reload, partial-day, bounded catch-up, journal, backup, rollback, maturity, backoff, clock, spread, resource-quote, future-format, and no-debt tests: PASS
-- Fabric and NeoForge version parity: PASS at `0.1.0-alpha.2`
+- Existing market calibration and no-debt model: unchanged
+- Unified mixed-clock regression: PASS
+- Format 1, 2, and 3 migration regression: PASS
+- Current-format checksum corruption recovery: PASS
+- Empty-primary backup recovery: PASS
+- Future-format primary rejection with an older backup present: PASS
+- Chart-history persistence: PASS
+- Generated-bank region persistence: PASS
 
-## Verified CI and dedicated-server startup
+## Feature implementation
 
-GitHub Actions run `33461667400` built and launched source commit `09307b1397ff7ef33d27b52503d963c51bd2fc66` using Java 25.
+- Casual four-page Banker GUI: IMPLEMENTED
+- Interactive persistent market charts: IMPLEMENTED
+- GUI deposits, withdrawals, savings, investing, CDs, lending, exchange, and recovery: IMPLEMENTED
+- Automatic village-bank placement: IMPLEMENTED
+- Natural fallback Banker in villages: IMPLEMENTED
+- Normal-player command dependency removed: IMPLEMENTED
+- `/emerald` restricted to administrators: IMPLEMENTED
 
-- Common regression job: PASS
-- Fabric 26.2 Gradle build: PASS
-- NeoForge 26.2 Gradle build: PASS
-- Fabric artifact upload: PASS
-- NeoForge artifact upload: PASS
-- Fabric dedicated-server development launch: PASS
-- NeoForge dedicated-server development launch: PASS
-- Fabric mod startup message observed: PASS
-- NeoForge mod startup message observed: PASS
-- Minecraft server-ready message observed for both loaders: PASS
+## CI verification pending
 
-Artifact IDs, ZIP digests, and exact JAR checksums are recorded in `release/ARTIFACTS-09307b13.md`.
+The feature branch must pass:
+
+- Common regression job
+- Fabric 26.2 Gradle build
+- NeoForge 26.2 Gradle build
+- Fabric dedicated-server launch smoke test
+- NeoForge dedicated-server launch smoke test
+- Fabric artifact upload
+- NeoForge artifact upload
 
 ## Manual publication gate
 
-- Fabric client launch test: PENDING
-- NeoForge client launch test: PENDING
-- Packaged dedicated-server launch test outside the development environment: PENDING
-- Deposit, withdrawal, journal recovery, maturity, partial-day, offline catch-up, and multiplayer gameplay checks: PENDING
-- Banker villager, workstation, and graphical interface: PLANNED FOR A LATER ALPHA
+- Fabric client launch and GUI test: PENDING
+- NeoForge client launch and GUI test: PENDING
+- Packaged dedicated-server launch test: PENDING
+- Village bank visual review across village biomes: PENDING
+- Two-player GUI and account-isolation test: PENDING
+- Full journal recovery test using real player inventories: PENDING
 
-The source, tests, loader builds, and automated dedicated-server startup checks are green. No formal public GitHub release should be created until both client JARs complete the manual checklist in `docs/TESTING.md`.
+No formal public release should be created until CI is green and both client builds complete the checklist in `docs/TESTING.md`.

@@ -2,11 +2,13 @@ package com.chedidandrew.emeraldstandard.core;
 
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.PLAYER;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.baseProperties;
+import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.readProperties;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.require;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.requireValidationFailure;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.writeProperties;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
@@ -19,7 +21,10 @@ final class JournalAndMigrationRegression {
         testJournalValidation();
         testLegacyMigration(root.resolve("legacy"));
         testFormatTwoMigration(root.resolve("format-two"));
-        testFutureFormatRejected(root.resolve("future"));
+        testFormatThreeClockMigration(root.resolve("format-three"));
+        testFutureFormatRejectedWithoutBackup(root.resolve("future"));
+        testFutureFormatNeverFallsBack(root.resolve("future-with-backup"));
+        testHistoryAndBankRegionPersistence(root.resolve("history-bank"));
     }
 
     private static void testJournalLifecycle(Path directory) throws Exception {
@@ -99,6 +104,8 @@ final class JournalAndMigrationRegression {
                 "Legacy cash did not migrate");
         require(migrated.account(PLAYER).shares.get("VILX") == 0.25,
                 "Legacy shares did not migrate");
+        require(migrated.priceHistory.get("VILX").size() == 1,
+                "Legacy migration did not seed chart history");
     }
 
     private static void testFormatTwoMigration(Path directory) throws Exception {
@@ -127,12 +134,25 @@ final class JournalAndMigrationRegression {
         require(migrated.account(PLAYER).cashMicro == 9L * EconomyState.MICRO,
                 "Format 2 cash did not migrate");
         require(migrated.pendingInventoryTransactions.isEmpty()
-                        && migrated.pendingGameTicks == 0L
-                        && migrated.pendingWallClockMs == 0L,
-                "Format 2 migration invented format 3 state");
+                        && migrated.pendingEconomicMillis == 0L,
+                "Format 2 migration invented format 4 state");
     }
 
-    private static void testFutureFormatRejected(Path directory) throws Exception {
+    private static void testFormatThreeClockMigration(Path directory) throws Exception {
+        Path save = directory.resolve("the_emerald_standard.properties");
+        Properties properties = baseProperties(3);
+        properties.setProperty(
+                "pending.wall_ms",
+                Long.toString(EconomyService.MILLIS_PER_MINECRAFT_DAY / 2L));
+        properties.setProperty("pending.game_ticks", "6000");
+        writeProperties(save, properties);
+        EconomyState migrated = EconomyState.load(save, 999L, 0L, 0L);
+        require(migrated.pendingEconomicMillis
+                        == EconomyService.MILLIS_PER_MINECRAFT_DAY / 2L,
+                "Format 3 clock migration summed overlapping clocks");
+    }
+
+    private static void testFutureFormatRejectedWithoutBackup(Path directory) throws Exception {
         Path save = directory.resolve("the_emerald_standard.properties");
         Properties properties = baseProperties(EconomyState.FORMAT_VERSION + 1);
         writeProperties(save, properties);
@@ -143,5 +163,55 @@ final class JournalAndMigrationRegression {
             rejected = expected.getMessage().contains("newer than supported");
         }
         require(rejected, "Future save format was interpreted as current data");
+    }
+
+    private static void testFutureFormatNeverFallsBack(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 81L, 0L, 0L);
+        require(service.deposit(PLAYER, 10L), "Future-format baseline deposit failed");
+        require(service.deposit(PLAYER, 5L), "Future-format backup creation failed");
+        Path save = directory.resolve("the_emerald_standard.properties");
+        Properties future = readProperties(save);
+        future.setProperty("format", Integer.toString(EconomyState.FORMAT_VERSION + 1));
+        writeProperties(save, future);
+
+        boolean rejected = false;
+        try {
+            EconomyState.load(save, 999L, 0L, 0L);
+        } catch (IOException expected) {
+            rejected = expected.getMessage().contains("newer than supported");
+        }
+        require(rejected, "Future primary silently fell back to a stale backup");
+        require(readProperties(save).getProperty("format")
+                        .equals(Integer.toString(EconomyState.FORMAT_VERSION + 1)),
+                "Future primary was modified after rejection");
+    }
+
+    private static void testHistoryAndBankRegionPersistence(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 82L, 0L, 0L);
+        for (int day = 1; day <= 25; day++) {
+            require(service.tickAt(
+                            day * EconomyService.TICKS_PER_MINECRAFT_DAY,
+                            day * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                    "History advance failed");
+        }
+        long region = 0x12345678ABCDEF01L;
+        require(service.markGeneratedBankRegion(region), "Bank region marker failed");
+        require(service.saveNowAt(
+                        25L * EconomyService.TICKS_PER_MINECRAFT_DAY,
+                        25L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "History save failed");
+
+        EconomyService reload = new EconomyService();
+        reload.startWithSeed(
+                directory,
+                999L,
+                25L * EconomyService.MILLIS_PER_MINECRAFT_DAY,
+                25L * EconomyService.TICKS_PER_MINECRAFT_DAY);
+        require(reload.marketSnapshot().priceHistory().get("VILX").size() == 26,
+                "Chart history did not survive reload");
+        require(reload.hasGeneratedBankRegion(region),
+                "Generated bank region did not survive reload");
     }
 }

@@ -23,7 +23,7 @@ final class EmeraldCommandHandlers {
 
     static int help(CommandContext<CommandSourceStack> context) {
         success(context, "The Emerald Standard alpha commands");
-        success(context, "/emerald market | commodities | portfolio | recover");
+        success(context, "/emerald open | market | commodities | portfolio | recover");
         success(context, "/emerald deposit <emeralds> | withdraw <emeralds>");
         success(context, "/emerald savings deposit|withdraw <emeralds>");
         success(context, "/emerald buy <ticker> <emeralds> | sell <ticker> <shares>");
@@ -32,6 +32,15 @@ final class EmeraldCommandHandlers {
         success(context, "/emerald exchange <resource> <count>");
         success(context, "Players fund villager businesses. Players can never borrow or enter debt.");
         return 1;
+    }
+
+    static int open(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        return BankerAccess.open(player, economy)
+                ? success(context, "Opened the Banker dashboard.")
+                : failure(context, "The Banker dashboard could not be opened.");
     }
 
     static int market(

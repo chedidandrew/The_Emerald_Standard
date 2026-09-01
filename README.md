@@ -2,38 +2,63 @@
 
 [![Build, test, and launch](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml/badge.svg)](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml)
 
-A lightweight passive-investing and villager-economy mod for **Minecraft 26.2**, with separate Fabric and NeoForge builds.
+A lightweight villager banking, investing, and commodity-exchange mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.1.0-alpha.2`. The economy, persistence, investments, crash-recovery journal, and command interface are implemented for testing. The Banker villager, workstation, charts, and full graphical interface remain the next gameplay milestone.
+> Current status: `0.2.0-alpha.1`. The player experience is now centered on Banker villagers and a graphical bank dashboard. Commands are retained for administrators and testing only.
 
 ## Core rule
 
-Players provide emerald capital to the villager economy. **Players can never borrow emeralds, hold a negative balance, or enter debt.** A villager business investment can lose some or all of the amount voluntarily invested, but it can never create an additional obligation.
+Players provide emerald capital to the villager economy. **Players can never borrow emeralds, hold a negative balance, or enter debt.** Villager business lending can lose some or all of the amount voluntarily invested, but it can never create an additional obligation.
 
-## Implemented in alpha.2
+## Natural village banking
 
-- A world-wide Villager Exchange with expansion, bull, boom, stagnation, recession, crash, and recovery regimes.
-- VILX, the diversified Villager Exchange Index, plus eight Minecraft-themed companies.
-- Deterministic market returns with independently mixed Gaussian inputs, rare jumps, correlated company risk, and positive long-run company distributions.
-- Savings with variable economic rates averaging near 3% over long simulations.
-- CDs with 30, 90, 180, and 365-day terms, locked opening rates, maturity stops, and an early withdrawal penalty.
-- Player-funded villager business lending with interest, partial default, and full default outcomes.
-- Dynamic diamond, gold, netherite, and emerald-ore exchange markets.
-- Fractional investing and a 0.25% trading spread on each side.
-- Offline progression at one economic day per Minecraft day, or 20 real minutes while the world is closed.
-- Partial-day progress preserved across short play sessions and restarts.
-- Bounded and chunked catch-up after very long offline periods, with banking paused until catch-up completes.
-- A private economy seed saved independently from the visible Minecraft world seed.
-- Versioned atomic saves, backup recovery, mutation rollback, automatic-save batching, and retry backoff.
-- A durable inventory transaction journal that reconciles interrupted deposits, withdrawals, and resource exchanges after reconnecting.
-- UUID-isolated accounts and explicit no-debt validation.
-- Fabric and NeoForge projects with automated common tests, loader builds, and dedicated-server launch smoke tests.
+When a player discovers a loaded village region, the mod automatically attempts to build a compact **Village Bank and Exchange** on a safe plot near the village. The building uses vanilla blocks, includes a banking counter, and contains a persistent Banker villager.
 
-## Alpha command interface
+This discovery-time generation works in both new and existing worlds. If no safe bank plot is available, an adult village resident is designated as the local Banker instead, so the economy remains accessible without commands.
 
-Use `/emerald help` in-game.
+Right-click a villager named **Banker** to open The Emerald Standard dashboard.
+
+## Casual-friendly dashboard
+
+The graphical interface is split into four simple pages:
+
+- **Overview:** net worth, cash, savings, physical emeralds, current market regime, and a market chart.
+- **Market:** nine Minecraft-themed investments, current prices, holdings, risk labels, chart history, buy, sell 25%, and sell-all actions.
+- **Banking:** savings, locked-rate CDs, and player-funded villager business lending.
+- **Exchange:** diamonds, gold, netherite materials, valuable ores, and blocks converted into bank cash at dynamic commodity prices.
+
+Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `All`. The interface explains outcomes in plain language and keeps the no-debt rule visible where lending is used.
+
+## Investments
+
+- `VILX` Villager Exchange Index
+- `RSDN` Redstone Dynamics
+- `DPMN` Deepdelve Mining
+- `NSPC` Nether Spice Company
+- `ENDR` Ender Freight and Logistics
+- `GLDH` Golden Harvest Cooperative
+- `POTN` Potionworks Laboratories
+- `IRNG` Iron Golem Security
+- `MCRT` Minecart Transit
+
+The simulation includes expansion, bull, boom, stagnation, recession, crash, and recovery regimes. Market prices, company risk, commodity prices, savings rates, CD rates, and villager-lending outcomes evolve persistently and continue while the world is closed.
+
+## Reliability and persistence
+
+- One unified economic-time accumulator prevents online and offline time from being counted twice.
+- Up to 180 economic days of chart history are persisted per investment.
+- Save format 4 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
+- Unsupported future save formats stop loading instead of silently falling back to stale backups.
+- Corrupt current-format saves can recover from a validated backup.
+- Inventory-linked deposits, withdrawals, and exchanges use a durable recovery journal.
+- Generated village-bank regions are persisted so the same area does not repeatedly generate banks.
+
+## Administrator commands
+
+Normal gameplay does not require commands. The `/emerald` command tree now requires permission level 2 and is intended for administrators, diagnostics, and development testing.
 
 ```text
+/emerald open
 /emerald market
 /emerald commodities
 /emerald portfolio
@@ -50,33 +75,13 @@ Use `/emerald help` in-game.
 /emerald exchange <resource> <count>
 ```
 
-Accepted alpha exchange resources include diamonds and diamond blocks, diamond ores, gold ingots and blocks, raw gold and raw-gold blocks, Overworld and Nether gold ores, ancient debris, netherite scrap, netherite ingots and blocks, emerald blocks, and emerald ores. Values move with the simulated commodity markets.
-
-Example:
-
-```text
-/emerald deposit 32
-/emerald buy VILX 20
-/emerald savings deposit 6
-/emerald cd open 3 90
-/emerald loan fund 3 180
-```
-
-## Safety limits
-
-- Inventory-linked commands are limited to 100,000 items per transaction.
-- Bank-only commands are limited to 1,000,000 emeralds per transaction.
-- Only one inventory transaction may be pending for a player at a time.
-- Banking is temporarily paused while a large offline catch-up backlog is processed.
-- A pending transaction is automatically reconciled on login, logout, or the next bank command. `/emerald recover` is available for manual recovery.
-
 ## Project layout
 
 ```text
-common/    Shared economy, persistence, command interface, and tests
+common/    Economy, persistence, GUI, village banks, shared gameplay, and tests
 fabric/    Fabric 26.2 lifecycle hooks, metadata, and Gradle build
 neoforge/  NeoForge 26.2 lifecycle hooks, metadata, and Gradle build
-docs/      Economy, architecture, recovery, and testing documentation
+docs/      Economy, GUI, architecture, recovery, and testing documentation
 scripts/   Common regression and dedicated-server smoke-test runners
 release/   Verified build status and artifact provenance
 ```
@@ -91,10 +96,9 @@ gradle --no-daemon -p fabric build
 gradle --no-daemon -p neoforge build
 ```
 
-The workflow builds each loader independently and launches both dedicated-server development environments. Successful runs publish Fabric and NeoForge JARs as workflow artifacts. A formal public release remains gated on manual client gameplay testing.
-
 ## Documentation
 
+- [Banker GUI and village banks](docs/GUI_AND_VILLAGE_BANKS.md)
 - [Economy model](docs/ECONOMY.md)
 - [Architecture and persistence](docs/ARCHITECTURE.md)
 - [Inventory transaction recovery](docs/TRANSACTION_RECOVERY.md)

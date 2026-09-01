@@ -2,10 +2,13 @@ package com.chedidandrew.emeraldstandard.core;
 
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.PLAYER;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.deleteTree;
+import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.readProperties;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.require;
+import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.writeProperties;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Properties;
 
 final class DurabilityAndInvariantRegression {
     private DurabilityAndInvariantRegression() {
@@ -14,6 +17,8 @@ final class DurabilityAndInvariantRegression {
     static void run(Path root) throws Exception {
         testTradingSpread(root.resolve("spread"));
         testBackupRecovery(root.resolve("backup"));
+        testEmptyPrimaryUsesBackup(root.resolve("empty-primary"));
+        testChecksumCorruptionUsesBackup(root.resolve("checksum"));
         testMutationRollback(root.resolve("rollback"));
         testAutomaticSaveBackoff(root.resolve("backoff"));
         testNoDebtAndCaps(root.resolve("no-debt"));
@@ -47,6 +52,38 @@ final class DurabilityAndInvariantRegression {
         EconomyState stillGood = EconomyState.load(backup, 999L, 50_000L, 0L);
         require(stillGood.account(PLAYER).cashMicro >= 10L * EconomyState.MICRO,
                 "Corrupt primary replaced known-good backup");
+    }
+
+    private static void testEmptyPrimaryUsesBackup(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 124L, 0L, 0L);
+        require(service.deposit(PLAYER, 10L), "Empty-primary first deposit failed");
+        require(service.deposit(PLAYER, 5L), "Empty-primary backup creation failed");
+        Path main = directory.resolve("the_emerald_standard.properties");
+        Files.writeString(main, "");
+        EconomyState recovered = EconomyState.load(main, 999L, 0L, 0L);
+        require(recovered.existingAccount(PLAYER) != null,
+                "Empty primary was accepted as a fresh economy");
+        require(recovered.account(PLAYER).cashMicro >= 10L * EconomyState.MICRO,
+                "Empty primary ignored the valid backup");
+    }
+
+    private static void testChecksumCorruptionUsesBackup(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 125L, 0L, 0L);
+        require(service.deposit(PLAYER, 10L), "Checksum first deposit failed");
+        require(service.deposit(PLAYER, 5L), "Checksum backup creation failed");
+        Path main = directory.resolve("the_emerald_standard.properties");
+        Properties properties = readProperties(main);
+        properties.setProperty(
+                "account." + PLAYER + ".cash",
+                Long.toString(999_999L * EconomyState.MICRO));
+        writeProperties(main, properties);
+        EconomyState recovered = EconomyState.load(main, 999L, 0L, 0L);
+        require(recovered.account(PLAYER).cashMicro < 999_999L * EconomyState.MICRO,
+                "Checksum did not detect a modified balance");
+        require(recovered.account(PLAYER).cashMicro >= 10L * EconomyState.MICRO,
+                "Checksum recovery did not use the valid backup");
     }
 
     private static void testMutationRollback(Path directory) throws Exception {

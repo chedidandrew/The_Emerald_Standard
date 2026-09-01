@@ -13,6 +13,7 @@ final class ClockAndMaturityRegression {
         testMaturities(root.resolve("maturity"));
         testPartialGameDay(root.resolve("partial-game"));
         testPartialWallDay(root.resolve("partial-wall"));
+        testMixedClockDoesNotDoubleCount(root.resolve("mixed-clock"));
         testBoundedCatchUp(root.resolve("catch-up"));
         testBackwardClock(root.resolve("clock"));
     }
@@ -48,7 +49,8 @@ final class ClockAndMaturityRegression {
         first.startWithSeed(directory, 51L, 0L, 0L);
         require(first.tickAt(12_000L, 0L), "First half game day failed");
         require(first.snapshot().economicDay == 0L
-                        && first.snapshot().pendingGameTicks == 12_000L,
+                        && first.snapshot().pendingEconomicMillis
+                                == EconomyService.MILLIS_PER_MINECRAFT_DAY / 2L,
                 "Partial game day was not retained");
         require(first.saveNowAt(12_000L, 0L), "Partial game-day save failed");
 
@@ -56,7 +58,7 @@ final class ClockAndMaturityRegression {
         second.startWithSeed(directory, 999L, 0L, 12_000L);
         require(second.tickAt(24_000L, 0L), "Second half game day failed");
         require(second.snapshot().economicDay == 1L
-                        && second.snapshot().pendingGameTicks == 0L,
+                        && second.snapshot().pendingEconomicMillis == 0L,
                 "Two half sessions did not create one economic day");
     }
 
@@ -69,13 +71,43 @@ final class ClockAndMaturityRegression {
 
         EconomyService second = new EconomyService();
         second.startWithSeed(directory, 999L, half, 0L);
-        require(second.snapshot().pendingWallClockMs == half,
+        require(second.snapshot().pendingEconomicMillis == half,
                 "Restart discarded partial wall time");
         require(second.tickAt(0L, EconomyService.MILLIS_PER_MINECRAFT_DAY),
                 "Second wall half-day failed");
         require(second.snapshot().economicDay == 1L
-                        && second.snapshot().pendingWallClockMs == 0L,
+                        && second.snapshot().pendingEconomicMillis == 0L,
                 "Two wall half-days did not create one economic day");
+    }
+
+    private static void testMixedClockDoesNotDoubleCount(Path directory) throws Exception {
+        long quarterWall = EconomyService.MILLIS_PER_MINECRAFT_DAY / 4L;
+        long threeQuarterWall = quarterWall * 3L;
+
+        EconomyService first = new EconomyService();
+        first.startWithSeed(directory, 521L, 0L, 0L);
+        require(first.tickAt(0L, threeQuarterWall), "Offline partial day failed");
+        require(first.saveNowAt(0L, threeQuarterWall), "Mixed-clock baseline save failed");
+
+        EconomyService second = new EconomyService();
+        second.startWithSeed(directory, 999L, threeQuarterWall, 0L);
+        require(second.tickAt(6_000L, EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Mixed clock first quarter failed");
+        require(second.snapshot().economicDay == 1L,
+                "Offline and online overlap did not create exactly one day");
+
+        require(second.tickAt(24_000L,
+                        EconomyService.MILLIS_PER_MINECRAFT_DAY + threeQuarterWall),
+                "Mixed clock next three quarters failed");
+        require(second.snapshot().economicDay == 1L
+                        && second.snapshot().pendingEconomicMillis == threeQuarterWall,
+                "Mixed clocks double-counted overlapping elapsed time");
+
+        require(second.tickAt(30_000L, 2L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Mixed clock final quarter failed");
+        require(second.snapshot().economicDay == 2L
+                        && second.snapshot().pendingEconomicMillis == 0L,
+                "Two real days did not become exactly two economic days");
     }
 
     private static void testBoundedCatchUp(Path directory) throws Exception {

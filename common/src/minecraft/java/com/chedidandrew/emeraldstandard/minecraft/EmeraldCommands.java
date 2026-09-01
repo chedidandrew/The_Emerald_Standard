@@ -28,8 +28,11 @@ public final class EmeraldCommands {
         int maxInventoryAmount = EconomyService.MAX_INVENTORY_ITEM_TRANSACTION;
 
         dispatcher.register(Commands.literal("emerald")
+                .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("help")
                         .executes(EmeraldCommandHandlers::help))
+                .then(Commands.literal("open")
+                        .executes(context -> EmeraldCommandHandlers.open(context, economy)))
                 .then(Commands.literal("market")
                         .executes(context -> EmeraldCommandHandlers.market(context, economy)))
                 .then(Commands.literal("commodities")

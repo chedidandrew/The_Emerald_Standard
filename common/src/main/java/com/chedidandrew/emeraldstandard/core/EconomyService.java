@@ -12,6 +12,7 @@ import java.util.UUID;
 public final class EconomyService {
     public static final long MILLIS_PER_MINECRAFT_DAY = 1_200_000L;
     public static final long TICKS_PER_MINECRAFT_DAY = 24_000L;
+    public static final long MILLIS_PER_GAME_TICK = 50L;
     public static final long MAX_TRUSTED_CATCH_UP_DAYS = 25_000L;
     public static final long MAX_WHOLE_EMERALD_TRANSACTION = 1_000_000L;
     public static final int MAX_INVENTORY_ITEM_TRANSACTION =
@@ -22,12 +23,9 @@ public final class EconomyService {
     private static final long AUTO_SAVE_INTERVAL_MS = 30_000L;
     private static final long INITIAL_SAVE_RETRY_MS = 2_000L;
     private static final long MAX_SAVE_RETRY_MS = 60_000L;
-    private static final long MAX_PENDING_WALL_MS =
+    private static final long MAX_PENDING_ECONOMIC_MS =
             MAX_TRUSTED_CATCH_UP_DAYS * MILLIS_PER_MINECRAFT_DAY
                     + MILLIS_PER_MINECRAFT_DAY - 1L;
-    private static final long MAX_PENDING_GAME_TICKS =
-            MAX_TRUSTED_CATCH_UP_DAYS * TICKS_PER_MINECRAFT_DAY
-                    + TICKS_PER_MINECRAFT_DAY - 1L;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private EconomyState state;
@@ -151,6 +149,7 @@ public final class EconomyService {
                 state.regime,
                 Map.copyOf(state.prices),
                 Map.copyOf(state.commodityPrices),
+                copyHistory(state.priceHistory),
                 catchUpDaysRemainingInternal(),
                 dirty);
     }
@@ -181,6 +180,35 @@ public final class EconomyService {
 
     public synchronized boolean isCatchingUp() {
         return catchUpDaysRemaining() > 0L;
+    }
+
+    public synchronized boolean hasGeneratedBankRegion(long regionKey) {
+        return state != null && state.generatedBankRegions.contains(regionKey);
+    }
+
+    public synchronized boolean markGeneratedBankRegion(long regionKey) {
+        if (state == null || path == null) {
+            lastError = "Economy service has not started";
+            return false;
+        }
+        EconomyState before = state.copy();
+        boolean dirtyBefore = dirty;
+        try {
+            if (!state.generatedBankRegions.add(regionKey)) {
+                return true;
+            }
+            state.save(path);
+            dirty = false;
+            resetSaveSchedule(state.lastWallClockMs);
+            lastError = "";
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            state = before;
+            dirty = dirtyBefore;
+            lastError = message(exception);
+            scheduleSaveRetry(state.lastWallClockMs);
+            return false;
+        }
     }
 
     public synchronized String transactionBlockReason(UUID id) {
@@ -598,31 +626,31 @@ public final class EconomyService {
         long safeNow = Math.max(0L, now);
         long safeGameTicks = Math.max(0L, gameTicks);
         long trustedNow = Math.max(safeNow, state.lastWallClockMs);
-        long wallDelta = trustedNow - state.lastWallClockMs;
-        long gameDelta = safeGameTicks >= state.lastGameTicks
+        long wallDeltaMs = trustedNow - state.lastWallClockMs;
+        long gameDeltaTicks = safeGameTicks >= state.lastGameTicks
                 ? safeGameTicks - state.lastGameTicks
                 : 0L;
-        boolean changed = wallDelta > 0L || safeGameTicks != state.lastGameTicks;
+        long gameDeltaMs = gameDeltaTicks > Long.MAX_VALUE / MILLIS_PER_GAME_TICK
+                ? Long.MAX_VALUE
+                : gameDeltaTicks * MILLIS_PER_GAME_TICK;
+        boolean changed = wallDeltaMs > 0L || safeGameTicks != state.lastGameTicks;
 
         state.lastWallClockMs = trustedNow;
         state.lastGameTicks = safeGameTicks;
-        state.pendingWallClockMs = cappedAdd(
-                state.pendingWallClockMs, wallDelta, MAX_PENDING_WALL_MS);
-        state.pendingGameTicks = cappedAdd(
-                state.pendingGameTicks, gameDelta, MAX_PENDING_GAME_TICKS);
+        long elapsedEconomicMs = Math.max(wallDeltaMs, gameDeltaMs);
+        state.pendingEconomicMillis = cappedAdd(
+                state.pendingEconomicMillis,
+                elapsedEconomicMs,
+                MAX_PENDING_ECONOMIC_MS);
 
-        long wallDays = state.pendingWallClockMs / MILLIS_PER_MINECRAFT_DAY;
-        long gameDays = state.pendingGameTicks / TICKS_PER_MINECRAFT_DAY;
-        long days = Math.min(maximumDaysToAdvance, Math.max(wallDays, gameDays));
+        long availableDays = state.pendingEconomicMillis / MILLIS_PER_MINECRAFT_DAY;
+        long days = Math.min(maximumDaysToAdvance, availableDays);
         if (days <= 0L) {
             return changed;
         }
 
         advance(days);
-        long consumedWallDays = Math.min(wallDays, days);
-        long consumedGameDays = Math.min(gameDays, days);
-        state.pendingWallClockMs -= consumedWallDays * MILLIS_PER_MINECRAFT_DAY;
-        state.pendingGameTicks -= consumedGameDays * TICKS_PER_MINECRAFT_DAY;
+        state.pendingEconomicMillis -= days * MILLIS_PER_MINECRAFT_DAY;
         return true;
     }
 
@@ -633,9 +661,7 @@ public final class EconomyService {
     }
 
     private long catchUpDaysRemainingInternal() {
-        return Math.max(
-                state.pendingWallClockMs / MILLIS_PER_MINECRAFT_DAY,
-                state.pendingGameTicks / TICKS_PER_MINECRAFT_DAY);
+        return state.pendingEconomicMillis / MILLIS_PER_MINECRAFT_DAY;
     }
 
     private boolean persistDirtyState(long now) {
@@ -691,6 +717,13 @@ public final class EconomyService {
             scheduleSaveRetry(now);
             return false;
         }
+    }
+
+    private static Map<String, java.util.List<Double>> copyHistory(
+            Map<String, java.util.List<Double>> history) {
+        Map<String, java.util.List<Double>> copy = new java.util.LinkedHashMap<>();
+        history.forEach((ticker, values) -> copy.put(ticker, java.util.List.copyOf(values)));
+        return Map.copyOf(copy);
     }
 
     private static EconomyState.PendingInventoryTransaction matchingTransaction(
@@ -789,6 +822,7 @@ public final class EconomyService {
             EconomyEngine.Regime regime,
             Map<String, Double> prices,
             Map<String, Double> commodityPrices,
+            Map<String, java.util.List<Double>> priceHistory,
             long catchUpDaysRemaining,
             boolean dirty) {
     }

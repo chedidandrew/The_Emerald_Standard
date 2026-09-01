@@ -3,7 +3,7 @@
   "id": "the_emerald_standard",
   "version": "${version}",
   "name": "The Emerald Standard",
-  "description": "A persistent villager banking and investment economy. Players invest emeralds and can never borrow or enter debt.",
+  "description": "A persistent villager banking and investment economy with natural village banks, Banker villagers, charts, and a casual-friendly graphical interface.",
   "authors": ["Andrew Chedid"],
   "contact": {
     "homepage": "https://github.com/chedidandrew/The_Emerald_Standard",
@@ -13,7 +13,8 @@
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabric"]
+    "main": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabric"],
+    "client": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabricClient"]
   },
   "depends": {
     "fabricloader": ">=0.19.3",
