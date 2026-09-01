@@ -9,7 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntitySpawnReason;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -196,7 +196,7 @@ public final class VillageBankManager {
                     } else if (window) {
                         level.setBlock(
                                 origin.offset(x, y, z),
-                                Blocks.GREEN_STAINED_GLASS_PANE.defaultBlockState(),
+                                Blocks.STAINED_GLASS_PANE.green().defaultBlockState(),
                                 3);
                     } else {
                         level.setBlock(
@@ -254,7 +254,7 @@ public final class VillageBankManager {
     }
 
     private static boolean spawnBanker(ServerLevel level, BlockPos position) {
-        Villager banker = EntityType.VILLAGER.create(level, EntitySpawnReason.NATURAL);
+        Villager banker = EntityTypes.VILLAGER.create(level, EntitySpawnReason.NATURAL);
         if (banker == null) {
             return false;
         }

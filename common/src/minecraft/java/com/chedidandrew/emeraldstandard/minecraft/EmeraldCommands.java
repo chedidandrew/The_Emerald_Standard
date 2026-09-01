@@ -10,6 +10,7 @@ import java.util.List;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.server.permissions.Permissions;
 
 /** Registers the command interface used before the Banker GUI is introduced. */
 public final class EmeraldCommands {
@@ -28,7 +29,7 @@ public final class EmeraldCommands {
         int maxInventoryAmount = EconomyService.MAX_INVENTORY_ITEM_TRANSACTION;
 
         dispatcher.register(Commands.literal("emerald")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER))
                 .then(Commands.literal("help")
                         .executes(EmeraldCommandHandlers::help))
                 .then(Commands.literal("open")

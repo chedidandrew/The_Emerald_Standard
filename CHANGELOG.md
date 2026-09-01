@@ -30,6 +30,7 @@ All notable changes to The Emerald Standard are documented here.
 
 ### Fixed
 
+- Aligned the Banker milestone with the Minecraft 26.2 entity, permissions, colored-block, and entity-tag APIs.
 - Prevented overlapping wall-clock and game-tick progress from double-counting economic time.
 - Prevented empty or truncated current saves from being accepted as fresh worlds.
 - Added SHA-256 save checksums so silent balance and history corruption is detected.

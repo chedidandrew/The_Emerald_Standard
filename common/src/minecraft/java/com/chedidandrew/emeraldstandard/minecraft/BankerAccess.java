@@ -15,7 +15,7 @@ public final class BankerAccess {
     }
 
     public static boolean isBanker(Entity entity) {
-        return entity instanceof Villager && entity.getTags().contains(BANKER_TAG);
+        return entity instanceof Villager && entity.entityTags().contains(BANKER_TAG);
     }
 
     public static void markBanker(Villager villager) {
