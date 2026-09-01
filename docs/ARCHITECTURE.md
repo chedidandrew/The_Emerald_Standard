@@ -64,7 +64,9 @@ Minecraft player inventories and The Emerald Standard bank are stored in differe
 
 The journal stores the player, transaction ID, item, quantity, pre-transaction inventory count, bank delta, stage, economic day, and wall-clock time. Only one inventory-linked transaction may be active per player.
 
-After the inventory change and bank commit, the affected player is synchronously saved. The journal is cleared only after that save succeeds. If the server or process stops at any point, login or logout reconciliation compares the saved inventory against the journal and completes or rolls back the missing side idempotently.
+After the inventory change and bank commit, online player data is synchronously flushed through vanilla's public `saveAll()` path. The journal is cleared only after that flush succeeds. If the server or process stops at any point, login or logout reconciliation compares the saved inventory against the journal and completes or rolls back the missing side idempotently.
+
+The public API does not expose the protected single-player save method, so alpha.2 deliberately favors correctness over scale by flushing all online players at transaction completion. A later server-scale storage layer can replace this broader flush without changing the journal state machine.
 
 See [TRANSACTION_RECOVERY.md](TRANSACTION_RECOVERY.md) for the full state machine.
 
@@ -90,4 +92,4 @@ The save validator rejects:
 - No cost-basis history or chart storage yet
 - No data-pack commodity definitions yet
 - Share quantities use floating-point values pending a fixed-point holdings migration
-- Synchronous account mutations still rewrite the world bank file, which is suitable for alpha testing but will need partitioning or an append-only bank ledger for large public servers
+- Synchronous account mutations still rewrite the world bank file, and inventory-linked transactions currently flush all online player data. Both are suitable for alpha correctness but will need partitioning or an append-only ledger for large public servers
