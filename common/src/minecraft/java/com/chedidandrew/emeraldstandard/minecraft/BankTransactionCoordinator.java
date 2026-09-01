@@ -12,8 +12,8 @@ import net.minecraft.world.item.Item;
  * Coordinates the durable bank journal with Minecraft player-data saves.
  *
  * <p>Bank and inventory data are stored in different files. A journal entry remains durable until
- * the affected player inventory is synchronously saved, allowing login recovery to complete or
- * roll back an interrupted transaction without duplicating or destroying items.</p>
+ * online player data is synchronously flushed, allowing login recovery to complete or roll back an
+ * interrupted transaction without duplicating or destroying items.</p>
  */
 public final class BankTransactionCoordinator {
     private static final String PREFIX = "[Emerald Standard] ";
@@ -21,7 +21,7 @@ public final class BankTransactionCoordinator {
     private BankTransactionCoordinator() {
     }
 
-    /** Saves the affected player and then clears a BANK_COMMITTED journal record. */
+    /** Flushes online player data and then clears a BANK_COMMITTED journal record. */
     public static boolean savePlayerAndComplete(
             ServerPlayer player,
             EconomyService economy,
@@ -61,7 +61,7 @@ public final class BankTransactionCoordinator {
             }
             if (!savePlayer(player)) {
                 return RecoveryResult.failed(
-                        "Could not save the player while rolling back a prepared transaction");
+                        "Could not save player data while rolling back a prepared transaction");
             }
             if (!economy.cancelPreparedInventoryTransaction(
                     player.getUUID(), transaction.transactionId)) {
@@ -94,7 +94,7 @@ public final class BankTransactionCoordinator {
 
         if (!savePlayer(player)) {
             return RecoveryResult.failed(
-                    "Could not save the player while completing a committed transaction");
+                    "Could not save player data while completing a committed transaction");
         }
         if (!economy.completeInventoryTransaction(
                 player.getUUID(), transaction.transactionId)) {
@@ -109,12 +109,15 @@ public final class BankTransactionCoordinator {
     }
 
     private static boolean savePlayer(ServerPlayer player) {
-        MinecraftServer server = player.getServer();
+        MinecraftServer server = player.serverLevel().getServer();
         if (server == null) {
             return false;
         }
         try {
-            server.getPlayerList().save(player);
+            // Vanilla exposes a public all-player flush, while the single-player save method is
+            // protected. The journal keeps this correct, and a future server-scale storage layer
+            // can replace the broader flush without changing transaction semantics.
+            server.getPlayerList().saveAll();
             return true;
         } catch (RuntimeException exception) {
             return false;
