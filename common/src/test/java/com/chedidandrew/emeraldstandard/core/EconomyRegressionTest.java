@@ -16,6 +16,7 @@ public final class EconomyRegressionTest {
         testMarketAndAssets();
         testRegimeDuration();
         testLoanRisk();
+        testLoanTermEconomics();
         testCommodities();
         testResourceQuotes();
         System.out.println("PASS EconomyRegressionTest");
@@ -36,7 +37,7 @@ public final class EconomyRegressionTest {
             maximum = Math.max(maximum, value);
         }
         double mean = sum / samples;
-        double deviation = Math.sqrt(sumSquares / samples - mean * mean);
+        double deviation = StrictMath.sqrt(sumSquares / samples - mean * mean);
         require(Math.abs(mean) < 0.012, "Gaussian mean is biased: " + mean);
         require(deviation > 0.975 && deviation < 1.025,
                 "Gaussian deviation is wrong: " + deviation);
@@ -91,7 +92,7 @@ public final class EconomyRegressionTest {
                 bestYear = Math.max(bestYear, annual);
             }
             for (int asset = 0; asset < prices.length; asset++) {
-                double cagr = Math.pow(prices[asset] / 100.0, 1.0 / years) - 1.0;
+                double cagr = StrictMath.pow(prices[asset] / 100.0, 1.0 / years) - 1.0;
                 cagrTotals[asset] += cagr;
                 if (asset == 0) {
                     vilxCagrs[seed] = cagr;
@@ -184,6 +185,46 @@ public final class EconomyRegressionTest {
                 defaultRate * 100.0,
                 fullDefaultRate * 100.0,
                 conditionalRecovery * 100.0);
+    }
+
+    private static void testLoanTermEconomics() {
+        int[] terms = {30, 90, 180, 365};
+        double previous = Double.NEGATIVE_INFINITY;
+        for (int term : terms) {
+            int samples = 50_000;
+            double payoutTotal = 0.0;
+            for (int sample = 0; sample < samples; sample++) {
+                long seed = 0x9E3779B97F4A7C15L * (sample + 1L);
+                EconomyEngine.Regime opening = EconomyEngine.initialRegime(seed);
+                EconomyEngine.Regime regime = opening;
+                double stress = 0.0;
+                for (int day = 1; day <= term; day++) {
+                    regime = EconomyEngine.nextRegime(regime, seed, day);
+                    stress += EconomyEngine.loanStressIncrement(regime);
+                }
+                double annualRate = EconomyEngine.villagerLoanAnnualYield(opening, term);
+                double maturedClaim = StrictMath.pow(1.0 + annualRate, term / 365.0);
+                EconomyEngine.LoanResolution resolution = EconomyEngine.resolveLoan(
+                        seed,
+                        new UUID(sample, ~sample),
+                        sample + 1L,
+                        0L,
+                        term,
+                        stress);
+                payoutTotal += maturedClaim * resolution.recoveryRate();
+            }
+            double expectedMultiple = payoutTotal / samples;
+            double annualized = StrictMath.pow(expectedMultiple, 365.0 / term) - 1.0;
+            require(annualized > 0.035,
+                    term + "-day villager lending underpays savings after risk: " + annualized);
+            require(annualized + 0.01 >= previous,
+                    "Longer villager lending terms do not compensate for risk");
+            previous = annualized;
+            System.out.printf(
+                    "%d-day villager lending expected annualized return %.2f%%%n",
+                    term,
+                    annualized * 100.0);
+        }
     }
 
     private static void testCommodities() {

@@ -49,7 +49,7 @@ final class EconomyPersistence {
             Files.createDirectories(path.getParent());
         }
 
-        ByteArrayOutputStream output = new ByteArrayOutputStream(16_384);
+        ByteArrayOutputStream output = new ByteArrayOutputStream(24_576);
         toProperties(state).store(
                 output, "The Emerald Standard data format " + EconomyState.FORMAT_VERSION);
         ByteBuffer buffer = ByteBuffer.wrap(output.toByteArray());
@@ -78,6 +78,7 @@ final class EconomyPersistence {
         } finally {
             Files.deleteIfExists(temporary);
         }
+        forceDirectory(path.getParent());
     }
 
     private static void preserveValidPrimary(EconomyState state, Path path) {
@@ -88,7 +89,18 @@ final class EconomyPersistence {
             read(path, state.seed, state.lastWallClockMs, state.lastGameTicks);
             Files.copy(path, backupPath(path), StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ignored) {
-            // Never replace a known-good backup with a corrupt primary file.
+            // Never replace a known-good backup with a corrupt or future-format primary file.
+        }
+    }
+
+    private static void forceDirectory(Path directory) {
+        if (directory == null) {
+            return;
+        }
+        try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (IOException | UnsupportedOperationException ignored) {
+            // Directory fsync is not available on every platform or filesystem.
         }
     }
 
@@ -99,6 +111,8 @@ final class EconomyPersistence {
         properties.setProperty("day", Long.toString(state.economicDay));
         properties.setProperty("wall", Long.toString(state.lastWallClockMs));
         properties.setProperty("ticks", Long.toString(state.lastGameTicks));
+        properties.setProperty("pending.wall_ms", Long.toString(state.pendingWallClockMs));
+        properties.setProperty("pending.game_ticks", Long.toString(state.pendingGameTicks));
         properties.setProperty("regime", state.regime.name());
 
         state.prices.forEach((key, value) ->
@@ -108,6 +122,10 @@ final class EconomyPersistence {
 
         for (Map.Entry<UUID, EconomyState.Account> entry : state.accounts.entrySet()) {
             writeAccount(properties, entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<UUID, EconomyState.PendingInventoryTransaction> entry
+                : state.pendingInventoryTransactions.entrySet()) {
+            writeTransaction(properties, entry.getKey(), entry.getValue());
         }
         return properties;
     }
@@ -138,6 +156,26 @@ final class EconomyPersistence {
                 properties.setProperty(prefix + "share." + ticker, Double.toString(shares)));
     }
 
+    private static void writeTransaction(
+            Properties properties,
+            UUID playerId,
+            EconomyState.PendingInventoryTransaction transaction) {
+        String prefix = "transaction." + playerId + ".";
+        properties.setProperty(prefix + "id", transaction.transactionId.toString());
+        properties.setProperty(prefix + "kind", transaction.kind.name());
+        properties.setProperty(prefix + "stage", transaction.stage.name());
+        properties.setProperty(prefix + "item", transaction.itemKey);
+        properties.setProperty(prefix + "count", Integer.toString(transaction.itemCount));
+        properties.setProperty(
+                prefix + "inventory_before", Integer.toString(transaction.inventoryCountBefore));
+        properties.setProperty(
+                prefix + "bank_delta", Long.toString(transaction.bankDeltaMicro));
+        properties.setProperty(
+                prefix + "created_day", Long.toString(transaction.createdEconomicDay));
+        properties.setProperty(
+                prefix + "created_wall", Long.toString(transaction.createdWallClockMs));
+    }
+
     private static EconomyState read(Path path, long fallbackSeed, long now, long ticks)
             throws IOException {
         Properties properties = new Properties();
@@ -147,11 +185,25 @@ final class EconomyPersistence {
 
         try {
             int format = integer(properties, "format", 1);
+            if (format < 1) {
+                throw new IOException("Unsupported economy save format " + format);
+            }
+            if (format > EconomyState.FORMAT_VERSION) {
+                throw new IOException(
+                        "Economy save format " + format
+                                + " is newer than supported format "
+                                + EconomyState.FORMAT_VERSION);
+            }
+
             EconomyState state = new EconomyState();
             state.seed = longValue(properties, "seed", fallbackSeed);
             state.economicDay = longValue(properties, "day", 0L);
             state.lastWallClockMs = longValue(properties, "wall", now);
             state.lastGameTicks = longValue(properties, "ticks", ticks);
+            if (format >= 3) {
+                state.pendingWallClockMs = longValue(properties, "pending.wall_ms", 0L);
+                state.pendingGameTicks = longValue(properties, "pending.game_ticks", 0L);
+            }
             state.regime = EconomyEngine.Regime.valueOf(
                     properties.getProperty("regime", EconomyEngine.Regime.EXPANSION.name()));
 
@@ -171,8 +223,13 @@ final class EconomyPersistence {
             } else {
                 loadLegacyAccounts(state, properties);
             }
+            if (format >= 3) {
+                loadTransactions(state, properties);
+            }
             state.validate();
             return state;
+        } catch (IOException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             throw new IOException("Invalid economy save data in " + path.getFileName(), exception);
         }
@@ -225,6 +282,50 @@ final class EconomyPersistence {
         }
     }
 
+    private static void loadTransactions(EconomyState state, Properties properties) {
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith("transaction.")) {
+                continue;
+            }
+            int uuidEnd = key.indexOf('.', "transaction.".length());
+            if (uuidEnd < 0) {
+                continue;
+            }
+            UUID playerId = UUID.fromString(key.substring("transaction.".length(), uuidEnd));
+            String field = key.substring(uuidEnd + 1);
+            EconomyState.PendingInventoryTransaction transaction =
+                    state.pendingInventoryTransactions.computeIfAbsent(playerId, ignored -> {
+                        EconomyState.PendingInventoryTransaction value =
+                                new EconomyState.PendingInventoryTransaction();
+                        value.playerId = playerId;
+                        return value;
+                    });
+            applyTransactionField(transaction, field, properties.getProperty(key));
+        }
+    }
+
+    private static void applyTransactionField(
+            EconomyState.PendingInventoryTransaction transaction,
+            String field,
+            String value) {
+        switch (field) {
+            case "id" -> transaction.transactionId = UUID.fromString(value);
+            case "kind" -> transaction.kind =
+                    EconomyState.InventoryTransactionKind.valueOf(value);
+            case "stage" -> transaction.stage =
+                    EconomyState.InventoryTransactionStage.valueOf(value);
+            case "item" -> transaction.itemKey = value;
+            case "count" -> transaction.itemCount = Integer.parseInt(value);
+            case "inventory_before" -> transaction.inventoryCountBefore = Integer.parseInt(value);
+            case "bank_delta" -> transaction.bankDeltaMicro = Long.parseLong(value);
+            case "created_day" -> transaction.createdEconomicDay = Long.parseLong(value);
+            case "created_wall" -> transaction.createdWallClockMs = Long.parseLong(value);
+            default -> {
+                // Ignore unknown fields from the same supported format for forward-compatible additions.
+            }
+        }
+    }
+
     private static void loadLegacyAccounts(EconomyState state, Properties properties) {
         for (String key : properties.stringPropertyNames()) {
             if (!key.startsWith("acct.")) {
@@ -270,13 +371,13 @@ final class EconomyPersistence {
         if (account.cdValueMicro > 0L) {
             account.cdPrincipalMicro = account.cdValueMicro;
             account.cdOpenDay = Math.max(0L, state.economicDay - 90L);
-            account.cdMaturityDay = Math.max(state.economicDay, account.cdMaturityDay);
+            account.cdMaturityDay = Math.max(state.economicDay + 1L, account.cdMaturityDay);
             account.cdAnnualRate = EconomyEngine.cdAnnualRate(state.regime, 90);
         }
         if (account.loanValueMicro > 0L) {
             account.loanPrincipalMicro = account.loanValueMicro;
             account.loanOpenDay = Math.max(0L, state.economicDay - 180L);
-            account.loanMaturityDay = Math.max(state.economicDay, account.loanMaturityDay);
+            account.loanMaturityDay = Math.max(state.economicDay + 1L, account.loanMaturityDay);
             account.loanAnnualRate = EconomyEngine.villagerLoanAnnualYield(state.regime, 180);
             account.loanSerial = 1L;
         }

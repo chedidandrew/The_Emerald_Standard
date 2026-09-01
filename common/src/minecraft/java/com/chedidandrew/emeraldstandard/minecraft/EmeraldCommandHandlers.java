@@ -10,6 +10,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -21,41 +22,46 @@ final class EmeraldCommandHandlers {
     }
 
     static int help(CommandContext<CommandSourceStack> context) {
-        send(context, "The Emerald Standard alpha commands");
-        send(context, "/emerald market | commodities | portfolio");
-        send(context, "/emerald deposit <emeralds> | withdraw <emeralds>");
-        send(context, "/emerald savings deposit|withdraw <emeralds>");
-        send(context, "/emerald buy <ticker> <emeralds> | sell <ticker> <shares>");
-        send(context, "/emerald cd open <emeralds> <30|90|180|365> | cd close");
-        send(context, "/emerald loan fund <emeralds> <30|90|180|365> | loan collect");
-        send(context, "/emerald exchange <resource> <count>");
-        send(context, "Players fund villager businesses. Players can never borrow or enter debt.");
+        success(context, "The Emerald Standard alpha commands");
+        success(context, "/emerald market | commodities | portfolio | recover");
+        success(context, "/emerald deposit <emeralds> | withdraw <emeralds>");
+        success(context, "/emerald savings deposit|withdraw <emeralds>");
+        success(context, "/emerald buy <ticker> <emeralds> | sell <ticker> <shares>");
+        success(context, "/emerald cd open <emeralds> <30|90|180|365> | cd close");
+        success(context, "/emerald loan fund <emeralds> <30|90|180|365> | loan collect");
+        success(context, "/emerald exchange <resource> <count>");
+        success(context, "Players fund villager businesses. Players can never borrow or enter debt.");
         return 1;
     }
 
     static int market(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) {
-        EconomyState state = economy.snapshot();
+        EconomyService.MarketSnapshot state = economy.marketSnapshot();
         if (state == null) {
-            return send(context, "The economy is not ready yet.");
+            return failure(context, "The economy is not ready yet.");
         }
-        send(context, String.format(
+        success(context, String.format(
                 Locale.ROOT,
                 "Economic day %d | Regime %s | Savings %.2f%% | 90-day CD %.2f%%",
-                state.economicDay,
-                state.regime,
-                EconomyEngine.savingsAnnualRate(state.regime) * 100.0,
-                EconomyEngine.cdAnnualRate(state.regime, 90) * 100.0));
+                state.economicDay(),
+                state.regime(),
+                EconomyEngine.savingsAnnualRate(state.regime()) * 100.0,
+                EconomyEngine.cdAnnualRate(state.regime(), 90) * 100.0));
+        if (state.catchUpDaysRemaining() > 0L) {
+            success(context,
+                    "Catch-up in progress: " + state.catchUpDaysRemaining()
+                            + " economic day(s) remain. Trading is temporarily paused.");
+        }
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
-            send(context, String.format(
+            success(context, String.format(
                     Locale.ROOT,
                     "%s | %s | %.2f emeralds",
                     asset.ticker(),
                     asset.name(),
-                    state.prices.get(asset.ticker())));
+                    state.prices().get(asset.ticker())));
         }
-        send(context, String.format(
+        success(context, String.format(
                 Locale.ROOT,
                 "Trading spread %.2f%% per side",
                 EconomyEngine.TRADE_SPREAD * 100.0));
@@ -65,20 +71,20 @@ final class EmeraldCommandHandlers {
     static int commodities(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) {
-        EconomyState state = economy.snapshot();
+        EconomyService.MarketSnapshot state = economy.marketSnapshot();
         if (state == null) {
-            return send(context, "The economy is not ready yet.");
+            return failure(context, "The economy is not ready yet.");
         }
-        send(context, "Current bank exchange values");
+        success(context, "Current bank exchange values");
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
-            send(context, String.format(
+            success(context, String.format(
                     Locale.ROOT,
                     "%s | %s | %.3f emeralds",
                     commodity.id(),
                     commodity.name(),
-                    state.commodityPrices.get(commodity.id())));
+                    state.commodityPrices().get(commodity.id())));
         }
-        send(context, "Gold blocks use 9 gold. Netherite ingots use 4 scrap and 4 gold.");
+        success(context, "Gold blocks use 9 gold. Netherite ingots use 4 scrap and 4 gold.");
         return 1;
     }
 
@@ -86,25 +92,36 @@ final class EmeraldCommandHandlers {
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
         ServerPlayer player = player(context);
-        EconomyState state = economy.snapshot();
-        if (state == null) {
-            return send(context, "The economy is not ready yet.");
+        EconomyService.PortfolioSnapshot portfolio = economy.portfolioSnapshot(player.getUUID());
+        if (portfolio == null) {
+            return failure(context, "The economy is not ready yet.");
         }
-        EconomyState.Account account = state.account(player.getUUID());
-        send(context, String.format(
+        EconomyState.Account account = portfolio.account();
+        success(context, String.format(
                 Locale.ROOT,
                 "Cash %.3f | Savings %.3f | Net worth %.3f emeralds",
                 emeralds(account.cashMicro),
                 emeralds(account.savingsMicro),
-                state.netWorth(player.getUUID())));
+                portfolio.netWorth()));
+
+        if (portfolio.catchUpDaysRemaining() > 0L) {
+            success(context,
+                    "Trading paused while " + portfolio.catchUpDaysRemaining()
+                            + " catch-up day(s) are processed.");
+        }
+        if (portfolio.pendingTransaction() != null) {
+            success(context,
+                    "Recovery journal active for transaction "
+                            + portfolio.pendingTransaction().transactionId + ". Use /emerald recover.");
+        }
 
         if (account.hasCd()) {
-            send(context, String.format(
+            success(context, String.format(
                     Locale.ROOT,
                     "CD %.3f | Locked rate %.2f%% | %d days remaining",
                     emeralds(account.cdValueMicro),
                     account.cdAnnualRate * 100.0,
-                    Math.max(0L, account.cdMaturityDay - state.economicDay)));
+                    Math.max(0L, account.cdMaturityDay - portfolio.economicDay())));
         }
         if (account.hasLoan()) {
             String status = account.loanResolved
@@ -112,9 +129,9 @@ final class EmeraldCommandHandlers {
                             Locale.ROOT,
                             " at %.1f%% recovery",
                             account.loanRecoveryRate * 100.0)
-                    : Math.max(0L, account.loanMaturityDay - state.economicDay)
+                    : Math.max(0L, account.loanMaturityDay - portfolio.economicDay())
                             + " days remaining";
-            send(context, String.format(
+            success(context, String.format(
                     Locale.ROOT,
                     "Villager loan %.3f | Locked yield %.2f%% | %s",
                     emeralds(account.loanValueMicro),
@@ -123,107 +140,207 @@ final class EmeraldCommandHandlers {
         }
 
         if (account.shares.isEmpty()) {
-            send(context, "Holdings none");
+            success(context, "Holdings none");
         } else {
-            send(context, "Holdings");
+            success(context, "Holdings");
             account.shares.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
-                    .forEach(entry -> send(context, String.format(
+                    .forEach(entry -> success(context, String.format(
                             Locale.ROOT,
                             "%s | %.6f shares | %.3f emeralds",
                             entry.getKey(),
                             entry.getValue(),
-                            entry.getValue() * state.prices.getOrDefault(entry.getKey(), 0.0))));
+                            entry.getValue()
+                                    * portfolio.prices().getOrDefault(entry.getKey(), 0.0))));
         }
         return 1;
+    }
+
+    static int recover(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        BankTransactionCoordinator.RecoveryResult result =
+                BankTransactionCoordinator.reconcile(player, economy);
+        if (!result.found()) {
+            return success(context, "No pending inventory transaction was found.");
+        }
+        if (!result.recovered()) {
+            return failure(context, "Recovery could not complete: " + result.error());
+        }
+        return success(context,
+                "Recovery complete for transaction " + result.transactionId() + ".");
     }
 
     static int deposit(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
-        int amount = IntegerArgumentType.getInteger(context, "amount");
         ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
+        int amount = IntegerArgumentType.getInteger(context, "amount");
+        int inventoryBefore = BankInventory.countItems(player, Items.EMERALD);
+        if (inventoryBefore < amount) {
+            return failure(context, "Not enough emeralds in your inventory.");
+        }
+
+        long creditMicro = amount * EconomyState.MICRO;
+        EconomyState.PendingInventoryTransaction transaction =
+                economy.prepareInventoryCredit(
+                        player.getUUID(),
+                        EconomyState.InventoryTransactionKind.DEPOSIT,
+                        "emerald",
+                        amount,
+                        inventoryBefore,
+                        creditMicro);
+        if (transaction == null) {
+            return failure(context, "Could not prepare the deposit. " + errorSuffix(economy));
+        }
+
         if (!BankInventory.removeItems(player, Items.EMERALD, amount)) {
-            return send(context, "Not enough emeralds in your inventory.");
+            economy.cancelPreparedInventoryTransaction(
+                    player.getUUID(), transaction.transactionId);
+            return failure(context, "The deposit was canceled before any bank credit was applied.");
         }
-        if (!economy.deposit(player.getUUID(), amount)) {
+        if (!economy.commitPreparedInventoryCredit(
+                player.getUUID(), transaction.transactionId)) {
             BankInventory.giveOrDrop(player, Items.EMERALD, amount);
-            return send(context, "Deposit failed and your emeralds were restored. "
-                    + errorSuffix(economy));
+            economy.cancelPreparedInventoryTransaction(
+                    player.getUUID(), transaction.transactionId);
+            return failure(context,
+                    "Deposit failed and your emeralds were restored. " + errorSuffix(economy));
         }
-        return send(context, "Deposited " + amount + " emeralds.");
+        if (!BankTransactionCoordinator.savePlayerAndComplete(
+                player, economy, transaction.transactionId)) {
+            return success(context,
+                    "Deposited " + amount
+                            + " emeralds. A recovery journal remains until player data is saved.");
+        }
+        return success(context, "Deposited " + amount + " emeralds.");
     }
 
     static int withdraw(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
-        int amount = IntegerArgumentType.getInteger(context, "amount");
         ServerPlayer player = player(context);
-        if (economy.withdraw(player.getUUID(), amount) == 0L) {
-            return send(context, "Insufficient bank cash or the withdrawal could not be saved.");
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
+        int requested = IntegerArgumentType.getInteger(context, "amount");
+        int inventoryBefore = BankInventory.countItems(player, Items.EMERALD);
+        EconomyState.PendingInventoryTransaction transaction =
+                economy.beginInventoryWithdrawal(
+                        player.getUUID(), requested, inventoryBefore);
+        if (transaction == null) {
+            return failure(context,
+                    "Insufficient bank cash or the withdrawal could not be journaled. "
+                            + errorSuffix(economy));
         }
 
-        int remainder = BankInventory.insertItems(player, Items.EMERALD, amount);
-        if (remainder > 0) {
-            if (!economy.deposit(player.getUUID(), remainder)) {
-                BankInventory.giveOrDrop(player, Items.EMERALD, remainder);
-                return send(context, "Inventory filled. Remaining emeralds were dropped safely.");
-            }
-            return send(context, "Withdrew " + (amount - remainder)
-                    + " emeralds. " + remainder + " remained in bank cash.");
+        int remainder = BankInventory.insertItems(player, Items.EMERALD, requested);
+        int delivered = requested - remainder;
+        if (remainder > 0
+                && !economy.reducePendingWithdrawal(
+                        player.getUUID(), transaction.transactionId, remainder)) {
+            return success(context,
+                    "Withdrew " + delivered
+                            + " emeralds. The recovery journal will deliver or refund the remaining "
+                            + remainder + " after relogging.");
         }
-        return send(context, "Withdrew " + amount + " emeralds.");
+
+        EconomyState.PendingInventoryTransaction adjusted =
+                economy.pendingInventoryTransaction(player.getUUID());
+        if (adjusted == null) {
+            return delivered == 0
+                    ? failure(context, "Your inventory had no room, so nothing was withdrawn.")
+                    : success(context, "Withdrew " + delivered + " emeralds.");
+        }
+        if (!BankTransactionCoordinator.savePlayerAndComplete(
+                player, economy, adjusted.transactionId)) {
+            return success(context,
+                    "Withdrew " + delivered
+                            + " emeralds. A recovery journal remains until player data is saved.");
+        }
+        return remainder == 0
+                ? success(context, "Withdrew " + delivered + " emeralds.")
+                : success(context,
+                        "Withdrew " + delivered + " emeralds. " + remainder
+                                + " remained in bank cash because your inventory was full.");
     }
 
     static int savings(
             CommandContext<CommandSourceStack> context,
             EconomyService economy,
             boolean intoSavings) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
         int amount = IntegerArgumentType.getInteger(context, "amount");
-        boolean success = economy.moveSavings(player(context).getUUID(), amount, intoSavings);
-        return send(context, success
-                ? "Savings transfer complete."
-                : "Savings transfer failed because the source balance was insufficient.");
+        boolean success = economy.moveSavings(player.getUUID(), amount, intoSavings);
+        return success
+                ? success(context, "Savings transfer complete.")
+                : failure(context,
+                        "Savings transfer failed because the source balance was insufficient. "
+                                + errorSuffix(economy));
     }
 
     static int buy(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
         boolean success = economy.buy(
-                player(context).getUUID(),
+                player.getUUID(),
                 StringArgumentType.getString(context, "ticker"),
                 IntegerArgumentType.getInteger(context, "amount"));
-        return send(context, success
-                ? "Investment purchased."
-                : "Purchase failed. Check the ticker and bank cash balance.");
+        return success
+                ? success(context, "Investment purchased.")
+                : failure(context,
+                        "Purchase failed. Check the ticker and bank cash balance. "
+                                + errorSuffix(economy));
     }
 
     static int sell(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
         boolean success = economy.sell(
-                player(context).getUUID(),
+                player.getUUID(),
                 StringArgumentType.getString(context, "ticker"),
                 DoubleArgumentType.getDouble(context, "shares"));
-        return send(context, success
-                ? "Investment sold."
-                : "Sale failed. Check the ticker and shares held.");
+        return success
+                ? success(context, "Investment sold.")
+                : failure(context,
+                        "Sale failed. Check the ticker and shares held. "
+                                + errorSuffix(economy));
     }
 
     static int openCd(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
         int amount = IntegerArgumentType.getInteger(context, "amount");
         int term = IntegerArgumentType.getInteger(context, "term");
         if (!supportedTerm(term)) {
-            return send(context, "CD term must be 30, 90, 180, or 365 days.");
+            return failure(context, "CD term must be 30, 90, 180, or 365 days.");
         }
-        ServerPlayer player = player(context);
         if (!economy.openCd(player.getUUID(), amount, term)) {
-            return send(context, "CD open failed. Only one CD can be active in this alpha.");
+            return failure(context,
+                    "CD open failed. Only one CD can be active in this alpha. "
+                            + errorSuffix(economy));
         }
-        EconomyState.Account account = economy.snapshot().account(player.getUUID());
-        return send(context, String.format(
+        EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
+        return success(context, String.format(
                 Locale.ROOT,
                 "CD opened at a locked %.2f%% annual rate through economic day %d.",
                 account.cdAnnualRate * 100.0,
@@ -233,16 +350,20 @@ final class EmeraldCommandHandlers {
     static int closeCd(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
-        EconomyService.CdCloseResult result = economy.closeCd(player(context).getUUID());
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
+        EconomyService.CdCloseResult result = economy.closeCd(player.getUUID());
         if (!result.closed()) {
-            return send(context, "No CD could be closed.");
+            return failure(context, "No CD could be closed. " + errorSuffix(economy));
         }
         return result.matured()
-                ? send(context, String.format(
+                ? success(context, String.format(
                         Locale.ROOT,
                         "Mature CD collected %.3f emeralds.",
                         emeralds(result.payoutMicro())))
-                : send(context, String.format(
+                : success(context, String.format(
                         Locale.ROOT,
                         "CD closed early. Returned %.3f after a %.3f emerald penalty.",
                         emeralds(result.payoutMicro()),
@@ -252,17 +373,22 @@ final class EmeraldCommandHandlers {
     static int fundLoan(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
         int amount = IntegerArgumentType.getInteger(context, "amount");
         int term = IntegerArgumentType.getInteger(context, "term");
         if (!supportedTerm(term)) {
-            return send(context, "Loan term must be 30, 90, 180, or 365 days.");
+            return failure(context, "Loan term must be 30, 90, 180, or 365 days.");
         }
-        ServerPlayer player = player(context);
         if (!economy.fundLoan(player.getUUID(), amount, term)) {
-            return send(context, "Loan funding failed. Only one can be active in this alpha.");
+            return failure(context,
+                    "Loan funding failed. Only one can be active in this alpha. "
+                            + errorSuffix(economy));
         }
-        EconomyState.Account account = economy.snapshot().account(player.getUUID());
-        return send(context, String.format(
+        EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
+        return success(context, String.format(
                 Locale.ROOT,
                 "Villagers received the investment at a locked %.2f%% yield. Principal is at risk, but you can never owe more.",
                 account.loanAnnualRate * 100.0));
@@ -271,22 +397,26 @@ final class EmeraldCommandHandlers {
     static int collectLoan(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
-        EconomyService.LoanCollectionResult result = economy.collectLoan(
-                player(context).getUUID());
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
+        EconomyService.LoanCollectionResult result = economy.collectLoan(player.getUUID());
         if (!result.collected()) {
-            return send(context, "The villager loan is absent or has not matured.");
+            return failure(context,
+                    "The villager loan is absent or has not matured. " + errorSuffix(economy));
         }
         return switch (result.outcome()) {
-            case REPAID -> send(context, String.format(
+            case REPAID -> success(context, String.format(
                     Locale.ROOT,
                     "Villager loan repaid in full %.3f emeralds.",
                     emeralds(result.payoutMicro())));
-            case PARTIAL_DEFAULT -> send(context, String.format(
+            case PARTIAL_DEFAULT -> success(context, String.format(
                     Locale.ROOT,
                     "Villager business partially defaulted. Recovered %.3f emeralds at %.1f%% recovery.",
                     emeralds(result.payoutMicro()),
                     result.recoveryRate() * 100.0));
-            case FULL_DEFAULT -> send(context,
+            case FULL_DEFAULT -> success(context,
                     "Villager business fully defaulted. It returned 0 emeralds, and you owe nothing.");
         };
     }
@@ -294,31 +424,81 @@ final class EmeraldCommandHandlers {
     static int exchange(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
         String name = StringArgumentType.getString(context, "resource")
                 .toLowerCase(Locale.ROOT);
         int count = IntegerArgumentType.getInteger(context, "count");
         BankInventory.ExchangeResource resource = BankInventory.exchangeResource(name);
         if (resource == null) {
-            return send(context, "Unknown resource. Use /emerald commodities for base markets.");
+            return failure(context, "Unknown resource. Use /emerald commodities for base markets.");
         }
         long proceeds = economy.quoteResourceValueMicro(resource.quoteId(), count);
-        if (proceeds < 0L) {
-            return send(context, "That resource is not accepted by the bank.");
+        if (proceeds <= 0L) {
+            return failure(context, "That resource is not currently accepted by the bank.");
         }
-        ServerPlayer player = player(context);
+        int inventoryBefore = BankInventory.countItems(player, resource.item());
+        if (inventoryBefore < count) {
+            return failure(context, "Not enough matching resources in your inventory.");
+        }
+
+        EconomyState.PendingInventoryTransaction transaction =
+                economy.prepareInventoryCredit(
+                        player.getUUID(),
+                        EconomyState.InventoryTransactionKind.EXCHANGE,
+                        resource.journalKey(),
+                        count,
+                        inventoryBefore,
+                        proceeds);
+        if (transaction == null) {
+            return failure(context, "Could not prepare the exchange. " + errorSuffix(economy));
+        }
         if (!BankInventory.removeItems(player, resource.item(), count)) {
-            return send(context, "Not enough matching resources in your inventory.");
+            economy.cancelPreparedInventoryTransaction(
+                    player.getUUID(), transaction.transactionId);
+            return failure(context, "The exchange was canceled before bank credit was applied.");
         }
-        if (!economy.creditMicro(player.getUUID(), proceeds)) {
+        if (!economy.commitPreparedInventoryCredit(
+                player.getUUID(), transaction.transactionId)) {
             BankInventory.giveOrDrop(player, resource.item(), count);
-            return send(context, "Exchange failed and your resources were restored. "
-                    + errorSuffix(economy));
+            economy.cancelPreparedInventoryTransaction(
+                    player.getUUID(), transaction.transactionId);
+            return failure(context,
+                    "Exchange failed and your resources were restored. " + errorSuffix(economy));
         }
-        return send(context, String.format(
+        if (!BankTransactionCoordinator.savePlayerAndComplete(
+                player, economy, transaction.transactionId)) {
+            return success(context, String.format(
+                    Locale.ROOT,
+                    "Exchanged %d item(s) for %.3f emeralds. A recovery journal remains until player data is saved.",
+                    count,
+                    emeralds(proceeds)));
+        }
+        return success(context, String.format(
                 Locale.ROOT,
-                "Exchanged %d items for %.3f emeralds in bank cash.",
+                "Exchanged %d item(s) for %.3f emeralds in bank cash.",
                 count,
                 emeralds(proceeds)));
+    }
+
+    private static boolean preparePlayerForBanking(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy,
+            ServerPlayer player) {
+        BankTransactionCoordinator.RecoveryResult recovery =
+                BankTransactionCoordinator.reconcile(player, economy);
+        if (recovery.found() && !recovery.recovered()) {
+            failure(context, "A previous transaction could not be recovered: " + recovery.error());
+            return false;
+        }
+        String reason = economy.transactionBlockReason(player.getUUID());
+        if (!reason.isBlank()) {
+            failure(context, reason + ".");
+            return false;
+        }
+        return true;
     }
 
     private static boolean supportedTerm(int term) {
@@ -330,11 +510,16 @@ final class EmeraldCommandHandlers {
         return context.getSource().getPlayerOrException();
     }
 
-    private static int send(CommandContext<CommandSourceStack> context, String text) {
+    private static int success(CommandContext<CommandSourceStack> context, String text) {
         context.getSource().sendSuccess(
                 () -> Component.literal("[Emerald Standard] " + text),
                 false);
         return 1;
+    }
+
+    private static int failure(CommandContext<CommandSourceStack> context, String text) {
+        context.getSource().sendFailure(Component.literal("[Emerald Standard] " + text));
+        return 0;
     }
 
     private static String errorSuffix(EconomyService economy) {

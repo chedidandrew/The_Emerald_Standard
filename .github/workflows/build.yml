@@ -1,4 +1,4 @@
-name: Build and verify Minecraft 26.2
+name: Build, test, and launch Minecraft 26.2
 
 on:
   push:
@@ -46,3 +46,30 @@ jobs:
           name: the-emerald-standard-${{ matrix.loader }}-${{ github.sha }}
           path: ${{ matrix.loader }}/build/libs/*.jar
           if-no-files-found: error
+
+  dedicated-server-smoke:
+    name: Launch ${{ matrix.loader }} dedicated server
+    needs: loader-builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        loader: [fabric, neoforge]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.5.1'
+      - name: Launch Minecraft server and verify mod startup
+        run: bash scripts/smoke-server.sh "${{ matrix.loader }}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: server-smoke-log-${{ matrix.loader }}-${{ github.sha }}
+          path: build/server-smoke/${{ matrix.loader }}.log
+          if-no-files-found: warn

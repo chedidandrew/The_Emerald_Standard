@@ -1,29 +1,33 @@
 # The Emerald Standard
 
-[![Build and verify](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml/badge.svg)](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml)
+[![Build, test, and launch](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml/badge.svg)](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml)
 
 A lightweight passive-investing and villager-economy mod for **Minecraft 26.2**, with separate Fabric and NeoForge builds.
 
-> Current status: `0.1.0-alpha.1`. The economy, persistence, investments, and command interface are implemented for testing. The Banker villager, workstation, charts, and full graphical interface are the next gameplay milestone.
+> Current status: `0.1.0-alpha.2`. The economy, persistence, investments, crash-recovery journal, and command interface are implemented for testing. The Banker villager, workstation, charts, and full graphical interface remain the next gameplay milestone.
 
 ## Core rule
 
 Players provide emerald capital to the villager economy. **Players can never borrow emeralds, hold a negative balance, or enter debt.** A villager business investment can lose some or all of the amount voluntarily invested, but it can never create an additional obligation.
 
-## Implemented in the alpha
+## Implemented in alpha.2
 
 - A world-wide Villager Exchange with expansion, bull, boom, stagnation, recession, crash, and recovery regimes.
 - VILX, the diversified Villager Exchange Index, plus eight Minecraft-themed companies.
-- Corrected deterministic return generation with correlated market and company risk.
+- Deterministic market returns with independently mixed Gaussian inputs, rare jumps, correlated company risk, and positive long-run company distributions.
 - Savings with variable economic rates averaging near 3% over long simulations.
 - CDs with 30, 90, 180, and 365-day terms, locked opening rates, maturity stops, and an early withdrawal penalty.
-- Player-funded villager business loans with interest, partial default, and full default outcomes.
+- Player-funded villager business lending with interest, partial default, and full default outcomes.
 - Dynamic diamond, gold, netherite, and emerald-ore exchange markets.
-- Fractional investing and a small bid/ask spread to prevent cost-free rapid trading.
+- Fractional investing and a 0.25% trading spread on each side.
 - Offline progression at one economic day per Minecraft day, or 20 real minutes while the world is closed.
-- A private economy seed that is saved independently from the visible Minecraft world seed.
-- Atomic saves, backup recovery, mutation rollback, and UUID-isolated accounts.
-- Fabric and NeoForge projects with automated GitHub Actions builds.
+- Partial-day progress preserved across short play sessions and restarts.
+- Bounded and chunked catch-up after very long offline periods, with banking paused until catch-up completes.
+- A private economy seed saved independently from the visible Minecraft world seed.
+- Versioned atomic saves, backup recovery, mutation rollback, automatic-save batching, and retry backoff.
+- A durable inventory transaction journal that reconciles interrupted deposits, withdrawals, and resource exchanges after reconnecting.
+- UUID-isolated accounts and explicit no-debt validation.
+- Fabric and NeoForge projects with automated common tests, loader builds, and dedicated-server launch smoke tests.
 
 ## Alpha command interface
 
@@ -33,6 +37,7 @@ Use `/emerald help` in-game.
 /emerald market
 /emerald commodities
 /emerald portfolio
+/emerald recover
 /emerald deposit <emeralds>
 /emerald withdraw <emeralds>
 /emerald savings deposit|withdraw <emeralds>
@@ -57,14 +62,23 @@ Example:
 /emerald loan fund 3 180
 ```
 
+## Safety limits
+
+- Inventory-linked commands are limited to 100,000 items per transaction.
+- Bank-only commands are limited to 1,000,000 emeralds per transaction.
+- Only one inventory transaction may be pending for a player at a time.
+- Banking is temporarily paused while a large offline catch-up backlog is processed.
+- A pending transaction is automatically reconciled on login, logout, or the next bank command. `/emerald recover` is available for manual recovery.
+
 ## Project layout
 
 ```text
 common/    Shared economy, persistence, command interface, and tests
-fabric/    Fabric 26.2 lifecycle hook, metadata, and Gradle build
-neoforge/  NeoForge 26.2 lifecycle hook, metadata, and Gradle build
-docs/      Economy, architecture, and testing documentation
-scripts/   Reproducible common-core regression test runner
+fabric/    Fabric 26.2 lifecycle hooks, metadata, and Gradle build
+neoforge/  NeoForge 26.2 lifecycle hooks, metadata, and Gradle build
+docs/      Economy, architecture, recovery, and testing documentation
+scripts/   Common regression and dedicated-server smoke-test runners
+release/   Verified build status and artifact provenance
 ```
 
 ## Building
@@ -77,13 +91,15 @@ gradle --no-daemon -p fabric build
 gradle --no-daemon -p neoforge build
 ```
 
-Successful CI runs publish Fabric and NeoForge JARs as workflow artifacts. Do not publish a public release until both loader jobs are green and each JAR has been launched in Minecraft 26.2.
+The workflow builds each loader independently and launches both dedicated-server development environments. Successful runs publish Fabric and NeoForge JARs as workflow artifacts. A formal public release remains gated on manual client gameplay testing.
 
 ## Documentation
 
 - [Economy model](docs/ECONOMY.md)
 - [Architecture and persistence](docs/ARCHITECTURE.md)
+- [Inventory transaction recovery](docs/TRANSACTION_RECOVERY.md)
 - [Testing and publication gate](docs/TESTING.md)
+- [Build status](release/BUILD_STATUS.md)
 - [Change history](CHANGELOG.md)
 
 ## License

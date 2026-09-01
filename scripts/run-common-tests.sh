@@ -15,3 +15,12 @@ javac --release 21 -cp "$BUILD" -d "$BUILD" "${TEST_SOURCES[@]}"
 
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.PersistenceRegressionTest
+
+fabric_version="$(grep '^mod_version=' "$ROOT/fabric/gradle.properties" | cut -d= -f2-)"
+neo_version="$(grep '^mod_version=' "$ROOT/neoforge/gradle.properties" | cut -d= -f2-)"
+if [[ -z "$fabric_version" || "$fabric_version" != "$neo_version" ]]; then
+    echo "Loader version mismatch: Fabric='$fabric_version' NeoForge='$neo_version'" >&2
+    exit 1
+fi
+
+echo "PASS loader version parity: $fabric_version"

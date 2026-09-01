@@ -10,7 +10,7 @@ public final class EconomyEngine {
     public static final int DAYS_PER_YEAR = 365;
     public static final double TRADE_SPREAD = 0.0025;
 
-    private static final double SQRT_DAYS_PER_YEAR = Math.sqrt(DAYS_PER_YEAR);
+    private static final double SQRT_DAYS_PER_YEAR = StrictMath.sqrt(DAYS_PER_YEAR);
     private static final double RISK_FREE_ANNUAL_RATE = 0.025;
     private static final long REGIME_SALT = 0x524547494D45L;
     private static final long MARKET_SALT = 0x4D41524B4554L;
@@ -128,7 +128,7 @@ public final class EconomyEngine {
 
     public static double marketReturn(Regime regime, long seed, long day) {
         double dailySigma = regime.annualVolatility() / SQRT_DAYS_PER_YEAR;
-        double logReturn = Math.log1p(regime.annualReturn()) / DAYS_PER_YEAR
+        double logReturn = StrictMath.log1p(regime.annualReturn()) / DAYS_PER_YEAR
                 - 0.5 * dailySigma * dailySigma
                 + dailySigma * gaussian(mix(seed, day, MARKET_SALT));
 
@@ -139,7 +139,7 @@ public final class EconomyEngine {
             logReturn += 0.04 + 0.08 * unit(mix(seed, day, 92L));
         }
 
-        return Math.expm1(clamp(logReturn, -0.60, 0.35));
+        return StrictMath.expm1(clamp(logReturn, -0.60, 0.35));
     }
 
     public static double assetReturn(Asset asset, double marketReturn, long seed, long day) {
@@ -147,19 +147,19 @@ public final class EconomyEngine {
             return marketReturn;
         }
 
-        double marketLogReturn = Math.log1p(clamp(marketReturn, -0.999999, Double.MAX_VALUE));
-        double riskFreeDailyLogReturn = Math.log1p(RISK_FREE_ANNUAL_RATE) / DAYS_PER_YEAR;
+        double marketLogReturn = StrictMath.log1p(clamp(marketReturn, -0.999999, Double.MAX_VALUE));
+        double riskFreeDailyLogReturn = StrictMath.log1p(RISK_FREE_ANNUAL_RATE) / DAYS_PER_YEAR;
         double idiosyncraticSigma = asset.annualIdiosyncraticVolatility() / SQRT_DAYS_PER_YEAR;
         double idiosyncraticShock = idiosyncraticSigma
                 * gaussian(mix(seed, day, stableHash(asset.ticker())));
 
         double assetLogReturn = riskFreeDailyLogReturn
                 + asset.beta() * (marketLogReturn - riskFreeDailyLogReturn)
-                + Math.log1p(asset.annualAlpha()) / DAYS_PER_YEAR
+                + StrictMath.log1p(asset.annualAlpha()) / DAYS_PER_YEAR
                 - 0.5 * idiosyncraticSigma * idiosyncraticSigma
                 + idiosyncraticShock;
 
-        return Math.expm1(clamp(assetLogReturn, -0.70, 0.50));
+        return StrictMath.expm1(clamp(assetLogReturn, -0.70, 0.50));
     }
 
     public static double savingsAnnualRate(Regime regime) {
@@ -187,8 +187,8 @@ public final class EconomyEngine {
 
     public static double villagerLoanAnnualYield(Regime regime, int termDays) {
         double termRate = switch (termDays) {
-            case 30 -> 0.075;
-            case 90 -> 0.095;
+            case 30 -> 0.105;
+            case 90 -> 0.115;
             case 180 -> 0.120;
             case 365 -> 0.150;
             default -> throw new IllegalArgumentException("Unsupported loan term: " + termDays);
@@ -224,7 +224,7 @@ public final class EconomyEngine {
             int termDays,
             double accumulatedStress) {
         double baseProbability = switch (termDays) {
-            case 30 -> 0.008;
+            case 30 -> 0.006;
             case 90 -> 0.018;
             case 180 -> 0.035;
             case 365 -> 0.055;
@@ -260,7 +260,7 @@ public final class EconomyEngine {
     }
 
     public static double compoundDaily(double principal, double annualRate) {
-        return principal * (Math.pow(1.0 + annualRate, 1.0 / DAYS_PER_YEAR) - 1.0);
+        return principal * (StrictMath.pow(1.0 + annualRate, 1.0 / DAYS_PER_YEAR) - 1.0);
     }
 
     public static double nextCommodityPrice(
@@ -272,11 +272,11 @@ public final class EconomyEngine {
         double targetPrice = commodity.anchorPrice() * commodityRegimeMultiplier(commodity.id(), regime);
         double safeCurrent = clamp(currentPrice, commodity.anchorPrice() * 0.20, commodity.anchorPrice() * 5.0);
         double dailySigma = commodity.annualVolatility() / SQRT_DAYS_PER_YEAR;
-        double meanReversion = 0.0030 * (Math.log(targetPrice) - Math.log(safeCurrent));
+        double meanReversion = 0.0030 * (StrictMath.log(targetPrice) - StrictMath.log(safeCurrent));
         double logReturn = meanReversion
                 - 0.5 * dailySigma * dailySigma
                 + dailySigma * gaussian(mix(seed, day, COMMODITY_SALT ^ stableHash(commodity.id())));
-        double next = safeCurrent * Math.exp(clamp(logReturn, -0.25, 0.25));
+        double next = safeCurrent * StrictMath.exp(clamp(logReturn, -0.25, 0.25));
         return clamp(next, commodity.anchorPrice() * 0.20, commodity.anchorPrice() * 5.0);
     }
 
@@ -370,7 +370,7 @@ public final class EconomyEngine {
     private static double gaussian(long key) {
         double first = Math.max(1.0e-12, unit(mix64(key ^ 0xD1B54A32D192ED03L)));
         double second = unit(mix64(key ^ 0x94D049BB133111EBL));
-        return Math.sqrt(-2.0 * Math.log(first)) * Math.cos(2.0 * Math.PI * second);
+        return StrictMath.sqrt(-2.0 * StrictMath.log(first)) * StrictMath.cos(2.0 * StrictMath.PI * second);
     }
 
     private static long mix(long seed, long day, long salt) {

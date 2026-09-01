@@ -4,18 +4,39 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
 /** Thread-safe application service shared by Fabric and NeoForge. */
 public final class EconomyService {
     public static final long MILLIS_PER_MINECRAFT_DAY = 1_200_000L;
-    private static final long MAX_CATCH_UP_DAYS = 1_000_000L;
+    public static final long TICKS_PER_MINECRAFT_DAY = 24_000L;
+    public static final long MAX_TRUSTED_CATCH_UP_DAYS = 25_000L;
+    public static final long MAX_WHOLE_EMERALD_TRANSACTION = 1_000_000L;
+    public static final int MAX_INVENTORY_ITEM_TRANSACTION =
+            EconomyState.MAX_PENDING_INVENTORY_ITEMS;
+
+    private static final long STARTUP_CATCH_UP_BATCH_DAYS = 2_000L;
+    private static final long TICK_CATCH_UP_BATCH_DAYS = 250L;
+    private static final long AUTO_SAVE_INTERVAL_MS = 30_000L;
+    private static final long INITIAL_SAVE_RETRY_MS = 2_000L;
+    private static final long MAX_SAVE_RETRY_MS = 60_000L;
+    private static final long MAX_PENDING_WALL_MS =
+            MAX_TRUSTED_CATCH_UP_DAYS * MILLIS_PER_MINECRAFT_DAY
+                    + MILLIS_PER_MINECRAFT_DAY - 1L;
+    private static final long MAX_PENDING_GAME_TICKS =
+            MAX_TRUSTED_CATCH_UP_DAYS * TICKS_PER_MINECRAFT_DAY
+                    + TICKS_PER_MINECRAFT_DAY - 1L;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private EconomyState state;
     private Path path;
     private String lastError = "";
+    private boolean dirty;
+    private long nextAutomaticSaveMs;
+    private long nextSaveRetryMs;
+    private long saveRetryDelayMs = INITIAL_SAVE_RETRY_MS;
 
     public synchronized void start(Path worldDataDirectory, long worldSeed, long gameTicks)
             throws IOException {
@@ -43,64 +64,137 @@ public final class EconomyService {
         path = worldDataDirectory.resolve("the_emerald_standard.properties");
         try {
             state = EconomyState.load(path, fallbackSeed, now, gameTicks);
-            catchUpInMemory(now, gameTicks);
+            observeProgress(now, gameTicks, STARTUP_CATCH_UP_BATCH_DAYS);
             state.save(path);
+            dirty = false;
+            resetSaveSchedule(now);
             lastError = "";
-        } catch (IOException exception) {
+        } catch (IOException | RuntimeException exception) {
             lastError = message(exception);
-            throw exception;
+            if (exception instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw new IOException("Could not initialize the economy", exception);
         }
     }
 
+    /**
+     * Observes wall and game time every server tick, preserves partial days, advances bounded catch-up
+     * batches, and periodically persists progress. Failed automatic saves use exponential backoff.
+     */
     public synchronized boolean tick(long gameTicks) {
-        if (state == null) {
+        return tickAt(gameTicks, System.currentTimeMillis());
+    }
+
+    synchronized boolean tickAt(long gameTicks, long now) {
+        if (state == null || path == null) {
             lastError = "Economy service has not started";
             return false;
         }
-        long elapsedDays = Math.max(0L, (gameTicks - state.lastGameTicks) / 24_000L);
-        if (elapsedDays == 0L) {
-            return true;
-        }
-
-        EconomyState before = state.copy();
         try {
-            advance(elapsedDays);
-            state.lastGameTicks += elapsedDays * 24_000L;
-            state.lastWallClockMs = laterWallClock(System.currentTimeMillis());
-            state.save(path);
-            lastError = "";
-            return true;
-        } catch (IOException | RuntimeException exception) {
-            state = before;
+            dirty |= observeProgress(now, gameTicks, TICK_CATCH_UP_BATCH_DAYS);
+            if (!dirty || now < nextAutomaticSaveMs || now < nextSaveRetryMs) {
+                return true;
+            }
+            return persistDirtyState(now);
+        } catch (RuntimeException exception) {
             lastError = message(exception);
+            scheduleSaveRetry(now);
             return false;
         }
     }
 
     public synchronized boolean saveNow() {
+        if (state == null) {
+            lastError = "Economy service has not started";
+            return false;
+        }
+        return saveNowAt(state.lastGameTicks, System.currentTimeMillis());
+    }
+
+    /** Saves final partial progress during server shutdown. */
+    public synchronized boolean saveNow(long gameTicks) {
+        return saveNowAt(gameTicks, System.currentTimeMillis());
+    }
+
+    synchronized boolean saveNowAt(long gameTicks, long now) {
         if (state == null || path == null) {
             lastError = "Economy service has not started";
             return false;
         }
-        EconomyState before = state.copy();
         try {
-            state.lastWallClockMs = laterWallClock(System.currentTimeMillis());
+            dirty |= observeProgress(now, gameTicks, STARTUP_CATCH_UP_BATCH_DAYS);
             state.save(path);
+            dirty = false;
+            resetSaveSchedule(now);
             lastError = "";
             return true;
         } catch (IOException | RuntimeException exception) {
-            state = before;
+            dirty = true;
             lastError = message(exception);
+            scheduleSaveRetry(now);
             return false;
         }
     }
 
+    /** Full copy retained for tests and administrative diagnostics. */
     public synchronized EconomyState snapshot() {
         return state == null ? null : state.copy();
     }
 
+    public synchronized MarketSnapshot marketSnapshot() {
+        if (state == null) {
+            return null;
+        }
+        return new MarketSnapshot(
+                state.economicDay,
+                state.regime,
+                Map.copyOf(state.prices),
+                Map.copyOf(state.commodityPrices),
+                catchUpDaysRemainingInternal(),
+                dirty);
+    }
+
+    public synchronized PortfolioSnapshot portfolioSnapshot(UUID id) {
+        if (state == null) {
+            return null;
+        }
+        EconomyState.Account account = state.existingAccount(id);
+        EconomyState.PendingInventoryTransaction transaction =
+                state.pendingInventoryTransactions.get(id);
+        return new PortfolioSnapshot(
+                state.economicDay,
+                account == null ? new EconomyState.Account() : account.copy(),
+                Map.copyOf(state.prices),
+                state.netWorth(id),
+                transaction == null ? null : transaction.copy(),
+                catchUpDaysRemainingInternal());
+    }
+
     public synchronized String lastError() {
         return lastError;
+    }
+
+    public synchronized long catchUpDaysRemaining() {
+        return state == null ? 0L : catchUpDaysRemainingInternal();
+    }
+
+    public synchronized boolean isCatchingUp() {
+        return catchUpDaysRemaining() > 0L;
+    }
+
+    public synchronized String transactionBlockReason(UUID id) {
+        if (state == null) {
+            return "The economy is not ready";
+        }
+        long catchUpDays = catchUpDaysRemainingInternal();
+        if (catchUpDays > 0L) {
+            return "The economy is still processing " + catchUpDays + " catch-up days";
+        }
+        if (state.pendingInventoryTransactions.containsKey(id)) {
+            return "A previous inventory transaction is waiting for recovery";
+        }
+        return "";
     }
 
     public synchronized boolean deposit(UUID id, long emeralds) {
@@ -112,7 +206,7 @@ public final class EconomyService {
         if (microEmeralds <= 0L) {
             return false;
         }
-        return mutate(current -> {
+        return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             if (!canAdd(account.cashMicro, microEmeralds)) {
                 return false;
@@ -127,7 +221,7 @@ public final class EconomyService {
         if (micro == null) {
             return 0L;
         }
-        return mutate(current -> {
+        return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             if (account.cashMicro < micro) {
                 return false;
@@ -142,7 +236,7 @@ public final class EconomyService {
         if (micro == null) {
             return false;
         }
-        return mutate(current -> {
+        return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             if (intoSavings) {
                 if (account.cashMicro < micro || !canAdd(account.savingsMicro, micro)) {
@@ -169,7 +263,7 @@ public final class EconomyService {
         if (micro == null) {
             return false;
         }
-        return mutate(current -> {
+        return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             if (account.cashMicro < micro || account.hasCd()) {
                 return false;
@@ -186,7 +280,7 @@ public final class EconomyService {
 
     public synchronized CdCloseResult closeCd(UUID id) {
         CdCloseResult[] result = {CdCloseResult.notClosed()};
-        boolean success = mutate(current -> {
+        boolean success = mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             if (!account.hasCd()) {
                 return false;
@@ -217,7 +311,7 @@ public final class EconomyService {
         if (micro == null) {
             return false;
         }
-        return mutate(current -> {
+        return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             if (account.cashMicro < micro || account.hasLoan()) {
                 return false;
@@ -240,7 +334,7 @@ public final class EconomyService {
 
     public synchronized LoanCollectionResult collectLoan(UUID id) {
         LoanCollectionResult[] result = {LoanCollectionResult.notCollected()};
-        boolean success = mutate(current -> {
+        boolean success = mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             if (!account.hasLoan()
                     || current.economicDay < account.loanMaturityDay
@@ -269,7 +363,7 @@ public final class EconomyService {
             return false;
         }
         String normalized = ticker.toUpperCase(Locale.ROOT);
-        return mutate(current -> {
+        return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             Double marketPrice = current.prices.get(normalized);
             if (marketPrice == null || account.cashMicro < micro) {
@@ -291,7 +385,7 @@ public final class EconomyService {
             return false;
         }
         String normalized = ticker.toUpperCase(Locale.ROOT);
-        return mutate(current -> {
+        return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
             double held = account.shares.getOrDefault(normalized, 0.0);
             Double marketPrice = current.prices.get(normalized);
@@ -321,14 +415,215 @@ public final class EconomyService {
                         resourceId, count, state.commodityPrices);
     }
 
-    private void catchUpInMemory(long now, long gameTicks) {
-        long trustedNow = Math.max(now, state.lastWallClockMs);
-        long offlineDays = Math.max(
-                0L, (trustedNow - state.lastWallClockMs) / MILLIS_PER_MINECRAFT_DAY);
-        long gameDays = Math.max(0L, (gameTicks - state.lastGameTicks) / 24_000L);
-        advance(Math.min(MAX_CATCH_UP_DAYS, Math.max(offlineDays, gameDays)));
+    /** Creates a durable PREPARED journal record before items leave the inventory. */
+    public synchronized EconomyState.PendingInventoryTransaction prepareInventoryCredit(
+            UUID playerId,
+            EconomyState.InventoryTransactionKind kind,
+            String itemKey,
+            int itemCount,
+            int inventoryCountBefore,
+            long creditMicro) {
+        if (kind == null
+                || kind == EconomyState.InventoryTransactionKind.WITHDRAWAL
+                || itemKey == null
+                || itemKey.isBlank()
+                || itemCount <= 0
+                || itemCount > MAX_INVENTORY_ITEM_TRANSACTION
+                || inventoryCountBefore < itemCount
+                || creditMicro <= 0L) {
+            return null;
+        }
+        UUID transactionId = UUID.randomUUID();
+        boolean success = mutatePlayer(playerId, true, current -> {
+            if (current.pendingInventoryTransactions.containsKey(playerId)) {
+                return false;
+            }
+            EconomyState.Account account = current.account(playerId);
+            if (!canAdd(account.cashMicro, creditMicro)) {
+                return false;
+            }
+            EconomyState.PendingInventoryTransaction transaction =
+                    new EconomyState.PendingInventoryTransaction();
+            transaction.transactionId = transactionId;
+            transaction.playerId = playerId;
+            transaction.kind = kind;
+            transaction.stage = EconomyState.InventoryTransactionStage.PREPARED;
+            transaction.itemKey = itemKey;
+            transaction.itemCount = itemCount;
+            transaction.inventoryCountBefore = inventoryCountBefore;
+            transaction.bankDeltaMicro = creditMicro;
+            transaction.createdEconomicDay = current.economicDay;
+            transaction.createdWallClockMs = current.lastWallClockMs;
+            current.pendingInventoryTransactions.put(playerId, transaction);
+            return true;
+        });
+        return success ? pendingInventoryTransaction(playerId) : null;
+    }
+
+    /** Applies a prepared bank credit after the corresponding items have left the inventory. */
+    public synchronized boolean commitPreparedInventoryCredit(
+            UUID playerId,
+            UUID transactionId) {
+        return mutatePlayer(playerId, true, current -> {
+            EconomyState.PendingInventoryTransaction transaction =
+                    matchingTransaction(current, playerId, transactionId);
+            if (transaction == null
+                    || transaction.stage != EconomyState.InventoryTransactionStage.PREPARED
+                    || !transaction.creditsBank()) {
+                return false;
+            }
+            EconomyState.Account account = current.account(playerId);
+            if (!canAdd(account.cashMicro, transaction.bankDeltaMicro)) {
+                return false;
+            }
+            account.cashMicro += transaction.bankDeltaMicro;
+            transaction.stage = EconomyState.InventoryTransactionStage.BANK_COMMITTED;
+            return true;
+        });
+    }
+
+    /** Debits bank cash and records a committed withdrawal before items enter the inventory. */
+    public synchronized EconomyState.PendingInventoryTransaction beginInventoryWithdrawal(
+            UUID playerId,
+            int itemCount,
+            int inventoryCountBefore) {
+        Long debitMicro = wholeEmeraldsToMicro(itemCount);
+        if (debitMicro == null
+                || itemCount > MAX_INVENTORY_ITEM_TRANSACTION
+                || inventoryCountBefore < 0) {
+            return null;
+        }
+        UUID transactionId = UUID.randomUUID();
+        boolean success = mutatePlayer(playerId, true, current -> {
+            if (current.pendingInventoryTransactions.containsKey(playerId)) {
+                return false;
+            }
+            EconomyState.Account account = current.account(playerId);
+            if (account.cashMicro < debitMicro) {
+                return false;
+            }
+            account.cashMicro -= debitMicro;
+            EconomyState.PendingInventoryTransaction transaction =
+                    new EconomyState.PendingInventoryTransaction();
+            transaction.transactionId = transactionId;
+            transaction.playerId = playerId;
+            transaction.kind = EconomyState.InventoryTransactionKind.WITHDRAWAL;
+            transaction.stage = EconomyState.InventoryTransactionStage.BANK_COMMITTED;
+            transaction.itemKey = "emerald";
+            transaction.itemCount = itemCount;
+            transaction.inventoryCountBefore = inventoryCountBefore;
+            transaction.bankDeltaMicro = -debitMicro;
+            transaction.createdEconomicDay = current.economicDay;
+            transaction.createdWallClockMs = current.lastWallClockMs;
+            current.pendingInventoryTransactions.put(playerId, transaction);
+            return true;
+        });
+        return success ? pendingInventoryTransaction(playerId) : null;
+    }
+
+    /** Returns an undelivered portion of a committed withdrawal to bank cash. */
+    public synchronized boolean reducePendingWithdrawal(
+            UUID playerId,
+            UUID transactionId,
+            int undeliveredCount) {
+        if (undeliveredCount <= 0) {
+            return true;
+        }
+        return mutatePlayer(playerId, true, current -> {
+            EconomyState.PendingInventoryTransaction transaction =
+                    matchingTransaction(current, playerId, transactionId);
+            if (transaction == null
+                    || transaction.kind != EconomyState.InventoryTransactionKind.WITHDRAWAL
+                    || transaction.stage != EconomyState.InventoryTransactionStage.BANK_COMMITTED
+                    || undeliveredCount > transaction.itemCount) {
+                return false;
+            }
+            long refundMicro = undeliveredCount * EconomyState.MICRO;
+            EconomyState.Account account = current.account(playerId);
+            if (!canAdd(account.cashMicro, refundMicro)) {
+                return false;
+            }
+            account.cashMicro += refundMicro;
+            transaction.itemCount -= undeliveredCount;
+            if (transaction.itemCount == 0) {
+                current.pendingInventoryTransactions.remove(playerId);
+            } else {
+                transaction.bankDeltaMicro = -transaction.itemCount * EconomyState.MICRO;
+            }
+            return true;
+        });
+    }
+
+    public synchronized boolean completeInventoryTransaction(
+            UUID playerId,
+            UUID transactionId) {
+        return mutatePlayer(playerId, true, current -> {
+            EconomyState.PendingInventoryTransaction transaction =
+                    matchingTransaction(current, playerId, transactionId);
+            if (transaction == null
+                    || transaction.stage != EconomyState.InventoryTransactionStage.BANK_COMMITTED) {
+                return false;
+            }
+            current.pendingInventoryTransactions.remove(playerId);
+            return true;
+        });
+    }
+
+    public synchronized boolean cancelPreparedInventoryTransaction(
+            UUID playerId,
+            UUID transactionId) {
+        return mutatePlayer(playerId, true, current -> {
+            EconomyState.PendingInventoryTransaction transaction =
+                    matchingTransaction(current, playerId, transactionId);
+            if (transaction == null
+                    || transaction.stage != EconomyState.InventoryTransactionStage.PREPARED) {
+                return false;
+            }
+            current.pendingInventoryTransactions.remove(playerId);
+            return true;
+        });
+    }
+
+    public synchronized EconomyState.PendingInventoryTransaction pendingInventoryTransaction(
+            UUID playerId) {
+        if (state == null) {
+            return null;
+        }
+        EconomyState.PendingInventoryTransaction transaction =
+                state.pendingInventoryTransactions.get(playerId);
+        return transaction == null ? null : transaction.copy();
+    }
+
+    private boolean observeProgress(long now, long gameTicks, long maximumDaysToAdvance) {
+        long safeNow = Math.max(0L, now);
+        long safeGameTicks = Math.max(0L, gameTicks);
+        long trustedNow = Math.max(safeNow, state.lastWallClockMs);
+        long wallDelta = trustedNow - state.lastWallClockMs;
+        long gameDelta = safeGameTicks >= state.lastGameTicks
+                ? safeGameTicks - state.lastGameTicks
+                : 0L;
+        boolean changed = wallDelta > 0L || safeGameTicks != state.lastGameTicks;
+
         state.lastWallClockMs = trustedNow;
-        state.lastGameTicks = gameTicks;
+        state.lastGameTicks = safeGameTicks;
+        state.pendingWallClockMs = cappedAdd(
+                state.pendingWallClockMs, wallDelta, MAX_PENDING_WALL_MS);
+        state.pendingGameTicks = cappedAdd(
+                state.pendingGameTicks, gameDelta, MAX_PENDING_GAME_TICKS);
+
+        long wallDays = state.pendingWallClockMs / MILLIS_PER_MINECRAFT_DAY;
+        long gameDays = state.pendingGameTicks / TICKS_PER_MINECRAFT_DAY;
+        long days = Math.min(maximumDaysToAdvance, Math.max(wallDays, gameDays));
+        if (days <= 0L) {
+            return changed;
+        }
+
+        advance(days);
+        long consumedWallDays = Math.min(wallDays, days);
+        long consumedGameDays = Math.min(gameDays, days);
+        state.pendingWallClockMs -= consumedWallDays * MILLIS_PER_MINECRAFT_DAY;
+        state.pendingGameTicks -= consumedGameDays * TICKS_PER_MINECRAFT_DAY;
+        return true;
     }
 
     private void advance(long days) {
@@ -337,31 +632,101 @@ public final class EconomyService {
         }
     }
 
-    private boolean mutate(Mutation mutation) {
-        if (state == null || path == null) {
-            lastError = "Economy service has not started";
-            return false;
-        }
-        EconomyState before = state.copy();
+    private long catchUpDaysRemainingInternal() {
+        return Math.max(
+                state.pendingWallClockMs / MILLIS_PER_MINECRAFT_DAY,
+                state.pendingGameTicks / TICKS_PER_MINECRAFT_DAY);
+    }
+
+    private boolean persistDirtyState(long now) {
         try {
-            if (!mutation.apply(state)) {
-                state = before;
-                lastError = "";
-                return false;
-            }
-            state.lastWallClockMs = laterWallClock(System.currentTimeMillis());
             state.save(path);
+            dirty = false;
+            resetSaveSchedule(now);
             lastError = "";
             return true;
         } catch (IOException | RuntimeException exception) {
-            state = before;
+            dirty = true;
             lastError = message(exception);
+            scheduleSaveRetry(now);
             return false;
         }
     }
 
-    private long laterWallClock(long now) {
-        return Math.max(now, state.lastWallClockMs);
+    private boolean mutatePlayer(UUID playerId, boolean allowPending, Mutation mutation) {
+        if (state == null || path == null) {
+            lastError = "Economy service has not started";
+            return false;
+        }
+        Objects.requireNonNull(playerId, "playerId");
+
+        long now = state.lastWallClockMs;
+        if (catchUpDaysRemainingInternal() > 0L) {
+            lastError = "Economy catch-up is still in progress";
+            return false;
+        }
+        if (!allowPending && state.pendingInventoryTransactions.containsKey(playerId)) {
+            lastError = "A pending inventory transaction must be recovered first";
+            return false;
+        }
+
+        EconomyState before = state.copy();
+        boolean dirtyBefore = dirty;
+        try {
+            if (!mutation.apply(state)) {
+                state = before;
+                dirty = dirtyBefore;
+                lastError = "";
+                return false;
+            }
+            state.save(path);
+            dirty = false;
+            resetSaveSchedule(now);
+            lastError = "";
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            state = before;
+            dirty = dirtyBefore;
+            lastError = message(exception);
+            scheduleSaveRetry(now);
+            return false;
+        }
+    }
+
+    private static EconomyState.PendingInventoryTransaction matchingTransaction(
+            EconomyState current,
+            UUID playerId,
+            UUID transactionId) {
+        EconomyState.PendingInventoryTransaction transaction =
+                current.pendingInventoryTransactions.get(playerId);
+        return transaction != null && transaction.transactionId.equals(transactionId)
+                ? transaction
+                : null;
+    }
+
+    private void resetSaveSchedule(long now) {
+        nextAutomaticSaveMs = saturatingAdd(now, AUTO_SAVE_INTERVAL_MS);
+        nextSaveRetryMs = 0L;
+        saveRetryDelayMs = INITIAL_SAVE_RETRY_MS;
+    }
+
+    private void scheduleSaveRetry(long now) {
+        nextSaveRetryMs = saturatingAdd(now, saveRetryDelayMs);
+        nextAutomaticSaveMs = nextSaveRetryMs;
+        saveRetryDelayMs = Math.min(MAX_SAVE_RETRY_MS, saveRetryDelayMs * 2L);
+    }
+
+    private static long cappedAdd(long current, long addition, long cap) {
+        if (addition <= 0L || current >= cap) {
+            return Math.min(current, cap);
+        }
+        return addition > cap - current ? cap : current + addition;
+    }
+
+    private static long saturatingAdd(long left, long right) {
+        return right > 0L && left > Long.MAX_VALUE - right
+                ? Long.MAX_VALUE
+                : left + right;
     }
 
     private static void clearCd(EconomyState.Account account) {
@@ -389,7 +754,9 @@ public final class EconomyService {
     }
 
     private static Long wholeEmeraldsToMicro(long emeralds) {
-        return emeralds <= 0L || emeralds > Long.MAX_VALUE / EconomyState.MICRO
+        return emeralds <= 0L
+                        || emeralds > MAX_WHOLE_EMERALD_TRANSACTION
+                        || emeralds > Long.MAX_VALUE / EconomyState.MICRO
                 ? null
                 : emeralds * EconomyState.MICRO;
     }
@@ -415,6 +782,24 @@ public final class EconomyService {
     @FunctionalInterface
     private interface Mutation {
         boolean apply(EconomyState state) throws IOException;
+    }
+
+    public record MarketSnapshot(
+            long economicDay,
+            EconomyEngine.Regime regime,
+            Map<String, Double> prices,
+            Map<String, Double> commodityPrices,
+            long catchUpDaysRemaining,
+            boolean dirty) {
+    }
+
+    public record PortfolioSnapshot(
+            long economicDay,
+            EconomyState.Account account,
+            Map<String, Double> prices,
+            double netWorth,
+            EconomyState.PendingInventoryTransaction pendingTransaction,
+            long catchUpDaysRemaining) {
     }
 
     public record CdCloseResult(

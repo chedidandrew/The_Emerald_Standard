@@ -10,18 +10,82 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 3;
     public static final long MICRO = 1_000_000L;
+    public static final int MAX_PENDING_INVENTORY_ITEMS = 100_000;
 
     public long seed;
     public long economicDay;
     public long lastWallClockMs;
     public long lastGameTicks;
+    public long pendingWallClockMs;
+    public long pendingGameTicks;
     public EconomyEngine.Regime regime;
 
     public final Map<String, Double> prices = new LinkedHashMap<>();
     public final Map<String, Double> commodityPrices = new LinkedHashMap<>();
     public final Map<UUID, Account> accounts = new HashMap<>();
+    public final Map<UUID, PendingInventoryTransaction> pendingInventoryTransactions =
+            new HashMap<>();
+
+    public enum InventoryTransactionKind {
+        DEPOSIT,
+        EXCHANGE,
+        WITHDRAWAL
+    }
+
+    public enum InventoryTransactionStage {
+        PREPARED,
+        BANK_COMMITTED
+    }
+
+    /**
+     * Durable bridge between Minecraft inventory state and the bank save.
+     *
+     * <p>The map is keyed by player UUID, so only one inventory-linked bank transaction can be
+     * active for a player at a time. The transaction remains until the player's inventory has been
+     * synchronously saved and the journal entry is cleared.</p>
+     */
+    public static final class PendingInventoryTransaction {
+        public UUID transactionId;
+        public UUID playerId;
+        public InventoryTransactionKind kind;
+        public InventoryTransactionStage stage;
+        public String itemKey;
+        public int itemCount;
+        public int inventoryCountBefore;
+        public long bankDeltaMicro;
+        public long createdEconomicDay;
+        public long createdWallClockMs;
+
+        public int inventoryDelta() {
+            return kind == InventoryTransactionKind.WITHDRAWAL ? itemCount : -itemCount;
+        }
+
+        public int expectedInventoryCount() {
+            long expected = (long) inventoryCountBefore + inventoryDelta();
+            return (int) Math.max(0L, Math.min(Integer.MAX_VALUE, expected));
+        }
+
+        public boolean creditsBank() {
+            return bankDeltaMicro > 0L;
+        }
+
+        public PendingInventoryTransaction copy() {
+            PendingInventoryTransaction copy = new PendingInventoryTransaction();
+            copy.transactionId = transactionId;
+            copy.playerId = playerId;
+            copy.kind = kind;
+            copy.stage = stage;
+            copy.itemKey = itemKey;
+            copy.itemCount = itemCount;
+            copy.inventoryCountBefore = inventoryCountBefore;
+            copy.bankDeltaMicro = bankDeltaMicro;
+            copy.createdEconomicDay = createdEconomicDay;
+            copy.createdWallClockMs = createdWallClockMs;
+            return copy;
+        }
+    }
 
     public static final class Account {
         public long cashMicro;
@@ -54,7 +118,7 @@ public final class EconomyState {
             return loanPrincipalMicro > 0L;
         }
 
-        Account copy() {
+        public Account copy() {
             Account copy = new Account();
             copy.cashMicro = cashMicro;
             copy.savingsMicro = savingsMicro;
@@ -81,8 +145,8 @@ public final class EconomyState {
     public static EconomyState fresh(long seed, long now, long gameTicks) {
         EconomyState state = new EconomyState();
         state.seed = seed;
-        state.lastWallClockMs = now;
-        state.lastGameTicks = gameTicks;
+        state.lastWallClockMs = Math.max(0L, now);
+        state.lastGameTicks = Math.max(0L, gameTicks);
         state.regime = EconomyEngine.initialRegime(seed);
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
             state.prices.put(asset.ticker(), 100.0);
@@ -108,11 +172,17 @@ public final class EconomyState {
         copy.economicDay = economicDay;
         copy.lastWallClockMs = lastWallClockMs;
         copy.lastGameTicks = lastGameTicks;
+        copy.pendingWallClockMs = pendingWallClockMs;
+        copy.pendingGameTicks = pendingGameTicks;
         copy.regime = regime;
         copy.prices.putAll(prices);
         copy.commodityPrices.putAll(commodityPrices);
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             copy.accounts.put(entry.getKey(), entry.getValue().copy());
+        }
+        for (Map.Entry<UUID, PendingInventoryTransaction> entry
+                : pendingInventoryTransactions.entrySet()) {
+            copy.pendingInventoryTransactions.put(entry.getKey(), entry.getValue().copy());
         }
         return copy;
     }
@@ -145,8 +215,15 @@ public final class EconomyState {
         return accounts.computeIfAbsent(id, ignored -> new Account());
     }
 
+    public Account existingAccount(UUID id) {
+        return accounts.get(id);
+    }
+
     public double netWorth(UUID id) {
-        Account account = account(id);
+        Account account = accounts.get(id);
+        if (account == null) {
+            return 0.0;
+        }
         double value = (account.cashMicro
                 + account.savingsMicro
                 + account.cdValueMicro
@@ -158,7 +235,12 @@ public final class EconomyState {
     }
 
     public void validate() throws IOException {
-        if (regime == null || economicDay < 0L || lastWallClockMs < 0L || lastGameTicks < 0L) {
+        if (regime == null
+                || economicDay < 0L
+                || lastWallClockMs < 0L
+                || lastGameTicks < 0L
+                || pendingWallClockMs < 0L
+                || pendingGameTicks < 0L) {
             throw new IOException("Economy clock or regime is invalid");
         }
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
@@ -168,7 +250,11 @@ public final class EconomyState {
             validatePrice("commodity " + commodity.id(), commodityPrices.get(commodity.id()));
         }
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
-            validateAccount(entry.getKey(), entry.getValue());
+            validateAccount(entry.getKey(), entry.getValue(), economicDay);
+        }
+        for (Map.Entry<UUID, PendingInventoryTransaction> entry
+                : pendingInventoryTransactions.entrySet()) {
+            validateTransaction(entry.getKey(), entry.getValue());
         }
     }
 
@@ -219,7 +305,11 @@ public final class EconomyState {
         }
     }
 
-    private static void validateAccount(UUID id, Account account) throws IOException {
+    private static void validateAccount(UUID id, Account account, long economicDay)
+            throws IOException {
+        if (account == null) {
+            throw new IOException("Null account for " + id);
+        }
         validateBalance(id, "cash", account.cashMicro);
         validateBalance(id, "savings", account.savingsMicro);
         validateBalance(id, "CD principal", account.cdPrincipalMicro);
@@ -228,6 +318,21 @@ public final class EconomyState {
         validateBalance(id, "loan value", account.loanValueMicro);
         validateRate(id, "CD", account.cdAnnualRate);
         validateRate(id, "loan", account.loanAnnualRate);
+
+        if (account.hasCd()) {
+            if (account.cdValueMicro < account.cdPrincipalMicro
+                    || account.cdOpenDay < 0L
+                    || account.cdMaturityDay <= account.cdOpenDay
+                    || account.cdAnnualRate <= 0.0) {
+                throw new IOException("Inconsistent active CD for " + id);
+            }
+        } else if (account.cdValueMicro != 0L
+                || account.cdOpenDay != 0L
+                || account.cdMaturityDay != 0L
+                || account.cdAnnualRate != 0.0) {
+            throw new IOException("Inactive CD contains residual state for " + id);
+        }
+
         if (!Double.isFinite(account.loanStress) || account.loanStress < 0.0) {
             throw new IOException("Invalid loan stress for " + id);
         }
@@ -236,6 +341,52 @@ public final class EconomyState {
                 || account.loanRecoveryRate > 1.0) {
             throw new IOException("Invalid loan recovery for " + id);
         }
+        if (account.hasLoan()) {
+            if (account.loanOpenDay < 0L
+                    || account.loanMaturityDay <= account.loanOpenDay
+                    || account.loanAnnualRate <= 0.0
+                    || account.loanSerial <= 0L) {
+                throw new IOException("Inconsistent active villager loan for " + id);
+            }
+            if (account.loanResolved && economicDay < account.loanMaturityDay) {
+                throw new IOException("Villager loan resolved before maturity for " + id);
+            }
+            if (!account.loanResolved
+                    && (account.loanRecoveryRate != 1.0
+                            || account.loanOutcome != EconomyEngine.LoanOutcome.REPAID)) {
+                throw new IOException("Unresolved villager loan has a default outcome for " + id);
+            }
+            if (account.loanResolved) {
+                switch (account.loanOutcome) {
+                    case REPAID -> {
+                        if (account.loanRecoveryRate != 1.0) {
+                            throw new IOException("Repaid loan has reduced recovery for " + id);
+                        }
+                    }
+                    case PARTIAL_DEFAULT -> {
+                        if (account.loanRecoveryRate <= 0.0
+                                || account.loanRecoveryRate >= 1.0) {
+                            throw new IOException("Partial default recovery is invalid for " + id);
+                        }
+                    }
+                    case FULL_DEFAULT -> {
+                        if (account.loanRecoveryRate != 0.0 || account.loanValueMicro != 0L) {
+                            throw new IOException("Full default retained value for " + id);
+                        }
+                    }
+                }
+            }
+        } else if (account.loanValueMicro != 0L
+                || account.loanOpenDay != 0L
+                || account.loanMaturityDay != 0L
+                || account.loanAnnualRate != 0.0
+                || account.loanStress != 0.0
+                || account.loanRecoveryRate != 1.0
+                || account.loanResolved
+                || account.loanOutcome != EconomyEngine.LoanOutcome.REPAID) {
+            throw new IOException("Inactive villager loan contains residual state for " + id);
+        }
+
         for (Map.Entry<String, Double> holding : account.shares.entrySet()) {
             if (!knownTicker(holding.getKey())
                     || !Double.isFinite(holding.getValue())
@@ -245,8 +396,51 @@ public final class EconomyState {
         }
     }
 
+    private static void validateTransaction(
+            UUID mapPlayerId,
+            PendingInventoryTransaction transaction) throws IOException {
+        if (transaction == null
+                || transaction.transactionId == null
+                || transaction.playerId == null
+                || !transaction.playerId.equals(mapPlayerId)
+                || transaction.kind == null
+                || transaction.stage == null
+                || transaction.itemKey == null
+                || transaction.itemKey.isBlank()
+                || transaction.itemCount <= 0
+                || transaction.itemCount > MAX_PENDING_INVENTORY_ITEMS
+                || transaction.inventoryCountBefore < 0
+                || transaction.createdEconomicDay < 0L
+                || transaction.createdWallClockMs < 0L) {
+            throw new IOException("Invalid pending inventory transaction for " + mapPlayerId);
+        }
+        if (transaction.kind == InventoryTransactionKind.WITHDRAWAL) {
+            long expectedDelta = safeMultiplyMicro(transaction.itemCount);
+            if (transaction.stage != InventoryTransactionStage.BANK_COMMITTED
+                    || transaction.bankDeltaMicro != -expectedDelta) {
+                throw new IOException("Invalid pending withdrawal for " + mapPlayerId);
+            }
+            return;
+        }
+        if (transaction.bankDeltaMicro <= 0L) {
+            throw new IOException("Invalid pending bank credit for " + mapPlayerId);
+        }
+        if (transaction.kind == InventoryTransactionKind.DEPOSIT
+                && transaction.bankDeltaMicro != safeMultiplyMicro(transaction.itemCount)) {
+            throw new IOException("Invalid pending emerald deposit for " + mapPlayerId);
+        }
+    }
+
+    private static long safeMultiplyMicro(int count) throws IOException {
+        if (count > Long.MAX_VALUE / MICRO) {
+            throw new IOException("Inventory transaction is too large");
+        }
+        return count * MICRO;
+    }
+
     private static boolean knownTicker(String ticker) {
-        return EconomyEngine.ASSETS.stream().anyMatch(asset -> asset.ticker().equals(ticker));
+        String normalized = ticker == null ? "" : ticker.toUpperCase(Locale.ROOT);
+        return EconomyEngine.ASSETS.stream().anyMatch(asset -> asset.ticker().equals(normalized));
     }
 
     private static long accrue(long currentMicro, double annualRate) {
