@@ -1,0 +1,48 @@
+name: Village bank placement report
+description: Report a missing, duplicated, damaged, or poorly placed Village Bank and Exchange.
+title: "[Village Bank]: "
+labels: [world-generation]
+body:
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options:
+        - Fabric 26.2
+        - NeoForge 26.2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: The Emerald Standard version
+      placeholder: 0.2.0-alpha.3
+    validations:
+      required: true
+  - type: input
+    id: seed
+    attributes:
+      label: World seed
+      description: Optional for public reports. A reproducible seed is very helpful.
+  - type: input
+    id: coordinates
+    attributes:
+      label: Approximate village coordinates and biome
+      placeholder: X 120, Y 70, Z -450, savanna
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Mention steep terrain, water, nearby structures, duplicated Bankers, or an existing-world upgrade.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag exterior and interior screenshots here when possible.
+  - type: textarea
+    id: modlist
+    attributes:
+      label: Other world-generation mods
+      description: List mods that alter villages, terrain, or structures.

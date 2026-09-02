@@ -39,6 +39,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Build ${{ matrix.loader }}
         run: bash "${{ matrix.loader }}/gradlew" --no-daemon -p "${{ matrix.loader }}" build --stacktrace
+      - name: Verify packaged ${{ matrix.loader }} JAR
+        run: bash scripts/verify-built-jar.sh "${{ matrix.loader }}"
       - uses: actions/upload-artifact@v7
         with:
           name: the-emerald-standard-${{ matrix.loader }}-${{ github.sha }}
@@ -68,4 +70,33 @@ jobs:
         with:
           name: server-smoke-log-${{ matrix.loader }}-${{ github.sha }}
           path: build/server-smoke/${{ matrix.loader }}.log
+          if-no-files-found: warn
+
+  client-bootstrap-smoke:
+    name: Launch ${{ matrix.loader }} client
+    needs: loader-builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        loader: [fabric, neoforge]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install virtual display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1
+      - name: Launch Minecraft client and verify screen registration
+        run: bash scripts/smoke-client.sh "${{ matrix.loader }}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: client-smoke-log-${{ matrix.loader }}-${{ github.sha }}
+          path: build/client-smoke/${{ matrix.loader }}.log
           if-no-files-found: warn

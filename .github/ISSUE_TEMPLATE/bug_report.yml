@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a crash, incorrect balance, GUI problem, or other reproducible defect.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options:
+        - Fabric 26.2
+        - NeoForge 26.2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: The Emerald Standard version
+      placeholder: 0.2.0-alpha.3
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the village, Banker, dashboard page, and transaction involved.
+      placeholder: |
+        1. Opened...
+        2. Clicked...
+        3. Observed...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or crash report
+      description: Drag latest.log or the crash report here. Remove server addresses or private information first.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I tested with the newest available alpha.
+          required: true
+        - label: I searched existing issues for the same problem.
+          required: true

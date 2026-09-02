@@ -2,9 +2,11 @@ package com.chedidandrew.emeraldstandard.fabric;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.minecraft.BankerAccess;
+import com.chedidandrew.emeraldstandard.minecraft.BankerIntegrationSelfTest;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
+import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
@@ -12,6 +14,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.Registry;
@@ -49,6 +52,10 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 LOGGER.info(
                         "The Emerald Standard economy started with {} catch-up day(s) remaining",
                         ECONOMY.catchUpDaysRemaining());
+                if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
+                    BankerIntegrationSelfTest.run(server.overworld());
+                    LOGGER.info("The Emerald Standard Banker integration self-test passed");
+                }
             } catch (Exception exception) {
                 throw new IllegalStateException(
                         "Could not start The Emerald Standard economy", exception);
@@ -72,8 +79,26 @@ public final class EmeraldStandardFabric implements ModInitializer {
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 recover(handler.player));
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                recover(handler.player));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            recover(handler.player);
+            BankingOperations.forgetPlayer(handler.player.getUUID());
+        });
+
+        UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
+            if (hand != InteractionHand.MAIN_HAND || level.isClientSide()) {
+                return InteractionResult.PASS;
+            }
+            if (player instanceof ServerPlayer serverPlayer
+                    && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                var accessPoint = VillageBankManager.bankAccessPoint(
+                        serverLevel, hitResult.getBlockPos(), ECONOMY);
+                if (accessPoint != null) {
+                    BankerAccess.openAt(serverPlayer, ECONOMY, accessPoint);
+                    return InteractionResult.SUCCESS_SERVER;
+                }
+            }
+            return InteractionResult.PASS;
+        });
 
         UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
             if (hand != InteractionHand.MAIN_HAND || !BankerAccess.isBanker(entity)) {

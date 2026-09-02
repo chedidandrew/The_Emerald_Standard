@@ -9,7 +9,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Items;
 
 /** Shared, server-authoritative banking actions used by the graphical Banker menu. */
-final class BankingOperations {
+public final class BankingOperations {
     private static final Map<UUID, Long> LAST_ACTION_TICK = new HashMap<>();
     static final int READY = 0;
     static final int DEPOSITED = 1;
@@ -35,6 +35,11 @@ final class BankingOperations {
     static final int UNSUPPORTED = -7;
 
     private BankingOperations() {
+    }
+
+    /** Clears short-lived per-player cooldown state when a player leaves the server. */
+    public static void forgetPlayer(UUID playerId) {
+        LAST_ACTION_TICK.remove(playerId);
     }
 
     static int recover(ServerPlayer player, EconomyService economy) {

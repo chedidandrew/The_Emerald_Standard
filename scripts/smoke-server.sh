@@ -22,7 +22,8 @@ if [[ "$LOADER" == "fabric" ]]; then
     command+=(--args=--nogui)
 fi
 
-setsid "${command[@]}" > "$LOG_FILE" 2>&1 &
+JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.integrationSmoke=true" \
+    setsid "${command[@]}" > "$LOG_FILE" 2>&1 &
 process_group="$!"
 
 cleanup() {
@@ -40,9 +41,10 @@ for _ in $(seq 1 360); do
         exit 1
     fi
     if grep -Fq "The Emerald Standard economy started" "$LOG_FILE" \
+            && grep -Fq "The Emerald Standard Banker integration self-test passed" "$LOG_FILE" \
             && grep -Eq 'Done \([^)]*s\)!' "$LOG_FILE"; then
         echo "PASS $LOADER dedicated-server smoke test"
-        tail -n 80 "$LOG_FILE"
+        tail -n 100 "$LOG_FILE"
         exit 0
     fi
     if ! kill -0 "$process_group" 2>/dev/null; then

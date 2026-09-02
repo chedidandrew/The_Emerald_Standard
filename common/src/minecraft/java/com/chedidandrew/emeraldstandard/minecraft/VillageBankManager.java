@@ -10,10 +10,12 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
@@ -61,7 +63,7 @@ public final class VillageBankManager {
                 if (packedAnchor == null) {
                     economy.markGeneratedBankRegion(regionKey, anchor.asLong());
                 }
-                ensureBanker(level, anchor, packedAnchor != null);
+                ensureBanker(level, anchor, packedAnchor != null, regionKey);
                 continue;
             }
 
@@ -74,10 +76,10 @@ public final class VillageBankManager {
                 completed = economy.markGeneratedBankRegion(
                         regionKey, bankerPosition.asLong());
                 if (completed) {
-                    ensureBanker(level, bankerPosition, true);
+                    ensureBanker(level, bankerPosition, true, regionKey);
                 }
             } else {
-                completed = ensureBanker(level, villagePosition, false)
+                completed = ensureBanker(level, villagePosition, false, regionKey)
                         && economy.markGeneratedBankRegion(
                                 regionKey, villagePosition.asLong());
             }
@@ -85,14 +87,14 @@ public final class VillageBankManager {
     }
 
     private static boolean ensureBanker(
-            ServerLevel level, BlockPos bankerAnchor, boolean generatedStructure) {
+            ServerLevel level, BlockPos bankerAnchor, boolean generatedStructure, long regionKey) {
         AABB search = new AABB(bankerAnchor).inflate(48.0, 20.0, 48.0);
         List<Villager> villagers = level.getEntitiesOfClass(
                 Villager.class,
                 search,
                 villager -> villager.isAlive() && !villager.isBaby());
         Villager existing = villagers.stream()
-                .filter(BankerAccess::isBanker)
+                .filter(villager -> BankerAccess.isBankerForRegion(villager, regionKey))
                 .min(Comparator.comparingDouble(villager ->
                         villager.distanceToSqr(
                                 bankerAnchor.getX() + 0.5,
@@ -100,20 +102,38 @@ public final class VillageBankManager {
                                 bankerAnchor.getZ() + 0.5)))
                 .orElse(null);
         if (existing != null) {
-            BankerAccess.markBanker(existing);
+            BankerAccess.markBanker(existing, regionKey);
             existing.setHomeTo(bankerAnchor, EmeraldConfig.current().bankerRestrictionRadius());
             return true;
         }
 
-        Villager candidate = generatedStructure ? null : villagers.stream()
+        // Adopt one legacy unscoped Banker before creating a replacement. This migrates
+        // alpha saves while still preventing two nearby banks from sharing the same villager.
+        Villager legacyBanker = villagers.stream()
+                .filter(BankerAccess::isLegacyUnscopedBanker)
                 .min(Comparator.comparingDouble(villager ->
                         villager.distanceToSqr(
                                 bankerAnchor.getX() + 0.5,
                                 bankerAnchor.getY() + 0.5,
                                 bankerAnchor.getZ() + 0.5)))
                 .orElse(null);
-        if (candidate != null) {
-            BankerAccess.markBanker(candidate);
+        if (legacyBanker != null && BankerAccess.markBanker(legacyBanker, regionKey)) {
+            legacyBanker.setHomeTo(
+                    bankerAnchor, EmeraldConfig.current().bankerRestrictionRadius());
+            return true;
+        }
+
+        // A fallback bank may use only an untouched unemployed adult. Established villagers,
+        // including traded librarians, are never converted or reset.
+        Villager candidate = generatedStructure ? null : villagers.stream()
+                .filter(BankerAccess::isEligibleUnemployedVillager)
+                .min(Comparator.comparingDouble(villager ->
+                        villager.distanceToSqr(
+                                bankerAnchor.getX() + 0.5,
+                                bankerAnchor.getY() + 0.5,
+                                bankerAnchor.getZ() + 0.5)))
+                .orElse(null);
+        if (candidate != null && BankerAccess.markBanker(candidate, regionKey)) {
             candidate.setHomeTo(
                     bankerAnchor, EmeraldConfig.current().bankerRestrictionRadius());
             return true;
@@ -127,7 +147,22 @@ public final class VillageBankManager {
                     bankerAnchor.getZ());
             spawnPosition = new BlockPos(bankerAnchor.getX(), y, bankerAnchor.getZ());
         }
-        return spawnBanker(level, spawnPosition, generatedStructure);
+        return spawnBanker(level, spawnPosition, generatedStructure, regionKey);
+    }
+
+    /** Returns the persisted Banker access point when the clicked lectern is a bank counter. */
+    public static BlockPos bankAccessPoint(
+            ServerLevel level, BlockPos clicked, EconomyService economy) {
+        if (!level.getBlockState(clicked).is(Blocks.LECTERN)) {
+            return null;
+        }
+        for (long packedAnchor : economy.generatedBankAnchorsSnapshot().values()) {
+            BlockPos anchor = BlockPos.of(packedAnchor);
+            if (anchor.north().equals(clicked)) {
+                return anchor;
+            }
+        }
+        return null;
     }
 
     private static BlockPos findBankPlot(
@@ -198,10 +233,11 @@ public final class VillageBankManager {
     }
 
     private static void buildBank(ServerLevel level, BlockPos origin) {
+        BankPalette palette = paletteFor(level, origin);
         for (int x = 0; x < BANK_WIDTH; x++) {
             for (int z = 0; z < BANK_DEPTH; z++) {
                 BlockPos floor = origin.offset(x, 0, z);
-                level.setBlock(floor, Blocks.STONE_BRICKS.defaultBlockState(), 3);
+                level.setBlock(floor, palette.floor().defaultBlockState(), 3);
                 for (int depth = 1; depth <= 2; depth++) {
                     BlockPos support = floor.below(depth);
                     if (level.getBlockState(support).isAir()
@@ -239,7 +275,7 @@ public final class VillageBankManager {
                     } else {
                         level.setBlock(
                                 origin.offset(x, y, z),
-                                (corner ? Blocks.STRIPPED_OAK_LOG : Blocks.OAK_PLANKS)
+                                (corner ? palette.corner() : palette.wall())
                                         .defaultBlockState(),
                                 3);
                     }
@@ -251,7 +287,7 @@ public final class VillageBankManager {
             for (int z = -1; z <= BANK_DEPTH; z++) {
                 level.setBlock(
                         origin.offset(x, 5, z),
-                        Blocks.DARK_OAK_SLAB.defaultBlockState(),
+                        palette.roof().defaultBlockState(),
                         3);
             }
         }
@@ -275,10 +311,10 @@ public final class VillageBankManager {
                 origin.offset(BANK_WIDTH - 2, 2, 1),
                 Blocks.BOOKSHELF.defaultBlockState(),
                 3);
-        level.setBlock(origin.offset(2, 1, 3), Blocks.OAK_FENCE.defaultBlockState(), 3);
+        level.setBlock(origin.offset(2, 1, 3), palette.fence().defaultBlockState(), 3);
         level.setBlock(
                 origin.offset(BANK_WIDTH - 3, 1, 3),
-                Blocks.OAK_FENCE.defaultBlockState(),
+                palette.fence().defaultBlockState(),
                 3);
         level.setBlock(origin.offset(2, 2, 3), Blocks.LANTERN.defaultBlockState(), 3);
         level.setBlock(
@@ -291,8 +327,46 @@ public final class VillageBankManager {
                 3);
     }
 
+    private static BankPalette paletteFor(ServerLevel level, BlockPos origin) {
+        var biome = level.getBiome(origin);
+        if (biome.is(BiomeTags.HAS_VILLAGE_DESERT)) {
+            return new BankPalette(
+                    Blocks.SMOOTH_SANDSTONE,
+                    Blocks.CUT_SANDSTONE,
+                    Blocks.STRIPPED_ACACIA_LOG,
+                    Blocks.SANDSTONE_SLAB,
+                    Blocks.ACACIA_FENCE);
+        }
+        if (biome.is(BiomeTags.HAS_VILLAGE_SAVANNA)) {
+            return new BankPalette(
+                    Blocks.STONE_BRICKS,
+                    Blocks.ACACIA_PLANKS,
+                    Blocks.STRIPPED_ACACIA_LOG,
+                    Blocks.ACACIA_SLAB,
+                    Blocks.ACACIA_FENCE);
+        }
+        if (biome.is(BiomeTags.HAS_VILLAGE_SNOWY)
+                || biome.is(BiomeTags.HAS_VILLAGE_TAIGA)) {
+            return new BankPalette(
+                    Blocks.STONE_BRICKS,
+                    Blocks.SPRUCE_PLANKS,
+                    Blocks.STRIPPED_SPRUCE_LOG,
+                    Blocks.SPRUCE_SLAB,
+                    Blocks.SPRUCE_FENCE);
+        }
+        return new BankPalette(
+                Blocks.STONE_BRICKS,
+                Blocks.OAK_PLANKS,
+                Blocks.STRIPPED_OAK_LOG,
+                Blocks.DARK_OAK_SLAB,
+                Blocks.OAK_FENCE);
+    }
+
+    private record BankPalette(Block floor, Block wall, Block corner, Block roof, Block fence) {
+    }
+
     private static boolean spawnBanker(
-            ServerLevel level, BlockPos position, boolean generatedStructure) {
+            ServerLevel level, BlockPos position, boolean generatedStructure, long regionKey) {
         Villager banker = EntityTypes.VILLAGER.create(
                 level,
                 generatedStructure
@@ -302,7 +376,10 @@ public final class VillageBankManager {
             return false;
         }
         banker.teleportTo(position.getX() + 0.5, position.getY(), position.getZ() + 0.5);
-        BankerAccess.markBanker(banker);
+        if (!BankerAccess.markBanker(banker, regionKey)) {
+            banker.discard();
+            return false;
+        }
         banker.setHomeTo(position, EmeraldConfig.current().bankerRestrictionRadius());
         banker.setCustomName(Component.translatable("entity.the_emerald_standard.banker"));
         return level.addFreshEntity(banker);

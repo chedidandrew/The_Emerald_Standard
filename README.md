@@ -4,7 +4,7 @@
 
 A lightweight villager banking, investing, and commodity-exchange mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.2.0-alpha.2`. The player experience is centered on Banker villagers and a graphical bank dashboard. Commands are retained for administrators and testing only.
+> Current status: `0.2.0-alpha.3`. The player experience is centered on Banker villagers and a graphical bank dashboard. Commands are reserved for administrators and diagnostics.
 
 ## Core rule
 
@@ -12,22 +12,22 @@ Players provide emerald capital to the villager economy. **Players can never bor
 
 ## Natural village banking
 
-When a player discovers a loaded village region, the mod automatically attempts to build a compact **Village Bank and Exchange** on a safe plot near the village. The building uses vanilla blocks, includes a banking counter, and contains a persistent Banker villager.
+When a player discovers a loaded village region, the mod searches for a safe nearby plot and builds a compact **Village Bank and Exchange**. The building uses a village-biome palette, includes a banking counter, and contains a persistent Banker villager.
 
-This discovery-time generation works in both new and existing worlds. If no safe bank plot is available, an adult village resident is designated as the local Banker instead, so the economy remains accessible without commands.
+This discovery-time system works in new and existing worlds without replacing vanilla village template pools. If no safe plot exists, the mod uses an untouched unemployed adult villager or spawns a new Banker. It never converts a villager with a profession, experience, trades, or a custom name.
 
-Right-click a villager named **Banker** to open The Emerald Standard dashboard. Bankers use the vanilla librarian profession and lectern behavior, remain close to their bank, and are replaced at the persisted bank counter if lost.
+Each Banker is associated with one persisted village-bank region, stays near its service point, and can be replaced at the correct counter if lost. Right-click the Banker or the bank lectern to open the dashboard.
 
 ## Casual-friendly dashboard
 
-The graphical interface is split into four simple pages:
+The graphical interface is split into four pages:
 
 - **Overview:** net worth, cash, savings, physical emeralds, current market regime, market news, and a market chart.
 - **Market:** nine sector-labeled Minecraft-themed investments, current prices, holdings, risk labels, chart history, buy, sell 25%, and sell-all actions.
 - **Banking:** savings, locked-rate CDs, and player-funded villager business lending with visible rates and estimated opening default risk.
 - **Exchange:** diamonds, gold, netherite materials, valuable ores, and blocks converted into bank cash at dynamic commodity prices.
 
-Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `All`. Destructive or risky actions require confirmation, hover text explains the trade-offs, and charts include scale labels and point inspection.
+Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `All`. Destructive or risky actions require confirmation. Hover text explains trade-offs, and charts include scale labels and point inspection.
 
 ## Investments
 
@@ -41,7 +41,7 @@ Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `A
 - `IRNG` Iron Golem Security
 - `MCRT` Minecart Transit
 
-The simulation includes expansion, bull, boom, stagnation, recession, crash, and recovery regimes. Rare market events create company- and commodity-specific shocks, while `VILX` tracks a weighted basket plus the broader village economy. Market prices, company risk, commodity prices, savings rates, CD rates, and villager-lending outcomes evolve persistently and continue while the world is closed.
+The simulation includes expansion, bull, boom, stagnation, recession, crash, and recovery regimes. Rare market events create company- and commodity-specific shocks, while `VILX` tracks a weighted basket plus the broader village economy. Prices, rates, risk, and lending outcomes continue to evolve while the world is closed.
 
 ## Reliability and persistence
 
@@ -50,13 +50,17 @@ The simulation includes expansion, bull, boom, stagnation, recession, crash, and
 - Save format 5 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
 - Unsupported future save formats stop loading instead of silently falling back to stale backups.
 - Corrupt current-format saves can recover from a validated backup.
-- Inventory-linked deposits, withdrawals, and exchanges use a durable recovery journal. Overflow recovery remains journal-protected instead of dropping item entities into the world.
-- Generated village-bank regions and exact Banker anchors are persisted so the same area does not repeatedly generate banks and lost Bankers return to the correct location.
-- A short configurable server-side transaction cooldown prevents button and packet spam.
+- Inventory-linked deposits, withdrawals, and exchanges use a durable recovery journal.
+- Overflow recovery stays journal-protected instead of dropping item entities into the world.
+- Generated bank regions and exact Banker anchors are persisted.
+- A configurable server-side transaction cooldown prevents button and packet spam.
+- Player disconnects clear transient cooldown state.
 
 ## World configuration
 
-The first server start creates `the_emerald_standard-config.properties` in the world's `data` directory. It controls village-bank generation, village scan frequency, region size, Banker home radius, and the transaction cooldown. Administrators can inspect or reload it without restarting:
+The first server start creates `the_emerald_standard-config.properties` in the world's `data` directory. It controls village-bank generation, scan frequency, region size, Banker home radius, and the transaction cooldown.
+
+Administrators can inspect or reload it without restarting:
 
 ```text
 /emerald config show
@@ -65,7 +69,7 @@ The first server start creates `the_emerald_standard-config.properties` in the w
 
 ## Administrator commands
 
-Normal gameplay does not require commands. The `/emerald` command tree now requires permission level 2 and is intended for administrators, diagnostics, and development testing.
+Normal gameplay does not require commands. The `/emerald` tree requires permission level 2 and is intended for administrators, diagnostics, and development testing.
 
 ```text
 /emerald open
@@ -86,6 +90,18 @@ Normal gameplay does not require commands. The `/emerald` command tree now requi
 /emerald exchange <resource> <count>
 ```
 
+## Installation
+
+### Fabric
+
+Install Minecraft 26.2, Fabric Loader 0.19.3 or newer, Fabric API 0.158.0+26.2 or newer, and the Fabric JAR from a verified workflow artifact or prerelease.
+
+### NeoForge
+
+Install Minecraft 26.2, NeoForge 26.2.0.72 or newer, and the NeoForge JAR from a verified workflow artifact or prerelease.
+
+The mod must be installed on the server and on every connecting client because it adds a custom graphical menu.
+
 ## Project layout
 
 ```text
@@ -93,7 +109,7 @@ common/    Economy, persistence, GUI, village banks, shared gameplay, and tests
 fabric/    Fabric 26.2 lifecycle hooks, metadata, and Gradle build
 neoforge/  NeoForge 26.2 lifecycle hooks, metadata, and Gradle build
 docs/      Economy, GUI, architecture, recovery, and testing documentation
-scripts/   Common regression and dedicated-server smoke-test runners
+scripts/   Regression, JAR verification, client smoke, and server smoke runners
 release/   Verified build status and artifact provenance
 ```
 
@@ -107,7 +123,13 @@ bash fabric/gradlew --no-daemon -p fabric build
 bash neoforge/gradlew --no-daemon -p neoforge build
 ```
 
-On Windows PowerShell, use `fabric\gradlew.bat --no-daemon -p fabric build` and the corresponding `neoforge\gradlew.bat` command.
+On Windows PowerShell, use `fabric\\gradlew.bat --no-daemon -p fabric build` and the corresponding `neoforge\\gradlew.bat` command.
+
+## Verification
+
+GitHub Actions runs the common regression suite, builds and inspects both packaged JARs, launches both dedicated-server development environments, runs a live Banker invariant test, and launches both clients under a virtual display to verify client initialization and screen registration.
+
+Manual visual, transaction, and multiplayer checks remain documented in [docs/TESTING.md](docs/TESTING.md).
 
 ## Documentation
 
