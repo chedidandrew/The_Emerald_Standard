@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation and gameplay documentation
+    url: https://github.com/chedidandrew/The_Emerald_Standard#readme
+    about: Check requirements, installation, and current alpha limitations before opening an issue.

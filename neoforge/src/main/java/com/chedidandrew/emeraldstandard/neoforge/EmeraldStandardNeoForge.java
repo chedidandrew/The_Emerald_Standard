@@ -2,9 +2,11 @@ package com.chedidandrew.emeraldstandard.neoforge;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.minecraft.BankerAccess;
+import com.chedidandrew.emeraldstandard.minecraft.BankerIntegrationSelfTest;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
+import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
@@ -62,6 +64,10 @@ public final class EmeraldStandardNeoForge {
             LOGGER.info(
                     "The Emerald Standard economy started with {} catch-up day(s) remaining",
                     ECONOMY.catchUpDaysRemaining());
+            if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
+                BankerIntegrationSelfTest.run(server.overworld());
+                LOGGER.info("The Emerald Standard Banker integration self-test passed");
+            }
         } catch (Exception exception) {
             throw new IllegalStateException(
                     "Could not start The Emerald Standard economy", exception);
@@ -97,7 +103,24 @@ public final class EmeraldStandardNeoForge {
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             recover(player);
+            BankingOperations.forgetPlayer(player.getUUID());
         }
+    }
+
+    @SubscribeEvent
+    public void onBlockInteract(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getEntity().level().isClientSide()
+                || !(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        var accessPoint = VillageBankManager.bankAccessPoint(
+                player.serverLevel(), event.getPos(), ECONOMY);
+        if (accessPoint == null) {
+            return;
+        }
+        BankerAccess.openAt(player, ECONOMY, accessPoint);
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
     }
 
     @SubscribeEvent

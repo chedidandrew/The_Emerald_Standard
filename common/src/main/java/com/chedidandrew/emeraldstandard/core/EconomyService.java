@@ -192,6 +192,11 @@ public final class EconomyService {
         return state == null ? null : state.generatedBankAnchors.get(regionKey);
     }
 
+    /** Read-only anchors used to recognize generated bank counters without exposing mutable state. */
+    public synchronized Map<Long, Long> generatedBankAnchorsSnapshot() {
+        return state == null ? Map.of() : Map.copyOf(state.generatedBankAnchors);
+    }
+
     public synchronized boolean markGeneratedBankRegion(long regionKey) {
         return markGeneratedBankRegion(regionKey, null);
     }

@@ -13,7 +13,7 @@ import net.minecraft.world.entity.player.Inventory;
 /** A compact, casual-player-first bank and exchange dashboard. */
 public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private static final int WIDTH = 320;
-    private static final int HEIGHT = 250;
+    private static final int HEIGHT = 230;
 
     private static final int PANEL = 0xFF16251F;
     private static final int PANEL_LIGHT = 0xFF20362D;
@@ -44,13 +44,16 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         seenStatusRevision = menu.statusRevision();
         int x = leftPos + 10;
         int y = topPos + 27;
-        String[] tabs = {"Overview", "Market", "Banking", "Exchange"};
+        Component[] tabs = {
+                tr("tab.overview"),
+                tr("tab.market"),
+                tr("tab.banking"),
+                tr("tab.exchange")
+        };
         for (int index = 0; index < tabs.length; index++) {
             int selectedTab = index;
             addRenderableWidget(Button.builder(
-                            Component.literal((tab == index ? "[" : "")
-                                    + tabs[index]
-                                    + (tab == index ? "]" : "")),
+                            selectedLabel(tabs[index], tab == index),
                             button -> {
                                 tab = selectedTab;
                                 rebuildWidgets();
@@ -72,16 +75,16 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private void addAmountButtons() {
         int x = leftPos + 12;
-        int y = topPos + 219;
+        int y = topPos + 207;
         for (int index = 0; index < BankerMenu.AMOUNT_PRESETS.length; index++) {
             int selected = index;
             int value = BankerMenu.AMOUNT_PRESETS[index];
-            String label = value < 0 ? "All" : Integer.toString(value);
+            Component label = value < 0 ? tr("amount.all") : Component.literal(Integer.toString(value));
             if (menu.selectedAmountPresetIndex() == index) {
-                label = "[" + label + "]";
+                label = selectedLabel(label, true);
             }
             addRenderableWidget(Button.builder(
-                            Component.literal(label),
+                            label,
                             button -> selectAndRefresh(BankerMenu.BUTTON_AMOUNT_BASE + selected))
                     .bounds(x + index * 49, y, 45, 18)
                     .build());
@@ -89,11 +92,11 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void addOverviewButtons() {
-        int y = topPos + 169;
-        addActionButton("Deposit", leftPos + 12, y, 68, BankerMenu.ACTION_DEPOSIT);
-        addActionButton("Withdraw", leftPos + 84, y, 68, BankerMenu.ACTION_WITHDRAW);
-        addActionButton("Save", leftPos + 156, y, 68, BankerMenu.ACTION_SAVINGS_DEPOSIT);
-        addActionButton("Recover", leftPos + 228, y, 80, BankerMenu.ACTION_RECOVER);
+        int y = topPos + 165;
+        addActionButton(tr("action.deposit"), leftPos + 12, y, 68, BankerMenu.ACTION_DEPOSIT);
+        addActionButton(tr("action.withdraw"), leftPos + 84, y, 68, BankerMenu.ACTION_WITHDRAW);
+        addActionButton(tr("action.save"), leftPos + 156, y, 68, BankerMenu.ACTION_SAVINGS_DEPOSIT);
+        addActionButton(tr("action.recover"), leftPos + 228, y, 80, BankerMenu.ACTION_RECOVER);
     }
 
     private void addMarketButtons() {
@@ -111,26 +114,28 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     .bounds(startX + (index % 3) * 31, startY + (index / 3) * 22, 29, 18)
                     .build());
         }
-        int y = topPos + 169;
-        addActionButton("Buy", leftPos + 112, y, 58, BankerMenu.ACTION_BUY);
-        addActionButton("Sell 25%", leftPos + 174, y, 62, BankerMenu.ACTION_SELL_QUARTER);
+        int y = topPos + 165;
+        addActionButton(tr("action.buy"), leftPos + 112, y, 58, BankerMenu.ACTION_BUY);
+        addActionButton(tr("action.sell_quarter"), leftPos + 174, y, 62, BankerMenu.ACTION_SELL_QUARTER);
         addConfirmingActionButton(
-                confirmationAction == BankerMenu.ACTION_SELL_ALL ? "Confirm" : "Sell All",
+                confirmationAction == BankerMenu.ACTION_SELL_ALL
+                        ? tr("action.confirm")
+                        : tr("action.sell_all"),
                 leftPos + 240,
                 y,
                 68,
                 BankerMenu.ACTION_SELL_ALL,
-                "Sells the entire selected holding at the current bid price.");
+                tr("tooltip.sell_all"));
     }
 
     private void addBankingButtons() {
         int y = topPos + 103;
-        addActionButton("To Savings", leftPos + 12, y, 76, BankerMenu.ACTION_SAVINGS_DEPOSIT);
-        addActionButton("From Savings", leftPos + 92, y, 86, BankerMenu.ACTION_SAVINGS_WITHDRAW);
+        addActionButton(tr("action.to_savings"), leftPos + 12, y, 76, BankerMenu.ACTION_SAVINGS_DEPOSIT);
+        addActionButton(tr("action.from_savings"), leftPos + 92, y, 86, BankerMenu.ACTION_SAVINGS_WITHDRAW);
         int cdAction = menu.hasCd() ? BankerMenu.ACTION_CLOSE_CD : BankerMenu.ACTION_OPEN_CD;
-        String cdActionLabel = confirmationAction == cdAction
-                ? "Confirm"
-                : menu.hasCd() ? "Close CD" : "Open CD";
+        Component cdActionLabel = confirmationAction == cdAction
+                ? tr("action.confirm")
+                : menu.hasCd() ? tr("action.close_cd") : tr("action.open_cd");
         if (menu.hasCd() && menu.cdDaysRemaining() > 0) {
             addConfirmingActionButton(
                     cdActionLabel,
@@ -138,7 +143,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     y,
                     60,
                     cdAction,
-                    "Early closure returns principal minus a 1% penalty and forfeits accrued interest.");
+                    tr("tooltip.close_cd_early"));
         } else {
             addActionButton(cdActionLabel, leftPos + 182, y, 60, cdAction);
         }
@@ -146,9 +151,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         int lendingAction = menu.hasLending()
                 ? BankerMenu.ACTION_COLLECT_LENDING
                 : BankerMenu.ACTION_FUND_LENDING;
-        String lendingActionLabel = confirmationAction == lendingAction
-                ? "Confirm"
-                : menu.hasLending() ? "Collect" : "Fund";
+        Component lendingActionLabel = confirmationAction == lendingAction
+                ? tr("action.confirm")
+                : menu.hasLending() ? tr("action.collect") : tr("action.fund");
         if (!menu.hasLending()) {
             addConfirmingActionButton(
                     lendingActionLabel,
@@ -156,7 +161,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     y,
                     62,
                     lendingAction,
-                    "Villager lending can lose principal, but it can never create player debt.");
+                    tr("tooltip.lending_risk"));
         } else {
             addActionButton(lendingActionLabel, leftPos + 246, y, 62, lendingAction);
         }
@@ -171,11 +176,10 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                             Component.literal(cdLabel),
                             button -> selectAndRefresh(BankerMenu.BUTTON_CD_TERM_BASE + selected))
                     .bounds(leftPos + 78 + index * 39, termY, 35, 18)
-                    .tooltip(Tooltip.create(Component.literal(String.format(
-                            Locale.ROOT,
-                            "%d-day CD · %.2f%% locked annual rate · 1%% early-close penalty",
+                    .tooltip(Tooltip.create(tr(
+                            "tooltip.cd_term",
                             BankerMenu.TERMS[index],
-                            EconomyEngine.cdAnnualRate(
+                            String.format(Locale.ROOT, "%.2f", EconomyEngine.cdAnnualRate(
                                     menu.regime(), BankerMenu.TERMS[index]) * 100.0))))
                     .build());
 
@@ -187,13 +191,12 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                             button -> selectAndRefresh(
                                     BankerMenu.BUTTON_LENDING_TERM_BASE + selected))
                     .bounds(leftPos + 78 + index * 39, termY + 23, 35, 18)
-                    .tooltip(Tooltip.create(Component.literal(String.format(
-                            Locale.ROOT,
-                            "%d-day villager loan · %.2f%% yield · about %.1f%% opening default risk",
+                    .tooltip(Tooltip.create(tr(
+                            "tooltip.lending_term",
                             BankerMenu.TERMS[index],
-                            EconomyEngine.villagerLoanAnnualYield(
-                                    menu.regime(), BankerMenu.TERMS[index]) * 100.0,
-                            EconomyEngine.estimatedLoanDefaultProbability(
+                            String.format(Locale.ROOT, "%.2f", EconomyEngine.villagerLoanAnnualYield(
+                                    menu.regime(), BankerMenu.TERMS[index]) * 100.0),
+                            String.format(Locale.ROOT, "%.1f", EconomyEngine.estimatedLoanDefaultProbability(
                                     menu.regime(), BankerMenu.TERMS[index]) * 100.0))))
                     .build());
         }
@@ -214,25 +217,25 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         button -> selectAndRefresh(BankerMenu.BUTTON_RESOURCE_BASE + next))
                 .bounds(leftPos + 274, topPos + 76, 24, 20)
                 .build());
-        addActionButton("Exchange", leftPos + 112, topPos + 137, 96,
+        addActionButton(tr("action.exchange"), leftPos + 112, topPos + 137, 96,
                 BankerMenu.ACTION_EXCHANGE);
     }
 
-    private void addActionButton(String label, int x, int y, int width, int id) {
+    private void addActionButton(Component label, int x, int y, int width, int id) {
         addRenderableWidget(Button.builder(
-                        Component.literal(label),
+                        label,
                         button -> sendMenuButton(id))
                 .bounds(x, y, width, 18)
                 .build());
     }
 
     private void addConfirmingActionButton(
-            String label, int x, int y, int width, int id, String explanation) {
+            Component label, int x, int y, int width, int id, Component explanation) {
         addRenderableWidget(Button.builder(
-                        Component.literal(label),
+                        label,
                         button -> confirmOrSend(id))
                 .bounds(x, y, width, 18)
-                .tooltip(Tooltip.create(Component.literal(explanation)))
+                .tooltip(Tooltip.create(explanation))
                 .build());
     }
 
@@ -286,7 +289,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         graphics.fill(x, y, x + imageWidth, y + imageHeight, PANEL_DARK);
         graphics.fill(x + 3, y + 3, x + imageWidth - 3, y + imageHeight - 3, PANEL);
         graphics.outline(x + 3, y + 3, imageWidth - 6, imageHeight - 6, GOLD);
-        graphics.fill(x + 8, y + 48, x + imageWidth - 8, y + 210, PANEL_LIGHT);
+        graphics.fill(x + 8, y + 48, x + imageWidth - 8, y + 196, PANEL_LIGHT);
 
         if (tab == BankerMenu.TAB_OVERVIEW || tab == BankerMenu.TAB_MARKET) {
             drawChart(graphics, x + 111, y + 57, 196, 88, mouseX, mouseY);
@@ -303,7 +306,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     protected void extractLabels(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         graphics.text(font, title, 12, 10, GOLD, false);
         graphics.text(font,
-                "Day " + menu.economicDay() + "  |  " + friendly(menu.regime().name()),
+                tr("header.day_regime", menu.economicDay(), friendly(menu.regime().name())),
                 182,
                 11,
                 MUTED,
@@ -318,37 +321,37 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             }
         }
 
-        graphics.text(font, "Amount", 12, 207, MUTED, false);
-        String status = statusText(menu.statusCode());
+        graphics.text(font, tr("label.amount"), 12, 198, MUTED, false);
+        Component status = statusText(menu.statusCode());
         int statusColor = menu.statusCode() < 0 ? NEGATIVE : POSITIVE;
-        if (!status.isBlank()) {
-            graphics.text(font, status, 12, 198, statusColor, false);
+        if (status != null) {
+            graphics.text(font, status, 12, 188, statusColor, false);
         }
         if (menu.catchUpDays() > 0) {
             graphics.text(font,
-                    "Market catch-up: " + menu.catchUpDays() + " day(s). Actions are paused.",
+                    tr("notice.catch_up", menu.catchUpDays()),
                     12,
-                    187,
+                    177,
                     GOLD,
                     false);
         } else if (menu.hasPendingTransaction()) {
             graphics.text(font,
-                    "A transaction is awaiting recovery.",
+                    tr("notice.recovery_pending"),
                     12,
-                    187,
+                    177,
                     GOLD,
                     false);
         }
     }
 
     private void drawOverviewLabels(GuiGraphicsExtractor graphics) {
-        graphics.text(font, "Your village finances", 14, 56, TEXT, false);
-        labelValue(graphics, "Net worth", money(menu.netWorth()), 14, 72, GOLD);
-        labelValue(graphics, "Bank cash", money(menu.cash()), 14, 88, TEXT);
-        labelValue(graphics, "Savings", money(menu.savings()), 14, 104, TEXT);
-        labelValue(graphics, "Invested", money(investedValue()), 14, 120, TEXT);
+        graphics.text(font, tr("overview.title"), 14, 56, TEXT, false);
+        labelValue(graphics, tr("label.net_worth"), money(menu.netWorth()), 14, 72, GOLD);
+        labelValue(graphics, tr("label.bank_cash"), money(menu.cash()), 14, 88, TEXT);
+        labelValue(graphics, tr("label.savings"), money(menu.savings()), 14, 104, TEXT);
+        labelValue(graphics, tr("label.invested"), money(investedValue()), 14, 120, TEXT);
         graphics.text(font,
-                "Inventory: " + menu.physicalEmeralds() + " emerald(s)",
+                tr("overview.inventory", menu.physicalEmeralds()),
                 14,
                 136,
                 MUTED,
@@ -365,14 +368,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         graphics.text(font,
                 marketBulletin(),
                 14,
-                157,
+                149,
                 MUTED,
                 false);
     }
 
     private void drawMarketLabels(GuiGraphicsExtractor graphics) {
         EconomyEngine.Asset selected = menu.selectedAsset();
-        graphics.text(font, "Choose an investment", 14, 56, TEXT, false);
+        graphics.text(font, tr("market.choose"), 14, 56, TEXT, false);
         graphics.text(font, selected.ticker(), 14, 126, GOLD, false);
         graphics.text(font, selected.sector(), 14, 138, TEXT, false);
         graphics.text(font, riskLabel(selected), 14, 150, MUTED, false);
@@ -396,44 +399,45 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void drawBankingLabels(GuiGraphicsExtractor graphics) {
-        graphics.text(font, "Savings", 16, 59, GOLD, false);
+        graphics.text(font, tr("label.savings"), 16, 59, GOLD, false);
         graphics.text(font, money(menu.savings()), 16, 73, TEXT, false);
         graphics.text(font,
-                String.format(Locale.ROOT, "Current rate %.2f%%", menu.savingsRate()),
+                tr("banking.current_rate", String.format(Locale.ROOT, "%.2f", menu.savingsRate())),
                 16,
                 85,
                 MUTED,
                 false);
 
-        graphics.text(font, "Certificates and villager lending", 171, 59, GOLD, false);
-        String cd = menu.hasCd()
-                ? money(menu.cdValue()) + " at " + String.format(Locale.ROOT, "%.2f%%", menu.cdRate())
-                : "No active CD";
+        graphics.text(font, tr("banking.products"), 171, 59, GOLD, false);
+        Component cd = menu.hasCd()
+                ? tr("banking.active_rate", money(menu.cdValue()),
+                        String.format(Locale.ROOT, "%.2f", menu.cdRate()))
+                : tr("banking.no_cd");
         graphics.text(font, cd, 171, 73, TEXT, false);
-        String lending = menu.hasLending()
-                ? money(menu.lendingValue()) + " at "
-                        + String.format(Locale.ROOT, "%.2f%%", menu.lendingRate())
-                : "No active lending";
+        Component lending = menu.hasLending()
+                ? tr("banking.active_rate", money(menu.lendingValue()),
+                        String.format(Locale.ROOT, "%.2f", menu.lendingRate()))
+                : tr("banking.no_lending");
         graphics.text(font, lending, 171, 85, TEXT, false);
 
-        graphics.text(font, "CD term", 14, 148, MUTED, false);
-        graphics.text(font, "Lending term", 14, 171, MUTED, false);
+        graphics.text(font, tr("banking.cd_term"), 14, 148, MUTED, false);
+        graphics.text(font, tr("banking.lending_term"), 14, 171, MUTED, false);
         if (menu.hasCd()) {
             graphics.text(font,
-                    menu.cdDaysRemaining() + " CD day(s) remaining",
+                    tr("banking.cd_remaining", menu.cdDaysRemaining()),
                     184,
                     128,
                     MUTED,
                     false);
         }
         if (menu.hasLending()) {
-            String detail = menu.lendingResolved()
-                    ? friendly(menu.lendingOutcome().name())
-                    : menu.lendingDaysRemaining() + " lending day(s) remaining";
+            Component detail = menu.lendingResolved()
+                    ? tr("banking.outcome", friendly(menu.lendingOutcome().name()))
+                    : tr("banking.lending_remaining", menu.lendingDaysRemaining());
             graphics.text(font, detail, 184, 140, MUTED, false);
         }
         graphics.text(font,
-                "Lending can lose principal. You can never owe emeralds.",
+                tr("banking.no_debt"),
                 14,
                 128,
                 MUTED,
@@ -441,27 +445,26 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void drawExchangeLabels(GuiGraphicsExtractor graphics) {
-        String resource = friendly(menu.selectedResourceName());
+        Component resource = tr("resource." + menu.selectedResourceName());
         graphics.centeredText(font, resource, 160, 69, GOLD);
         graphics.centeredText(font,
-                "Owned: " + menu.selectedResourceCount(),
+                tr("exchange.owned", menu.selectedResourceCount()),
                 160,
                 83,
                 TEXT);
         graphics.centeredText(font,
-                String.format(Locale.ROOT,
-                        "Bank quote: %.2f emeralds each",
-                        menu.selectedResourceUnitQuote()),
+                tr("exchange.quote", String.format(Locale.ROOT, "%.2f",
+                        menu.selectedResourceUnitQuote())),
                 160,
                 96,
                 MUTED);
         graphics.centeredText(font,
-                "Choose an amount below, then exchange it into bank cash.",
+                tr("exchange.instructions"),
                 160,
                 121,
                 MUTED);
         graphics.centeredText(font,
-                "Prices move with the villager commodity market.",
+                tr("exchange.market_note"),
                 160,
                 159,
                 MUTED);
@@ -479,7 +482,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         graphics.outline(x, y, width, height, 0xFF456B5A);
         int[] points = menu.historyPointsCenti();
         if (points.length < 2) {
-            graphics.centeredText(font, "History builds as the economy advances", x + width / 2,
+            graphics.centeredText(font, tr("chart.history_building"), x + width / 2,
                     y + height / 2 - 4, MUTED);
             return;
         }
@@ -502,7 +505,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         graphics.fill(x + 1, y + height / 2, x + width - 1, y + height / 2 + 1, 0xFF29463A);
         graphics.text(font, money(max / 100.0), x + 4, y + 4, MUTED, false);
         graphics.text(font, money(min / 100.0), x + 4, y + height - 12, MUTED, false);
-        graphics.text(font, "up to 180d", x + width - 58, y + height - 12, MUTED, false);
+        graphics.text(font, tr("chart.range"), x + width - 58, y + height - 12, MUTED, false);
         int previousX = x + 3;
         int previousY = chartY(points[0], min, max, y, height);
         for (int index = 1; index < points.length; index++) {
@@ -521,8 +524,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             int daysAgo = points.length - 1 - index;
             graphics.setTooltipForNextFrame(
                     font,
-                    Component.literal(money(points[index] / 100.0)
-                            + (daysAgo == 0 ? " today" : " · " + daysAgo + " sampled point(s) ago")),
+                    daysAgo == 0
+                            ? tr("chart.tooltip_today", money(points[index] / 100.0))
+                            : tr("chart.tooltip_ago", money(points[index] / 100.0), daysAgo),
                     mouseX,
                     mouseY);
         }
@@ -564,7 +568,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private void labelValue(
             GuiGraphicsExtractor graphics,
-            String label,
+            Component label,
             String value,
             int x,
             int y,
@@ -601,57 +605,60 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return builder.toString();
     }
 
-    private static String riskLabel(EconomyEngine.Asset asset) {
+    private static Component tr(String suffix, Object... arguments) {
+        return Component.translatable("gui.the_emerald_standard." + suffix, arguments);
+    }
+
+    private static Component selectedLabel(Component label, boolean selected) {
+        if (!selected) {
+            return label;
+        }
+        return Component.literal("[").append(label.copy()).append("]");
+    }
+
+    private static Component riskLabel(EconomyEngine.Asset asset) {
         double risk = asset.beta() + asset.annualIdiosyncraticVolatility() * 2.0;
-        if (risk < 1.0) return "Lower risk";
-        if (risk < 1.45) return "Moderate risk";
-        if (risk < 1.75) return "High risk";
-        return "Very high risk";
+        if (risk < 1.0) return tr("risk.lower");
+        if (risk < 1.45) return tr("risk.moderate");
+        if (risk < 1.75) return tr("risk.high");
+        return tr("risk.very_high");
     }
 
-    private static String regimeBulletin(EconomyEngine.Regime regime) {
-        return switch (regime) {
-            case EXPANSION -> "Village commerce is expanding.";
-            case BULL -> "Broad markets continue to climb.";
-            case BOOM -> "Rapid growth is lifting risk.";
-            case STAGNATION -> "Trade is moving sideways.";
-            case RECESSION -> "Overworld demand has weakened.";
-            case CRASH -> "Heavy selling grips the exchange.";
-            case RECOVERY -> "Markets are rebuilding.";
-        };
+    private static Component regimeBulletin(EconomyEngine.Regime regime) {
+        return tr("regime." + regime.name().toLowerCase(Locale.ROOT));
     }
 
-    private String marketBulletin() {
+    private Component marketBulletin() {
         EconomyEngine.MarketEvent event = menu.lastMarketEvent();
         if (event != EconomyEngine.MarketEvent.NONE && menu.marketEventAge() <= 180) {
-            return "News: " + event.title() + " (" + menu.marketEventAge() + "d ago)";
+            return tr("news.event", event.title(), menu.marketEventAge());
         }
-        return "News: " + regimeBulletin(menu.regime());
+        return tr("news.regime", regimeBulletin(menu.regime()));
     }
 
-    private static String statusText(int status) {
+    private static Component statusText(int status) {
         return switch (status) {
-            case 1 -> "Emeralds deposited into bank cash.";
-            case 2 -> "Emeralds withdrawn to your inventory.";
-            case 3 -> "Moved bank cash into savings.";
-            case 4 -> "Moved savings into bank cash.";
-            case 5 -> "Investment purchased.";
-            case 6 -> "Investment sold.";
-            case 7 -> "Certificate of deposit opened.";
-            case 8 -> "Certificate of deposit closed.";
-            case 9 -> "Villager business lending funded.";
-            case 10 -> "Villager lending proceeds collected.";
-            case 11 -> "Resources exchanged into bank cash.";
-            case 12 -> "Pending transaction recovered.";
-            case 13 -> "Action completed. Recovery will finish after player data saves.";
-            case -1 -> "The economy is busy or still catching up.";
-            case -2 -> "Not enough emeralds, bank cash, shares, or resources.";
-            case -3 -> "Your inventory has no room.";
-            case -4 -> "Only one active product of this type is allowed in this alpha.";
-            case -5 -> "That product is not ready to collect or close.";
-            case -6 -> "The action could not be saved safely.";
-            case -7 -> "That option is not supported.";
-            default -> "";
+            case 1 -> tr("status.deposited");
+            case 2 -> tr("status.withdrew");
+            case 3 -> tr("status.saved");
+            case 4 -> tr("status.unsaved");
+            case 5 -> tr("status.bought");
+            case 6 -> tr("status.sold");
+            case 7 -> tr("status.cd_opened");
+            case 8 -> tr("status.cd_closed");
+            case 9 -> tr("status.lending_funded");
+            case 10 -> tr("status.lending_collected");
+            case 11 -> tr("status.exchanged");
+            case 12 -> tr("status.recovered");
+            case 13 -> tr("status.recovery_pending");
+            case -1 -> tr("status.busy");
+            case -2 -> tr("status.insufficient");
+            case -3 -> tr("status.inventory_full");
+            case -4 -> tr("status.product_active");
+            case -5 -> tr("status.not_ready");
+            case -6 -> tr("status.persistence_failed");
+            case -7 -> tr("status.unsupported");
+            default -> null;
         };
     }
 }

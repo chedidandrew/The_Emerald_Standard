@@ -1,0 +1,39 @@
+name: Economy balance feedback
+description: Share long-play feedback about market risk, savings, CDs, lending, or resource prices.
+title: "[Balance]: "
+labels: [balance]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: The Emerald Standard version
+      placeholder: 0.2.0-alpha.3
+    validations:
+      required: true
+  - type: input
+    id: playtime
+    attributes:
+      label: Approximate playtime or economic days observed
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Savings
+        - Certificates of deposit
+        - Villager business lending
+        - VILX
+        - Individual investments
+        - Commodity exchange
+        - Overall progression
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback and observed outcomes
+      description: Include specific prices, gains, losses, defaults, or progression effects when possible.
+    validations:
+      required: true

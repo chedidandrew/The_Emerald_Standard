@@ -2,6 +2,35 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## 0.2.0-alpha.3 - 2026-09-01
+
+### Added
+
+- Region-scoped Banker identity tags so nearby village banks cannot share or replace one another's villager.
+- Direct interaction with the lectern at a generated bank counter.
+- Biome-aware bank palettes for plains, desert, savanna, snowy, and taiga villages.
+- Live dedicated-server invariants proving that only safe, untouched unemployed villagers can be converted.
+- Fabric and NeoForge client bootstrap smoke tests under a virtual display.
+- Packaged-JAR content and language-file validation in CI.
+- Crash, world-generation, and economy-balance GitHub issue templates.
+- Additional English translation keys for dashboard actions, confirmations, tooltips, risks, and operation results.
+
+### Changed
+
+- Bumped Fabric and NeoForge versions to `0.2.0-alpha.3`.
+- Fallback Banker selection now prefers an untouched unemployed adult and otherwise spawns a new Banker.
+- Existing unscoped alpha Bankers are migrated to a persisted village-region identity.
+- Generated banks now adapt core building materials to the village biome while retaining the same compact footprint.
+- Client and server smoke workflows now reject fatal log entries and verify expected mod integration markers.
+- Updated README, GUI documentation, test gate, and build status for the release-candidate workflow.
+
+### Fixed
+
+- Prevented farmers, librarians, traded villagers, experienced villagers, babies, dead villagers, and custom-named villagers from being repurposed or reset as Bankers.
+- Prevented two nearby generated banks from adopting the same Banker.
+- Preserved dashboard access through the bank counter if a Banker is temporarily missing.
+- Cleared transient per-player action cooldown state on disconnect.
+
 ## 0.2.0-alpha.2 - 2026-09-01
 
 ### Added
