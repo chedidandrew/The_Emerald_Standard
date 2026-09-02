@@ -23,6 +23,8 @@ public final class EmeraldConfig {
 
     private final boolean villageProsperitySimulationEnabled;
     private final boolean villageVisualProgressionEnabled;
+    private final boolean villageMarketIntegrationEnabled;
+    private final boolean villageAutomaticRecoveryEnabled;
     private final int villageProsperityScanIntervalTicks;
     private final int villageDevelopmentRadius;
     private final int villageConstructionIntervalTicks;
@@ -37,6 +39,8 @@ public final class EmeraldConfig {
             int transactionCooldownTicks,
             boolean villageProsperitySimulationEnabled,
             boolean villageVisualProgressionEnabled,
+            boolean villageMarketIntegrationEnabled,
+            boolean villageAutomaticRecoveryEnabled,
             int villageProsperityScanIntervalTicks,
             int villageDevelopmentRadius,
             int villageConstructionIntervalTicks,
@@ -49,6 +53,8 @@ public final class EmeraldConfig {
         this.transactionCooldownTicks = transactionCooldownTicks;
         this.villageProsperitySimulationEnabled = villageProsperitySimulationEnabled;
         this.villageVisualProgressionEnabled = villageVisualProgressionEnabled;
+        this.villageMarketIntegrationEnabled = villageMarketIntegrationEnabled;
+        this.villageAutomaticRecoveryEnabled = villageAutomaticRecoveryEnabled;
         this.villageProsperityScanIntervalTicks = villageProsperityScanIntervalTicks;
         this.villageDevelopmentRadius = villageDevelopmentRadius;
         this.villageConstructionIntervalTicks = villageConstructionIntervalTicks;
@@ -73,10 +79,12 @@ public final class EmeraldConfig {
                 bounded(properties, "transactions.cooldown_ticks", 5, 0, 200),
                 bool(properties, "village_prosperity.simulation_enabled", true),
                 bool(properties, "village_prosperity.visual_progression_enabled", true),
+                bool(properties, "village_prosperity.market_integration_enabled", true),
+                bool(properties, "village_prosperity.automatic_recovery_enabled", true),
                 bounded(properties, "village_prosperity.scan_interval_ticks", 400, 40, 24_000),
                 bounded(properties, "village_prosperity.development_radius", 96, 48, 192),
-                bounded(properties, "village_prosperity.construction_interval_ticks", 4, 1, 200),
-                bounded(properties, "village_prosperity.construction_blocks_per_tick", 4, 1, 64),
+                bounded(properties, "village_prosperity.construction_interval_ticks", 10, 1, 200),
+                bounded(properties, "village_prosperity.construction_blocks_per_tick", 2, 1, 64),
                 bounded(properties, "village_prosperity.settler_spawn_interval_ticks", 1_200, 200, 24_000));
         return current;
     }
@@ -120,6 +128,14 @@ public final class EmeraldConfig {
         return villageVisualProgressionEnabled;
     }
 
+    public boolean villageMarketIntegrationEnabled() {
+        return villageMarketIntegrationEnabled;
+    }
+
+    public boolean villageAutomaticRecoveryEnabled() {
+        return villageAutomaticRecoveryEnabled;
+    }
+
     public int villageProsperityScanIntervalTicks() {
         return villageProsperityScanIntervalTicks;
     }
@@ -145,7 +161,8 @@ public final class EmeraldConfig {
                 Locale.ROOT,
                 "village banks=%s, bank scan=%d ticks, bank region=%d blocks, banker radius=%d, "
                         + "transaction cooldown=%d ticks, prosperity simulation=%s, visual progression=%s, "
-                        + "prosperity scan=%d ticks, development radius=%d, construction=%d block(s)/%d tick(s), "
+                        + "market integration=%s, automatic recovery=%s, prosperity scan=%d ticks, "
+                        + "development radius=%d, construction=%d block(s)/%d tick(s), "
                         + "settler interval=%d ticks",
                 villageBanksEnabled,
                 villageScanIntervalTicks,
@@ -154,6 +171,8 @@ public final class EmeraldConfig {
                 transactionCooldownTicks,
                 villageProsperitySimulationEnabled,
                 villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled,
+                villageAutomaticRecoveryEnabled,
                 villageProsperityScanIntervalTicks,
                 villageDevelopmentRadius,
                 villageConstructionBlocksPerTick,
@@ -170,10 +189,12 @@ public final class EmeraldConfig {
                 5,
                 true,
                 true,
+                true,
+                true,
                 400,
                 96,
-                4,
-                4,
+                10,
+                2,
                 1_200);
     }
 
@@ -187,10 +208,12 @@ public final class EmeraldConfig {
         properties.setProperty("transactions.cooldown_ticks", "5");
         properties.setProperty("village_prosperity.simulation_enabled", "true");
         properties.setProperty("village_prosperity.visual_progression_enabled", "true");
+        properties.setProperty("village_prosperity.market_integration_enabled", "true");
+        properties.setProperty("village_prosperity.automatic_recovery_enabled", "true");
         properties.setProperty("village_prosperity.scan_interval_ticks", "400");
         properties.setProperty("village_prosperity.development_radius", "96");
-        properties.setProperty("village_prosperity.construction_interval_ticks", "4");
-        properties.setProperty("village_prosperity.construction_blocks_per_tick", "4");
+        properties.setProperty("village_prosperity.construction_interval_ticks", "10");
+        properties.setProperty("village_prosperity.construction_blocks_per_tick", "2");
         properties.setProperty("village_prosperity.settler_spawn_interval_ticks", "1200");
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try (OutputStream output = Files.newOutputStream(temporary)) {

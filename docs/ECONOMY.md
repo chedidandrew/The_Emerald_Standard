@@ -4,90 +4,51 @@
 
 One Minecraft day equals one economic day. A standard Minecraft day lasts 20 real minutes, so 365 economic days equal about 5 real days, 1 hour, and 40 minutes.
 
-The larger of accumulated game time and trusted wall-clock time advances the economy so ordinary online play is not double-counted. Partial game and wall days are stored, so repeated sessions shorter than 20 minutes still accumulate correctly across restarts.
+The larger of accumulated game time and trusted wall-clock time advances one unified remainder so ordinary online play is not double-counted. Partial progress persists across restarts. Offline catch-up is bounded, and banking pauses while a backlog remains so players cannot trade against a stale market.
 
-Moving the computer clock backward does not lower the trusted timestamp. Offline catch-up is capped at 25,000 economic days, advances no more than 2,000 days during startup, and continues in 250-day background batches. Banking is paused while catch-up remains so every player sees a fully current market before trading.
+## Global market regimes
 
-## Market regimes
+The global economy transitions among expansion, bull, boom, stagnation, recession, crash, and recovery. Regimes are persistent and probabilistic rather than scripted. VILX and eight Minecraft-themed companies combine broad-market exposure, company-specific risk, rare deterministic events, and a private economy seed.
 
-The global economy transitions between expansion, bull, boom, stagnation, recession, crash, and recovery states. Transition probabilities are intentionally persistent. Long-run regression tests currently observe average runs of roughly:
+The committed regression suite continues to target roughly 10 percent long-run VILX CAGR while allowing severe negative years, unusually strong recoveries, and long sideways periods. These are simulation targets, not guaranteed player returns.
 
-| Regime | Typical simulated duration |
-|---|---:|
-| Expansion | about 286 days |
-| Bull | about 222 days |
-| Boom | about 111 days |
-| Stagnation | about 200 days |
-| Recession | about 143 days |
-| Crash | about 25 days |
-| Recovery | about 167 days |
+## Village fundamentals
 
-Actual worlds vary because transitions are seeded and probabilistic.
+When Village Prosperity simulation and market integration are both enabled, eligible settlements contribute a deliberately small fundamental factor:
 
-## VILX, company returns, and events
+- Mining influences Deepdelve Mining and commodity supply.
+- Agriculture influences Golden Harvest Cooperative.
+- Trade influences Nether Spice and Ender Freight.
+- Transportation influences Minecart Transit.
+- Security influences Iron Golem Security.
+- Specialized prosperity contributes modestly to Redstone Dynamics and Potionworks.
 
-The hidden broad-economy return is the common market factor. Each company combines:
+The annual per-asset contribution is capped at approximately plus or minus 1.2 percentage points. Empty, Extinct, Abandoned, and temporarily market-suppressed player-damaged settlements do not contribute. Global regimes, volatility, and company events remain dominant.
 
-```text
-risk-free return
-+ beta exposure to VILX
-+ a small company alpha assumption
-+ company-specific volatility
-```
+`village_prosperity.market_integration_enabled=false` removes these settlement fundamentals without disabling the local simulation or visual progression.
 
-The Gaussian generator independently mixes both Box-Muller uniform inputs. Rare market jumps add fat tails, while future outcomes remain deterministic from the private economy seed and economic day. Deterministic transcendental calculations use `StrictMath` to improve replay consistency across platforms.
+## Local village economy
 
-VILX is a player-facing index built from 85 percent broad-economy exposure and 15 percent of a rebalanced weighted basket of the eight displayed companies. Rare named events—such as a Redstone Revolution, Nether Supply Crisis, or Villager Credit Scare—apply targeted shocks to affected companies and commodities and appear as dashboard news. Their selection and effects remain deterministic for a given private seed and economic day.
+Local settlements track food, materials, treasury, prosperity, safety, and several industry outputs. They are not guaranteed to become permanently richer. Daily simulation includes consumption, small storage spoilage, infrastructure and material upkeep, food-shortage penalties, and rare local positive or negative events.
 
-The committed regression suite evaluates 250 independent 75-year histories. Current calibration results are approximately:
-
-| Investment | Mean long-run CAGR |
-|---|---:|
-| VILX | 10.1% |
-| RSDN | 11.3% |
-| DPMN | 8.4% |
-| NSPC | 9.0% |
-| ENDR | 8.9% |
-| GLDH | 6.7% |
-| POTN | 8.0% |
-| IRNG | 7.2% |
-| MCRT | 6.8% |
-
-Across those simulations, roughly 27% of VILX years are negative. Severe crashes and unusually strong recoveries occur, but none of these figures is a guarantee for a particular world.
+With visual progression enabled, pending settlers do not produce output until the actual villager entity exists and a census observes it. Infection and long-term emigration also remove residents from productive population without inventing a death event.
 
 ## Savings and CDs
 
-Savings rates move with the economic regime and average near 3% across the long-run regime distribution.
+Savings rates vary by regime and average near 3 percent across the long-run regime distribution.
 
-CDs support 30, 90, 180, and 365-day terms. The rate is locked when the CD opens. Interest stops at maturity. Closing early returns principal minus a 1% penalty and forfeits accrued interest. Automatic renewal is not part of this alpha.
+CDs support 30, 90, 180, and 365-day terms. The rate locks at opening, interest stops at maturity, and closing early returns principal minus a 1 percent penalty while forfeiting accrued interest.
 
 ## Villager business lending
 
-A player may fund one villager business lending position at a time in the alpha. The quoted yield is locked when funded. Economic stress accumulated during the term affects the deterministic default probability at maturity.
+Players can fund villager businesses but can never borrow from them. Lending can fully repay, partially default, or fully default. A player's maximum loss is the amount voluntarily funded. There is no debt balance and no additional repayment obligation.
 
-Possible outcomes are:
-
-- Full repayment with accrued interest
-- Partial default with 45% to 90% recovery of the matured claim
-- Full default with zero recovery
-
-A player's maximum loss is the amount voluntarily invested. No code path creates a debt balance or requires additional payment.
-
-Alpha.2 increased the 30-day and 90-day quoted yields and slightly reduced the 30-day base default probability so short terms provide a meaningful expected premium over savings. The committed path-based test currently observes approximate expected annualized returns of:
-
-| Term | Expected annualized return after defaults |
-|---|---:|
-| 30 days | 6.7% |
-| 90 days | 7.5% |
-| 180 days | 8.0% |
-| 365 days | 12.2% |
-
-The stressed 365-day default-distribution test produces about an 8.2% default rate, about a 1.0% full-default rate, and about 59.5% average recovery conditional on default.
+Current path-based tests target approximate expected annualized returns after defaults of roughly 6.7 percent for 30 days, 7.5 percent for 90 days, 8.0 percent for 180 days, and 12.2 percent for 365 days.
 
 ## Commodity exchange
 
-Diamond, gold, netherite, and emerald-ore values follow mean-reverting markets with regime-sensitive targets. Resource forms use material-equivalent pricing. Diamond, raw-gold, gold, netherite, and emerald blocks are supported alongside valuable ore and processed forms. A gold block is worth nine gold ingots, Nether gold ore is conservatively valued at half an ingot, and a netherite ingot includes four scraps and four gold ingots.
+Diamond, gold, netherite, and emerald-ore values follow mean-reverting markets with regime and event sensitivity. Resource forms use conservative material-equivalent pricing. Village mining and trade can add only a small capped supply pressure when market integration is enabled.
 
 ## Trading friction
 
-Stock and index trades use a 0.25% spread on each side. This prevents cost-free rapid trading and gives future Banker upgrades room to improve execution costs.
+Stock and index trades use a 0.25 percent spread on each side to discourage cost-free rapid trading.

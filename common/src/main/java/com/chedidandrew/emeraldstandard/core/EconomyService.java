@@ -39,11 +39,23 @@ public final class EconomyService {
     private long saveRetryDelayMs = INITIAL_SAVE_RETRY_MS;
     private boolean villageProsperitySimulationEnabled = true;
     private boolean villageVisualProgressionEnabled = true;
+    private boolean villageMarketIntegrationEnabled = true;
+    private boolean villageAutomaticRecoveryEnabled = true;
 
     public synchronized void configureVillageProsperity(
             boolean simulationEnabled, boolean visualProgressionEnabled) {
+        configureVillageProsperity(simulationEnabled, visualProgressionEnabled, true, true);
+    }
+
+    public synchronized void configureVillageProsperity(
+            boolean simulationEnabled,
+            boolean visualProgressionEnabled,
+            boolean marketIntegrationEnabled,
+            boolean automaticRecoveryEnabled) {
         villageProsperitySimulationEnabled = simulationEnabled;
         villageVisualProgressionEnabled = visualProgressionEnabled;
+        villageMarketIntegrationEnabled = marketIntegrationEnabled;
+        villageAutomaticRecoveryEnabled = automaticRecoveryEnabled;
     }
 
     public synchronized boolean villageProsperitySimulationEnabled() {
@@ -252,11 +264,20 @@ public final class EconomyService {
 
     /** Registers or refreshes one loaded village without scanning or loading any chunks here. */
     public synchronized VillageSnapshot observeVillage(VillageObservation observation) {
+        return observeVillage(null, observation);
+    }
+
+    /**
+     * Registers or refreshes a loaded village, preferring an already-tagged stable village identity
+     * when one is supplied by the Minecraft integration layer.
+     */
+    public synchronized VillageSnapshot observeVillage(
+            UUID preferredVillageId, VillageObservation observation) {
         if (state == null || path == null || observation == null) {
             lastError = "Economy service has not started";
             return null;
         }
-        UUID villageId = resolveVillageId(observation);
+        UUID villageId = resolveVillageId(preferredVillageId, observation);
         EconomyState.VillageRecord existing = state.existingVillage(villageId);
         boolean created = existing == null;
         EconomyState.VillageRecord before = existing == null ? null : existing.copy();
@@ -330,9 +351,17 @@ public final class EconomyService {
         if (state == null) {
             return List.of();
         }
+        VillageProsperityEngine.VillageFundamentals fundamentals =
+                villageMarketIntegrationEnabled
+                        ? state.villageFundamentals()
+                        : VillageProsperityEngine.VillageFundamentals.neutral();
         List<VillageSnapshot> snapshots = new ArrayList<>(state.villages.size());
         for (EconomyState.VillageRecord village : state.villages.values()) {
-            snapshots.add(villageSnapshot(village));
+            snapshots.add(new VillageSnapshot(
+                    village.copy(),
+                    fundamentals,
+                    villageProsperitySimulationEnabled,
+                    villageVisualProgressionEnabled));
         }
         return List.copyOf(snapshots);
     }
@@ -371,6 +400,56 @@ public final class EconomyService {
             lastError = message(exception);
             return false;
         }
+    }
+
+    /** Records a loaded-world resident state transition such as zombie infection. */
+    public synchronized boolean recordResidentStatus(
+            UUID villageId,
+            UUID residentId,
+            String profession,
+            long packedPosition,
+            VillageProsperityEngine.ResidentStatus status) {
+        if (state == null || path == null || villageId == null || residentId == null || status == null) {
+            return false;
+        }
+        return mutateVillage(villageId, false, village -> {
+            EconomyState.ResidentRecord resident = village.residents.get(residentId);
+            if (resident == null && status == VillageProsperityEngine.ResidentStatus.INFECTED) {
+                resident = nearestResidentWithStatus(
+                        village, packedPosition, 16.0,
+                        VillageProsperityEngine.ResidentStatus.INFECTED,
+                        VillageProsperityEngine.ResidentStatus.ACTIVE);
+            }
+            if (resident == null) {
+                resident = new EconomyState.ResidentRecord();
+                resident.residentId = residentId;
+                village.residents.put(residentId, resident);
+            }
+            if (resident.status == VillageProsperityEngine.ResidentStatus.DEAD) {
+                return true;
+            }
+            VillageProsperityEngine.ResidentStatus previous = resident.status;
+            if (profession != null && !profession.isBlank()) {
+                resident.profession = profession;
+            }
+            resident.status = status;
+            resident.lastSeenDay = state.economicDay;
+            resident.lastKnownPos = packedPosition;
+
+            if (status == VillageProsperityEngine.ResidentStatus.INFECTED
+                    && previous != VillageProsperityEngine.ResidentStatus.INFECTED) {
+                village.population = Math.max(0, village.population - 1);
+                village.observedPopulation = Math.max(0, village.observedPopulation - 1);
+                village.safety = Math.max(0.0, village.safety - 5.0);
+                village.prosperity = Math.max(0.0, village.prosperity - 2.0);
+                if (village.population <= 0) {
+                    village.lifecycle = VillageProsperityEngine.Lifecycle.DEVASTATED;
+                } else if (village.population <= 2) {
+                    village.lifecycle = VillageProsperityEngine.Lifecycle.THREATENED;
+                }
+            }
+            return true;
+        });
     }
 
     /** Records an actual loaded-world villager casualty. Missing or unloaded villagers are not deaths. */
@@ -552,6 +631,23 @@ public final class EconomyService {
         });
     }
 
+    /** Releases a reserved project site when construction was blocked before any block was placed. */
+    public synchronized boolean releaseVillageProjectSite(UUID villageId, long projectId) {
+        return mutateVillage(villageId, true, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null
+                    || project.materializedComplete
+                    || project.materializedBlocks > 0
+                    || project.abstractOnly) {
+                return false;
+            }
+            project.originPos = 0L;
+            project.totalBlocks = project.type.nominalBlocks();
+            project.blocked = false;
+            return true;
+        });
+    }
+
     public synchronized boolean updateVillageProjectMaterialization(
             UUID villageId,
             long projectId,
@@ -634,7 +730,7 @@ public final class EconomyService {
         }
     }
 
-    private UUID resolveVillageId(VillageObservation observation) {
+    private UUID resolveVillageId(UUID preferredVillageId, VillageObservation observation) {
         UUID byRegion = state.bankRegionVillageIds.get(observation.bankRegionKey());
         if (byRegion != null) {
             EconomyState.VillageRecord mapped = state.existingVillage(byRegion);
@@ -642,8 +738,16 @@ public final class EconomyService {
                 return byRegion;
             }
         }
+        if (preferredVillageId != null) {
+            EconomyState.VillageRecord preferred = state.existingVillage(preferredVillageId);
+            if (preferred != null
+                    && Objects.equals(preferred.dimensionKey, observation.dimensionKey())
+                    && distanceSquared(preferred.centerPos, observation.centerPos()) <= 72.0 * 72.0) {
+                return preferredVillageId;
+            }
+        }
         EconomyState.VillageRecord nearby = nearestVillage(
-                observation.dimensionKey(), observation.centerPos(), 96.0);
+                observation.dimensionKey(), observation.centerPos(), 48.0);
         if (nearby != null) {
             return nearby.villageId;
         }
@@ -732,12 +836,20 @@ public final class EconomyService {
                 continue;
             }
             seen.add(observed.residentId());
-            EconomyState.ResidentRecord resident = village.residents.computeIfAbsent(
-                    observed.residentId(), ignored -> {
-                        EconomyState.ResidentRecord created = new EconomyState.ResidentRecord();
-                        created.residentId = observed.residentId();
-                        return created;
-                    });
+            EconomyState.ResidentRecord resident = village.residents.get(observed.residentId());
+            if (resident == null) {
+                EconomyState.ResidentRecord infected = nearestResidentWithStatus(
+                        village,
+                        observed.packedPosition(),
+                        16.0,
+                        VillageProsperityEngine.ResidentStatus.INFECTED);
+                if (infected != null) {
+                    village.residents.remove(infected.residentId);
+                }
+                resident = new EconomyState.ResidentRecord();
+                resident.residentId = observed.residentId();
+                village.residents.put(observed.residentId(), resident);
+            }
             resident.profession = observed.profession() == null || observed.profession().isBlank()
                     ? "minecraft:none"
                     : observed.profession();
@@ -745,12 +857,26 @@ public final class EconomyService {
             resident.lastSeenDay = state.economicDay;
             resident.lastKnownPos = observed.packedPosition();
         }
+        int emigrated = 0;
         for (EconomyState.ResidentRecord resident : village.residents.values()) {
-            if (!seen.contains(resident.residentId)
-                    && resident.status == VillageProsperityEngine.ResidentStatus.ACTIVE
-                    && state.economicDay - resident.lastSeenDay >= 3L) {
+            if (seen.contains(resident.residentId)) {
+                continue;
+            }
+            long missingDays = state.economicDay - resident.lastSeenDay;
+            if (resident.status == VillageProsperityEngine.ResidentStatus.ACTIVE
+                    && missingDays >= 3L) {
                 resident.status = VillageProsperityEngine.ResidentStatus.AWAY;
             }
+            if (resident.status == VillageProsperityEngine.ResidentStatus.AWAY
+                    && missingDays >= 30L) {
+                resident.status = VillageProsperityEngine.ResidentStatus.EMIGRATED;
+                emigrated++;
+            }
+        }
+        if (emigrated > 0) {
+            village.population = Math.max(
+                    village.observedPopulation,
+                    Math.max(0, village.population - emigrated));
         }
         while (village.residents.size() > VillageProsperityEngine.RESIDENT_HISTORY_LIMIT) {
             UUID removable = village.residents.entrySet().stream()
@@ -791,18 +917,50 @@ public final class EconomyService {
         if (!villageProsperitySimulationEnabled
                 && villageVisualProgressionEnabled
                 && previousCensusDay < state.economicDay) {
-            VillageProsperityEngine.advanceVisualOnlyPulse(
-                    village, state.seed, state.economicDay);
+            if (village.population > 0 || villageAutomaticRecoveryEnabled) {
+                VillageProsperityEngine.advanceVisualOnlyPulse(
+                        village, state.seed, state.economicDay);
+            }
         }
         village.lastCensusDay = state.economicDay;
     }
 
     private VillageSnapshot villageSnapshot(EconomyState.VillageRecord village) {
+        VillageProsperityEngine.VillageFundamentals fundamentals =
+                villageMarketIntegrationEnabled
+                        ? state.villageFundamentals()
+                        : VillageProsperityEngine.VillageFundamentals.neutral();
         return new VillageSnapshot(
                 village.copy(),
-                state.villageFundamentals(),
+                fundamentals,
                 villageProsperitySimulationEnabled,
                 villageVisualProgressionEnabled);
+    }
+
+    private static EconomyState.ResidentRecord nearestResidentWithStatus(
+            EconomyState.VillageRecord village,
+            long packedPosition,
+            double maximumDistance,
+            VillageProsperityEngine.ResidentStatus... statuses) {
+        if (village == null || statuses == null || statuses.length == 0) {
+            return null;
+        }
+        java.util.Set<VillageProsperityEngine.ResidentStatus> accepted =
+                java.util.Set.of(statuses);
+        double maximumDistanceSquared = maximumDistance * maximumDistance;
+        EconomyState.ResidentRecord best = null;
+        double bestDistance = maximumDistanceSquared;
+        for (EconomyState.ResidentRecord resident : village.residents.values()) {
+            if (!accepted.contains(resident.status)) {
+                continue;
+            }
+            double distance = distanceSquared(resident.lastKnownPos, packedPosition);
+            if (distance <= bestDistance) {
+                best = resident;
+                bestDistance = distance;
+            }
+        }
+        return best;
     }
 
     private static EconomyState.VillageProject findProject(
@@ -1285,7 +1443,11 @@ public final class EconomyService {
 
     private void advance(long days) {
         for (long day = 0L; day < days; day++) {
-            state.advanceOneDay(villageProsperitySimulationEnabled);
+            state.advanceOneDay(
+                    villageProsperitySimulationEnabled,
+                    villageVisualProgressionEnabled,
+                    villageMarketIntegrationEnabled,
+                    villageAutomaticRecoveryEnabled);
         }
     }
 

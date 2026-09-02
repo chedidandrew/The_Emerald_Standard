@@ -2,6 +2,66 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## 0.3.0-beta.2 - 2026-09-02
+
+### Added
+
+- Independent `village_prosperity.market_integration_enabled` and `village_prosperity.automatic_recovery_enabled` world settings.
+- Physical-first population reconciliation when visible settlement progression is enabled.
+- Persisted resident-tag preference when resolving an already-known village identity.
+- Zombie-villager infection and cure reconciliation that suspends productive population without inventing a death.
+- Long-absence emigration behavior for residents who remain away from a repeatedly observed settlement.
+- Real beds in Cottage projects and physical-bed checks before settlers may materialize.
+- Local food spoilage, infrastructure upkeep, material upkeep, shortages, and rare positive or negative village shocks.
+- Regression coverage for physical-first recovery, simulation-only recovery, disabled automatic recovery, market-integration isolation, emigration, infection idempotence, cure reconciliation, stable tagged identity, physical population growth, and declining functional tiers.
+
+### Changed
+
+- Bumped Fabric and NeoForge versions to `0.3.0-beta.2`.
+- Normal population growth queues a physical settler instead of creating a productive invisible resident when visual progression is enabled.
+- Village centers prefer a nearby bell and fall back to the observed resident cluster.
+- Existing tagged resident identity is preferred before proximity-based village reuse.
+- Unassociated proximity reuse is tighter to reduce accidental merging of neighboring settlements.
+- Functional development tier may decline after collapse while completed physical structures remain intact.
+- Default development construction pacing is reduced to two blocks every ten server ticks.
+- Village snapshot lists reuse one global-fundamentals calculation rather than recomputing it for every settlement.
+- Warehouses use chests instead of barrels so prosperity structures do not create unintended fisherman workstations.
+- Player-owned projectile deaths use the projectile owner for player-cause attribution when Minecraft exposes it.
+
+### Fixed
+
+- Prevented Extinct villages from resuming production or market influence before physical settlers actually exist when visual progression is enabled.
+- Prevented normal simulated population growth from getting ahead of physical residents in visual worlds.
+- Prevented prosperity structures from replacing the existing terrain surface, village paths, farmland, player floors, containers, and other solid blocks.
+- Restricted development lots to a conservative natural-ground whitelist and made failed Minecraft block placements stop progress instead of being counted as successful.
+- Released a project site when it is blocked before the first physical placement so another safe lot can be selected later.
+- Removed the old eight-settler convergence ceiling when visuals are re-enabled after long simulation-only periods.
+- Prevented repeated zombie observations from decrementing the same productive resident more than once.
+- Allowed cured residents to reconcile stale infection records when entity UUIDs change across conversion.
+- Prevented an Extinct settlement from retaining a permanently elevated functional development tier.
+
+## 0.3.0-beta.1 - 2026-09-02
+
+### Added
+
+- The first Village Prosperity System with persistent settlement identities and loader-neutral abstract simulation.
+- Village population, housing, food, materials, treasury, prosperity, safety, farming, mining, trade, redstone, alchemy, transportation, security, and development-point tracking.
+- Active, Threatened, Devastated, Extinct, Recovering, and Abandoned village lifecycle states.
+- Persistent resident and incident records with explicit player, hostile, raid, environmental, and unknown casualty categories.
+- Cottage, Warehouse, and Mine Entrance development projects with economic and physical progress.
+- Bounded gradual construction while players are nearby and chunks are already loaded.
+- Capped village fundamentals for the global investment and commodity simulation.
+- A fifth Banker dashboard page for village status, development, and restoration support.
+- Save format 6 persistence for villages, residents, incidents, projects, construction state, and bank associations.
+- Village Prosperity regression tests.
+
+### Changed
+
+- Promoted the project from alpha to the first beta line.
+- Connected the global market to local Minecraft settlement fundamentals while keeping offline progression data-only.
+- Suppressed free Banker replacement for Extinct and Abandoned settlements.
+- Added restoration funding for player-abandoned settlements without introducing player borrowing or debt.
+
 ## 0.2.0-alpha.3 - 2026-09-01
 
 ### Added
