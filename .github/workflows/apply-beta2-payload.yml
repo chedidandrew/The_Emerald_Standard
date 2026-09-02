@@ -1,0 +1,42 @@
+name: Apply beta2 hardening payload
+
+on:
+  push:
+    branches:
+      - fix/beta2-world-hardening
+    paths:
+      - '.beta2-payload/**'
+      - '.github/workflows/apply-beta2-payload.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Rebuild and verify hardening payload
+        run: |
+          cat .beta2-payload/part-* | base64 --decode > /tmp/beta2-payload.tar.xz
+          echo "993ef9e1b831093cf28629037cf74dae7e6ea498939eec1babc8541e2f5b9426  /tmp/beta2-payload.tar.xz" | sha256sum --check --strict
+          tar -xJf /tmp/beta2-payload.tar.xz -C .
+          bash scripts/run-common-tests.sh
+          rm -rf .beta2-payload
+          rm .github/workflows/apply-beta2-payload.yml
+          git diff --check
+      - name: Commit beta2 hardening source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Harden Village Prosperity for 0.3.0-beta.2" -m "Keep abstract and physical settlement state aligned, protect player terrain during gradual construction, complete resident lifecycle handling, add independent recovery and market-integration toggles, slow visual materialization, improve village identity reuse and performance, and update all beta documentation and release history."
+          git push origin HEAD:fix/beta2-world-hardening
