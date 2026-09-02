@@ -27,7 +27,7 @@ jobs:
       - name: Rebuild and verify hardening payload
         run: |
           cat .beta2-payload/part-* | base64 --decode > /tmp/beta2-payload.tar.xz
-          echo "993ef9e1b831093cf28629037cf74dae7e6ea498939eec1babc8541e2f5b9426  /tmp/beta2-payload.tar.xz" | sha256sum --check --strict
+          echo "4f8dd72b762b7668f1da7aa00415fb09a5c1e3f862d263b11fa506ee3133df82  /tmp/beta2-payload.tar.xz" | sha256sum --check --strict
           tar -xJf /tmp/beta2-payload.tar.xz -C .
           bash scripts/run-common-tests.sh
           rm -rf .beta2-payload
