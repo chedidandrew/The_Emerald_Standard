@@ -15,6 +15,7 @@ javac --release 21 -cp "$BUILD" -d "$BUILD" "${TEST_SOURCES[@]}"
 
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.PersistenceRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageProsperityRegressionTest
 
 fabric_version="$(grep '^mod_version=' "$ROOT/fabric/gradle.properties" | cut -d= -f2-)"
 neo_version="$(grep '^mod_version=' "$ROOT/neoforge/gradle.properties" | cut -d= -f2-)"

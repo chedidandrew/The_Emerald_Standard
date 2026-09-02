@@ -147,6 +147,12 @@ final class EconomyPersistence {
                 properties.setProperty(
                         "bank.anchor." + Long.toUnsignedString(region, 16),
                         Long.toString(anchor)));
+        state.bankRegionVillageIds.forEach((region, villageId) ->
+                properties.setProperty(
+                        "bank.village." + Long.toUnsignedString(region, 16),
+                        villageId.toString()));
+        state.villages.forEach((villageId, village) ->
+                writeVillage(properties, villageId, village));
 
         for (Map.Entry<UUID, EconomyState.Account> entry : state.accounts.entrySet()) {
             writeAccount(properties, entry.getKey(), entry.getValue());
@@ -156,6 +162,84 @@ final class EconomyPersistence {
             writeTransaction(properties, entry.getKey(), entry.getValue());
         }
         return properties;
+    }
+
+    private static void writeVillage(
+            Properties properties,
+            UUID villageId,
+            EconomyState.VillageRecord village) {
+        String prefix = "village." + villageId + ".";
+        properties.setProperty(prefix + "dimension", village.dimensionKey);
+        properties.setProperty(prefix + "center", Long.toString(village.centerPos));
+        properties.setProperty(prefix + "bank_region", Long.toString(village.bankRegionKey));
+        properties.setProperty(prefix + "bank_anchor", Long.toString(village.bankAnchorPos));
+        properties.setProperty(prefix + "discovered", Long.toString(village.discoveredDay));
+        properties.setProperty(prefix + "simulated", Long.toString(village.lastSimulatedDay));
+        properties.setProperty(prefix + "census", Long.toString(village.lastCensusDay));
+        properties.setProperty(prefix + "last_incident", Long.toString(village.lastIncidentDay));
+        properties.setProperty(prefix + "recovery", Long.toString(village.recoveryEligibleDay));
+        properties.setProperty(prefix + "abandoned", Long.toString(village.abandonedSinceDay));
+        properties.setProperty(prefix + "last_collapse", Long.toString(village.lastCollapseDay));
+        properties.setProperty(prefix + "market_suppressed", Long.toString(village.marketSuppressedUntilDay));
+        properties.setProperty(prefix + "lifecycle", village.lifecycle.name());
+        properties.setProperty(prefix + "incident_cause", village.lastIncidentCause.name());
+        properties.setProperty(prefix + "population", Integer.toString(village.population));
+        properties.setProperty(prefix + "observed_population", Integer.toString(village.observedPopulation));
+        properties.setProperty(prefix + "housing", Integer.toString(village.housingCapacity));
+        properties.setProperty(prefix + "pending_settlers", Integer.toString(village.pendingSettlers));
+        properties.setProperty(prefix + "tier", Integer.toString(village.developmentTier));
+        properties.setProperty(prefix + "collapse_count", Integer.toString(village.collapseCount));
+        properties.setProperty(prefix + "casualties.hostile", Integer.toString(village.hostileCasualties));
+        properties.setProperty(prefix + "casualties.player", Integer.toString(village.playerCasualties));
+        properties.setProperty(prefix + "casualties.environmental", Integer.toString(village.environmentalCasualties));
+        properties.setProperty(prefix + "food", Double.toString(village.foodSupply));
+        properties.setProperty(prefix + "materials", Double.toString(village.materialSupply));
+        properties.setProperty(prefix + "treasury", Double.toString(village.treasury));
+        properties.setProperty(prefix + "prosperity", Double.toString(village.prosperity));
+        properties.setProperty(prefix + "safety", Double.toString(village.safety));
+        properties.setProperty(prefix + "output.agriculture", Double.toString(village.agricultureOutput));
+        properties.setProperty(prefix + "output.mining", Double.toString(village.miningOutput));
+        properties.setProperty(prefix + "output.trade", Double.toString(village.tradeOutput));
+        properties.setProperty(prefix + "output.redstone", Double.toString(village.redstoneOutput));
+        properties.setProperty(prefix + "output.alchemy", Double.toString(village.alchemyOutput));
+        properties.setProperty(prefix + "output.transport", Double.toString(village.transportOutput));
+        properties.setProperty(prefix + "output.security", Double.toString(village.securityOutput));
+        properties.setProperty(prefix + "restoration_fund", Double.toString(village.restorationFund));
+        properties.setProperty(prefix + "development_points", Double.toString(village.developmentPoints));
+        properties.setProperty(prefix + "restoration_funded", Boolean.toString(village.restorationFunded));
+        properties.setProperty(prefix + "project_serial", Long.toString(village.projectSerial));
+
+        village.residents.forEach((residentId, resident) -> {
+            String residentPrefix = prefix + "resident." + residentId + ".";
+            properties.setProperty(residentPrefix + "profession", resident.profession);
+            properties.setProperty(residentPrefix + "status", resident.status.name());
+            properties.setProperty(residentPrefix + "last_seen", Long.toString(resident.lastSeenDay));
+            properties.setProperty(residentPrefix + "pos", Long.toString(resident.lastKnownPos));
+        });
+        for (EconomyState.VillageProject project : village.projects) {
+            String projectPrefix = prefix + "project." + project.projectId + ".";
+            properties.setProperty(projectPrefix + "type", project.type.name());
+            properties.setProperty(projectPrefix + "approved", Long.toString(project.approvedDay));
+            properties.setProperty(projectPrefix + "completed", Long.toString(project.completedDay));
+            properties.setProperty(projectPrefix + "progress", Double.toString(project.economicProgress));
+            properties.setProperty(projectPrefix + "economic_complete", Boolean.toString(project.economicComplete));
+            properties.setProperty(projectPrefix + "origin", Long.toString(project.originPos));
+            properties.setProperty(projectPrefix + "blocks", Integer.toString(project.materializedBlocks));
+            properties.setProperty(projectPrefix + "total_blocks", Integer.toString(project.totalBlocks));
+            properties.setProperty(projectPrefix + "materialized_complete", Boolean.toString(project.materializedComplete));
+            properties.setProperty(projectPrefix + "blocked", Boolean.toString(project.blocked));
+            properties.setProperty(projectPrefix + "abstract_only", Boolean.toString(project.abstractOnly));
+        }
+        for (int index = 0; index < village.incidents.size(); index++) {
+            EconomyState.VillageIncident incident = village.incidents.get(index);
+            String incidentPrefix = prefix + "incident." + index + ".";
+            properties.setProperty(incidentPrefix + "day", Long.toString(incident.day));
+            properties.setProperty(incidentPrefix + "cause", incident.cause.name());
+            properties.setProperty(incidentPrefix + "casualties", Integer.toString(incident.casualties));
+            properties.setProperty(incidentPrefix + "player",
+                    incident.responsiblePlayer == null ? "" : incident.responsiblePlayer.toString());
+            properties.setProperty(incidentPrefix + "market", Boolean.toString(incident.marketEligible));
+        }
     }
 
     private static void writeAccount(
@@ -294,6 +378,10 @@ final class EconomyPersistence {
             if (format >= 5) {
                 loadGeneratedBankAnchors(state, properties);
             }
+            if (format >= 6) {
+                loadVillages(state, properties);
+                loadBankVillageAssociations(state, properties);
+            }
 
             if (format >= 2) {
                 loadCurrentAccounts(state, properties);
@@ -309,6 +397,201 @@ final class EconomyPersistence {
             throw exception;
         } catch (RuntimeException exception) {
             throw new IOException("Invalid economy save data in " + path.getFileName(), exception);
+        }
+    }
+
+    private static void loadVillages(EconomyState state, Properties properties)
+            throws IOException {
+        Map<UUID, Map<Long, EconomyState.VillageProject>> projects = new TreeMap<>();
+        Map<UUID, Map<Integer, EconomyState.VillageIncident>> incidents = new TreeMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith("village.")) {
+                continue;
+            }
+            int uuidEnd = key.indexOf('.', "village.".length());
+            if (uuidEnd < 0) {
+                throw new IOException("Invalid village property " + key);
+            }
+            UUID villageId = UUID.fromString(key.substring("village.".length(), uuidEnd));
+            String field = key.substring(uuidEnd + 1);
+            EconomyState.VillageRecord village = state.village(villageId);
+            village.villageId = villageId;
+            String value = properties.getProperty(key);
+            if (field.startsWith("resident.")) {
+                applyResidentField(village, field, value);
+            } else if (field.startsWith("project.")) {
+                applyProjectField(projects, villageId, field, value);
+            } else if (field.startsWith("incident.")) {
+                applyIncidentField(incidents, villageId, field, value);
+            } else {
+                applyVillageField(village, field, value);
+            }
+        }
+        for (Map.Entry<UUID, Map<Long, EconomyState.VillageProject>> entry : projects.entrySet()) {
+            EconomyState.VillageRecord village = state.villages.get(entry.getKey());
+            if (village != null) {
+                village.projects.addAll(entry.getValue().values());
+            }
+        }
+        for (Map.Entry<UUID, Map<Integer, EconomyState.VillageIncident>> entry : incidents.entrySet()) {
+            EconomyState.VillageRecord village = state.villages.get(entry.getKey());
+            if (village != null) {
+                village.incidents.addAll(entry.getValue().values());
+            }
+        }
+    }
+
+    private static void applyVillageField(
+            EconomyState.VillageRecord village, String field, String value) {
+        switch (field) {
+            case "dimension" -> village.dimensionKey = value;
+            case "center" -> village.centerPos = Long.parseLong(value);
+            case "bank_region" -> village.bankRegionKey = Long.parseLong(value);
+            case "bank_anchor" -> village.bankAnchorPos = Long.parseLong(value);
+            case "discovered" -> village.discoveredDay = Long.parseLong(value);
+            case "simulated" -> village.lastSimulatedDay = Long.parseLong(value);
+            case "census" -> village.lastCensusDay = Long.parseLong(value);
+            case "last_incident" -> village.lastIncidentDay = Long.parseLong(value);
+            case "recovery" -> village.recoveryEligibleDay = Long.parseLong(value);
+            case "abandoned" -> village.abandonedSinceDay = Long.parseLong(value);
+            case "last_collapse" -> village.lastCollapseDay = Long.parseLong(value);
+            case "market_suppressed" -> village.marketSuppressedUntilDay = Long.parseLong(value);
+            case "lifecycle" -> village.lifecycle = VillageProsperityEngine.Lifecycle.valueOf(value);
+            case "incident_cause" -> village.lastIncidentCause =
+                    VillageProsperityEngine.IncidentCause.valueOf(value);
+            case "population" -> village.population = Integer.parseInt(value);
+            case "observed_population" -> village.observedPopulation = Integer.parseInt(value);
+            case "housing" -> village.housingCapacity = Integer.parseInt(value);
+            case "pending_settlers" -> village.pendingSettlers = Integer.parseInt(value);
+            case "tier" -> village.developmentTier = Integer.parseInt(value);
+            case "collapse_count" -> village.collapseCount = Integer.parseInt(value);
+            case "casualties.hostile" -> village.hostileCasualties = Integer.parseInt(value);
+            case "casualties.player" -> village.playerCasualties = Integer.parseInt(value);
+            case "casualties.environmental" -> village.environmentalCasualties = Integer.parseInt(value);
+            case "food" -> village.foodSupply = Double.parseDouble(value);
+            case "materials" -> village.materialSupply = Double.parseDouble(value);
+            case "treasury" -> village.treasury = Double.parseDouble(value);
+            case "prosperity" -> village.prosperity = Double.parseDouble(value);
+            case "safety" -> village.safety = Double.parseDouble(value);
+            case "output.agriculture" -> village.agricultureOutput = Double.parseDouble(value);
+            case "output.mining" -> village.miningOutput = Double.parseDouble(value);
+            case "output.trade" -> village.tradeOutput = Double.parseDouble(value);
+            case "output.redstone" -> village.redstoneOutput = Double.parseDouble(value);
+            case "output.alchemy" -> village.alchemyOutput = Double.parseDouble(value);
+            case "output.transport" -> village.transportOutput = Double.parseDouble(value);
+            case "output.security" -> village.securityOutput = Double.parseDouble(value);
+            case "restoration_fund" -> village.restorationFund = Double.parseDouble(value);
+            case "development_points" -> village.developmentPoints = Double.parseDouble(value);
+            case "restoration_funded" -> village.restorationFunded = Boolean.parseBoolean(value);
+            case "project_serial" -> village.projectSerial = Long.parseLong(value);
+            default -> {
+                // Ignore unknown fields from this supported format.
+            }
+        }
+    }
+
+    private static void applyResidentField(
+            EconomyState.VillageRecord village, String field, String value) {
+        String remainder = field.substring("resident.".length());
+        int uuidEnd = remainder.indexOf('.');
+        if (uuidEnd < 0) {
+            throw new IllegalArgumentException("Invalid resident property " + field);
+        }
+        UUID residentId = UUID.fromString(remainder.substring(0, uuidEnd));
+        String residentField = remainder.substring(uuidEnd + 1);
+        EconomyState.ResidentRecord resident = village.residents.computeIfAbsent(
+                residentId, ignored -> {
+                    EconomyState.ResidentRecord record = new EconomyState.ResidentRecord();
+                    record.residentId = residentId;
+                    return record;
+                });
+        switch (residentField) {
+            case "profession" -> resident.profession = value;
+            case "status" -> resident.status = VillageProsperityEngine.ResidentStatus.valueOf(value);
+            case "last_seen" -> resident.lastSeenDay = Long.parseLong(value);
+            case "pos" -> resident.lastKnownPos = Long.parseLong(value);
+            default -> {
+            }
+        }
+    }
+
+    private static void applyProjectField(
+            Map<UUID, Map<Long, EconomyState.VillageProject>> all,
+            UUID villageId,
+            String field,
+            String value) {
+        String remainder = field.substring("project.".length());
+        int idEnd = remainder.indexOf('.');
+        if (idEnd < 0) {
+            throw new IllegalArgumentException("Invalid project property " + field);
+        }
+        long projectId = Long.parseLong(remainder.substring(0, idEnd));
+        String projectField = remainder.substring(idEnd + 1);
+        EconomyState.VillageProject project = all
+                .computeIfAbsent(villageId, ignored -> new TreeMap<>())
+                .computeIfAbsent(projectId, ignored -> {
+                    EconomyState.VillageProject created = new EconomyState.VillageProject();
+                    created.projectId = projectId;
+                    return created;
+                });
+        switch (projectField) {
+            case "type" -> project.type = VillageProsperityEngine.ProjectType.valueOf(value);
+            case "approved" -> project.approvedDay = Long.parseLong(value);
+            case "completed" -> project.completedDay = Long.parseLong(value);
+            case "progress" -> project.economicProgress = Double.parseDouble(value);
+            case "economic_complete" -> project.economicComplete = Boolean.parseBoolean(value);
+            case "origin" -> project.originPos = Long.parseLong(value);
+            case "blocks" -> project.materializedBlocks = Integer.parseInt(value);
+            case "total_blocks" -> project.totalBlocks = Integer.parseInt(value);
+            case "materialized_complete" -> project.materializedComplete = Boolean.parseBoolean(value);
+            case "blocked" -> project.blocked = Boolean.parseBoolean(value);
+            case "abstract_only" -> project.abstractOnly = Boolean.parseBoolean(value);
+            default -> {
+            }
+        }
+    }
+
+    private static void applyIncidentField(
+            Map<UUID, Map<Integer, EconomyState.VillageIncident>> all,
+            UUID villageId,
+            String field,
+            String value) {
+        String remainder = field.substring("incident.".length());
+        int indexEnd = remainder.indexOf('.');
+        if (indexEnd < 0) {
+            throw new IllegalArgumentException("Invalid incident property " + field);
+        }
+        int index = Integer.parseInt(remainder.substring(0, indexEnd));
+        String incidentField = remainder.substring(indexEnd + 1);
+        EconomyState.VillageIncident incident = all
+                .computeIfAbsent(villageId, ignored -> new TreeMap<>())
+                .computeIfAbsent(index, ignored -> new EconomyState.VillageIncident());
+        switch (incidentField) {
+            case "day" -> incident.day = Long.parseLong(value);
+            case "cause" -> incident.cause = VillageProsperityEngine.IncidentCause.valueOf(value);
+            case "casualties" -> incident.casualties = Integer.parseInt(value);
+            case "player" -> incident.responsiblePlayer = value.isBlank() ? null : UUID.fromString(value);
+            case "market" -> incident.marketEligible = Boolean.parseBoolean(value);
+            default -> {
+            }
+        }
+    }
+
+    private static void loadBankVillageAssociations(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.village.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                UUID villageId = UUID.fromString(properties.getProperty(key));
+                state.bankRegionVillageIds.put(region, villageId);
+            } catch (RuntimeException exception) {
+                throw new IOException("Invalid bank-village association " + encoded, exception);
+            }
         }
     }
 

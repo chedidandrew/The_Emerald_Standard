@@ -3,6 +3,8 @@ package com.chedidandrew.emeraldstandard.core;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -35,6 +37,22 @@ public final class EconomyService {
     private long nextAutomaticSaveMs;
     private long nextSaveRetryMs;
     private long saveRetryDelayMs = INITIAL_SAVE_RETRY_MS;
+    private boolean villageProsperitySimulationEnabled = true;
+    private boolean villageVisualProgressionEnabled = true;
+
+    public synchronized void configureVillageProsperity(
+            boolean simulationEnabled, boolean visualProgressionEnabled) {
+        villageProsperitySimulationEnabled = simulationEnabled;
+        villageVisualProgressionEnabled = visualProgressionEnabled;
+    }
+
+    public synchronized boolean villageProsperitySimulationEnabled() {
+        return villageProsperitySimulationEnabled;
+    }
+
+    public synchronized boolean villageVisualProgressionEnabled() {
+        return villageVisualProgressionEnabled;
+    }
 
     public synchronized void start(Path worldDataDirectory, long worldSeed, long gameTicks)
             throws IOException {
@@ -230,6 +248,596 @@ public final class EconomyService {
             scheduleSaveRetry(state.lastWallClockMs);
             return false;
         }
+    }
+
+    /** Registers or refreshes one loaded village without scanning or loading any chunks here. */
+    public synchronized VillageSnapshot observeVillage(VillageObservation observation) {
+        if (state == null || path == null || observation == null) {
+            lastError = "Economy service has not started";
+            return null;
+        }
+        UUID villageId = resolveVillageId(observation);
+        EconomyState.VillageRecord existing = state.existingVillage(villageId);
+        boolean created = existing == null;
+        EconomyState.VillageRecord before = existing == null ? null : existing.copy();
+        UUID previousRegionAssociation = observation.bankRegionKey() == 0L
+                ? null
+                : state.bankRegionVillageIds.get(observation.bankRegionKey());
+        boolean dirtyBefore = dirty;
+        try {
+            EconomyState.VillageRecord village = state.village(villageId);
+            if (created) {
+                initializeVillage(village, observation);
+            }
+            updateVillageObservation(village, observation);
+            if (observation.bankRegionKey() != 0L
+                    && state.generatedBankRegions.contains(observation.bankRegionKey())) {
+                state.bankRegionVillageIds.put(observation.bankRegionKey(), villageId);
+                village.bankRegionKey = observation.bankRegionKey();
+                Long anchor = state.generatedBankAnchors.get(observation.bankRegionKey());
+                if (anchor != null) {
+                    village.bankAnchorPos = anchor;
+                }
+            }
+            dirty = true;
+            if (created) {
+                state.save(path);
+                dirty = false;
+                resetSaveSchedule(state.lastWallClockMs);
+            }
+            lastError = "";
+            return villageSnapshot(village);
+        } catch (IOException | RuntimeException exception) {
+            if (before == null) {
+                state.villages.remove(villageId);
+            } else {
+                state.villages.put(villageId, before);
+            }
+            if (observation.bankRegionKey() != 0L) {
+                if (previousRegionAssociation == null) {
+                    state.bankRegionVillageIds.remove(observation.bankRegionKey());
+                } else {
+                    state.bankRegionVillageIds.put(
+                            observation.bankRegionKey(), previousRegionAssociation);
+                }
+            }
+            dirty = dirtyBefore;
+            lastError = message(exception);
+            scheduleSaveRetry(state.lastWallClockMs);
+            return null;
+        }
+    }
+
+    public synchronized VillageSnapshot villageSnapshot(UUID villageId) {
+        if (state == null || villageId == null) {
+            return null;
+        }
+        EconomyState.VillageRecord village = state.existingVillage(villageId);
+        return village == null ? null : villageSnapshot(village);
+    }
+
+    public synchronized VillageSnapshot nearestVillageSnapshot(
+            String dimensionKey, long packedPosition, double maximumDistance) {
+        if (state == null) {
+            return null;
+        }
+        EconomyState.VillageRecord village = nearestVillage(
+                dimensionKey, packedPosition, maximumDistance);
+        return village == null ? null : villageSnapshot(village);
+    }
+
+    public synchronized List<VillageSnapshot> villageSnapshots() {
+        if (state == null) {
+            return List.of();
+        }
+        List<VillageSnapshot> snapshots = new ArrayList<>(state.villages.size());
+        for (EconomyState.VillageRecord village : state.villages.values()) {
+            snapshots.add(villageSnapshot(village));
+        }
+        return List.copyOf(snapshots);
+    }
+
+    public synchronized UUID villageIdForBankRegion(long regionKey) {
+        return state == null ? null : state.bankRegionVillageIds.get(regionKey);
+    }
+
+    public synchronized boolean associateBankRegionWithVillage(
+            long regionKey, UUID villageId, long packedAnchor) {
+        if (state == null || path == null || villageId == null) {
+            return false;
+        }
+        EconomyState.VillageRecord village = state.existingVillage(villageId);
+        if (village == null || !state.generatedBankRegions.contains(regionKey)) {
+            return false;
+        }
+        EconomyState.VillageRecord before = village.copy();
+        UUID previous = state.bankRegionVillageIds.get(regionKey);
+        try {
+            state.bankRegionVillageIds.put(regionKey, villageId);
+            village.bankRegionKey = regionKey;
+            village.bankAnchorPos = packedAnchor;
+            state.save(path);
+            dirty = false;
+            resetSaveSchedule(state.lastWallClockMs);
+            lastError = "";
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            state.villages.put(villageId, before);
+            if (previous == null) {
+                state.bankRegionVillageIds.remove(regionKey);
+            } else {
+                state.bankRegionVillageIds.put(regionKey, previous);
+            }
+            lastError = message(exception);
+            return false;
+        }
+    }
+
+    /** Records an actual loaded-world villager casualty. Missing or unloaded villagers are not deaths. */
+    public synchronized boolean recordVillagerDeath(
+            UUID villageId,
+            UUID residentId,
+            String profession,
+            long packedPosition,
+            VillageProsperityEngine.IncidentCause cause,
+            UUID responsiblePlayer) {
+        if (state == null || path == null || villageId == null || cause == null) {
+            return false;
+        }
+        EconomyState.VillageRecord village = state.existingVillage(villageId);
+        if (village == null) {
+            return false;
+        }
+        EconomyState.VillageRecord before = village.copy();
+        try {
+            EconomyState.ResidentRecord resident = residentId == null
+                    ? null
+                    : village.residents.get(residentId);
+            if (resident != null
+                    && resident.status == VillageProsperityEngine.ResidentStatus.DEAD) {
+                return true;
+            }
+            if (residentId != null) {
+                resident = village.residents.computeIfAbsent(residentId, ignored -> {
+                    EconomyState.ResidentRecord created = new EconomyState.ResidentRecord();
+                    created.residentId = residentId;
+                    return created;
+                });
+                resident.profession = profession == null || profession.isBlank()
+                        ? "minecraft:none"
+                        : profession;
+                resident.status = VillageProsperityEngine.ResidentStatus.DEAD;
+                resident.lastSeenDay = state.economicDay;
+                resident.lastKnownPos = packedPosition;
+            }
+            village.population = Math.max(0, village.population - 1);
+            village.observedPopulation = Math.max(0, village.observedPopulation - 1);
+            village.lastIncidentDay = state.economicDay;
+            village.lastIncidentCause = cause;
+            double safetyLoss = switch (cause) {
+                case RAID, PILLAGER -> 18.0;
+                case HOSTILE -> 12.0;
+                case PLAYER -> 24.0;
+                case ENVIRONMENT, UNKNOWN -> 7.0;
+                case NONE -> 0.0;
+            };
+            village.safety = Math.max(0.0, village.safety - safetyLoss);
+            village.prosperity = Math.max(0.0, village.prosperity - safetyLoss * 0.55);
+            switch (cause) {
+                case RAID, PILLAGER, HOSTILE -> village.hostileCasualties++;
+                case PLAYER -> {
+                    village.playerCasualties++;
+                    village.marketSuppressedUntilDay = Math.max(
+                            village.marketSuppressedUntilDay, state.economicDay + 60L);
+                }
+                case ENVIRONMENT, UNKNOWN -> village.environmentalCasualties++;
+                case NONE -> {
+                }
+            }
+            EconomyState.VillageIncident incident = new EconomyState.VillageIncident();
+            incident.day = state.economicDay;
+            incident.cause = cause;
+            incident.casualties = 1;
+            incident.responsiblePlayer = responsiblePlayer;
+            incident.marketEligible = cause != VillageProsperityEngine.IncidentCause.PLAYER;
+            village.incidents.add(incident);
+            while (village.incidents.size() > VillageProsperityEngine.INCIDENT_HISTORY_LIMIT) {
+                village.incidents.remove(0);
+            }
+
+            if (village.population == 0) {
+                village.collapseCount = state.economicDay - village.lastCollapseDay <= 30L
+                        ? village.collapseCount + 1
+                        : 1;
+                village.lastCollapseDay = state.economicDay;
+                int delay = VillageProsperityEngine.recoveryDelayDays(village, cause);
+                boolean deliberate = cause == VillageProsperityEngine.IncidentCause.PLAYER;
+                boolean repeatedCollapse = village.collapseCount >= 3;
+                village.lifecycle = deliberate || repeatedCollapse
+                        ? VillageProsperityEngine.Lifecycle.ABANDONED
+                        : VillageProsperityEngine.Lifecycle.EXTINCT;
+                village.abandonedSinceDay = village.lifecycle
+                                == VillageProsperityEngine.Lifecycle.ABANDONED
+                        ? state.economicDay
+                        : 0L;
+                village.recoveryEligibleDay = delay == Integer.MAX_VALUE
+                        ? state.economicDay + 3L
+                        : state.economicDay + delay;
+            } else if (village.population <= 2 || village.prosperity < 25.0) {
+                village.lifecycle = VillageProsperityEngine.Lifecycle.DEVASTATED;
+            } else {
+                village.lifecycle = VillageProsperityEngine.Lifecycle.THREATENED;
+            }
+            state.save(path);
+            dirty = false;
+            resetSaveSchedule(state.lastWallClockMs);
+            lastError = "";
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            state.villages.put(villageId, before);
+            lastError = message(exception);
+            return false;
+        }
+    }
+
+    public synchronized VillageFundingResult fundVillage(
+            UUID playerId, UUID villageId, long emeralds) {
+        Long micro = wholeEmeraldsToMicro(emeralds);
+        if (state == null || path == null || micro == null || villageId == null) {
+            return VillageFundingResult.notFunded();
+        }
+        EconomyState.Account account = state.existingAccount(playerId);
+        EconomyState.VillageRecord village = state.existingVillage(villageId);
+        if (account == null || village == null || account.cashMicro < micro) {
+            return VillageFundingResult.notFunded();
+        }
+        EconomyState.Account accountBefore = account.copy();
+        EconomyState.VillageRecord villageBefore = village.copy();
+        try {
+            account.cashMicro -= micro;
+            double amount = emeralds;
+            village.treasury = Math.min(1_000_000.0, village.treasury + amount * 0.75);
+            village.developmentPoints = Math.min(
+                    1_000_000.0, village.developmentPoints + amount * 0.65);
+            EconomyState.VillageProject active = village.projects.stream()
+                    .filter(project -> !project.economicComplete)
+                    .findFirst()
+                    .orElse(null);
+            if (active != null) {
+                active.economicProgress = Math.min(
+                        1.0, active.economicProgress + Math.min(0.20, amount / 250.0));
+            }
+            boolean restorationActivated = false;
+            if (village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
+                    || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT) {
+                village.restorationFund = Math.min(
+                        1_000_000.0, village.restorationFund + amount);
+                if (village.restorationFund >= VillageProsperityEngine.RESTORATION_EMERALD_TARGET) {
+                    village.restorationFunded = true;
+                    village.recoveryEligibleDay = Math.min(
+                            village.recoveryEligibleDay, state.economicDay + 3L);
+                    restorationActivated = true;
+                }
+            }
+            state.save(path);
+            dirty = false;
+            resetSaveSchedule(state.lastWallClockMs);
+            lastError = "";
+            return new VillageFundingResult(true, restorationActivated, micro);
+        } catch (IOException | RuntimeException exception) {
+            state.accounts.put(playerId, accountBefore);
+            state.villages.put(villageId, villageBefore);
+            lastError = message(exception);
+            return VillageFundingResult.notFunded();
+        }
+    }
+
+    public synchronized boolean reserveVillageProjectSite(
+            UUID villageId, long projectId, long originPos, int totalBlocks) {
+        return mutateVillage(villageId, true, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null
+                    || !project.economicComplete
+                    || project.materializedComplete
+                    || project.abstractOnly
+                    || project.originPos != 0L
+                    || totalBlocks <= 0) {
+                return false;
+            }
+            project.originPos = originPos;
+            project.totalBlocks = totalBlocks;
+            project.materializedBlocks = 0;
+            project.blocked = false;
+            return true;
+        });
+    }
+
+    public synchronized boolean updateVillageProjectMaterialization(
+            UUID villageId,
+            long projectId,
+            int materializedBlocks,
+            boolean complete,
+            boolean blocked) {
+        return mutateVillage(villageId, complete || blocked, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null || project.originPos == 0L || project.abstractOnly) {
+                return false;
+            }
+            project.totalBlocks = Math.max(project.totalBlocks, materializedBlocks);
+            project.materializedBlocks = Math.max(
+                    project.materializedBlocks,
+                    Math.min(project.totalBlocks, materializedBlocks));
+            project.materializedComplete = complete
+                    || project.materializedBlocks >= project.totalBlocks;
+            project.blocked = blocked && !project.materializedComplete;
+            return true;
+        });
+    }
+
+    public synchronized boolean consumePendingSettler(UUID villageId) {
+        return mutateVillage(villageId, false, village -> {
+            if (village.pendingSettlers <= 0) {
+                return false;
+            }
+            village.pendingSettlers--;
+            return true;
+        });
+    }
+
+    public synchronized boolean allowBankerReplacementAt(long packedAnchor) {
+        if (!villageProsperitySimulationEnabled || state == null) {
+            return true;
+        }
+        EconomyState.VillageRecord village = nearestVillage(
+                "minecraft:overworld", packedAnchor, 160.0);
+        if (village == null) {
+            return true;
+        }
+        if (village.population <= 0
+                || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT
+                || village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED) {
+            return false;
+        }
+        return village.lastIncidentCause == VillageProsperityEngine.IncidentCause.NONE
+                || state.economicDay - village.lastIncidentDay >= 3L;
+    }
+
+    private boolean mutateVillage(
+            UUID villageId, boolean persistImmediately, VillageMutation mutation) {
+        if (state == null || path == null || villageId == null) {
+            return false;
+        }
+        EconomyState.VillageRecord village = state.existingVillage(villageId);
+        if (village == null) {
+            return false;
+        }
+        EconomyState.VillageRecord before = village.copy();
+        boolean dirtyBefore = dirty;
+        try {
+            if (!mutation.apply(village)) {
+                return false;
+            }
+            dirty = true;
+            if (persistImmediately) {
+                state.save(path);
+                dirty = false;
+                resetSaveSchedule(state.lastWallClockMs);
+            }
+            lastError = "";
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            state.villages.put(villageId, before);
+            dirty = dirtyBefore;
+            lastError = message(exception);
+            scheduleSaveRetry(state.lastWallClockMs);
+            return false;
+        }
+    }
+
+    private UUID resolveVillageId(VillageObservation observation) {
+        UUID byRegion = state.bankRegionVillageIds.get(observation.bankRegionKey());
+        if (byRegion != null) {
+            EconomyState.VillageRecord mapped = state.existingVillage(byRegion);
+            if (mapped != null && distanceSquared(mapped.centerPos, observation.centerPos()) <= 96.0 * 96.0) {
+                return byRegion;
+            }
+        }
+        EconomyState.VillageRecord nearby = nearestVillage(
+                observation.dimensionKey(), observation.centerPos(), 96.0);
+        if (nearby != null) {
+            return nearby.villageId;
+        }
+        long first = mix64(state.seed ^ observation.centerPos() ^ observation.bankRegionKey());
+        long second = mix64(~state.seed
+                ^ Long.rotateLeft(observation.centerPos(), 19)
+                ^ Long.rotateLeft(observation.bankRegionKey(), 7));
+        UUID candidate = new UUID(first, second);
+        while (state.villages.containsKey(candidate)) {
+            first = mix64(first + 0x9E3779B97F4A7C15L);
+            second = mix64(second + 0xD1B54A32D192ED03L);
+            candidate = new UUID(first, second);
+        }
+        return candidate;
+    }
+
+    private EconomyState.VillageRecord nearestVillage(
+            String dimensionKey, long packedPosition, double maximumDistance) {
+        if (state == null) {
+            return null;
+        }
+        long x = unpackX(packedPosition);
+        long y = unpackY(packedPosition);
+        long z = unpackZ(packedPosition);
+        double maximumDistanceSquared = maximumDistance * maximumDistance;
+        EconomyState.VillageRecord best = null;
+        double bestDistance = maximumDistanceSquared;
+        for (EconomyState.VillageRecord village : state.villages.values()) {
+            if (!Objects.equals(village.dimensionKey, dimensionKey)) {
+                continue;
+            }
+            long center = village.centerPos;
+            double dx = unpackX(center) - x;
+            double dy = unpackY(center) - y;
+            double dz = unpackZ(center) - z;
+            double distance = dx * dx + dy * dy + dz * dz;
+            if (distance <= bestDistance) {
+                best = village;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private void initializeVillage(
+            EconomyState.VillageRecord village, VillageObservation observation) {
+        village.dimensionKey = observation.dimensionKey();
+        village.centerPos = observation.centerPos();
+        village.bankRegionKey = observation.bankRegionKey();
+        village.bankAnchorPos = observation.bankAnchorPos();
+        village.discoveredDay = state.economicDay;
+        village.lastSimulatedDay = state.economicDay;
+        village.lastCensusDay = state.economicDay;
+        village.population = Math.min(
+                VillageProsperityEngine.MAX_ABSTRACT_POPULATION,
+                Math.max(0, observation.observedPopulation()));
+        village.observedPopulation = village.population;
+        village.housingCapacity = Math.max(
+                Math.max(4, observation.bedCount()), village.population + 2);
+        village.foodSupply = Math.max(60.0, village.population * 24.0);
+        village.materialSupply = Math.max(24.0, village.population * 12.0);
+        village.treasury = Math.max(8.0, village.population * 2.0);
+        village.developmentPoints = Math.max(4.0, village.population * 0.8);
+        village.prosperity = 50.0;
+        village.safety = observation.raidActive() ? 38.0 : 65.0;
+        village.lifecycle = observation.raidActive()
+                ? VillageProsperityEngine.Lifecycle.THREATENED
+                : VillageProsperityEngine.Lifecycle.ACTIVE;
+    }
+
+    private void updateVillageObservation(
+            EconomyState.VillageRecord village, VillageObservation observation) {
+        long previousCensusDay = village.lastCensusDay;
+        village.observedPopulation = Math.max(0, observation.observedPopulation());
+        village.housingCapacity = Math.max(
+                village.housingCapacity,
+                Math.max(observation.bedCount(), village.observedPopulation + 1));
+        village.bankRegionKey = observation.bankRegionKey();
+        if (observation.bankAnchorPos() != 0L) {
+            village.bankAnchorPos = observation.bankAnchorPos();
+        }
+
+        java.util.Set<UUID> seen = new java.util.HashSet<>();
+        for (ResidentObservation observed : observation.residents()) {
+            if (observed == null || observed.residentId() == null) {
+                continue;
+            }
+            seen.add(observed.residentId());
+            EconomyState.ResidentRecord resident = village.residents.computeIfAbsent(
+                    observed.residentId(), ignored -> {
+                        EconomyState.ResidentRecord created = new EconomyState.ResidentRecord();
+                        created.residentId = observed.residentId();
+                        return created;
+                    });
+            resident.profession = observed.profession() == null || observed.profession().isBlank()
+                    ? "minecraft:none"
+                    : observed.profession();
+            resident.status = VillageProsperityEngine.ResidentStatus.ACTIVE;
+            resident.lastSeenDay = state.economicDay;
+            resident.lastKnownPos = observed.packedPosition();
+        }
+        for (EconomyState.ResidentRecord resident : village.residents.values()) {
+            if (!seen.contains(resident.residentId)
+                    && resident.status == VillageProsperityEngine.ResidentStatus.ACTIVE
+                    && state.economicDay - resident.lastSeenDay >= 3L) {
+                resident.status = VillageProsperityEngine.ResidentStatus.AWAY;
+            }
+        }
+        while (village.residents.size() > VillageProsperityEngine.RESIDENT_HISTORY_LIMIT) {
+            UUID removable = village.residents.entrySet().stream()
+                    .filter(entry -> entry.getValue().status
+                            != VillageProsperityEngine.ResidentStatus.ACTIVE)
+                    .map(Map.Entry::getKey)
+                    .findFirst()
+                    .orElse(null);
+            if (removable == null) {
+                break;
+            }
+            village.residents.remove(removable);
+        }
+
+        if (village.observedPopulation > village.population) {
+            int arrivals = village.observedPopulation - village.population;
+            village.population = Math.min(
+                    VillageProsperityEngine.MAX_ABSTRACT_POPULATION,
+                    village.observedPopulation);
+            village.pendingSettlers = Math.max(0, village.pendingSettlers - arrivals);
+        }
+        if (village.observedPopulation > 0
+                && (village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT
+                        || village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED)) {
+            village.population = Math.max(village.population, village.observedPopulation);
+            village.lifecycle = VillageProsperityEngine.Lifecycle.RECOVERING;
+            village.restorationFunded = false;
+            village.restorationFund = 0.0;
+        }
+        if (observation.raidActive() || observation.hostileCount() >= 4) {
+            village.lifecycle = VillageProsperityEngine.Lifecycle.THREATENED;
+            village.safety = Math.max(0.0, village.safety - 1.5);
+            village.lastIncidentDay = state.economicDay;
+            village.lastIncidentCause = observation.raidActive()
+                    ? VillageProsperityEngine.IncidentCause.RAID
+                    : VillageProsperityEngine.IncidentCause.HOSTILE;
+        }
+        if (!villageProsperitySimulationEnabled
+                && villageVisualProgressionEnabled
+                && previousCensusDay < state.economicDay) {
+            VillageProsperityEngine.advanceVisualOnlyPulse(
+                    village, state.seed, state.economicDay);
+        }
+        village.lastCensusDay = state.economicDay;
+    }
+
+    private VillageSnapshot villageSnapshot(EconomyState.VillageRecord village) {
+        return new VillageSnapshot(
+                village.copy(),
+                state.villageFundamentals(),
+                villageProsperitySimulationEnabled,
+                villageVisualProgressionEnabled);
+    }
+
+    private static EconomyState.VillageProject findProject(
+            EconomyState.VillageRecord village, long projectId) {
+        return village.projects.stream()
+                .filter(project -> project.projectId == projectId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static long mix64(long value) {
+        value ^= value >>> 30;
+        value *= 0xBF58476D1CE4E5B9L;
+        value ^= value >>> 27;
+        value *= 0x94D049BB133111EBL;
+        return value ^ (value >>> 31);
+    }
+
+    private static double distanceSquared(long first, long second) {
+        double dx = unpackX(first) - unpackX(second);
+        double dy = unpackY(first) - unpackY(second);
+        double dz = unpackZ(first) - unpackZ(second);
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static int unpackX(long packed) {
+        return (int) (packed >> 38);
+    }
+
+    private static int unpackY(long packed) {
+        return (int) (packed << 52 >> 52);
+    }
+
+    private static int unpackZ(long packed) {
+        return (int) (packed << 26 >> 38);
     }
 
     public synchronized String transactionBlockReason(UUID id) {
@@ -677,7 +1285,7 @@ public final class EconomyService {
 
     private void advance(long days) {
         for (long day = 0L; day < days; day++) {
-            state.advanceOneDay();
+            state.advanceOneDay(villageProsperitySimulationEnabled);
         }
     }
 
@@ -854,6 +1462,50 @@ public final class EconomyService {
         return value == null || value.isBlank()
                 ? exception.getClass().getSimpleName()
                 : value;
+    }
+
+    @FunctionalInterface
+    private interface VillageMutation {
+        boolean apply(EconomyState.VillageRecord village) throws IOException;
+    }
+
+    public record ResidentObservation(
+            UUID residentId, String profession, long packedPosition) {
+    }
+
+    public record VillageObservation(
+            String dimensionKey,
+            long centerPos,
+            long bankRegionKey,
+            long bankAnchorPos,
+            int observedPopulation,
+            int bedCount,
+            int hostileCount,
+            boolean raidActive,
+            List<ResidentObservation> residents) {
+        public VillageObservation {
+            dimensionKey = dimensionKey == null || dimensionKey.isBlank()
+                    ? "minecraft:overworld"
+                    : dimensionKey;
+            observedPopulation = Math.max(0, observedPopulation);
+            bedCount = Math.max(0, bedCount);
+            hostileCount = Math.max(0, hostileCount);
+            residents = residents == null ? List.of() : List.copyOf(residents);
+        }
+    }
+
+    public record VillageSnapshot(
+            EconomyState.VillageRecord village,
+            VillageProsperityEngine.VillageFundamentals fundamentals,
+            boolean simulationEnabled,
+            boolean visualProgressionEnabled) {
+    }
+
+    public record VillageFundingResult(
+            boolean funded, boolean restorationActivated, long contributionMicro) {
+        static VillageFundingResult notFunded() {
+            return new VillageFundingResult(false, false, 0L);
+        }
     }
 
     @FunctionalInterface

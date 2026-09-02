@@ -10,6 +10,7 @@ import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
+import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
@@ -18,12 +19,14 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.entity.npc.villager.Villager;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -57,7 +60,10 @@ public final class EmeraldStandardNeoForge {
     public void onServerStarted(ServerStartedEvent event) {
         try {
             var server = event.getServer();
-            EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
+            EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
+            ECONOMY.configureVillageProsperity(
+                    config.villageProsperitySimulationEnabled(),
+                    config.villageVisualProgressionEnabled());
             ECONOMY.start(
                     server.getWorldPath(LevelResource.DATA),
                     server.overworld().getSeed(),
@@ -90,7 +96,15 @@ public final class EmeraldStandardNeoForge {
             LOGGER.error("Could not advance or save The Emerald Standard economy: {}",
                     ECONOMY.lastError());
         }
+        VillageProsperityManager.tick(event.getServer(), ECONOMY);
         VillageBankManager.tick(event.getServer(), ECONOMY);
+    }
+
+    @SubscribeEvent
+    public void onLivingDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof Villager villager) {
+            VillageProsperityManager.onVillagerDeath(villager, event.getSource(), ECONOMY);
+        }
     }
 
     @SubscribeEvent
