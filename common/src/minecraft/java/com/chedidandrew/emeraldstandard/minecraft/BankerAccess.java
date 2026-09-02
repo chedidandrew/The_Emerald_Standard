@@ -37,19 +37,20 @@ public final class BankerAccess {
 
     /**
      * Returns true only for an untouched adult villager that can safely become a Banker.
-     * Existing professions, trades, XP, names, babies, and dead villagers are never repurposed.
+     * Existing professions, offers, XP, names, babies, and dead villagers are never repurposed.
      */
     public static boolean isEligibleUnemployedVillager(Villager villager) {
         return villager.isAlive()
                 && !villager.isBaby()
                 && !villager.hasCustomName()
                 && villager.getVillagerXp() == 0
+                && villager.getOffers().isEmpty()
                 && villager.getVillagerData().profession().is(VillagerProfession.NONE);
     }
 
     /**
      * Marks a newly spawned or untouched unemployed villager as the Banker for one village region.
-     * Existing Banker tags are migrated to the supplied region id without disturbing player trades.
+     * Existing Banker tags are migrated to the supplied region id without resetting their data.
      */
     public static boolean markBanker(Villager villager, long regionKey) {
         boolean existingBanker = isBanker(villager);
@@ -68,12 +69,14 @@ public final class BankerAccess {
         villager.setCustomNameVisible(true);
         villager.setPersistenceRequired();
 
-        BuiltInRegistries.VILLAGER_PROFESSION.get(VillagerProfession.LIBRARIAN)
-                .ifPresent(profession -> villager.setVillagerData(
-                        villager.getVillagerData().withProfession(profession).withLevel(1)));
-        villager.setVillagerDataFinalized(true);
-        if (villager.level() instanceof ServerLevel level) {
-            villager.refreshBrain(level);
+        if (!existingBanker) {
+            BuiltInRegistries.VILLAGER_PROFESSION.get(VillagerProfession.LIBRARIAN)
+                    .ifPresent(profession -> villager.setVillagerData(
+                            villager.getVillagerData().withProfession(profession).withLevel(1)));
+            villager.setVillagerDataFinalized(true);
+            if (villager.level() instanceof ServerLevel level) {
+                villager.refreshBrain(level);
+            }
         }
         return true;
     }
