@@ -31,7 +31,7 @@ The branch includes expanded Village Prosperity regression coverage for:
 - Functional tier decline after extinction
 - Existing project, lifecycle, market-cap, and no-debt invariants
 
-The beta.2 source has passed the loader-neutral regression suite. A full Fabric and NeoForge GitHub Actions build, packaged-JAR verification, dedicated-server launch, and client-bootstrap run is the merge gate for this candidate.
+The beta.2 source has passed the loader-neutral regression suite and direct Fabric and NeoForge Java compilation. A full GitHub Actions build, packaged-JAR verification, dedicated-server launch, and client-bootstrap run is the merge gate for this candidate.
 
 ## Publication status
 
