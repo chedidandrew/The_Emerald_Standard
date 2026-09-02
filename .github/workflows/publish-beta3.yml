@@ -1,0 +1,143 @@
+name: Publish 0.3.0-beta.3 prerelease
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-beta3.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    if: github.repository == 'chedidandrew/The_Emerald_Standard'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v0.3.0-beta.3
+      TITLE: The Emerald Standard 0.3.0-beta.3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Wait for verified build of this source commit
+        id: verified
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="$GITHUB_SHA"
+          run_id=""
+          for attempt in $(seq 1 50); do
+            row="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow build.yml \
+              --commit "$target_sha" \
+              --limit 10 \
+              --json databaseId,status,conclusion,headSha \
+              --jq '[.[] | select(.headSha == "'"$target_sha"'")] | first | [.databaseId,.status,.conclusion] | @tsv' 2>/dev/null || true)"
+            if [[ -n "$row" && "$row" != "null" ]]; then
+              IFS=$'\t' read -r candidate status conclusion <<< "$row"
+              run_id="$candidate"
+              if [[ "$status" == "completed" ]]; then
+                if [[ "$conclusion" != "success" ]]; then
+                  echo "Build run $run_id completed with $conclusion" >&2
+                  exit 1
+                fi
+                break
+              fi
+            fi
+            sleep 12
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "No build workflow run found for $target_sha" >&2
+            exit 1
+          fi
+          final="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '[.status,.conclusion] | @tsv')"
+          IFS=$'\t' read -r final_status final_conclusion <<< "$final"
+          if [[ "$final_status" != "completed" || "$final_conclusion" != "success" ]]; then
+            echo "Build run $run_id was not successfully completed" >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Download verified Fabric and NeoForge artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.verified.outputs.run_id }}'
+          target_sha='${{ steps.verified.outputs.target_sha }}'
+          mkdir -p dist/fabric dist/neoforge dist/release
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "the-emerald-standard-fabric-$target_sha" --dir dist/fabric
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "the-emerald-standard-neoforge-$target_sha" --dir dist/neoforge
+
+          cp dist/fabric/the-emerald-standard-fabric-0.3.0-beta.3.jar \
+            dist/release/The-Emerald-Standard-Fabric-26.2-0.3.0-beta.3.jar
+          cp dist/fabric/the-emerald-standard-fabric-0.3.0-beta.3-sources.jar \
+            dist/release/The-Emerald-Standard-Fabric-26.2-0.3.0-beta.3-sources.jar
+          cp dist/neoforge/the-emerald-standard-neoforge-0.3.0-beta.3.jar \
+            dist/release/The-Emerald-Standard-NeoForge-26.2-0.3.0-beta.3.jar
+          cp dist/neoforge/the-emerald-standard-neoforge-0.3.0-beta.3-sources.jar \
+            dist/release/The-Emerald-Standard-NeoForge-26.2-0.3.0-beta.3-sources.jar
+
+          cd dist/release
+          sha256sum *.jar | sort -k2 > The-Emerald-Standard-0.3.0-beta.3-SHA256SUMS.txt
+
+      - name: Publish GitHub prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(dist/release/*)
+          target_sha='${{ steps.verified.outputs.target_sha }}'
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$target_sha" --title "$TITLE" \
+              --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md --prerelease
+          else
+            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+              --target "$target_sha" --title "$TITLE" \
+              --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md --prerelease
+          fi
+
+      - name: Record artifact provenance and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.verified.outputs.run_id }}'
+          target_sha='${{ steps.verified.outputs.target_sha }}'
+          short_sha="${target_sha:0:8}"
+          artifact_rows="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+            --jq '.artifacts[] | select(.name | startswith("the-emerald-standard-")) | "- `\(.name)` id `\(.id)`, digest `\(.digest)`"')"
+          checksum_rows="$(sed 's/^/- `/' dist/release/The-Emerald-Standard-0.3.0-beta.3-SHA256SUMS.txt | sed 's/$/`/')"
+          cat > "release/ARTIFACTS-$short_sha.md" <<EOF
+          # Verified artifacts for 0.3.0-beta.3
+
+          Source commit: \`$target_sha\`
+
+          GitHub Actions run: \`$run_id\`
+
+          ## Workflow artifacts
+
+          $artifact_rows
+
+          ## Release JAR SHA-256 checksums
+
+          $checksum_rows
+
+          The release assets were downloaded from the successful build workflow for the exact tagged source commit and published without rebuilding.
+          EOF
+
+          rm -f .github/workflows/publish-beta3.yml
+          git config user.name 'chedidandrew'
+          git config user.email '145610849+chedidandrew@users.noreply.github.com'
+          git add -A release/ARTIFACTS-*.md .github/workflows/publish-beta3.yml
+          git commit -m "Record verified 0.3.0-beta.3 release artifacts"
+          git push origin HEAD:main
+          git push origin --delete fix/beta3-completion work/beta3-hardening || true
