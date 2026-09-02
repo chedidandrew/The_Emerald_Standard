@@ -26,10 +26,12 @@ The branch includes expanded Village Prosperity regression coverage for:
 - Automatic-recovery disablement
 - Market-integration disablement
 - Resident emigration
-- Stable identity persistence
+- Infection and cure reconciliation
+- Stable identity preference and persistence
+- Functional tier decline after extinction
 - Existing project, lifecycle, market-cap, and no-debt invariants
 
-Final GitHub Actions run information will be recorded after the beta.2 candidate passes the repository workflow and is merged to `main`.
+The beta.2 source has passed the loader-neutral regression suite. A full Fabric and NeoForge GitHub Actions build, packaged-JAR verification, dedicated-server launch, and client-bootstrap run is the merge gate for this candidate.
 
 ## Publication status
 
