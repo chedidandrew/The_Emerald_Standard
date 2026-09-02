@@ -12,6 +12,7 @@ import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.flag.FeatureFlags;
@@ -114,7 +115,7 @@ public final class EmeraldStandardNeoForge {
             return;
         }
         var accessPoint = VillageBankManager.bankAccessPoint(
-                player.serverLevel(), event.getPos(), ECONOMY);
+                (ServerLevel) player.level(), event.getPos(), ECONOMY);
         if (accessPoint == null) {
             return;
         }
