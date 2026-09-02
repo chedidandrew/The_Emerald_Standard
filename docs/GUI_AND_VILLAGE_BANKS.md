@@ -2,114 +2,83 @@
 
 ## Player experience
 
-The Emerald Standard is designed to feel like a natural village service rather than a command console.
+The Emerald Standard is designed as a natural village service rather than a command console.
 
 1. Discover or visit a village.
 2. Locate the Village Bank and Exchange or a villager named Banker.
 3. Right-click the Banker or the lectern at the bank counter.
-4. Use the four-page graphical dashboard.
+4. Use the five-page graphical dashboard.
 
-No command is required for ordinary deposits, withdrawals, saving, investing, lending, or commodity exchange.
+No command is required for ordinary banking, investing, lending, exchange, or village-support gameplay.
 
 ## Dashboard pages
 
 ### Overview
 
-The Overview page presents:
-
-- Total net worth
-- Bank cash
-- Savings balance
-- Invested value
-- Physical emeralds in the inventory
-- Current economic day and market regime
-- Recent market-event headline or current regime bulletin
-- A chart for the selected investment
-- Direct Deposit, Withdraw, Save, and Recover actions
+Shows net worth, bank cash, savings, invested value, physical emeralds, current economic day, market regime, market news, and the selected investment chart. Quick actions include Deposit, Withdraw, Save, and Recover.
 
 ### Market
 
-Selecting one of the nine investments updates:
-
-- Full investment name
-- Current price
-- Recent chart
-- Change over the visible chart period
-- Sector
-- Risk label
-- Shares held
-- Current holding value
-
-Players buy a selected emerald amount or sell 25 percent or all of a holding. Sell-all requires confirmation. Charts use a minimum scale range so small moves are not visually exaggerated, show high and low values, and expose sampled prices on hover. The 0.25 percent per-side spread remains in effect.
+The nine investments expose current price, chart history, sector, risk, shares held, and holding value. Players can buy a selected emerald amount, sell 25 percent, or sell all. Sell-all requires confirmation. The 0.25 percent per-side trading spread remains in effect.
 
 ### Banking
 
-The Banking page separates lower-risk and higher-risk choices:
-
-- Savings with a visible current annual rate
-- 30, 90, 180, and 365-day locked-rate CDs
-- 30, 90, 180, and 365-day villager business lending
-
-The interface states that lending can lose principal but can never create player debt. Tooltips show the offered rate and estimated opening default risk. Funding lending requires confirmation. Closing an immature CD also requires confirmation and explains the one percent principal penalty and forfeited interest.
+Shows savings, locked-rate 30/90/180/365-day CDs, and player-funded villager business lending. Lending visibly warns that principal can be lost while also stating that no debt can be created. Funding lending and closing an immature CD require confirmation.
 
 ### Exchange
 
-The Exchange page cycles through supported valuable resources, shows the inventory count and current per-item emerald quote, and converts the selected amount into bank cash.
+Cycles through supported valuable resources, shows current inventory count and dynamic emerald quote, and converts the selected amount into bank cash.
+
+### Village
+
+Shows the local settlement connected to the current bank access point:
+
+- Lifecycle and development tier
+- Productive population and housing
+- Prosperity and safety
+- Food, materials, and treasury
+- Farming, mining, and trade output
+- Current development project and visual backlog
+- Recent incident information
+- Village support or restoration action when available
+
+Village support is a contribution to local development. It is not a loan to the player and never creates debt.
 
 ## Amount presets
 
-Every page uses the same transaction presets:
-
-- 1
-- 5
-- 10
-- 32
-- 64
-- All
-
-This avoids text entry and keeps the interface controller-friendly and easy to learn.
+The interface uses the same one-click presets throughout: `1`, `5`, `10`, `32`, `64`, and `All`.
 
 ## Village Bank and Exchange generation
 
-The first time a player loads a village region, the server searches deterministic positions around the village for a safe, relatively flat, dry, loaded, and unoccupied plot.
+The first time a player loads a village region, the server searches deterministic positions for a safe, relatively flat, dry, loaded, and unoccupied bank plot. The bank uses plains, desert, savanna, snowy, or taiga palettes and includes a lectern counter, storage, bookshelves, lighting, and a persistent Banker.
 
-When a plot is found, the mod constructs an 11 by 9 bank containing:
-
-- A stable floor and foundation
-- Village-biome wall, roof, corner, and fence materials
-- Green stained-glass windows
-- A lectern and barrel banking counter
-- Bookshelves and lanterns
-- A persistent Banker behind the counter
-
-The palette follows plains, desert, savanna, snowy, and taiga village biome tags. The structure deliberately avoids valuable emerald-block decoration that could be farmed.
-
-Generation is discovery-based instead of injected into vanilla jigsaw pools. This allows existing worlds to receive banks, keeps Fabric and NeoForge behavior aligned, and avoids broad compatibility conflicts with village world-generation mods.
-
-Generated village regions and exact Banker counter anchors are stored in the economy save so they are not processed repeatedly. The default region size is 256 blocks and can be changed in the world configuration.
+Generation is discovery-based rather than injected into vanilla jigsaw pools. This supports existing worlds, keeps Fabric and NeoForge aligned, and reduces conflict with world-generation mods.
 
 ## Banker safety and identity
 
-Each Banker receives a durable region identity tag. Nearby banks therefore cannot accidentally share or replace the same villager.
+Fallback Banker selection uses only an untouched adult villager with no profession, XP, custom name, or established trades. Otherwise the mod spawns a new Banker. Existing player-developed villagers are never repurposed.
 
-If a generated Banker is lost, the bank creates a replacement at the persisted service point. An older unscoped alpha Banker may be adopted once for migration.
+Bankers are associated with persisted bank identity and the surrounding stable settlement record. Banker replacement is suppressed while the settlement is Extinct or Abandoned. Player financial accounts are global, so losing a Banker or village never destroys player wealth.
 
-When no bank plot is available, the fallback follows this order:
+## Village Prosperity structures
 
-1. Use an untouched adult villager with no profession, no XP, no custom name, and no prior Banker identity.
-2. Otherwise spawn a new persistent Banker at a safe village surface.
-3. Never repurpose an established or player-customized villager.
+The first physical prosperity projects are Cottage, Warehouse, and Mine Entrance. They are not spawned instantly after offline catch-up. Approved projects enter a bounded queue and place only a small number of blocks while a player is nearby.
 
-Bankers currently use the vanilla librarian profession and lectern behavior while retaining their custom Banker name, persistent tag, home restriction, and banking interaction. This provides stable cross-loader behavior without overwriting player trades.
+Candidate sites must be loaded, flat, naturally surfaced, dry, and clear. Project floors are placed above terrain rather than replacing it. Solid or protected placements stop construction instead of being overwritten. Cottages contain real beds, and Warehouses use chests rather than barrels.
 
 ## Interaction safety
 
-The server remains authoritative for every action. The menu closes when the player dies, is removed, or moves more than eight blocks from the Banker or bank access point. A short configurable cooldown prevents duplicate button and packet spam.
+The server remains authoritative for all actions. The menu closes when the player dies, is removed, or leaves the allowed interaction range. A configurable cooldown prevents duplicate button and packet spam.
 
 ## Configuration
 
-The world `data/the_emerald_standard-config.properties` file controls village-bank generation, scan interval, region size, Banker restriction radius, and transaction cooldown. Administrators can use `/emerald config show` and `/emerald config reload` to inspect or apply edits.
+The world `data/the_emerald_standard-config.properties` file controls bank generation and Village Prosperity. The four key prosperity switches are:
 
-## Administrative access
+```properties
+village_prosperity.simulation_enabled=true
+village_prosperity.visual_progression_enabled=true
+village_prosperity.market_integration_enabled=true
+village_prosperity.automatic_recovery_enabled=true
+```
 
-The `/emerald` command tree requires permission level 2. `/emerald open` remains an administrator and development shortcut. It intentionally omits the Banker-distance check.
+Administrators can inspect or reload configuration with `/emerald config show` and `/emerald config reload`.

@@ -402,14 +402,42 @@ public final class EconomyState {
     }
 
     public void advanceOneDay(boolean villageProsperitySimulationEnabled) {
+        advanceOneDay(
+                villageProsperitySimulationEnabled,
+                villageProsperitySimulationEnabled,
+                villageProsperitySimulationEnabled,
+                true);
+    }
+
+    public void advanceOneDay(
+            boolean villageProsperitySimulationEnabled,
+            boolean villageMarketIntegrationEnabled,
+            boolean villageAutomaticRecoveryEnabled) {
+        advanceOneDay(
+                villageProsperitySimulationEnabled,
+                villageProsperitySimulationEnabled,
+                villageMarketIntegrationEnabled,
+                villageAutomaticRecoveryEnabled);
+    }
+
+    public void advanceOneDay(
+            boolean villageProsperitySimulationEnabled,
+            boolean villageVisualProgressionEnabled,
+            boolean villageMarketIntegrationEnabled,
+            boolean villageAutomaticRecoveryEnabled) {
         economicDay++;
         if (villageProsperitySimulationEnabled) {
             for (VillageRecord village : villages.values()) {
-                VillageProsperityEngine.advanceOneDay(village, seed, economicDay);
+                VillageProsperityEngine.advanceOneDay(
+                        village,
+                        seed,
+                        economicDay,
+                        villageAutomaticRecoveryEnabled,
+                        villageVisualProgressionEnabled);
             }
         }
         VillageProsperityEngine.VillageFundamentals villageFundamentals =
-                villageProsperitySimulationEnabled
+                villageProsperitySimulationEnabled && villageMarketIntegrationEnabled
                         ? VillageProsperityEngine.aggregateFundamentals(villages.values(), economicDay)
                         : VillageProsperityEngine.VillageFundamentals.neutral();
         regime = EconomyEngine.nextRegime(regime, seed, economicDay);

@@ -50,7 +50,9 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
                 ECONOMY.configureVillageProsperity(
                         config.villageProsperitySimulationEnabled(),
-                        config.villageVisualProgressionEnabled());
+                        config.villageVisualProgressionEnabled(),
+                        config.villageMarketIntegrationEnabled(),
+                        config.villageAutomaticRecoveryEnabled());
                 ECONOMY.start(
                         server.getWorldPath(LevelResource.DATA),
                         server.overworld().getSeed(),

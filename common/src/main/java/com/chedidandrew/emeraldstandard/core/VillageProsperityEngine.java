@@ -14,6 +14,7 @@ public final class VillageProsperityEngine {
 
     private static final long GROWTH_SALT = 0x47524F575448L;
     private static final long PROJECT_SALT = 0x50524F4A454354L;
+    private static final long LOCAL_SHOCK_SALT = 0x4C4F43414C53484FL;
 
     public enum Lifecycle {
         ACTIVE,
@@ -97,6 +98,22 @@ public final class VillageProsperityEngine {
 
     /** Advances one abstract village day. No blocks, chunks, entities, or pathfinding are touched. */
     public static void advanceOneDay(EconomyState.VillageRecord village, long worldSeed, long day) {
+        advanceOneDay(village, worldSeed, day, true, false);
+    }
+
+    /** Advances one abstract village day with optional automatic extinction recovery. */
+    public static void advanceOneDay(
+            EconomyState.VillageRecord village, long worldSeed, long day, boolean automaticRecovery) {
+        advanceOneDay(village, worldSeed, day, automaticRecovery, false);
+    }
+
+    /** Advances one day and optionally requires physical settlers before production resumes. */
+    public static void advanceOneDay(
+            EconomyState.VillageRecord village,
+            long worldSeed,
+            long day,
+            boolean automaticRecovery,
+            boolean requirePhysicalSettlers) {
         if (village == null || village.villageId == null) {
             return;
         }
@@ -111,7 +128,8 @@ public final class VillageProsperityEngine {
             village.alchemyOutput = 0.0;
             village.transportOutput = 0.0;
             village.securityOutput = 0.0;
-            advanceRecovery(village, day);
+            advanceRecovery(village, day, automaticRecovery, requirePhysicalSettlers);
+            updateDevelopmentTier(village);
             return;
         }
 
@@ -150,16 +168,43 @@ public final class VillageProsperityEngine {
                 * clamp(0.5 + village.safety / 100.0, 0.4, 1.5);
 
         double foodUse = population * 0.46;
-        village.foodSupply = clamp(village.foodSupply + village.agricultureOutput - foodUse,
-                0.0, 20_000.0);
+        double foodSpoilage = village.foodSupply * 0.0008;
+        double infrastructureUpkeep = cottages * 0.03 + warehouses * 0.08 + mines * 0.10;
+        double materialUpkeep = (cottages + warehouses + mines) * 0.015;
+        village.foodSupply = clamp(
+                village.foodSupply + village.agricultureOutput - foodUse - foodSpoilage,
+                0.0,
+                20_000.0);
         village.materialSupply = clamp(village.materialSupply
                         + village.miningOutput
-                        + population * 0.04 * productivity,
+                        + population * 0.04 * productivity
+                        - materialUpkeep,
                 0.0, 20_000.0);
         village.treasury = clamp(village.treasury
                         + village.tradeOutput * 0.055
-                        + village.transportOutput * 0.015,
+                        + village.transportOutput * 0.015
+                        - population * 0.008
+                        - infrastructureUpkeep,
                 0.0, 1_000_000.0);
+
+        double localShock = unit(worldSeed, village.villageId, day, LOCAL_SHOCK_SALT);
+        if (localShock < 0.0015) {
+            village.agricultureOutput *= 0.72;
+            village.foodSupply *= 0.985;
+            village.prosperity = Math.max(0.0, village.prosperity - 1.5);
+        } else if (localShock < 0.0030) {
+            village.tradeOutput *= 0.74;
+            village.treasury = Math.max(0.0, village.treasury - population * 0.04);
+            village.prosperity = Math.max(0.0, village.prosperity - 0.8);
+        } else if (localShock > 0.9985) {
+            village.materialSupply = clamp(
+                    village.materialSupply + population * 0.35, 0.0, 20_000.0);
+            village.prosperity = Math.min(100.0, village.prosperity + 0.5);
+        }
+        if (village.foodSupply < population * 3.0) {
+            village.prosperity = Math.max(0.0, village.prosperity - 0.7);
+            village.safety = Math.max(0.0, village.safety - 0.15);
+        }
         village.developmentPoints = clamp(
                 village.developmentPoints + population * productivity * 0.045,
                 0.0,
@@ -183,12 +228,19 @@ public final class VillageProsperityEngine {
 
         updateLifecycle(village, day);
         advanceProjects(village, worldSeed, day, productivity);
-        maybeGrowPopulation(village, worldSeed, day);
+        maybeGrowPopulation(village, worldSeed, day, requirePhysicalSettlers);
         maybeApproveProject(village, worldSeed, day);
         updateDevelopmentTier(village);
     }
 
-    private static void advanceRecovery(EconomyState.VillageRecord village, long day) {
+    private static void advanceRecovery(
+            EconomyState.VillageRecord village,
+            long day,
+            boolean automaticRecovery,
+            boolean requirePhysicalSettlers) {
+        if (!automaticRecovery) {
+            return;
+        }
         if (village.lifecycle == Lifecycle.ABANDONED) {
             if (!village.restorationFunded
                     || village.restorationFund < RESTORATION_EMERALD_TARGET
@@ -199,8 +251,16 @@ public final class VillageProsperityEngine {
             return;
         }
 
-        village.population = 2;
-        village.pendingSettlers = Math.max(village.pendingSettlers, 2);
+        if (requirePhysicalSettlers) {
+            // Queue physical settlers first. Productive abstract population remains zero until
+            // a loaded-world census observes the spawned residents.
+            village.population = 0;
+            village.pendingSettlers = Math.max(village.pendingSettlers, 2);
+        } else {
+            // Simulation-only mode has no physical representation to wait for.
+            village.population = 2;
+            village.pendingSettlers = 0;
+        }
         village.housingCapacity = Math.max(village.housingCapacity, 4);
         village.foodSupply = Math.max(village.foodSupply, 60.0);
         village.materialSupply = Math.max(village.materialSupply, 20.0);
@@ -232,23 +292,35 @@ public final class VillageProsperityEngine {
     }
 
     private static void maybeGrowPopulation(
-            EconomyState.VillageRecord village, long worldSeed, long day) {
+            EconomyState.VillageRecord village,
+            long worldSeed,
+            long day,
+            boolean requirePhysicalSettlers) {
         if (village.lifecycle != Lifecycle.ACTIVE && village.lifecycle != Lifecycle.RECOVERING) {
             return;
         }
-        if (village.population >= MAX_ABSTRACT_POPULATION
-                || village.population >= village.housingCapacity
-                || village.foodSupply < village.population * 10.0
+        int committedPopulation = village.population
+                + (requirePhysicalSettlers ? village.pendingSettlers : 0);
+        if (committedPopulation >= MAX_ABSTRACT_POPULATION
+                || committedPopulation >= village.housingCapacity
+                || village.foodSupply < Math.max(1, village.population) * 10.0
                 || village.safety < 45.0) {
             return;
         }
         double baseChance = 0.0014
                 + 0.0012 * clamp(village.prosperity / 100.0, 0.0, 1.0)
-                + 0.0006 * clamp((village.housingCapacity - village.population) / 8.0, 0.0, 1.0);
+                + 0.0006 * clamp((village.housingCapacity - committedPopulation) / 8.0, 0.0, 1.0);
         double draw = unit(worldSeed, village.villageId, day, GROWTH_SALT);
         if (draw < baseChance) {
-            village.population++;
-            village.pendingSettlers = Math.min(8, village.pendingSettlers + 1);
+            if (requirePhysicalSettlers) {
+                // In visual worlds, a population increase becomes real only after a settler entity
+                // is safely materialized and observed by a loaded-world census.
+                village.pendingSettlers = Math.min(
+                        MAX_ABSTRACT_POPULATION - village.population,
+                        village.pendingSettlers + 1);
+            } else {
+                village.population++;
+            }
             village.foodSupply = Math.max(0.0, village.foodSupply - 6.0);
         }
     }
@@ -366,7 +438,9 @@ public final class VillageProsperityEngine {
         boolean warehouse = completedProjects(village, ProjectType.WAREHOUSE) > 0;
         boolean mine = completedProjects(village, ProjectType.MINE_ENTRANCE) > 0;
         int tier;
-        if (village.population >= 28 && village.prosperity >= 75.0 && completed >= 6) {
+        if (village.population <= 0) {
+            tier = 0;
+        } else if (village.population >= 28 && village.prosperity >= 75.0 && completed >= 6) {
             tier = 5;
         } else if (village.population >= 18 && village.prosperity >= 65.0 && completed >= 4) {
             tier = 4;
@@ -379,7 +453,8 @@ public final class VillageProsperityEngine {
         } else {
             tier = 0;
         }
-        village.developmentTier = Math.max(village.developmentTier, tier);
+        // Completed structures stay materialized, but the functional tier may decline.
+        village.developmentTier = tier;
     }
 
     /**
@@ -393,7 +468,7 @@ public final class VillageProsperityEngine {
         }
         village.lastSimulatedDay = Math.max(village.lastSimulatedDay, day);
         if (village.population <= 0) {
-            advanceRecovery(village, day);
+            advanceRecovery(village, day, true, true);
             return;
         }
         village.developmentPoints = clamp(

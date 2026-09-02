@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
@@ -27,10 +28,14 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
@@ -52,7 +57,9 @@ public final class VillageProsperityManager {
         EmeraldConfig config = EmeraldConfig.current();
         economy.configureVillageProsperity(
                 config.villageProsperitySimulationEnabled(),
-                config.villageVisualProgressionEnabled());
+                config.villageVisualProgressionEnabled(),
+                config.villageMarketIntegrationEnabled(),
+                config.villageAutomaticRecoveryEnabled());
         if (!config.villageProsperitySimulationEnabled()
                 && !config.villageVisualProgressionEnabled()) {
             return;
@@ -86,7 +93,7 @@ public final class VillageProsperityManager {
             return;
         }
 
-        Entity killer = source == null ? null : source.getEntity();
+        Entity killer = responsibleEntity(source);
         UUID responsiblePlayer = killer instanceof ServerPlayer player ? player.getUUID() : null;
         VillageProsperityEngine.IncidentCause cause = classifyCause(killer);
         String profession = String.valueOf(villager.getVillagerData().profession());
@@ -142,7 +149,7 @@ public final class VillageProsperityManager {
             AABB area = new AABB(player.blockPosition()).inflate(48.0, 24.0, 48.0);
             List<Villager> villagers = level.getEntitiesOfClass(
                     Villager.class, area, villager -> villager.isAlive());
-            BlockPos center = centerOf(villagers, player.blockPosition());
+            BlockPos center = stableCenter(level, villagers, player.blockPosition());
             int bedCount = countBeds(level, center, 24, 6);
             List<Monster> hostiles = level.getEntitiesOfClass(
                     Monster.class,
@@ -162,7 +169,9 @@ public final class VillageProsperityManager {
                         String.valueOf(villager.getVillagerData().profession()),
                         villager.blockPosition().asLong()));
             }
+            UUID preferredVillageId = preferredTaggedVillage(villagers);
             EconomyService.VillageSnapshot snapshot = economy.observeVillage(
+                    preferredVillageId,
                     new EconomyService.VillageObservation(
                             "minecraft:overworld",
                             center.asLong(),
@@ -178,6 +187,20 @@ public final class VillageProsperityManager {
             }
             for (Villager villager : villagers) {
                 assignVillage(villager, snapshot.village().villageId);
+            }
+            List<ZombieVillager> infectedResidents = level.getEntitiesOfClass(
+                    ZombieVillager.class,
+                    area,
+                    zombie -> zombie.isAlive()
+                            && (snapshot.village().villageId.equals(villageId(zombie))
+                                    || snapshot.village().residents.containsKey(zombie.getUUID())));
+            for (ZombieVillager zombie : infectedResidents) {
+                economy.recordResidentStatus(
+                        snapshot.village().villageId,
+                        zombie.getUUID(),
+                        "minecraft:none",
+                        zombie.blockPosition().asLong(),
+                        VillageProsperityEngine.ResidentStatus.INFECTED);
             }
             if (anchor != null) {
                 economy.associateBankRegionWithVillage(
@@ -233,20 +256,22 @@ public final class VillageProsperityManager {
                 }
                 BlockState current = level.getBlockState(target);
                 if (!current.equals(placement.state)) {
-                    boolean foundation = placement.dy == 0;
                     boolean safe = level.getBlockEntity(target) == null
-                            && (foundation || current.isAir() || current.canBeReplaced());
-                    if (!safe) {
+                            && (current.isAir() || current.canBeReplaced());
+                    if (!safe || !level.setBlock(target, placement.state, 3)) {
                         blocked = true;
                         break;
                     }
-                    level.setBlock(target, placement.state, 3);
                     placedThisTick++;
                     remainingBudget--;
                 }
                 index++;
             }
             boolean complete = index >= placements.size();
+            if (blocked && index == 0 && project.materializedBlocks == 0) {
+                economy.releaseVillageProjectSite(village.villageId, project.projectId);
+                continue;
+            }
             economy.updateVillageProjectMaterialization(
                     village.villageId, project.projectId, index, complete, blocked);
             if (placedThisTick > 0) {
@@ -273,10 +298,9 @@ public final class VillageProsperityManager {
             EconomyState.VillageRecord village,
             EmeraldConfig config,
             long gameTime) {
-        if (village.pendingSettlers <= 0
-                || village.population <= 0
-                || village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
-                || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT) {
+        if (village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
+                || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT
+                || (village.population <= 0 && !config.villageAutomaticRecoveryEnabled())) {
             return;
         }
         long previous = LAST_SETTLER_TICK.getOrDefault(village.villageId, Long.MIN_VALUE / 2L);
@@ -288,7 +312,14 @@ public final class VillageProsperityManager {
         int living = level.getEntitiesOfClass(
                         Villager.class, area, Villager::isAlive)
                 .size();
-        if (living >= village.population || village.housingCapacity <= living) {
+        int targetPopulation = Math.min(
+                VillageProsperityEngine.MAX_ABSTRACT_POPULATION,
+                Math.max(village.population, village.observedPopulation + village.pendingSettlers));
+        boolean reconciliationNeeded = living < targetPopulation;
+        int usableBeds = countBeds(level, center, 24, 6);
+        if ((village.pendingSettlers <= 0 && !reconciliationNeeded)
+                || village.housingCapacity <= living
+                || usableBeds <= living) {
             return;
         }
         List<Monster> threats = level.getEntitiesOfClass(
@@ -366,23 +397,28 @@ public final class VillageProsperityManager {
                 }
                 int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
                 BlockPos ground = new BlockPos(x, surface - 1, z);
-                if (level.getBlockState(ground).isAir() || !level.getFluidState(ground).isEmpty()) {
+                BlockState groundState = level.getBlockState(ground);
+                if (groundState.isAir()
+                        || !level.getFluidState(ground).isEmpty()
+                        || !isNaturalProjectGround(groundState)) {
                     return null;
                 }
                 minimum = Math.min(minimum, surface);
                 maximum = Math.max(maximum, surface);
             }
         }
-        if (maximum - minimum > 1) {
+        if (maximum != minimum) {
             return null;
         }
+        // The floor is placed in air directly above the natural surface. We never replace the
+        // ground layer, which keeps paths, farmland, player floors, and protected blocks intact.
         BlockPos origin = new BlockPos(
                 centerX - size.width / 2,
-                maximum - 1,
+                maximum,
                 centerZ - size.depth / 2);
         for (int x = -1; x <= size.width; x++) {
             for (int z = -1; z <= size.depth; z++) {
-                for (int y = 1; y <= size.height; y++) {
+                for (int y = 0; y <= size.height; y++) {
                     BlockPos target = origin.offset(x, y, z);
                     BlockState state = level.getBlockState(target);
                     if (level.getBlockEntity(target) != null
@@ -412,8 +448,15 @@ public final class VillageProsperityManager {
         floor(placements, width, depth, palette.floor);
         shell(placements, width, depth, 3, palette.wall, palette.corner, true);
         roof(placements, width, depth, 4, palette.roof);
-        placements.add(new Placement(1, 1, depth - 2, Blocks.BARREL.defaultBlockState()));
+        placements.add(new Placement(1, 1, depth - 2, Blocks.CHEST.defaultBlockState()));
         placements.add(new Placement(width - 2, 1, depth - 2, Blocks.BOOKSHELF.defaultBlockState()));
+        BlockState bedFoot = Blocks.BED.white().defaultBlockState()
+                .setValue(BedBlock.FACING, Direction.SOUTH);
+        BlockState bedHead = bedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+        for (int bedX : new int[] {1, 2, 4, 5}) {
+            placements.add(new Placement(bedX, 1, 2, bedFoot));
+            placements.add(new Placement(bedX, 1, 3, bedHead));
+        }
         return placements;
     }
 
@@ -425,7 +468,7 @@ public final class VillageProsperityManager {
         shell(placements, width, depth, 3, palette.wall, palette.corner, true);
         roof(placements, width, depth, 4, palette.roof);
         for (int x = 1; x < width - 1; x += 2) {
-            placements.add(new Placement(x, 1, depth - 2, Blocks.BARREL.defaultBlockState()));
+            placements.add(new Placement(x, 1, depth - 2, Blocks.CHEST.defaultBlockState()));
         }
         placements.add(new Placement(width / 2, 1, 2, Blocks.CRAFTING_TABLE.defaultBlockState()));
         return placements;
@@ -543,6 +586,75 @@ public final class VillageProsperityManager {
             case COTTAGE, MINE_ENTRANCE -> new StructureSize(7, 7, 5);
             case WAREHOUSE -> new StructureSize(9, 7, 5);
         };
+    }
+
+    private static BlockPos stableCenter(
+            ServerLevel level, List<Villager> villagers, BlockPos fallback) {
+        BlockPos approximate = centerOf(villagers, fallback);
+        BlockPos bestBell = null;
+        double bestDistance = Double.MAX_VALUE;
+        int radius = 32;
+        int vertical = 6;
+        for (int x = approximate.getX() - radius; x <= approximate.getX() + radius; x++) {
+            for (int z = approximate.getZ() - radius; z <= approximate.getZ() + radius; z++) {
+                if (!level.hasChunk(Math.floorDiv(x, 16), Math.floorDiv(z, 16))) {
+                    continue;
+                }
+                for (int y = approximate.getY() - vertical; y <= approximate.getY() + vertical; y++) {
+                    BlockPos candidate = new BlockPos(x, y, z);
+                    if (!level.getBlockState(candidate).is(Blocks.BELL)) {
+                        continue;
+                    }
+                    double distance = candidate.distSqr(approximate);
+                    if (distance < bestDistance) {
+                        bestBell = candidate;
+                        bestDistance = distance;
+                    }
+                }
+            }
+        }
+        return bestBell == null ? approximate : bestBell;
+    }
+
+    private static Entity responsibleEntity(DamageSource source) {
+        if (source == null) {
+            return null;
+        }
+        Entity attacker = source.getEntity();
+        if (attacker == null) {
+            attacker = source.getDirectEntity();
+        }
+        if (attacker instanceof Projectile projectile && projectile.getOwner() != null) {
+            attacker = projectile.getOwner();
+        }
+        return attacker;
+    }
+
+    private static UUID preferredTaggedVillage(List<Villager> villagers) {
+        Map<UUID, Integer> counts = new HashMap<>();
+        for (Villager villager : villagers) {
+            UUID tagged = villageId(villager);
+            if (tagged != null) {
+                counts.merge(tagged, 1, Integer::sum);
+            }
+        }
+        return counts.entrySet().stream()
+                .max(Map.Entry.<UUID, Integer>comparingByValue()
+                        .thenComparing(entry -> entry.getKey().toString()))
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+
+    private static boolean isNaturalProjectGround(BlockState state) {
+        return state.is(BlockTags.DIRT)
+                || state.is(Blocks.SAND)
+                || state.is(Blocks.RED_SAND)
+                || state.is(Blocks.STONE)
+                || state.is(Blocks.ANDESITE)
+                || state.is(Blocks.DIORITE)
+                || state.is(Blocks.GRANITE)
+                || state.is(Blocks.SNOW)
+                || state.is(Blocks.SNOW_BLOCK);
     }
 
     private static BlockPos centerOf(List<Villager> villagers, BlockPos fallback) {

@@ -10,91 +10,97 @@ bash scripts/run-common-tests.sh
 
 The suite verifies:
 
-- Gaussian distribution and deterministic replay
-- VILX and individual-company long-run calibration
-- Deterministic market-event frequency, targeted impacts, and VILX constituent weights
-- Regime persistence and crash behavior
-- Villager-lending defaults and term-by-term expected returns
-- Commodity movement and resource quotes
-- CD and lending maturity
-- Pure wall-clock, pure game-tick, and mixed-clock progression
-- Bounded catch-up and banking lockout
-- Save and reload equality
-- Format migration and future-format rejection
-- Required-field and checksum corruption recovery
-- Market history, market events, bank regions, and Banker anchors
-- Inventory journal lifecycle
-- Backup preservation, rollback, save retry backoff, spread, caps, and no-debt invariants
+- Gaussian distribution, deterministic replay, market calibration, regimes, events, and commodities
+- Villager-lending defaults and expected returns by term
+- Savings, CD, and lending maturity
+- Unified wall-clock/game-tick progression and bounded catch-up
+- Save migration, checksums, backup recovery, rollback, retry backoff, and no-debt invariants
+- Inventory transaction-journal lifecycle
+- Village Prosperity simulation and project approval
+- Independent simulation, visual, market-integration, and automatic-recovery behavior
+- Physical-first extinction recovery
+- Simulation-only abstract recovery
+- Market-influence bounds
+- Stable village identity persistence and preferred resident-tag identity
+- Resident Away to Emigrated transitions
+- Infection idempotence and cure reconciliation
+- Physical-mode population growth waiting for materialized settlers
+- Functional development-tier decline after collapse
 
 ## Automated loader verification
 
-GitHub Actions must pass:
+GitHub Actions must pass for the exact candidate commit:
 
-- Common economy regression tests
-- Fabric 26.2 Gradle build
-- NeoForge 26.2 Gradle build
-- Packaged Fabric JAR content and language validation
-- Packaged NeoForge JAR content and language validation
-- Fabric dedicated-server development launch
-- NeoForge dedicated-server development launch
-- Live Banker invariant test on both servers
-- Minecraft server-ready log detection
+- Common regression tests
+- Fabric 26.2 build and packaged-JAR validation
+- NeoForge 26.2 build and packaged-JAR validation
+- Fabric dedicated-server launch
+- NeoForge dedicated-server launch
+- Live Banker invariant checks
 - Fabric client bootstrap under a virtual display
 - NeoForge client bootstrap under a virtual display
-- Client screen-registration log detection
-- Artifact upload for both loaders and all smoke logs
+- Screen-registration and fatal-log checks
+- Artifact upload for both loaders and smoke logs
 
-The live Banker invariant test proves that an untouched unemployed adult can become a region-scoped Banker while an established farmer and a custom-named villager cannot be repurposed.
+## Manual beta checklist
 
-## Manual client checklist
+Automated startup proves API compatibility and initialization. It cannot prove every physical-world edge case.
 
-Automated bootstrap confirms loading and registration, but it does not replace visual and hands-on testing.
+### Banking and GUI
 
-### Fabric
+On both Fabric and NeoForge:
 
-- Launch Minecraft 26.2 with Fabric Loader and Fabric API.
-- Open a new world and an existing world.
-- Visit a village and confirm one bank or fallback Banker appears.
-- Right-click the Banker and the bank lectern.
-- Verify all four GUI pages.
-- Test GUI scales and window sizes, especially the smallest supported scaled height.
-- Confirm chart rendering, hover values, high/low labels, news, sectors, and tooltips.
-- Test every amount preset.
-- Confirm sell-all, early CD closure, and lending funding require a second click.
-- Test deposit, withdrawal, savings, buying, selling, CD, lending, and exchange actions.
-- Fill the inventory and test a withdrawal.
-- Force recovery with insufficient inventory space and confirm nothing drops into the world.
-- Close the game during prepared and committed journal states and verify exact-once recovery.
-- Confirm an established villager is never converted into a Banker.
+- Open a new world and an upgraded existing world.
+- Open the dashboard through both a Banker and bank lectern.
+- Verify all five pages and all GUI scales.
+- Exercise deposit, withdrawal, savings, buy/sell, CD, lending, exchange, Village support, and recovery.
+- Verify risky actions require confirmation.
+- Test full-inventory and interrupted transaction recovery.
 
-### NeoForge
+### Village identity and lifecycle
 
-Repeat the complete Fabric client checklist using NeoForge 26.2.
+- Test two villages closer than 100 blocks and confirm identities do not merge.
+- Move tagged villagers around and confirm their original settlement remains stable unless intentionally resettled.
+- Kill residents with pillagers, zombies, direct player attacks, and player-owned projectiles.
+- Confirm player-caused extinction becomes Abandoned and does not manipulate market fundamentals.
+- Convert a villager to a zombie villager, confirm productive population pauses, cure it, and confirm population reconciles once.
+- Move a resident away for more than the emigration window and confirm it stops contributing without being recorded dead.
+- Confirm a dead or extinct Banker never deletes player financial data.
 
-### Multiplayer
+### Recovery and physical population
 
-- Connect at least two players to one server.
-- Confirm both see the same prices, news, and regime.
-- Confirm accounts remain UUID-isolated.
-- Confirm only permission-level-2 players can use `/emerald` commands.
-- Confirm normal players can use Bankers and bank lecterns.
-- Confirm nearby village regions do not share a Banker.
-- Confirm one village region does not generate duplicate banks.
-- Confirm a lost Banker is replaced at the persisted bank counter.
-- Confirm the dashboard closes outside eight blocks.
-- Edit each world configuration setting, reload it, and verify invalid values are rejected without replacing the active configuration.
+- Wipe a village with hostile mobs and allow the recovery cooldown to expire.
+- Confirm the abstract population remains zero until a real settler spawns when visual progression is enabled.
+- Confirm settlers do not spawn with nearby threats or without a free real bed.
+- Disable automatic recovery and confirm extinction persists.
+- Run simulation with visuals disabled for a long period, then re-enable visuals and verify physical population converges gradually.
 
-### Village appearance
+### Construction safety
 
-Review generated banks in plains, desert, savanna, snowy, and taiga villages, plus coastal, mountainous, terraced, cave-adjacent, and modded terrain.
+Inspect Cottage, Warehouse, and Mine Entrance in all vanilla village biomes and difficult terrain.
+
+- Confirm construction never replaces village paths, farmland, containers, player floors, or existing buildings.
+- Confirm only naturally surfaced flat lots are accepted.
+- Place a solid block in a reserved project area before construction and confirm the project stops safely.
+- Block a project before its first placement and confirm the site can be released for another lot.
+- Verify failed placements from a protection or claim mod are not counted as progress.
+- Confirm Cottage beds are usable and Warehouse storage does not create fisherman workstations.
+
+### Multiplayer and performance
+
+- Connect at least two players and verify shared market state with UUID-isolated accounts.
+- Interact with different banks simultaneously.
+- Verify permission level 2 is still required for `/emerald` commands.
+- Test dozens to hundreds of known settlement records and profile census, catch-up, materialization, and save time.
 
 ## Publication gate
 
-A public prerelease requires:
+A public beta prerelease requires:
 
-1. Green automated workflow results for the exact release-candidate commit.
-2. Both packaged client JARs reaching the title screen and loading worlds.
-3. The complete GUI transaction checklist passing on both loaders.
-4. Visual review of all village-biome palettes.
-5. Multiplayer account-isolation and journal-recovery checks passing.
-6. Recorded artifact IDs and SHA-256 checksums for the chosen source commit.
+1. Green CI for the exact release commit.
+2. Both packaged client JARs loading worlds.
+3. Complete banking and Village page transactions on both loaders.
+4. Manual construction-safety review in every supported vanilla village biome.
+5. Live hostile-extinction, restoration, infection/cure, and emigration tests.
+6. Multiplayer account and village-identity checks.
+7. Recorded artifact IDs and SHA-256 checksums for the chosen source commit.

@@ -1,38 +1,56 @@
 # Village Prosperity System
 
-The Village Prosperity System connects the global Villager Exchange to persistent local village economies while keeping the mod lightweight. Villages are simulated as compact records. Physical villagers and structures are processed only when their chunks are loaded and players are nearby.
+The Village Prosperity System connects The Emerald Standard's global market to persistent local Minecraft settlements while preserving the mod's lightweight identity.
 
-## Configuration modes
+The key architectural rule is simple: **offline progression changes data, not chunks or entities**. Physical village growth materializes gradually only when players are nearby and the relevant chunks are already loaded.
 
-The economic simulation and visible world progression are independent world settings:
+## Configuration
 
 ```properties
 village_prosperity.simulation_enabled=true
 village_prosperity.visual_progression_enabled=true
+village_prosperity.market_integration_enabled=true
+village_prosperity.automatic_recovery_enabled=true
 ```
 
-Supported combinations:
+The four settings are independent.
 
-| Simulation | Visual progression | Behavior |
-|---|---|---|
-| On | On | Full prosperity simulation, market influence, settlers, and gradual construction |
-| On | Off | Village economies and market fundamentals continue, but no prosperity structures or settlers are materialized |
-| Off | On | Loaded villages can show lightweight visual activity and construction progress without changing market fundamentals |
-| Off | Off | The original global market and banking experience only |
+- `simulation_enabled`: advances population, supplies, output, prosperity, safety, projects, and lifecycle data.
+- `visual_progression_enabled`: allows loaded villages to materialize approved structures and reconcile physical settlers.
+- `market_integration_enabled`: allows eligible villages to contribute their capped fundamental factor to assets and commodities.
+- `automatic_recovery_enabled`: allows recoverable extinct villages to enter the recovery process after their cooldown.
 
-The visual option never force-loads chunks. Turning it off leaves completed structures intact and pauses future materialization.
+Turning visual progression off never removes structures that already exist. Turning market integration off leaves the local village simulation intact but makes the global market ignore settlement fundamentals.
 
 ## Stable village identity
 
-Each managed village receives a private UUID associated with its dimension, original center, seed, and persisted bank region. Villagers carry the village UUID as a durable tag. Bankers, projects, incidents, structures, and prosperity data all reference that identity rather than relying only on a configurable map grid.
+Each village receives a private UUID. The world-facing scanner prefers a nearby village bell as the persistent physical center when one is available, then falls back to the observed villager cluster. Existing bank-region mappings remain a compatibility aid, while proximity reuse is intentionally tighter than in beta.1 to reduce accidental merging of nearby villages.
 
-The first loaded census records beds, residents, professions, and nearby threats. Later scans update known residents without treating an unloaded or missing entity as dead. An explicit Minecraft death event is required before a resident is counted as a casualty.
+Every managed villager receives a village tag. Resident records preserve profession, status, last-seen day, and last-known position.
 
-## Simulated resources
+A missing entity is never treated as a death. Explicit Minecraft death events are required for casualties.
 
-Every village maintains bounded abstract values for:
+## Resident states
 
-- Population and housing capacity
+Residents can be:
+
+- Active
+- Away
+- Infected
+- Emigrated
+- Dead
+
+An unseen Active resident becomes Away after three economic days of continued village observation. A resident still absent after thirty economic days becomes Emigrated and no longer counts toward productive abstract population.
+
+Loaded zombie villagers are recorded as Infected when a village tag, preserved UUID, or nearby known resident identifies the conversion. Infection removes that resident from productive population without recording a death. Repeated zombie observations are idempotent. When a living villager later appears near the infection location, the stale infected record is reconciled to the cured resident and productive population can recover.
+
+## Abstract village economy
+
+Each village tracks bounded values for:
+
+- Population
+- Observed population
+- Housing capacity
 - Food supply
 - Material supply
 - Treasury
@@ -41,13 +59,30 @@ Every village maintains bounded abstract values for:
 - Farming output
 - Mining output
 - Trade output
+- Redstone output
+- Alchemy output
+- Transportation output
+- Security output
 - Development points
 
-The system does not mine real terrain or duplicate physical ores. Miner, farmer, merchant, and builder activity is represented economically. Visible particles and work-site activity are presentation only.
+The system never mines real terrain for abstract production and never creates physical ores as an economic side effect.
+
+### Maintenance and local variation
+
+Village economies are not guaranteed to climb forever. Daily simulation now includes:
+
+- Food consumption
+- Small storage spoilage
+- Infrastructure treasury upkeep
+- Material upkeep
+- Rare local harvest shocks
+- Rare local trade disruptions
+- Rare positive material discoveries
+- Prosperity penalties during severe food shortages
+
+These local effects are deliberately modest. Actual casualties and safety remain more important than random local shocks.
 
 ## Development tiers
-
-Villages progress through six stages:
 
 | Tier | Name |
 |---:|---|
@@ -58,23 +93,50 @@ Villages progress through six stages:
 | 4 | Prosperous Town |
 | 5 | Regional Center |
 
-Population, housing, prosperity, safety, treasury, and completed development projects determine the tier. Progress can reverse after severe collapse, but completed structures are never automatically deleted.
+A village's **functional tier can now rise or fall** as population and prosperity change. Completed physical structures are never automatically removed when the functional tier falls.
 
-## Project queue
+## Development projects
 
-The beta starts with three development projects:
+Beta 2 begins with three physical project types:
 
-- Cottage: increases housing capacity
-- Warehouse: improves resource storage and local production efficiency
-- Mine Entrance: improves abstract mining output
+- Cottage
+- Warehouse
+- Mine Entrance
 
-Projects are approved by the simulation only when the village has enough population, supplies, safety, and development points. Offline catch-up advances project economics, then compresses long absences into a bounded queue instead of placing years of buildings during world loading.
+Projects require population, resources, treasury, prosperity, safety, and development points. Offline simulation may complete their economic phase, but physical construction stays in a bounded visual backlog.
 
-When visual progression is enabled, one project at a time reserves a safe nearby lot. The server places only a configurable number of blocks at each construction interval. No project force-loads chunks, removes block entities, clears protected space, or replaces a site that has become occupied.
+### Construction safety
 
-## Lightweight worker representation
+The materializer follows conservative rules:
 
-Villagers do not run a complete offline AI economy. Loaded residents can visit ordinary workplaces and the current construction area while particles and sounds show activity. Production and project completion remain controlled by the server-side prosperity record, so deaths, pathfinding failures, and unloaded chunks cannot corrupt the economy.
+- No forced chunk loading
+- No placement when a required chunk is unloaded
+- No replacement of block entities
+- No replacement of solid or protected blocks
+- No replacement of the existing terrain surface
+- The project floor is placed in air directly above a flat surface made from a conservative natural-ground whitelist
+- A failed `setBlock` result is treated as blocked instead of being counted as successful construction
+- A site blocked before the first physical placement is released so a later pass can choose another safe lot
+- Development lots cannot overlap existing prosperity projects or the Village Bank anchor
+- Unsafe terrain, water, steep sites, and occupied air volumes are rejected
+
+Warehouses and cottages use chests rather than barrels so prosperity buildings do not unintentionally create fisherman workstations.
+
+Cottages include four real beds. Physical settler reconciliation requires actual available beds, keeping visible population tied to usable village housing.
+
+Default construction speed is intentionally slower than beta.1: two blocks every ten server ticks. Servers may tune the values in configuration.
+
+## Population reconciliation
+
+When visual progression is enabled, physical villagers are authoritative for productive population growth. A simulated birth or migration event queues a settler, but it does not increase productive abstract population until a real villager is materialized and a census observes it. This also lets physical villages converge after visual progression is re-enabled without relying on the old eight-settler cap.
+
+Recovery behaves differently depending on configuration:
+
+- **Simulation + visuals:** recovery approval queues two settlers, but abstract productive population stays at zero until those entities actually spawn and the census observes them.
+- **Simulation only:** there is intentionally no physical population to wait for, so a recoverable settlement can resume abstractly.
+- **Automatic recovery off:** extinct settlements remain extinct until players or existing villagers restore them through other gameplay.
+
+A physical settler is only spawned when the destination is loaded, the village has an available real bed, no nearby hostile blocks settlement, and the spawn interval has elapsed.
 
 ## Village lifecycle
 
@@ -87,42 +149,55 @@ A village can be:
 - Recovering
 - Abandoned
 
-Casualties reduce population, output, safety, prosperity, and project speed. A village with no living residents stops producing resources and approving projects. Existing structures, financial accounts, history, and the village identity remain intact.
+Casualties reduce population, safety, prosperity, and production. A settlement with no productive population contributes no market fundamentals.
 
 ### Hostile destruction
 
-Pillager, raid, zombie, and other hostile casualties can move a village into a recoverable extinct state. After a safety cooldown, a loaded village with usable housing and no nearby threat may receive two settlers. Repeated collapses increase the delay and can suspend automatic recovery.
+Pillager, raid, zombie, and other hostile deaths can lead to recoverable extinction. Repeated collapses increase the recovery delay and eventually suspend automatic recovery.
 
 ### Player-caused destruction
 
-A player-caused extinction becomes Abandoned. It does not automatically spawn replacement residents and is excluded from market fundamentals to prevent stock-price manipulation. Restoration requires imported villagers, cured residents, or a funded restoration effort.
+Direct player kills and player-owned projectile kills are attributed to the player when Minecraft exposes that ownership. A player-caused extinction becomes Abandoned, does not automatically replenish victims, and is excluded from market fundamentals to prevent intentional stock-price manipulation.
 
-### Environmental and unknown deaths
+Environmental traps that Minecraft does not attribute to an attacker remain environmental incidents. They are deliberately given conservative market effects.
 
-Environmental incidents are recorded and reduce the local economy, but they use conservative market influence. A resident missing from a scan becomes Away after a grace period and later Emigrated. Missing residents are never assumed dead.
+### Banker death
 
-## Restoration
+A Banker is only an interface to world-level accounts. Losing a Banker or an entire village never deletes player cash, savings, holdings, CDs, or villager-lending positions. Banker replacement is suppressed while the associated village is Extinct or Abandoned.
 
-The Village page in the Banker dashboard shows the local lifecycle, population, housing, prosperity, safety, supplies, treasury, tier, current project, and construction backlog.
+## Village restoration
 
-Players can contribute emeralds to village support. This is a local development contribution, not a loan and not a guaranteed investment return. An abandoned or extinct village becomes eligible for restoration after the configured target is met and the loaded-world safety and housing checks pass.
+Players may contribute emeralds to local village support. A contribution is a development grant, not a loan, debt, or guaranteed investment return.
 
-Player accounts remain world-level. A destroyed or unstaffed village can never erase cash, savings, investments, CDs, or villager business lending.
+Abandoned villages require the restoration threshold and a valid future recovery window before automatic recovery can resume. Player balances can never become negative.
 
-## Market connection
+## Global market connection
 
-Active simulated villages contribute a small, capped fundamental factor to the global economy:
+Eligible villages provide a small capped fundamental factor to the broader simulation:
 
 - Mining supports Deepdelve Mining and commodity supply
-- Farming supports Golden Harvest Cooperative
-- Trade and transportation support Nether Spice, Ender Freight, and Minecart Transit
-- Safety supports Iron Golem Security
-- Prosperity and development support Redstone Dynamics and Potionworks
+- Agriculture supports Golden Harvest Cooperative
+- Trade supports Nether Spice and Ender Freight
+- Transportation supports Minecart Transit
+- Security supports Iron Golem Security
+- Prosperity and specialized output support Redstone Dynamics and Potionworks
 
-The combined annual village contribution is capped so the global regime, market volatility, and company-specific events remain dominant. Player-caused destruction is excluded from the market calculation.
+The annual asset effect remains capped at approximately plus or minus 1.2 percentage points so settlement activity cannot guarantee investment returns.
 
-## Offline behavior
+Player-caused abandoned villages and empty settlements are excluded from fundamentals.
 
-Offline progression updates data only. It does not create raids, kill villagers, force chunks, move entities, mine terrain, or instantly place structures. When a village is loaded again, its abstract state is already current and any missing physical projects enter the gradual construction queue.
+## Performance model
 
-This split between simulation and materialization is the core performance rule of the feature.
+Village Prosperity is designed around bounded work:
+
+- No offline AI
+- No forced chunks
+- Periodic loaded-world census only
+- One compact persistent record per known village
+- Small incident and resident history limits
+- Bounded project queue
+- Bounded global block-placement budget
+- Cached village fundamentals for snapshot lists
+- No real resource mining for simulated output
+
+For very large public servers, future storage partitioning may still be warranted, but single-player and ordinary multiplayer remain the primary beta target.
