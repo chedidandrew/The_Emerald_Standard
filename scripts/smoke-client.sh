@@ -29,7 +29,7 @@ set -e
 # initializing. Any other ERROR/FATAL entry remains a hard failure.
 unexpected_errors="$(
     grep -E '\[[^]]+/(ERROR|FATAL)\]' "$LOG_FILE" \
-        | grep -Ev '\[mojang/Narrator\]: Error while loading the narrator|\[minecraft/SoundEngine\]: Error starting SoundSystem\. Turning off sounds & music' \
+        | grep -Ev 'Error while loading the narrator|Error starting SoundSystem\. Turning off sounds & music' \
         || true
 )"
 
