@@ -30,6 +30,7 @@ All notable changes to The Emerald Standard are documented here.
 - Prevented two nearby generated banks from adopting the same Banker.
 - Preserved dashboard access through the bank counter if a Banker is temporarily missing.
 - Cleared transient per-player action cooldown state on disconnect.
+- Corrected the NeoForge bank-counter interaction to use Minecraft 26.2's available server-level API.
 
 ## 0.2.0-alpha.2 - 2026-09-01
 
