@@ -16,6 +16,7 @@ rm -rf "$RUN_DIR"
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
 set +e
+ALSOFT_DRIVERS="null" \
 JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.clientSmoke=true" \
     timeout 240s xvfb-run -a \
     bash "$ROOT/$LOADER/gradlew" --no-daemon -p "$ROOT/$LOADER" runClient \
@@ -23,14 +24,33 @@ JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.clientSmoke=tru
 status=$?
 set -e
 
-if grep -Eq '\[[^]]+/(ERROR|FATAL)\]|Exception in thread|A fatal error has been detected|ReportedException|Could not execute entrypoint' "$LOG_FILE"; then
-    echo "$LOADER client logged a fatal startup error" >&2
+# Minecraft logs two recoverable errors on some headless Linux runners when narrator or audio
+# devices are unavailable. They do not prevent the client, resources, or mod screen registry from
+# initializing. Any other ERROR/FATAL entry remains a hard failure.
+unexpected_errors="$(
+    grep -E '\[[^]]+/(ERROR|FATAL)\]' "$LOG_FILE" \
+        | grep -Ev '\[mojang/Narrator\]: Error while loading the narrator|\[minecraft/SoundEngine\]: Error starting SoundSystem\. Turning off sounds & music' \
+        || true
+)"
+
+if [[ -n "$unexpected_errors" ]] \
+        || grep -Eq 'Exception in thread|A fatal error has been detected|ReportedException|Could not execute entrypoint|ModLoadingException|Mixin apply failed|NoClassDefFoundError|ClassNotFoundException|Crash report saved to' "$LOG_FILE"; then
+    echo "$LOADER client logged an unexpected fatal startup error" >&2
+    if [[ -n "$unexpected_errors" ]]; then
+        printf '%s\n' "$unexpected_errors" >&2
+    fi
     cat "$LOG_FILE" >&2
     exit 1
 fi
 
 if ! grep -Fq "The Emerald Standard client initialized" "$LOG_FILE"; then
     echo "$LOADER client never initialized The Emerald Standard" >&2
+    cat "$LOG_FILE" >&2
+    exit 1
+fi
+
+if ! grep -Fq "Stopping!" "$LOG_FILE"; then
+    echo "$LOADER client did not reach the controlled smoke-test shutdown" >&2
     cat "$LOG_FILE" >&2
     exit 1
 fi
