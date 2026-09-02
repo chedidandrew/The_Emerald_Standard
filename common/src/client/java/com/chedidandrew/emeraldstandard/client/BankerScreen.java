@@ -1,6 +1,7 @@
 package com.chedidandrew.emeraldstandard.client;
 
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
+import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import java.util.Locale;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -48,7 +49,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 tr("tab.overview"),
                 tr("tab.market"),
                 tr("tab.banking"),
-                tr("tab.exchange")
+                tr("tab.exchange"),
+                tr("tab.village")
         };
         for (int index = 0; index < tabs.length; index++) {
             int selectedTab = index;
@@ -58,7 +60,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 tab = selectedTab;
                                 rebuildWidgets();
                             })
-                    .bounds(x + index * 75, y, 71, 18)
+                    .bounds(x + index * 60, y, 57, 18)
                     .build());
         }
 
@@ -68,6 +70,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case BankerMenu.TAB_MARKET -> addMarketButtons();
             case BankerMenu.TAB_BANKING -> addBankingButtons();
             case BankerMenu.TAB_EXCHANGE -> addExchangeButtons();
+            case BankerMenu.TAB_VILLAGE -> addVillageButtons();
             default -> {
             }
         }
@@ -221,6 +224,27 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 BankerMenu.ACTION_EXCHANGE);
     }
 
+    private void addVillageButtons() {
+        if (!menu.hasVillage()) {
+            return;
+        }
+        boolean restoration = menu.villageLifecycle()
+                == VillageProsperityEngine.Lifecycle.ABANDONED
+                || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT;
+        Component label = confirmationAction == BankerMenu.ACTION_SUPPORT_VILLAGE
+                ? tr("action.confirm")
+                : restoration ? tr("action.restore_village") : tr("action.support_village");
+        addConfirmingActionButton(
+                label,
+                leftPos + 100,
+                topPos + 165,
+                120,
+                BankerMenu.ACTION_SUPPORT_VILLAGE,
+                restoration
+                        ? tr("tooltip.restore_village")
+                        : tr("tooltip.support_village"));
+    }
+
     private void addActionButton(Component label, int x, int y, int width, int id) {
         addRenderableWidget(Button.builder(
                         label,
@@ -299,6 +323,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         } else if (tab == BankerMenu.TAB_EXCHANGE) {
             graphics.outline(x + 52, y + 62, 216, 47, 0xFF456B5A);
             graphics.fill(x + 60, y + 118, x + 260, y + 119, 0xFF456B5A);
+        } else if (tab == BankerMenu.TAB_VILLAGE) {
+            graphics.outline(x + 10, y + 54, 145, 97, 0xFF456B5A);
+            graphics.outline(x + 165, y + 54, 143, 97, 0xFF456B5A);
         }
     }
 
@@ -317,6 +344,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case BankerMenu.TAB_MARKET -> drawMarketLabels(graphics);
             case BankerMenu.TAB_BANKING -> drawBankingLabels(graphics);
             case BankerMenu.TAB_EXCHANGE -> drawExchangeLabels(graphics);
+            case BankerMenu.TAB_VILLAGE -> drawVillageLabels(graphics);
             default -> {
             }
         }
@@ -468,6 +496,106 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 160,
                 159,
                 MUTED);
+    }
+
+    private void drawVillageLabels(GuiGraphicsExtractor graphics) {
+        if (!menu.hasVillage()) {
+            graphics.centeredText(font, tr("village.none"), 160, 92, MUTED);
+            graphics.centeredText(font, tr("village.find_bank"), 160, 110, MUTED);
+            return;
+        }
+        graphics.text(font, tr("village.community"), 16, 59, GOLD, false);
+        graphics.text(font,
+                tr("village.status", tr("village.lifecycle."
+                        + menu.villageLifecycle().name().toLowerCase(Locale.ROOT))),
+                16,
+                75,
+                TEXT,
+                false);
+        graphics.text(font,
+                tr("village.population", menu.villagePopulation(), menu.villageHousing()),
+                16,
+                89,
+                TEXT,
+                false);
+        graphics.text(font,
+                tr("village.tier", menu.villageTier()),
+                16,
+                103,
+                TEXT,
+                false);
+        graphics.text(font,
+                tr("village.prosperity", String.format(Locale.ROOT, "%.1f", menu.villageProsperity())),
+                16,
+                117,
+                menu.villageProsperity() >= 50.0 ? POSITIVE : GOLD,
+                false);
+        graphics.text(font,
+                tr("village.safety", String.format(Locale.ROOT, "%.1f", menu.villageSafety())),
+                16,
+                131,
+                menu.villageSafety() >= 50.0 ? POSITIVE : NEGATIVE,
+                false);
+
+        graphics.text(font, tr("village.resources"), 171, 59, GOLD, false);
+        graphics.text(font,
+                tr("village.food", String.format(Locale.ROOT, "%.1f", menu.villageFood())),
+                171,
+                75,
+                TEXT,
+                false);
+        graphics.text(font,
+                tr("village.materials", String.format(Locale.ROOT, "%.1f", menu.villageMaterials())),
+                171,
+                89,
+                TEXT,
+                false);
+        graphics.text(font,
+                tr("village.treasury", money(menu.villageTreasury())),
+                171,
+                103,
+                TEXT,
+                false);
+        int projectOrdinal = menu.villageProjectTypeOrdinal();
+        Component project = projectOrdinal < 0
+                || projectOrdinal >= VillageProsperityEngine.ProjectType.values().length
+                ? tr("village.project.none")
+                : tr("village.project."
+                        + VillageProsperityEngine.ProjectType.values()[projectOrdinal]
+                                .name().toLowerCase(Locale.ROOT));
+        graphics.text(font,
+                tr("village.project", project),
+                171,
+                117,
+                TEXT,
+                false);
+        graphics.text(font,
+                tr("village.progress",
+                        String.format(Locale.ROOT, "%.1f", menu.villageProjectProgress()),
+                        menu.villageProjectBacklog()),
+                171,
+                131,
+                MUTED,
+                false);
+        Component mode = menu.villageSimulationEnabled()
+                ? menu.villageVisualProgressionEnabled()
+                        ? tr("village.mode.full")
+                        : tr("village.mode.simulation")
+                : menu.villageVisualProgressionEnabled()
+                        ? tr("village.mode.visual")
+                        : tr("village.mode.off");
+        graphics.text(font, mode, 16, 149, MUTED, false);
+        if (menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.ABANDONED
+                || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT) {
+            graphics.text(font,
+                    tr("village.restoration",
+                            String.format(Locale.ROOT, "%.1f", menu.villageRestorationFund()),
+                            String.format(Locale.ROOT, "%.0f", VillageProsperityEngine.RESTORATION_EMERALD_TARGET)),
+                    171,
+                    149,
+                    GOLD,
+                    false);
+        }
     }
 
     private void drawChart(
@@ -651,6 +779,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case 11 -> tr("status.exchanged");
             case 12 -> tr("status.recovered");
             case 13 -> tr("status.recovery_pending");
+            case 14 -> tr("status.village_funded");
+            case 15 -> tr("status.village_restoration_ready");
             case -1 -> tr("status.busy");
             case -2 -> tr("status.insufficient");
             case -3 -> tr("status.inventory_full");
@@ -658,6 +788,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case -5 -> tr("status.not_ready");
             case -6 -> tr("status.persistence_failed");
             case -7 -> tr("status.unsupported");
+            case -8 -> tr("status.no_village");
             default -> null;
         };
     }

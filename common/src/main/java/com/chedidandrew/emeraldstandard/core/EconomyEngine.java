@@ -172,6 +172,19 @@ public final class EconomyEngine {
     }
 
     public static double assetReturn(Asset asset, double marketReturn, long seed, long day) {
+        return assetReturn(asset, marketReturn, seed, day, 0.0);
+    }
+
+    /**
+     * Computes one company return with a small, capped annual village-fundamentals drift.
+     * World activity can influence the market, but it can never guarantee a profit.
+     */
+    public static double assetReturn(
+            Asset asset,
+            double marketReturn,
+            long seed,
+            long day,
+            double annualVillageDrift) {
         if (asset.ticker().equals("VILX")) {
             return marketReturn;
         }
@@ -181,10 +194,12 @@ public final class EconomyEngine {
         double idiosyncraticSigma = asset.annualIdiosyncraticVolatility() / SQRT_DAYS_PER_YEAR;
         double idiosyncraticShock = idiosyncraticSigma
                 * gaussian(mix(seed, day, stableHash(asset.ticker())));
+        double safeVillageDrift = clamp(annualVillageDrift, -0.012, 0.012);
 
         double assetLogReturn = riskFreeDailyLogReturn
                 + asset.beta() * (marketLogReturn - riskFreeDailyLogReturn)
                 + StrictMath.log1p(asset.annualAlpha()) / DAYS_PER_YEAR
+                + StrictMath.log1p(safeVillageDrift) / DAYS_PER_YEAR
                 - 0.5 * idiosyncraticSigma * idiosyncraticSigma
                 + idiosyncraticShock;
 
@@ -411,7 +426,21 @@ public final class EconomyEngine {
             Regime regime,
             long seed,
             long day) {
-        double targetPrice = commodity.anchorPrice() * commodityRegimeMultiplier(commodity.id(), regime);
+        return nextCommodityPrice(commodity, currentPrice, regime, seed, day, 0.0);
+    }
+
+    /** Positive annual supply pressure gently lowers the commodity's mean-reversion target. */
+    public static double nextCommodityPrice(
+            Commodity commodity,
+            double currentPrice,
+            Regime regime,
+            long seed,
+            long day,
+            double annualSupplyPressure) {
+        double safePressure = clamp(annualSupplyPressure, -0.01, 0.01);
+        double targetPrice = commodity.anchorPrice()
+                * commodityRegimeMultiplier(commodity.id(), regime)
+                * (1.0 - safePressure);
         double safeCurrent = clamp(currentPrice, commodity.anchorPrice() * 0.20, commodity.anchorPrice() * 5.0);
         double dailySigma = commodity.annualVolatility() / SQRT_DAYS_PER_YEAR;
         double meanReversion = 0.0030 * (StrictMath.log(targetPrice) - StrictMath.log(safeCurrent));

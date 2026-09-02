@@ -25,6 +25,8 @@ public final class BankingOperations {
     static final int EXCHANGED = 11;
     static final int RECOVERED = 12;
     static final int RECOVERY_PENDING = 13;
+    static final int VILLAGE_FUNDED = 14;
+    static final int VILLAGE_RESTORATION_READY = 15;
 
     static final int BUSY = -1;
     static final int INSUFFICIENT = -2;
@@ -33,6 +35,7 @@ public final class BankingOperations {
     static final int NOT_READY = -5;
     static final int PERSISTENCE_FAILED = -6;
     static final int UNSUPPORTED = -7;
+    static final int NO_VILLAGE = -8;
 
     private BankingOperations() {
     }
@@ -303,6 +306,34 @@ public final class BankingOperations {
                         player, economy, transaction.transactionId)
                 ? EXCHANGED
                 : RECOVERY_PENDING;
+    }
+
+    static int supportVillage(
+            ServerPlayer player,
+            EconomyService economy,
+            java.util.UUID villageId,
+            int requested) {
+        int readiness = prepare(player, economy);
+        if (readiness != READY) {
+            return readiness;
+        }
+        if (villageId == null) {
+            return NO_VILLAGE;
+        }
+        long cash = economy.portfolioSnapshot(player.getUUID()).account().cashMicro
+                / EconomyState.MICRO;
+        int amount = cappedFinancialAmount(requested, cash);
+        if (amount <= 0) {
+            return INSUFFICIENT;
+        }
+        EconomyService.VillageFundingResult result =
+                economy.fundVillage(player.getUUID(), villageId, amount);
+        if (!result.funded()) {
+            return PERSISTENCE_FAILED;
+        }
+        return result.restorationActivated()
+                ? VILLAGE_RESTORATION_READY
+                : VILLAGE_FUNDED;
     }
 
     private static int prepare(ServerPlayer player, EconomyService economy) {

@@ -63,7 +63,7 @@ public final class VillageBankManager {
                 if (packedAnchor == null) {
                     economy.markGeneratedBankRegion(regionKey, anchor.asLong());
                 }
-                ensureBanker(level, anchor, packedAnchor != null, regionKey);
+                ensureBanker(level, anchor, packedAnchor != null, regionKey, economy);
                 continue;
             }
 
@@ -76,18 +76,36 @@ public final class VillageBankManager {
                 completed = economy.markGeneratedBankRegion(
                         regionKey, bankerPosition.asLong());
                 if (completed) {
-                    ensureBanker(level, bankerPosition, true, regionKey);
+                    EconomyService.VillageSnapshot village = economy.nearestVillageSnapshot(
+                            "minecraft:overworld", villagePosition.asLong(), 128.0);
+                    if (village != null) {
+                        economy.associateBankRegionWithVillage(
+                                regionKey, village.village().villageId, bankerPosition.asLong());
+                    }
+                    ensureBanker(level, bankerPosition, true, regionKey, economy);
                 }
             } else {
-                completed = ensureBanker(level, villagePosition, false, regionKey)
+                completed = ensureBanker(level, villagePosition, false, regionKey, economy)
                         && economy.markGeneratedBankRegion(
                                 regionKey, villagePosition.asLong());
+                if (completed) {
+                    EconomyService.VillageSnapshot village = economy.nearestVillageSnapshot(
+                            "minecraft:overworld", villagePosition.asLong(), 128.0);
+                    if (village != null) {
+                        economy.associateBankRegionWithVillage(
+                                regionKey, village.village().villageId, villagePosition.asLong());
+                    }
+                }
             }
         }
     }
 
     private static boolean ensureBanker(
-            ServerLevel level, BlockPos bankerAnchor, boolean generatedStructure, long regionKey) {
+            ServerLevel level,
+            BlockPos bankerAnchor,
+            boolean generatedStructure,
+            long regionKey,
+            EconomyService economy) {
         AABB search = new AABB(bankerAnchor).inflate(48.0, 20.0, 48.0);
         List<Villager> villagers = level.getEntitiesOfClass(
                 Villager.class,
@@ -104,6 +122,12 @@ public final class VillageBankManager {
         if (existing != null) {
             BankerAccess.markBanker(existing, regionKey);
             existing.setHomeTo(bankerAnchor, EmeraldConfig.current().bankerRestrictionRadius());
+            return true;
+        }
+
+        // An extinct or deliberately abandoned village keeps account access through its bank
+        // lectern, but it does not receive a free replacement Banker until recovery begins.
+        if (!economy.allowBankerReplacementAt(bankerAnchor.asLong())) {
             return true;
         }
 

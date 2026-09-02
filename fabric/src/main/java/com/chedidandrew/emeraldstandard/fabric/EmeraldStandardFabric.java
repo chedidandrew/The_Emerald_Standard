@@ -10,10 +10,12 @@ import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
+import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -25,6 +27,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +47,10 @@ public final class EmeraldStandardFabric implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
-                EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
+                EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
+                ECONOMY.configureVillageProsperity(
+                        config.villageProsperitySimulationEnabled(),
+                        config.villageVisualProgressionEnabled());
                 ECONOMY.start(
                         server.getWorldPath(LevelResource.DATA),
                         server.overworld().getSeed(),
@@ -74,7 +80,14 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 LOGGER.error("Could not advance or save The Emerald Standard economy: {}",
                         ECONOMY.lastError());
             }
+            VillageProsperityManager.tick(server, ECONOMY);
             VillageBankManager.tick(server, ECONOMY);
+        });
+
+        ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
+            if (entity instanceof Villager villager) {
+                VillageProsperityManager.onVillagerDeath(villager, damageSource, ECONOMY);
+            }
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->

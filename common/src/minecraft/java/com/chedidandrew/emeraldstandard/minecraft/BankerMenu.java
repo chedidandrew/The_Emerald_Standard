@@ -5,6 +5,7 @@ import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
@@ -21,6 +22,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int TAB_MARKET = 1;
     public static final int TAB_BANKING = 2;
     public static final int TAB_EXCHANGE = 3;
+    public static final int TAB_VILLAGE = 4;
 
     public static final int BUTTON_ASSET_BASE = 10;
     public static final int BUTTON_RESOURCE_BASE = 30;
@@ -41,6 +43,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int ACTION_COLLECT_LENDING = 110;
     public static final int ACTION_EXCHANGE = 111;
     public static final int ACTION_RECOVER = 112;
+    public static final int ACTION_SUPPORT_VILLAGE = 113;
 
     public static final int[] AMOUNT_PRESETS = {1, 5, 10, 32, 64, -1};
     public static final int[] TERMS = {30, 90, 180, 365};
@@ -92,7 +95,24 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_ASSET_HOLDING_BASE = DATA_ASSET_PRICE_BASE + 9;
     private static final int DATA_HISTORY_COUNT = DATA_ASSET_HOLDING_BASE + 9;
     private static final int DATA_HISTORY_BASE = DATA_HISTORY_COUNT + 1;
-    public static final int DATA_COUNT = DATA_HISTORY_BASE + HISTORY_POINTS;
+    private static final int DATA_VILLAGE_PRESENT = DATA_HISTORY_BASE + HISTORY_POINTS;
+    private static final int DATA_VILLAGE_LIFECYCLE = DATA_VILLAGE_PRESENT + 1;
+    private static final int DATA_VILLAGE_POPULATION = DATA_VILLAGE_PRESENT + 2;
+    private static final int DATA_VILLAGE_HOUSING = DATA_VILLAGE_PRESENT + 3;
+    private static final int DATA_VILLAGE_TIER = DATA_VILLAGE_PRESENT + 4;
+    private static final int DATA_VILLAGE_PROSPERITY_BPS = DATA_VILLAGE_PRESENT + 5;
+    private static final int DATA_VILLAGE_SAFETY_BPS = DATA_VILLAGE_PRESENT + 6;
+    private static final int DATA_VILLAGE_FOOD_CENTI = DATA_VILLAGE_PRESENT + 7;
+    private static final int DATA_VILLAGE_MATERIAL_CENTI = DATA_VILLAGE_PRESENT + 8;
+    private static final int DATA_VILLAGE_TREASURY_CENTI_LOW = DATA_VILLAGE_PRESENT + 9;
+    private static final int DATA_VILLAGE_TREASURY_CENTI_HIGH = DATA_VILLAGE_PRESENT + 10;
+    private static final int DATA_VILLAGE_PROJECT_TYPE = DATA_VILLAGE_PRESENT + 11;
+    private static final int DATA_VILLAGE_PROJECT_PROGRESS_BPS = DATA_VILLAGE_PRESENT + 12;
+    private static final int DATA_VILLAGE_PROJECT_BACKLOG = DATA_VILLAGE_PRESENT + 13;
+    private static final int DATA_VILLAGE_RESTORATION_CENTI = DATA_VILLAGE_PRESENT + 14;
+    private static final int DATA_VILLAGE_SIMULATION_ENABLED = DATA_VILLAGE_PRESENT + 15;
+    private static final int DATA_VILLAGE_VISUAL_ENABLED = DATA_VILLAGE_PRESENT + 16;
+    public static final int DATA_COUNT = DATA_VILLAGE_PRESENT + 17;
 
     private final Inventory inventory;
     private final EconomyService economy;
@@ -139,6 +159,24 @@ public final class BankerMenu extends AbstractContainerMenu {
     private final int[] assetHoldingsCenti = new int[9];
     private final int[] historyCenti = new int[HISTORY_POINTS];
     private int historyCount;
+
+    private UUID villageId;
+    private int villagePresent;
+    private int villageLifecycle;
+    private int villagePopulation;
+    private int villageHousing;
+    private int villageTier;
+    private int villageProsperityBps;
+    private int villageSafetyBps;
+    private int villageFoodCenti;
+    private int villageMaterialCenti;
+    private long villageTreasuryCenti;
+    private int villageProjectType = -1;
+    private int villageProjectProgressBps;
+    private int villageProjectBacklog;
+    private int villageRestorationCenti;
+    private int villageSimulationEnabled;
+    private int villageVisualEnabled;
 
     /** Client-side constructor used by the menu registry. */
     public BankerMenu(int containerId, Inventory inventory) {
@@ -241,6 +279,8 @@ public final class BankerMenu extends AbstractContainerMenu {
                     selectedExchangeResource(),
                     requested);
             case ACTION_RECOVER -> BankingOperations.recover(serverPlayer, economy);
+            case ACTION_SUPPORT_VILLAGE -> BankingOperations.supportVillage(
+                    serverPlayer, economy, villageId, requested);
             default -> Integer.MIN_VALUE;
         };
         if (statusCode == Integer.MIN_VALUE) {
@@ -448,6 +488,73 @@ public final class BankerMenu extends AbstractContainerMenu {
         return points;
     }
 
+    public boolean hasVillage() {
+        return data.get(DATA_VILLAGE_PRESENT) != 0;
+    }
+
+    public com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.Lifecycle villageLifecycle() {
+        int ordinal = clampIndex(
+                data.get(DATA_VILLAGE_LIFECYCLE),
+                com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.Lifecycle.values().length);
+        return com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.Lifecycle.values()[ordinal];
+    }
+
+    public int villagePopulation() {
+        return Math.max(0, data.get(DATA_VILLAGE_POPULATION));
+    }
+
+    public int villageHousing() {
+        return Math.max(0, data.get(DATA_VILLAGE_HOUSING));
+    }
+
+    public int villageTier() {
+        return Math.max(0, data.get(DATA_VILLAGE_TIER));
+    }
+
+    public double villageProsperity() {
+        return Math.max(0, data.get(DATA_VILLAGE_PROSPERITY_BPS)) / 100.0;
+    }
+
+    public double villageSafety() {
+        return Math.max(0, data.get(DATA_VILLAGE_SAFETY_BPS)) / 100.0;
+    }
+
+    public double villageFood() {
+        return Math.max(0, data.get(DATA_VILLAGE_FOOD_CENTI)) / 100.0;
+    }
+
+    public double villageMaterials() {
+        return Math.max(0, data.get(DATA_VILLAGE_MATERIAL_CENTI)) / 100.0;
+    }
+
+    public double villageTreasury() {
+        return readLong(DATA_VILLAGE_TREASURY_CENTI_LOW, DATA_VILLAGE_TREASURY_CENTI_HIGH) / 100.0;
+    }
+
+    public int villageProjectTypeOrdinal() {
+        return data.get(DATA_VILLAGE_PROJECT_TYPE);
+    }
+
+    public double villageProjectProgress() {
+        return Math.max(0, data.get(DATA_VILLAGE_PROJECT_PROGRESS_BPS)) / 100.0;
+    }
+
+    public int villageProjectBacklog() {
+        return Math.max(0, data.get(DATA_VILLAGE_PROJECT_BACKLOG));
+    }
+
+    public double villageRestorationFund() {
+        return Math.max(0, data.get(DATA_VILLAGE_RESTORATION_CENTI)) / 100.0;
+    }
+
+    public boolean villageSimulationEnabled() {
+        return data.get(DATA_VILLAGE_SIMULATION_ENABLED) != 0;
+    }
+
+    public boolean villageVisualProgressionEnabled() {
+        return data.get(DATA_VILLAGE_VISUAL_ENABLED) != 0;
+    }
+
     private int selectedAmount() {
         int preset = AMOUNT_PRESETS[clampIndex(amountPresetIndex, AMOUNT_PRESETS.length)];
         if (preset > 0) {
@@ -470,7 +577,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     private static boolean isAction(int buttonId) {
-        return buttonId >= ACTION_DEPOSIT && buttonId <= ACTION_RECOVER;
+        return buttonId >= ACTION_DEPOSIT && buttonId <= ACTION_SUPPORT_VILLAGE;
     }
 
     private void setClientSelection(int index, int value) {
@@ -570,6 +677,68 @@ public final class BankerMenu extends AbstractContainerMenu {
         selectedResourceUnitQuoteCenti = unitQuoteMicro <= 0L
                 ? 0
                 : saturatingInt(Math.round(unitQuoteMicro / 10_000.0));
+
+        BlockPos villageSearchPoint = accessPoint == null
+                ? serverPlayer.blockPosition()
+                : accessPoint;
+        EconomyService.VillageSnapshot villageSnapshot = economy.nearestVillageSnapshot(
+                "minecraft:overworld", villageSearchPoint.asLong(), 160.0);
+        if (villageSnapshot == null) {
+            clearVillageSnapshot();
+        } else {
+            EconomyState.VillageRecord village = villageSnapshot.village();
+            villageId = village.villageId;
+            villagePresent = 1;
+            villageLifecycle = village.lifecycle.ordinal();
+            villagePopulation = village.population;
+            villageHousing = village.housingCapacity;
+            villageTier = village.developmentTier;
+            villageProsperityBps = basisPoints(village.prosperity / 100.0);
+            villageSafetyBps = basisPoints(village.safety / 100.0);
+            villageFoodCenti = centiInt(village.foodSupply);
+            villageMaterialCenti = centiInt(village.materialSupply);
+            villageTreasuryCenti = centi(village.treasury);
+            villageProjectBacklog = village.visualBacklog();
+            villageRestorationCenti = centiInt(village.restorationFund);
+            villageSimulationEnabled = villageSnapshot.simulationEnabled() ? 1 : 0;
+            villageVisualEnabled = villageSnapshot.visualProgressionEnabled() ? 1 : 0;
+            EconomyState.VillageProject project = village.projects.stream()
+                    .filter(value -> !value.economicComplete)
+                    .findFirst()
+                    .orElseGet(village::nextVisualProject);
+            if (project == null) {
+                villageProjectType = -1;
+                villageProjectProgressBps = 0;
+            } else {
+                villageProjectType = project.type.ordinal();
+                double progress = project.economicComplete
+                        ? project.totalBlocks <= 0
+                                ? 0.0
+                                : project.materializedBlocks / (double) project.totalBlocks
+                        : project.economicProgress;
+                villageProjectProgressBps = saturatingInt(Math.round(progress * 10_000.0));
+            }
+        }
+    }
+
+    private void clearVillageSnapshot() {
+        villageId = null;
+        villagePresent = 0;
+        villageLifecycle = 0;
+        villagePopulation = 0;
+        villageHousing = 0;
+        villageTier = 0;
+        villageProsperityBps = 0;
+        villageSafetyBps = 0;
+        villageFoodCenti = 0;
+        villageMaterialCenti = 0;
+        villageTreasuryCenti = 0L;
+        villageProjectType = -1;
+        villageProjectProgressBps = 0;
+        villageProjectBacklog = 0;
+        villageRestorationCenti = 0;
+        villageSimulationEnabled = economy != null && economy.villageProsperitySimulationEnabled() ? 1 : 0;
+        villageVisualEnabled = economy != null && economy.villageVisualProgressionEnabled() ? 1 : 0;
     }
 
     private int dataValue(int index) {
@@ -624,6 +793,23 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (index >= DATA_HISTORY_BASE && index < DATA_HISTORY_BASE + HISTORY_POINTS) {
             return historyCenti[index - DATA_HISTORY_BASE];
         }
+        if (index == DATA_VILLAGE_PRESENT) return villagePresent;
+        if (index == DATA_VILLAGE_LIFECYCLE) return villageLifecycle;
+        if (index == DATA_VILLAGE_POPULATION) return villagePopulation;
+        if (index == DATA_VILLAGE_HOUSING) return villageHousing;
+        if (index == DATA_VILLAGE_TIER) return villageTier;
+        if (index == DATA_VILLAGE_PROSPERITY_BPS) return villageProsperityBps;
+        if (index == DATA_VILLAGE_SAFETY_BPS) return villageSafetyBps;
+        if (index == DATA_VILLAGE_FOOD_CENTI) return villageFoodCenti;
+        if (index == DATA_VILLAGE_MATERIAL_CENTI) return villageMaterialCenti;
+        if (index == DATA_VILLAGE_TREASURY_CENTI_LOW) return low(villageTreasuryCenti);
+        if (index == DATA_VILLAGE_TREASURY_CENTI_HIGH) return high(villageTreasuryCenti);
+        if (index == DATA_VILLAGE_PROJECT_TYPE) return villageProjectType;
+        if (index == DATA_VILLAGE_PROJECT_PROGRESS_BPS) return villageProjectProgressBps;
+        if (index == DATA_VILLAGE_PROJECT_BACKLOG) return villageProjectBacklog;
+        if (index == DATA_VILLAGE_RESTORATION_CENTI) return villageRestorationCenti;
+        if (index == DATA_VILLAGE_SIMULATION_ENABLED) return villageSimulationEnabled;
+        if (index == DATA_VILLAGE_VISUAL_ENABLED) return villageVisualEnabled;
         return 0;
     }
 

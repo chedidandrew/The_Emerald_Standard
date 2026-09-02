@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 5;
+    public static final int FORMAT_VERSION = 6;
     public static final int HISTORY_DAYS = 180;
     public static final long MICRO = 1_000_000L;
     public static final int MAX_PENDING_INVENTORY_ITEMS = 100_000;
@@ -34,6 +34,10 @@ public final class EconomyState {
     public final Set<Long> generatedBankRegions = new HashSet<>();
     /** Packed BlockPos anchors for generated banks or fallback Banker gathering points. */
     public final Map<Long, Long> generatedBankAnchors = new HashMap<>();
+    /** Stable village identities associated with legacy bank-region markers. */
+    public final Map<Long, UUID> bankRegionVillageIds = new HashMap<>();
+    /** Persistent abstract village economies and development backlogs. */
+    public final Map<UUID, VillageRecord> villages = new LinkedHashMap<>();
     public final Map<UUID, Account> accounts = new HashMap<>();
     public final Map<UUID, PendingInventoryTransaction> pendingInventoryTransactions =
             new HashMap<>();
@@ -152,6 +156,192 @@ public final class EconomyState {
         }
     }
 
+    public static final class ResidentRecord {
+        public UUID residentId;
+        public String profession = "minecraft:none";
+        public VillageProsperityEngine.ResidentStatus status =
+                VillageProsperityEngine.ResidentStatus.ACTIVE;
+        public long lastSeenDay;
+        public long lastKnownPos;
+
+        public ResidentRecord copy() {
+            ResidentRecord copy = new ResidentRecord();
+            copy.residentId = residentId;
+            copy.profession = profession;
+            copy.status = status;
+            copy.lastSeenDay = lastSeenDay;
+            copy.lastKnownPos = lastKnownPos;
+            return copy;
+        }
+    }
+
+    public static final class VillageIncident {
+        public long day;
+        public VillageProsperityEngine.IncidentCause cause =
+                VillageProsperityEngine.IncidentCause.UNKNOWN;
+        public int casualties = 1;
+        public UUID responsiblePlayer;
+        public boolean marketEligible = true;
+
+        public VillageIncident copy() {
+            VillageIncident copy = new VillageIncident();
+            copy.day = day;
+            copy.cause = cause;
+            copy.casualties = casualties;
+            copy.responsiblePlayer = responsiblePlayer;
+            copy.marketEligible = marketEligible;
+            return copy;
+        }
+    }
+
+    public static final class VillageProject {
+        public long projectId;
+        public VillageProsperityEngine.ProjectType type =
+                VillageProsperityEngine.ProjectType.COTTAGE;
+        public long approvedDay;
+        public long completedDay;
+        public double economicProgress;
+        public boolean economicComplete;
+        public long originPos;
+        public int materializedBlocks;
+        public int totalBlocks;
+        public boolean materializedComplete;
+        public boolean blocked;
+        public boolean abstractOnly;
+
+        public VillageProject copy() {
+            VillageProject copy = new VillageProject();
+            copy.projectId = projectId;
+            copy.type = type;
+            copy.approvedDay = approvedDay;
+            copy.completedDay = completedDay;
+            copy.economicProgress = economicProgress;
+            copy.economicComplete = economicComplete;
+            copy.originPos = originPos;
+            copy.materializedBlocks = materializedBlocks;
+            copy.totalBlocks = totalBlocks;
+            copy.materializedComplete = materializedComplete;
+            copy.blocked = blocked;
+            copy.abstractOnly = abstractOnly;
+            return copy;
+        }
+    }
+
+    /** Persistent economic and physical-development record for one stable village identity. */
+    public static final class VillageRecord {
+        public UUID villageId;
+        public String dimensionKey = "minecraft:overworld";
+        public long centerPos;
+        public long bankRegionKey;
+        public long bankAnchorPos;
+        public long discoveredDay;
+        public long lastSimulatedDay;
+        public long lastCensusDay;
+        public long lastIncidentDay;
+        public long recoveryEligibleDay;
+        public long abandonedSinceDay;
+        public long lastCollapseDay;
+        public long marketSuppressedUntilDay;
+        public VillageProsperityEngine.Lifecycle lifecycle =
+                VillageProsperityEngine.Lifecycle.ACTIVE;
+        public VillageProsperityEngine.IncidentCause lastIncidentCause =
+                VillageProsperityEngine.IncidentCause.NONE;
+        public int population;
+        public int observedPopulation;
+        public int housingCapacity;
+        public int pendingSettlers;
+        public int developmentTier;
+        public int collapseCount;
+        public int hostileCasualties;
+        public int playerCasualties;
+        public int environmentalCasualties;
+        public double foodSupply;
+        public double materialSupply;
+        public double treasury;
+        public double prosperity = 50.0;
+        public double safety = 60.0;
+        public double agricultureOutput;
+        public double miningOutput;
+        public double tradeOutput;
+        public double redstoneOutput;
+        public double alchemyOutput;
+        public double transportOutput;
+        public double securityOutput;
+        public double restorationFund;
+        public double developmentPoints;
+        public boolean restorationFunded;
+        public long projectSerial;
+        public final Map<UUID, ResidentRecord> residents = new LinkedHashMap<>();
+        public final List<VillageProject> projects = new ArrayList<>();
+        public final List<VillageIncident> incidents = new ArrayList<>();
+
+        public VillageProject nextVisualProject() {
+            return projects.stream()
+                    .filter(project -> project.economicComplete
+                            && !project.materializedComplete
+                            && !project.abstractOnly
+                            && !project.blocked)
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        public int visualBacklog() {
+            return (int) projects.stream()
+                    .filter(project -> project.economicComplete
+                            && !project.materializedComplete
+                            && !project.abstractOnly)
+                    .count();
+        }
+
+        public VillageRecord copy() {
+            VillageRecord copy = new VillageRecord();
+            copy.villageId = villageId;
+            copy.dimensionKey = dimensionKey;
+            copy.centerPos = centerPos;
+            copy.bankRegionKey = bankRegionKey;
+            copy.bankAnchorPos = bankAnchorPos;
+            copy.discoveredDay = discoveredDay;
+            copy.lastSimulatedDay = lastSimulatedDay;
+            copy.lastCensusDay = lastCensusDay;
+            copy.lastIncidentDay = lastIncidentDay;
+            copy.recoveryEligibleDay = recoveryEligibleDay;
+            copy.abandonedSinceDay = abandonedSinceDay;
+            copy.lastCollapseDay = lastCollapseDay;
+            copy.marketSuppressedUntilDay = marketSuppressedUntilDay;
+            copy.lifecycle = lifecycle;
+            copy.lastIncidentCause = lastIncidentCause;
+            copy.population = population;
+            copy.observedPopulation = observedPopulation;
+            copy.housingCapacity = housingCapacity;
+            copy.pendingSettlers = pendingSettlers;
+            copy.developmentTier = developmentTier;
+            copy.collapseCount = collapseCount;
+            copy.hostileCasualties = hostileCasualties;
+            copy.playerCasualties = playerCasualties;
+            copy.environmentalCasualties = environmentalCasualties;
+            copy.foodSupply = foodSupply;
+            copy.materialSupply = materialSupply;
+            copy.treasury = treasury;
+            copy.prosperity = prosperity;
+            copy.safety = safety;
+            copy.agricultureOutput = agricultureOutput;
+            copy.miningOutput = miningOutput;
+            copy.tradeOutput = tradeOutput;
+            copy.redstoneOutput = redstoneOutput;
+            copy.alchemyOutput = alchemyOutput;
+            copy.transportOutput = transportOutput;
+            copy.securityOutput = securityOutput;
+            copy.restorationFund = restorationFund;
+            copy.developmentPoints = developmentPoints;
+            copy.restorationFunded = restorationFunded;
+            copy.projectSerial = projectSerial;
+            residents.forEach((id, resident) -> copy.residents.put(id, resident.copy()));
+            projects.forEach(project -> copy.projects.add(project.copy()));
+            incidents.forEach(incident -> copy.incidents.add(incident.copy()));
+            return copy;
+        }
+    }
+
     public static EconomyState fresh(long seed, long now, long gameTicks) {
         EconomyState state = new EconomyState();
         state.seed = seed;
@@ -193,6 +383,10 @@ public final class EconomyState {
                 copy.priceHistory.put(ticker, new ArrayList<>(values)));
         copy.generatedBankRegions.addAll(generatedBankRegions);
         copy.generatedBankAnchors.putAll(generatedBankAnchors);
+        copy.bankRegionVillageIds.putAll(bankRegionVillageIds);
+        for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
+            copy.villages.put(entry.getKey(), entry.getValue().copy());
+        }
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             copy.accounts.put(entry.getKey(), entry.getValue().copy());
         }
@@ -204,7 +398,20 @@ public final class EconomyState {
     }
 
     public void advanceOneDay() {
+        advanceOneDay(true);
+    }
+
+    public void advanceOneDay(boolean villageProsperitySimulationEnabled) {
         economicDay++;
+        if (villageProsperitySimulationEnabled) {
+            for (VillageRecord village : villages.values()) {
+                VillageProsperityEngine.advanceOneDay(village, seed, economicDay);
+            }
+        }
+        VillageProsperityEngine.VillageFundamentals villageFundamentals =
+                villageProsperitySimulationEnabled
+                        ? VillageProsperityEngine.aggregateFundamentals(villages.values(), economicDay)
+                        : VillageProsperityEngine.VillageFundamentals.neutral();
         regime = EconomyEngine.nextRegime(regime, seed, economicDay);
         double marketReturn = EconomyEngine.marketReturn(regime, seed, economicDay);
         EconomyEngine.MarketEvent event = EconomyEngine.marketEvent(seed, economicDay, regime);
@@ -220,7 +427,12 @@ public final class EconomyState {
             }
             double current = prices.getOrDefault(asset.ticker(), 100.0);
             double baseReturn = EconomyEngine.assetReturn(
-                    asset, marketReturn, seed, economicDay);
+                    asset,
+                    marketReturn,
+                    seed,
+                    economicDay,
+                    VillageProsperityEngine.assetAnnualDrift(
+                            asset.ticker(), villageFundamentals));
             double eventReturn = EconomyEngine.eventAssetReturn(event, asset.ticker());
             double realizedReturn = (1.0 + baseReturn) * (1.0 + eventReturn) - 1.0;
             double next = current * (1.0 + realizedReturn);
@@ -232,9 +444,14 @@ public final class EconomyState {
                 .sum();
         // VILX is rebalanced from its displayed constituents while the hidden broad-economy
         // factor supplies diversification that no eight-company sample can provide alone.
-        double vilxReturn = 0.85 * marketReturn
+        double vilxBaseReturn = 0.85 * marketReturn
                 + 0.15 * constituentReturn
                 + EconomyEngine.eventAssetReturn(event, "VILX");
+        double vilxVillageDaily = StrictMath.expm1(
+                StrictMath.log1p(VillageProsperityEngine.assetAnnualDrift(
+                                "VILX", villageFundamentals))
+                        / EconomyEngine.DAYS_PER_YEAR);
+        double vilxReturn = (1.0 + vilxBaseReturn) * (1.0 + vilxVillageDaily) - 1.0;
         double currentVilx = prices.getOrDefault("VILX", 100.0);
         prices.put("VILX", boundedPrice(currentVilx * (1.0 + vilxReturn)));
         normalizeHighPrices();
@@ -243,7 +460,13 @@ public final class EconomyState {
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
             double current = commodityPrices.getOrDefault(commodity.id(), commodity.anchorPrice());
             double next = EconomyEngine.nextCommodityPrice(
-                    commodity, current, regime, seed, economicDay);
+                    commodity,
+                    current,
+                    regime,
+                    seed,
+                    economicDay,
+                    VillageProsperityEngine.commodityAnnualSupplyPressure(
+                            commodity.id(), villageFundamentals));
             next *= 1.0 + EconomyEngine.eventCommodityReturn(event, commodity.id());
             commodityPrices.put(commodity.id(), boundedPrice(next));
         }
@@ -251,6 +474,22 @@ public final class EconomyState {
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             advanceAccount(entry.getKey(), entry.getValue());
         }
+    }
+
+    public VillageRecord village(UUID id) {
+        return villages.computeIfAbsent(id, ignored -> {
+            VillageRecord record = new VillageRecord();
+            record.villageId = id;
+            return record;
+        });
+    }
+
+    public VillageRecord existingVillage(UUID id) {
+        return villages.get(id);
+    }
+
+    public VillageProsperityEngine.VillageFundamentals villageFundamentals() {
+        return VillageProsperityEngine.aggregateFundamentals(villages.values(), economicDay);
     }
 
     public Account account(UUID id) {
@@ -299,6 +538,17 @@ public final class EconomyState {
             if (region == null || !generatedBankRegions.contains(region)) {
                 throw new IOException("Bank anchor exists without a generated region marker");
             }
+        }
+        for (Map.Entry<Long, UUID> entry : bankRegionVillageIds.entrySet()) {
+            if (entry.getKey() == null
+                    || entry.getValue() == null
+                    || !generatedBankRegions.contains(entry.getKey())
+                    || !villages.containsKey(entry.getValue())) {
+                throw new IOException("Bank-region village association is invalid");
+            }
+        }
+        for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
+            validateVillage(entry.getKey(), entry.getValue(), economicDay);
         }
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             validateAccount(entry.getKey(), entry.getValue(), economicDay);
@@ -385,6 +635,111 @@ public final class EconomyState {
             if (!knownTicker(ticker)) {
                 throw new IOException("Unknown price-history ticker " + ticker);
             }
+        }
+    }
+
+    private static void validateVillage(UUID id, VillageRecord village, long economicDay)
+            throws IOException {
+        if (village == null
+                || village.villageId == null
+                || !id.equals(village.villageId)
+                || village.dimensionKey == null
+                || village.dimensionKey.isBlank()
+                || village.lifecycle == null
+                || village.lastIncidentCause == null
+                || village.population < 0
+                || village.population > VillageProsperityEngine.MAX_ABSTRACT_POPULATION
+                || village.observedPopulation < 0
+                || village.housingCapacity < 0
+                || village.pendingSettlers < 0
+                || village.developmentTier < 0
+                || village.developmentTier > 5
+                || village.discoveredDay < 0L
+                || village.lastSimulatedDay < 0L
+                || village.lastSimulatedDay > economicDay
+                || village.lastCensusDay < 0L
+                || village.lastIncidentDay < 0L
+                || village.recoveryEligibleDay < 0L
+                || village.lastCollapseDay < 0L
+                || village.lastCollapseDay > economicDay
+                || village.marketSuppressedUntilDay < 0L) {
+            throw new IOException("Invalid village record " + id);
+        }
+        validateFiniteRange("village prosperity", village.prosperity, 0.0, 100.0);
+        validateFiniteRange("village safety", village.safety, 0.0, 100.0);
+        validateFiniteRange("village food", village.foodSupply, 0.0, 20_000.0);
+        validateFiniteRange("village materials", village.materialSupply, 0.0, 20_000.0);
+        validateFiniteRange("village treasury", village.treasury, 0.0, 1_000_000.0);
+        validateFiniteRange("village restoration fund", village.restorationFund, 0.0, 1_000_000.0);
+        validateFiniteRange("village development points", village.developmentPoints, 0.0, 1_000_000.0);
+        double[] outputs = {
+                village.agricultureOutput,
+                village.miningOutput,
+                village.tradeOutput,
+                village.redstoneOutput,
+                village.alchemyOutput,
+                village.transportOutput,
+                village.securityOutput
+        };
+        for (double output : outputs) {
+            validateFiniteRange("village output", output, 0.0, 1_000_000.0);
+        }
+        if (village.residents.size() > VillageProsperityEngine.RESIDENT_HISTORY_LIMIT
+                || village.projects.size() > VillageProsperityEngine.MAX_PROJECTS_PER_VILLAGE
+                || village.incidents.size() > VillageProsperityEngine.INCIDENT_HISTORY_LIMIT) {
+            throw new IOException("Village record exceeds bounded history limits " + id);
+        }
+        for (Map.Entry<UUID, ResidentRecord> residentEntry : village.residents.entrySet()) {
+            ResidentRecord resident = residentEntry.getValue();
+            if (residentEntry.getKey() == null
+                    || resident == null
+                    || resident.residentId == null
+                    || !residentEntry.getKey().equals(resident.residentId)
+                    || resident.profession == null
+                    || resident.profession.isBlank()
+                    || resident.status == null
+                    || resident.lastSeenDay < 0L
+                    || resident.lastSeenDay > economicDay) {
+                throw new IOException("Invalid resident record in village " + id);
+            }
+        }
+        long previousProject = 0L;
+        for (VillageProject project : village.projects) {
+            if (project == null
+                    || project.type == null
+                    || project.projectId <= previousProject
+                    || project.approvedDay < 0L
+                    || project.approvedDay > economicDay
+                    || project.completedDay < 0L
+                    || project.completedDay > economicDay
+                    || !Double.isFinite(project.economicProgress)
+                    || project.economicProgress < 0.0
+                    || project.economicProgress > 1.0
+                    || project.materializedBlocks < 0
+                    || project.totalBlocks < 0
+                    || project.materializedBlocks > project.totalBlocks
+                    || (project.economicComplete && project.economicProgress < 1.0)
+                    || (project.materializedComplete
+                            && project.materializedBlocks < project.totalBlocks)) {
+                throw new IOException("Invalid village project in " + id);
+            }
+            previousProject = project.projectId;
+        }
+        for (VillageIncident incident : village.incidents) {
+            if (incident == null
+                    || incident.cause == null
+                    || incident.day < 0L
+                    || incident.day > economicDay
+                    || incident.casualties <= 0) {
+                throw new IOException("Invalid village incident in " + id);
+            }
+        }
+    }
+
+    private static void validateFiniteRange(
+            String name, double value, double minimum, double maximum) throws IOException {
+        if (!Double.isFinite(value) || value < minimum || value > maximum) {
+            throw new IOException("Invalid " + name);
         }
     }
 
