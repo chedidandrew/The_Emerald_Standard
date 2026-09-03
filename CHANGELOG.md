@@ -2,6 +2,28 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## 0.3.0-beta.4 - 2026-09-03
+
+### Added
+
+- One-command `/emerald debug` diagnostic flight recorder with a five-minute default and 15-minute maximum.
+- Automatic market, portfolio, village, construction, settler, GUI-action, validation, and performance capture.
+- Incremental JSON Lines timeline for crash resilience.
+- Shareable ZIP reports with human-readable summaries and sanitized state snapshots.
+- Optional `/emerald debug mark` moment markers and `/emerald debug stop` explicit stop command.
+- Automatic recovery and packaging of interrupted capture directories on the next server start.
+- Construction, village-census, casualty, settler, and Banker GUI instrumentation.
+
+### Changed
+
+- Bumped Fabric and NeoForge versions to `0.3.0-beta.4`.
+- Debug capture remains entirely dormant when disabled and records only the initiating tester's account.
+
+### Privacy and safety
+
+- Debug reports omit the private economy seed, world seed, player chat, server address, and unrelated accounts.
+- Reports rotate automatically and retain the newest five ZIP files.
+
 ## 0.3.0-beta.3 - 2026-09-02
 
 ### Added

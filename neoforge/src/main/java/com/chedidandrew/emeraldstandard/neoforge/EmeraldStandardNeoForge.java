@@ -1,5 +1,6 @@
 package com.chedidandrew.emeraldstandard.neoforge;
 
+import com.chedidandrew.emeraldstandard.minecraft.DebugFlightRecorder;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.minecraft.BankerAccess;
 import com.chedidandrew.emeraldstandard.minecraft.BankerIntegrationSelfTest;
@@ -76,6 +77,7 @@ public final class EmeraldStandardNeoForge {
             LOGGER.info(
                     "The Emerald Standard economy started with {} catch-up day(s) remaining",
                     ECONOMY.catchUpDaysRemaining());
+            DebugFlightRecorder.initialize(server);
             if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
                 BankerIntegrationSelfTest.run(server.overworld());
                 LOGGER.info("The Emerald Standard Banker integration self-test passed");
@@ -89,6 +91,7 @@ public final class EmeraldStandardNeoForge {
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
         var server = event.getServer();
+        DebugFlightRecorder.stopForShutdown(server, ECONOMY);
         if (!ECONOMY.saveNow(server.overworld().getGameTime())) {
             LOGGER.error("Could not save The Emerald Standard economy: {}",
                     ECONOMY.lastError());
@@ -104,6 +107,7 @@ public final class EmeraldStandardNeoForge {
         }
         VillageProsperityManager.tick(event.getServer(), ECONOMY);
         VillageBankManager.tick(event.getServer(), ECONOMY);
+        DebugFlightRecorder.tick(event.getServer(), ECONOMY);
     }
 
     @SubscribeEvent
@@ -126,6 +130,7 @@ public final class EmeraldStandardNeoForge {
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            DebugFlightRecorder.onPlayerDisconnect(player, ECONOMY);
             recover(player);
             BankingOperations.forgetPlayer(player.getUUID());
         }

@@ -4,7 +4,7 @@
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.3.0-beta.3`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
+> Current status: `0.3.0-beta.4`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
 
 ## Core rule
 
@@ -131,6 +131,18 @@ Beta.3 upgrades beta.1 and beta.2 format-6 worlds to format 7. Once beta.3 has s
 
 Beta durability boundary: materialization trusts already-persisted project progress, so blocks removed later or lost through chunk rollback are not auto-repaired. Bank markers and Minecraft chunk saves are also not cross-file atomic; a crash between those writes can yield a fallback Banker without a rebuilt structure. Player financial data remains world-level and intact in both cases.
 
+## One-command debug flight recorder
+
+Mod testing does not require memorizing a diagnostic command tree. An operator can run:
+
+```text
+/emerald debug
+```
+
+The command enables a full five-minute capture of the testing player's banking actions, market changes, nearby village state, construction, settlers, persistence state, validation warnings, and performance sampling. Running the same command again stops early. `/emerald debug <1-15>` selects a duration, and `/emerald debug mark` adds an optional numbered moment marker.
+
+The capture is written incrementally for crash resilience and then packaged under the world's `data/the_emerald_standard_debug` directory as a shareable `TES-debug-*.zip`. Reports exclude the private economy seed, world seed, chat, server address, and unrelated player accounts. Interrupted captures are packaged automatically on the next server start.
+
 ## Administrator commands
 
 Normal gameplay does not require commands. The `/emerald` tree requires permission level 2 and is intended for administration, diagnostics, configuration, and recovery.
@@ -183,6 +195,8 @@ GitHub Actions runs the common economy, persistence, and Village Prosperity regr
 Hands-on visual, transaction, terrain, raid, recovery, and multiplayer checks remain part of the beta test plan.
 
 ## Documentation
+
+- [Debug flight recorder](docs/DEBUGGING.md)
 
 - [Village Prosperity System](docs/VILLAGE_PROSPERITY.md)
 - [Banker GUI and village banks](docs/GUI_AND_VILLAGE_BANKS.md)

@@ -118,3 +118,10 @@ Inspect Village Banks, Cottage, Warehouse, and Mine Entrance in all vanilla vill
 The beta.3 prerelease publisher requires a successful `main`-push `build.yml` run for the exact source commit, downloads rather than rebuilds that run's exact Fabric and NeoForge binary/source artifacts, stages them in a draft, verifies the complete public filename set and bytes, and records artifact IDs, workflow digests, and release-asset SHA-256 checksums.
 
 The manual checklist above remains required evidence before promoting the mod to a stable release. Automated startup cannot certify subjective structure appearance, third-party claim integrations, every GUI scale, long multiplayer behavior, project-block reconciliation after chunk rollback, or cross-file bank-marker/chunk atomicity; beta.3 is intentionally published as a prerelease while that wider validation continues.
+
+
+## One-command diagnostic capture
+
+For hands-on testing, run `/emerald debug`, reproduce the issue for up to five minutes, and run the same command again or let it expire. Use `/emerald debug mark` when a specific moment should be easy to find. Attach the generated `TES-debug-*.zip` from the world's `data/the_emerald_standard_debug` directory to the bug report and mention any marker numbers.
+
+The capture should be used for GUI transactions, village lifecycle tests, construction placement, raid recovery, settler behavior, market progression, and persistence recovery. Confirm that the final `validation.txt` contains no unexplained failures and that no private economy seed or unrelated player account is present.
