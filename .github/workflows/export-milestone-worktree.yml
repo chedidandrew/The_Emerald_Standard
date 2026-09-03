@@ -1,0 +1,26 @@
+name: Export milestone worktree
+
+on:
+  push:
+    branches:
+      - milestone-95
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Package repository worktree
+        run: |
+          rm -rf .git
+          zip -qr The-Emerald-Standard-milestone.zip . -x 'The-Emerald-Standard-milestone.zip'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: the-emerald-standard-milestone-${{ github.sha }}
+          path: The-Emerald-Standard-milestone.zip
+          if-no-files-found: error
+          retention-days: 7
