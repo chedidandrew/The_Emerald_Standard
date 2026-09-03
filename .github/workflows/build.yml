@@ -5,15 +5,46 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  prepare-milestone:
+    name: Prepare milestone branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      test_ref: ${{ steps.ref.outputs.test_ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name == 'milestone-95' && 'milestone-95' || github.sha }}
+          fetch-depth: 0
+      - name: Apply 0.4 milestone transformation once
+        if: github.event_name == 'push' && github.ref_name == 'milestone-95'
+        run: |
+          if grep -q '^mod_version=0.4.0-beta.1$' fabric/gradle.properties; then
+            echo 'Milestone transformation already applied.'
+            exit 0
+          fi
+          python3 scripts/apply_milestone_95.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Implement 0.4.0 beta visible village progression'
+          git push origin HEAD:milestone-95
+      - name: Resolve commit to test
+        id: ref
+        run: echo "test_ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   common-tests:
     name: Common economy regression tests
+    needs: prepare-milestone
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare-milestone.outputs.test_ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -23,7 +54,7 @@ jobs:
 
   loader-builds:
     name: Build ${{ matrix.loader }}
-    needs: common-tests
+    needs: [prepare-milestone, common-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -32,6 +63,8 @@ jobs:
         loader: [fabric, neoforge]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare-milestone.outputs.test_ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -43,13 +76,13 @@ jobs:
         run: bash scripts/verify-built-jar.sh "${{ matrix.loader }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: the-emerald-standard-${{ matrix.loader }}-${{ github.sha }}
+          name: the-emerald-standard-${{ matrix.loader }}-${{ needs.prepare-milestone.outputs.test_ref }}
           path: ${{ matrix.loader }}/build/libs/*.jar
           if-no-files-found: error
 
   dedicated-server-smoke:
     name: Launch ${{ matrix.loader }} dedicated server
-    needs: loader-builds
+    needs: [prepare-milestone, loader-builds]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -58,6 +91,8 @@ jobs:
         loader: [fabric, neoforge]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare-milestone.outputs.test_ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -68,13 +103,13 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: server-smoke-log-${{ matrix.loader }}-${{ github.sha }}
+          name: server-smoke-log-${{ matrix.loader }}-${{ needs.prepare-milestone.outputs.test_ref }}
           path: build/server-smoke/${{ matrix.loader }}.log
           if-no-files-found: warn
 
   client-bootstrap-smoke:
     name: Launch ${{ matrix.loader }} client
-    needs: loader-builds
+    needs: [prepare-milestone, loader-builds]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -83,6 +118,8 @@ jobs:
         loader: [fabric, neoforge]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare-milestone.outputs.test_ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -97,6 +134,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: client-smoke-log-${{ matrix.loader }}-${{ github.sha }}
+          name: client-smoke-log-${{ matrix.loader }}-${{ needs.prepare-milestone.outputs.test_ref }}
           path: build/client-smoke/${{ matrix.loader }}.log
           if-no-files-found: warn
