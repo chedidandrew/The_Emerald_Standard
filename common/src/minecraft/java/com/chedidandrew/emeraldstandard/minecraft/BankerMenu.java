@@ -302,6 +302,8 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (statusCode == Integer.MIN_VALUE) {
             return false;
         }
+        DebugFlightRecorder.recordBankAction(
+                serverPlayer, buttonId, requested, statusCode);
         statusRevision++;
         refreshServerSnapshot();
         broadcastChanges();

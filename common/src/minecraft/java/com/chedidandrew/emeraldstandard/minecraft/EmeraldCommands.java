@@ -42,6 +42,23 @@ public final class EmeraldCommands {
                         .executes(context -> EmeraldCommandHandlers.portfolio(context, economy)))
                 .then(Commands.literal("recover")
                         .executes(context -> EmeraldCommandHandlers.recover(context, economy)))
+                .then(Commands.literal("debug")
+                        .executes(context -> EmeraldCommandHandlers.debug(
+                                context, economy, DebugFlightRecorder.DEFAULT_MINUTES))
+                        .then(Commands.literal("mark")
+                                .executes(context -> EmeraldCommandHandlers.debugMark(
+                                        context, economy)))
+                        .then(Commands.literal("stop")
+                                .executes(context -> EmeraldCommandHandlers.debugStop(
+                                        context, economy)))
+                        .then(Commands.argument(
+                                        "minutes",
+                                        IntegerArgumentType.integer(
+                                                1, DebugFlightRecorder.MAX_MINUTES))
+                                .executes(context -> EmeraldCommandHandlers.debug(
+                                        context,
+                                        economy,
+                                        IntegerArgumentType.getInteger(context, "minutes")))))
                 .then(Commands.literal("config")
                         .then(Commands.literal("show")
                                 .executes(EmeraldCommandHandlers::showConfig))

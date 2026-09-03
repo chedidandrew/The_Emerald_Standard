@@ -1,5 +1,6 @@
 package com.chedidandrew.emeraldstandard.fabric;
 
+import com.chedidandrew.emeraldstandard.minecraft.DebugFlightRecorder;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.minecraft.BankerAccess;
 import com.chedidandrew.emeraldstandard.minecraft.BankerIntegrationSelfTest;
@@ -62,6 +63,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 LOGGER.info(
                         "The Emerald Standard economy started with {} catch-up day(s) remaining",
                         ECONOMY.catchUpDaysRemaining());
+                DebugFlightRecorder.initialize(server);
                 if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
                     BankerIntegrationSelfTest.run(server.overworld());
                     LOGGER.info("The Emerald Standard Banker integration self-test passed");
@@ -73,6 +75,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            DebugFlightRecorder.stopForShutdown(server, ECONOMY);
             if (!ECONOMY.saveNow(server.overworld().getGameTime())) {
                 LOGGER.error("Could not save The Emerald Standard economy: {}",
                         ECONOMY.lastError());
@@ -87,6 +90,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
             }
             VillageProsperityManager.tick(server, ECONOMY);
             VillageBankManager.tick(server, ECONOMY);
+            DebugFlightRecorder.tick(server, ECONOMY);
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
@@ -101,6 +105,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 recover(handler.player));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            DebugFlightRecorder.onPlayerDisconnect(handler.player, ECONOMY);
             recover(handler.player);
             BankingOperations.forgetPlayer(handler.player.getUUID());
         });

@@ -138,3 +138,10 @@ Inventory-linked deposits, withdrawals, and exchanges use durable `PREPARED` and
 ## Current beta scaling boundary
 
 The simulation is intentionally lightweight for single-player and ordinary multiplayer, but very large public servers will eventually need storage partitioning. Account and village mutations still serialize the shared world economy file, and large offline catch-up still advances known villages day by day. Catch-up batches scale down with known account and settlement counts, and physical development requests only dimension-matching snapshots near loaded players instead of copying the full village registry. Snapshot lists reuse one village-fundamentals calculation instead of recalculating it for every settlement.
+
+
+## Debug flight recorder
+
+`DebugFlightRecorder` is a server-side, operator-triggered, time-bounded diagnostic layer. Loader tick hooks perform only a constant-time inactive lookup when no capture exists. During a capture, the recorder samples the authoritative `EconomyService`, the initiating tester's account, and the nearest settlement; instrumentation hooks add construction, census, casualty, settler, and GUI-action events.
+
+The JSON Lines timeline is flushed after every event and packaged with sanitized snapshots at normal stop, timeout, disconnect, size limit, or server shutdown. Any `.active-*` directory left by a process crash is converted into an `INCOMPLETE-CRASH` report during the next initialization. The recorder never serializes the private economy seed or unrelated accounts.

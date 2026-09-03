@@ -25,6 +25,8 @@ final class EmeraldCommandHandlers {
     static int help(CommandContext<CommandSourceStack> context) {
         success(context, "The Emerald Standard alpha commands");
         success(context, "/emerald open | market | commodities | portfolio | recover");
+        success(context, "/emerald debug starts or stops a five-minute full diagnostic capture");
+        success(context, "/emerald debug mark adds an optional moment marker");
         success(context, "/emerald config show|reload");
         success(context, "/emerald deposit <emeralds> | withdraw <emeralds>");
         success(context, "/emerald savings deposit|withdraw <emeralds>");
@@ -34,6 +36,37 @@ final class EmeraldCommandHandlers {
         success(context, "/emerald exchange <resource> <count>");
         success(context, "Players fund villager businesses. Players can never borrow or enter debt.");
         return 1;
+    }
+
+    static int debug(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy,
+            int minutes) throws CommandSyntaxException {
+        DebugFlightRecorder.CommandResult result =
+                DebugFlightRecorder.toggle(player(context), economy, minutes);
+        return result.success()
+                ? success(context, result.message())
+                : failure(context, result.message());
+    }
+
+    static int debugMark(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy) throws CommandSyntaxException {
+        DebugFlightRecorder.CommandResult result =
+                DebugFlightRecorder.mark(player(context), economy);
+        return result.success()
+                ? success(context, result.message())
+                : failure(context, result.message());
+    }
+
+    static int debugStop(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy) throws CommandSyntaxException {
+        DebugFlightRecorder.CommandResult result =
+                DebugFlightRecorder.stop(player(context), economy);
+        return result.success()
+                ? success(context, result.message())
+                : failure(context, result.message());
     }
 
     static int showConfig(CommandContext<CommandSourceStack> context) {

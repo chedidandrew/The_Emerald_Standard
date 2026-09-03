@@ -43,6 +43,12 @@ body:
     validations:
       required: true
   - type: textarea
+    id: debug_report
+    attributes:
+      label: The Emerald Standard debug report
+      description: Run /emerald debug, reproduce the issue, then attach the generated TES-debug ZIP and mention any marker numbers.
+
+  - type: textarea
     id: logs
     attributes:
       label: Logs or crash report

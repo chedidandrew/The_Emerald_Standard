@@ -158,13 +158,22 @@ public final class VillageProsperityManager {
         VillageProsperityEngine.IncidentCause cause = responsible == null
                 ? classifyCause(killer)
                 : VillageProsperityEngine.IncidentCause.PLAYER;
-        economy.recordVillagerDeath(
+        boolean recorded = economy.recordVillagerDeath(
                 villageId,
                 resident.getUUID(),
                 profession,
                 resident.blockPosition().asLong(),
                 cause,
                 responsiblePlayer);
+        if (recorded && resident.level() instanceof ServerLevel level) {
+            DebugFlightRecorder.recordVillageIncident(
+                    level,
+                    villageId,
+                    resident.getUUID(),
+                    cause,
+                    responsiblePlayer,
+                    resident.blockPosition());
+        }
     }
 
     public static UUID villageId(Entity entity) {
@@ -285,6 +294,7 @@ public final class VillageProsperityManager {
             if (snapshot == null || !observed.add(snapshot.village().villageId)) {
                 continue;
             }
+            DebugFlightRecorder.recordVillageObservation(level.getServer(), snapshot);
             for (Villager villager : villagers) {
                 assignVillage(villager, snapshot.village().villageId);
             }
@@ -355,6 +365,16 @@ public final class VillageProsperityManager {
             if (project.originPos == 0L) {
                 BlockPos origin = findProjectOrigin(level, village, project, config);
                 if (origin == null) {
+                    DebugFlightRecorder.recordConstruction(
+                            level,
+                            village.villageId,
+                            project.projectId,
+                            project.type.name(),
+                            "site_unavailable",
+                            BlockPos.of(village.centerPos),
+                            project.materializedBlocks,
+                            project.totalBlocks,
+                            "No loaded, safe, unoccupied project lot was available");
                     economy.deferVillageProjectMaterialization(
                             village.villageId, project.projectId, gameTime);
                     continue;
@@ -374,6 +394,16 @@ public final class VillageProsperityManager {
                 project.boundsMinPos = bounds.minimum.asLong();
                 project.boundsMaxPos = bounds.maximum.asLong();
                 project.totalBlocks = template.size();
+                DebugFlightRecorder.recordConstruction(
+                        level,
+                        village.villageId,
+                        project.projectId,
+                        project.type.name(),
+                        "site_reserved",
+                        origin,
+                        0,
+                        project.totalBlocks,
+                        "");
             }
 
             BlockPos origin = BlockPos.of(project.originPos);
@@ -421,8 +451,28 @@ public final class VillageProsperityManager {
             if (index > project.materializedBlocks || complete) {
                 economy.updateVillageProjectMaterialization(
                         village.villageId, project.projectId, index, complete, false);
+                DebugFlightRecorder.recordConstruction(
+                        level,
+                        village.villageId,
+                        project.projectId,
+                        project.type.name(),
+                        complete ? "completed" : "progress",
+                        origin,
+                        index,
+                        placements.size(),
+                        "");
             }
             if (blocked) {
+                DebugFlightRecorder.recordConstruction(
+                        level,
+                        village.villageId,
+                        project.projectId,
+                        project.type.name(),
+                        "blocked",
+                        origin,
+                        index,
+                        placements.size(),
+                        unloaded ? "Required chunk was unloaded" : "Placement was occupied, protected, or rejected");
                 // The core persists both the completed template prefix and retry deadline. A
                 // verified obstruction can relocate an untouched site; an unloaded site keeps its
                 // reservation in case chunk data already contains a not-yet-journaled prefix.
@@ -569,6 +619,8 @@ public final class VillageProsperityManager {
         }
         if (level.addFreshEntity(settler)) {
             LAST_SETTLER_TICK.put(village.villageId, gameTime);
+            DebugFlightRecorder.recordSettler(
+                    level, village.villageId, settler.getUUID(), settler.blockPosition());
             // The next loaded-world census is the sole authority that consumes the queue. Doing
             // so here as well would count one arrival twice and could collapse a two-settler
             // recovery into one.
