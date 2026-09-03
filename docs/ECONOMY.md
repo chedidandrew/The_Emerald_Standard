@@ -23,7 +23,7 @@ When Village Prosperity simulation and market integration are both enabled, elig
 - Security influences Iron Golem Security.
 - Specialized prosperity contributes modestly to Redstone Dynamics and Potionworks.
 
-The annual per-asset contribution is capped at approximately plus or minus 1.2 percentage points. Empty, Extinct, Abandoned, and temporarily market-suppressed player-damaged settlements do not contribute. Global regimes, volatility, and company events remain dominant.
+The annual per-asset contribution is capped at approximately plus or minus 1.2 percentage points. Normally, Empty, Extinct, Abandoned, and temporarily market-suppressed settlements do not contribute. A player-damage counterfactual is the deliberate exception: before the first player-caused casualty changes an eligible village, the exact village state and current contribution are persisted. That no-player-damage branch advances under the normal abstract simulation and is re-priced on each enabled simulation day; genuine non-player casualties are applied to it as well. Repeated player hits do not recapture the baseline. The counterfactual remains authoritative until the cooldown has elapsed and the live village has fully recovered. Global regimes, volatility, and company events remain dominant.
 
 `village_prosperity.market_integration_enabled=false` removes these settlement fundamentals without disabling the local simulation or visual progression.
 

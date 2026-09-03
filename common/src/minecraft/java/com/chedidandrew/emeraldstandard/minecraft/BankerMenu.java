@@ -112,12 +112,15 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_VILLAGE_RESTORATION_CENTI = DATA_VILLAGE_PRESENT + 14;
     private static final int DATA_VILLAGE_SIMULATION_ENABLED = DATA_VILLAGE_PRESENT + 15;
     private static final int DATA_VILLAGE_VISUAL_ENABLED = DATA_VILLAGE_PRESENT + 16;
-    public static final int DATA_COUNT = DATA_VILLAGE_PRESENT + 17;
+    private static final int DATA_VILLAGE_INCIDENT_CAUSE = DATA_VILLAGE_PRESENT + 17;
+    private static final int DATA_VILLAGE_INCIDENT_AGE = DATA_VILLAGE_PRESENT + 18;
+    public static final int DATA_COUNT = DATA_VILLAGE_PRESENT + 19;
 
     private final Inventory inventory;
     private final EconomyService economy;
     private final ServerPlayer serverPlayer;
     private final BlockPos accessPoint;
+    private final Long bankRegionKey;
     private final ContainerData data;
 
     private int selectedAssetIndex;
@@ -177,10 +180,12 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int villageRestorationCenti;
     private int villageSimulationEnabled;
     private int villageVisualEnabled;
+    private int villageIncidentCause;
+    private int villageIncidentAge;
 
     /** Client-side constructor used by the menu registry. */
     public BankerMenu(int containerId, Inventory inventory) {
-        this(containerId, inventory, null, null, null);
+        this(containerId, inventory, null, null, null, null);
     }
 
     /** Server-side constructor used when a player interacts with a Banker. */
@@ -189,7 +194,7 @@ public final class BankerMenu extends AbstractContainerMenu {
             Inventory inventory,
             EconomyService economy,
             ServerPlayer player) {
-        this(containerId, inventory, economy, player, null);
+        this(containerId, inventory, economy, player, null, null);
     }
 
     public BankerMenu(
@@ -198,11 +203,22 @@ public final class BankerMenu extends AbstractContainerMenu {
             EconomyService economy,
             ServerPlayer player,
             BlockPos accessPoint) {
+        this(containerId, inventory, economy, player, accessPoint, null);
+    }
+
+    public BankerMenu(
+            int containerId,
+            Inventory inventory,
+            EconomyService economy,
+            ServerPlayer player,
+            BlockPos accessPoint,
+            Long bankRegionKey) {
         super(BankerMenus.type(), containerId);
         this.inventory = inventory;
         this.economy = economy;
         this.serverPlayer = player;
         this.accessPoint = accessPoint;
+        this.bankRegionKey = bankRegionKey;
         this.data = economy == null
                 ? new SimpleContainerData(DATA_COUNT)
                 : new BankerContainerData(this);
@@ -555,6 +571,20 @@ public final class BankerMenu extends AbstractContainerMenu {
         return data.get(DATA_VILLAGE_VISUAL_ENABLED) != 0;
     }
 
+    public com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.IncidentCause
+            villageIncidentCause() {
+        int ordinal = clampIndex(
+                data.get(DATA_VILLAGE_INCIDENT_CAUSE),
+                com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.IncidentCause
+                        .values().length);
+        return com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.IncidentCause
+                .values()[ordinal];
+    }
+
+    public int villageIncidentAge() {
+        return Math.max(0, data.get(DATA_VILLAGE_INCIDENT_AGE));
+    }
+
     private int selectedAmount() {
         int preset = AMOUNT_PRESETS[clampIndex(amountPresetIndex, AMOUNT_PRESETS.length)];
         if (preset > 0) {
@@ -681,8 +711,20 @@ public final class BankerMenu extends AbstractContainerMenu {
         BlockPos villageSearchPoint = accessPoint == null
                 ? serverPlayer.blockPosition()
                 : accessPoint;
-        EconomyService.VillageSnapshot villageSnapshot = economy.nearestVillageSnapshot(
-                "minecraft:overworld", villageSearchPoint.asLong(), 160.0);
+        String dimensionKey = serverPlayer.level() instanceof net.minecraft.server.level.ServerLevel level
+                ? level.dimension().identifier().toString()
+                : "minecraft:overworld";
+        UUID associatedVillageId = bankRegionKey == null
+                ? null
+                : economy.villageIdForBankRegion(bankRegionKey);
+        EconomyService.VillageSnapshot villageSnapshot = associatedVillageId == null
+                ? null
+                : economy.villageSnapshot(associatedVillageId);
+        if (villageSnapshot == null
+                || !dimensionKey.equals(villageSnapshot.village().dimensionKey)) {
+            villageSnapshot = economy.nearestVillageSnapshot(
+                    dimensionKey, villageSearchPoint.asLong(), 160.0);
+        }
         if (villageSnapshot == null) {
             clearVillageSnapshot();
         } else {
@@ -702,6 +744,12 @@ public final class BankerMenu extends AbstractContainerMenu {
             villageRestorationCenti = centiInt(village.restorationFund);
             villageSimulationEnabled = villageSnapshot.simulationEnabled() ? 1 : 0;
             villageVisualEnabled = villageSnapshot.visualProgressionEnabled() ? 1 : 0;
+            villageIncidentCause = village.lastIncidentCause.ordinal();
+            villageIncidentAge = village.lastIncidentCause
+                            == com.chedidandrew.emeraldstandard.core.VillageProsperityEngine
+                                    .IncidentCause.NONE
+                    ? 0
+                    : saturatingInt(Math.max(0L, day - village.lastIncidentDay));
             EconomyState.VillageProject project = village.projects.stream()
                     .filter(value -> !value.economicComplete)
                     .findFirst()
@@ -739,6 +787,8 @@ public final class BankerMenu extends AbstractContainerMenu {
         villageRestorationCenti = 0;
         villageSimulationEnabled = economy != null && economy.villageProsperitySimulationEnabled() ? 1 : 0;
         villageVisualEnabled = economy != null && economy.villageVisualProgressionEnabled() ? 1 : 0;
+        villageIncidentCause = 0;
+        villageIncidentAge = 0;
     }
 
     private int dataValue(int index) {
@@ -810,6 +860,8 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (index == DATA_VILLAGE_RESTORATION_CENTI) return villageRestorationCenti;
         if (index == DATA_VILLAGE_SIMULATION_ENABLED) return villageSimulationEnabled;
         if (index == DATA_VILLAGE_VISUAL_ENABLED) return villageVisualEnabled;
+        if (index == DATA_VILLAGE_INCIDENT_CAUSE) return villageIncidentCause;
+        if (index == DATA_VILLAGE_INCIDENT_AGE) return villageIncidentAge;
         return 0;
     }
 

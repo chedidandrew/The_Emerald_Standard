@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 6;
+    public static final int FORMAT_VERSION = 7;
     public static final int HISTORY_DAYS = 180;
     public static final long MICRO = 1_000_000L;
     public static final int MAX_PENDING_INVENTORY_ITEMS = 100_000;
@@ -38,6 +38,8 @@ public final class EconomyState {
     public final Map<Long, UUID> bankRegionVillageIds = new HashMap<>();
     /** Persistent abstract village economies and development backlogs. */
     public final Map<UUID, VillageRecord> villages = new LinkedHashMap<>();
+    /** Pre-incident market contributions held while player-damaged villages recover. */
+    public final Map<UUID, VillageMarketShadow> villageMarketShadows = new LinkedHashMap<>();
     public final Map<UUID, Account> accounts = new HashMap<>();
     public final Map<UUID, PendingInventoryTransaction> pendingInventoryTransactions =
             new HashMap<>();
@@ -208,6 +210,12 @@ public final class EconomyState {
         public boolean materializedComplete;
         public boolean blocked;
         public boolean abstractOnly;
+        /** Inclusive packed BlockPos bounds reserved by the authored physical template. */
+        public long boundsMinPos;
+        public long boundsMaxPos;
+        /** Persistent retry gate used to avoid rescanning an unsafe site every server tick. */
+        public long retryAfterGameTick;
+        public int materializationFailures;
 
         public VillageProject copy() {
             VillageProject copy = new VillageProject();
@@ -223,6 +231,61 @@ public final class EconomyState {
             copy.materializedComplete = materializedComplete;
             copy.blocked = blocked;
             copy.abstractOnly = abstractOnly;
+            copy.boundsMinPos = boundsMinPos;
+            copy.boundsMaxPos = boundsMaxPos;
+            copy.retryAfterGameTick = retryAfterGameTick;
+            copy.materializationFailures = materializationFailures;
+            return copy;
+        }
+    }
+
+    /**
+     * Market counterfactual captured immediately before a player-caused casualty.
+     *
+     * <p>The full no-player-damage village state advances daily and refreshes the cached
+     * contribution and weight, preventing an attack from changing either side of the weighted
+     * average without indefinitely freezing a favorable observation. The shadow is released only
+     * after the cooldown and a full population recovery.</p>
+     */
+    public static final class VillageMarketShadow {
+        public boolean present;
+        public boolean contributionEligible;
+        public int formulaVersion;
+        public long capturedDay;
+        public long minimumReleaseDay;
+        public int recoveryPopulation;
+        public double weight = Double.NaN;
+        public double broad = Double.NaN;
+        public double mining = Double.NaN;
+        public double agriculture = Double.NaN;
+        public double trade = Double.NaN;
+        public double redstone = Double.NaN;
+        public double alchemy = Double.NaN;
+        public double transport = Double.NaN;
+        public double security = Double.NaN;
+        /** Full no-player-damage state used to advance the market counterfactual. */
+        public VillageRecord counterfactualVillage;
+
+        public VillageMarketShadow copy() {
+            VillageMarketShadow copy = new VillageMarketShadow();
+            copy.present = present;
+            copy.contributionEligible = contributionEligible;
+            copy.formulaVersion = formulaVersion;
+            copy.capturedDay = capturedDay;
+            copy.minimumReleaseDay = minimumReleaseDay;
+            copy.recoveryPopulation = recoveryPopulation;
+            copy.weight = weight;
+            copy.broad = broad;
+            copy.mining = mining;
+            copy.agriculture = agriculture;
+            copy.trade = trade;
+            copy.redstone = redstone;
+            copy.alchemy = alchemy;
+            copy.transport = transport;
+            copy.security = security;
+            copy.counterfactualVillage = counterfactualVillage == null
+                    ? null
+                    : counterfactualVillage.copy();
             return copy;
         }
     }
@@ -276,11 +339,16 @@ public final class EconomyState {
         public final List<VillageIncident> incidents = new ArrayList<>();
 
         public VillageProject nextVisualProject() {
+            return nextVisualProject(Long.MAX_VALUE);
+        }
+
+        /** Returns the next project whose persisted placement retry delay has elapsed. */
+        public VillageProject nextVisualProject(long currentGameTick) {
             return projects.stream()
                     .filter(project -> project.economicComplete
                             && !project.materializedComplete
                             && !project.abstractOnly
-                            && !project.blocked)
+                            && project.retryAfterGameTick <= Math.max(0L, currentGameTick))
                     .findFirst()
                     .orElse(null);
         }
@@ -387,6 +455,9 @@ public final class EconomyState {
         for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
             copy.villages.put(entry.getKey(), entry.getValue().copy());
         }
+        for (Map.Entry<UUID, VillageMarketShadow> entry : villageMarketShadows.entrySet()) {
+            copy.villageMarketShadows.put(entry.getKey(), entry.getValue().copy());
+        }
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             copy.accounts.put(entry.getKey(), entry.getValue().copy());
         }
@@ -435,10 +506,19 @@ public final class EconomyState {
                         villageAutomaticRecoveryEnabled,
                         villageVisualProgressionEnabled);
             }
+            for (VillageMarketShadow shadow : villageMarketShadows.values()) {
+                VillageProsperityEngine.advanceMarketShadow(
+                        shadow,
+                        seed,
+                        economicDay,
+                        villageAutomaticRecoveryEnabled);
+            }
         }
+        releaseRecoveredMarketShadows();
         VillageProsperityEngine.VillageFundamentals villageFundamentals =
                 villageProsperitySimulationEnabled && villageMarketIntegrationEnabled
-                        ? VillageProsperityEngine.aggregateFundamentals(villages.values(), economicDay)
+                        ? VillageProsperityEngine.aggregateFundamentals(
+                                villages.values(), villageMarketShadows, economicDay)
                         : VillageProsperityEngine.VillageFundamentals.neutral();
         regime = EconomyEngine.nextRegime(regime, seed, economicDay);
         double marketReturn = EconomyEngine.marketReturn(regime, seed, economicDay);
@@ -517,7 +597,21 @@ public final class EconomyState {
     }
 
     public VillageProsperityEngine.VillageFundamentals villageFundamentals() {
-        return VillageProsperityEngine.aggregateFundamentals(villages.values(), economicDay);
+        return VillageProsperityEngine.aggregateFundamentals(
+                villages.values(), villageMarketShadows, economicDay);
+    }
+
+    private void releaseRecoveredMarketShadows() {
+        villageMarketShadows.entrySet().removeIf(entry -> {
+            VillageRecord village = villages.get(entry.getKey());
+            VillageMarketShadow shadow = entry.getValue();
+            return village != null
+                    && shadow != null
+                    && economicDay >= shadow.minimumReleaseDay
+                    && economicDay >= village.marketSuppressedUntilDay
+                    && village.lifecycle == VillageProsperityEngine.Lifecycle.ACTIVE
+                    && village.population >= shadow.recoveryPopulation;
+        });
     }
 
     public Account account(UUID id) {
@@ -533,10 +627,11 @@ public final class EconomyState {
         if (account == null) {
             return 0.0;
         }
-        double value = (account.cashMicro
+        // Convert before adding. Summing four valid long balances first can wrap negative.
+        double value = ((double) account.cashMicro
                 + account.savingsMicro
                 + account.cdValueMicro
-                + account.loanValueMicro) / (double) MICRO;
+                + account.loanValueMicro) / MICRO;
         for (Map.Entry<String, Double> holding : account.shares.entrySet()) {
             value += holding.getValue() * prices.getOrDefault(holding.getKey(), 0.0);
         }
@@ -577,6 +672,9 @@ public final class EconomyState {
         }
         for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
             validateVillage(entry.getKey(), entry.getValue(), economicDay);
+        }
+        for (Map.Entry<UUID, VillageMarketShadow> entry : villageMarketShadows.entrySet()) {
+            validateMarketShadow(entry.getKey(), entry.getValue(), economicDay);
         }
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             validateAccount(entry.getKey(), entry.getValue(), economicDay);
@@ -746,9 +844,12 @@ public final class EconomyState {
                     || project.materializedBlocks < 0
                     || project.totalBlocks < 0
                     || project.materializedBlocks > project.totalBlocks
+                    || project.retryAfterGameTick < 0L
+                    || project.materializationFailures < 0
                     || (project.economicComplete && project.economicProgress < 1.0)
                     || (project.materializedComplete
-                            && project.materializedBlocks < project.totalBlocks)) {
+                            && project.materializedBlocks < project.totalBlocks)
+                    || !validProjectBounds(project)) {
                 throw new IOException("Invalid village project in " + id);
             }
             previousProject = project.projectId;
@@ -764,11 +865,67 @@ public final class EconomyState {
         }
     }
 
+    private void validateMarketShadow(
+            UUID villageId, VillageMarketShadow shadow, long economicDay) throws IOException {
+        if (villageId == null
+                || shadow == null
+                || !shadow.present
+                || shadow.formulaVersion
+                        != VillageProsperityEngine.MARKET_SHADOW_FORMULA_VERSION
+                || !villages.containsKey(villageId)
+                || shadow.capturedDay < 0L
+                || shadow.capturedDay > economicDay
+                || shadow.minimumReleaseDay < shadow.capturedDay
+                || shadow.recoveryPopulation <= 0
+                || shadow.recoveryPopulation > VillageProsperityEngine.MAX_ABSTRACT_POPULATION
+                || shadow.counterfactualVillage == null
+                || !villageId.equals(shadow.counterfactualVillage.villageId)
+                || !Double.isFinite(shadow.weight)
+                || shadow.weight < 1.0
+                || shadow.weight > 6.0) {
+            throw new IOException("Invalid village market shadow " + villageId);
+        }
+        validateVillage(villageId, shadow.counterfactualVillage, economicDay);
+        if (!VillageProsperityEngine.isMarketShadowCurrent(shadow, economicDay)) {
+            throw new IOException("Stale village market shadow " + villageId);
+        }
+        validateFiniteRange("market-shadow broad score", shadow.broad, -1.0, 1.0);
+        validateFiniteRange("market-shadow mining score", shadow.mining, -1.0, 1.0);
+        validateFiniteRange("market-shadow agriculture score", shadow.agriculture, -1.0, 1.0);
+        validateFiniteRange("market-shadow trade score", shadow.trade, -1.0, 1.0);
+        validateFiniteRange("market-shadow redstone score", shadow.redstone, -1.0, 1.0);
+        validateFiniteRange("market-shadow alchemy score", shadow.alchemy, -1.0, 1.0);
+        validateFiniteRange("market-shadow transport score", shadow.transport, -1.0, 1.0);
+        validateFiniteRange("market-shadow security score", shadow.security, -1.0, 1.0);
+    }
+
     private static void validateFiniteRange(
             String name, double value, double minimum, double maximum) throws IOException {
         if (!Double.isFinite(value) || value < minimum || value > maximum) {
             throw new IOException("Invalid " + name);
         }
+    }
+
+    private static boolean validProjectBounds(VillageProject project) {
+        if (project.boundsMinPos == 0L && project.boundsMaxPos == 0L) {
+            // Legacy projects did not persist bounds.
+            return true;
+        }
+        return unpackX(project.boundsMinPos) <= unpackX(project.boundsMaxPos)
+                && unpackY(project.boundsMinPos) <= unpackY(project.boundsMaxPos)
+                && unpackZ(project.boundsMinPos) <= unpackZ(project.boundsMaxPos);
+    }
+
+    private static int unpackX(long packed) {
+        return (int) (packed >> 38);
+    }
+
+    private static int unpackY(long packed) {
+        return (int) (packed << 52 >> 52);
+    }
+
+    private static int unpackZ(long packed) {
+        return (int) (packed << 26 >> 38);
     }
 
     private static void validateAccount(UUID id, Account account, long economicDay)

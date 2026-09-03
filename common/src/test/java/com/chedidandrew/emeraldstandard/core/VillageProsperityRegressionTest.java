@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.core;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,6 +14,8 @@ public final class VillageProsperityRegressionTest {
         testSimulationAndProjects();
         testIndependentToggleBehavior();
         testMarketInfluenceBound();
+        testPlayerMarketShadowIsolationAndRelease();
+        testMarketShadowResidentHistoryCap();
         testLifecycleAndRestoration();
         testPersistenceAndStableIdentity();
         testRecoveryWaitsForPhysicalSettlers();
@@ -22,6 +25,17 @@ public final class VillageProsperityRegressionTest {
         testInfectionAndCureReconciliation();
         testPreferredStableIdentity();
         testFunctionalTierCanDecline();
+        testZeroPopulationDiscoveryIsAbandoned();
+        testSurvivorsCanRecoverFromDevastation();
+        testProfessionSpecializationIsBounded();
+        testInfectedDeathDoesNotDoubleDecrement();
+        testNearbyVillageSnapshots();
+        testAdaptiveCatchUpBatch();
+        testUnchangedBankAssociationDoesNotRewriteSave();
+        testBankReplacementUsesPersistedAssociation();
+        testNetWorthCannotOverflowLongAddition();
+        testEpsilonOversellIsRejected();
+        testProjectBoundsAndRetryRoundTrip();
         System.out.println("PASS VillageProsperityRegressionTest");
     }
 
@@ -77,6 +91,325 @@ public final class VillageProsperityRegressionTest {
         }
     }
 
+    private static void testPlayerMarketShadowIsolationAndRelease() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-market-shadow-");
+        try {
+            UUID attackedVillageId =
+                    UUID.fromString("00000000-0000-0000-0000-000000000101");
+            UUID naturalVillageId =
+                    UUID.fromString("00000000-0000-0000-0000-000000000202");
+            UUID firstAttackedResident =
+                    UUID.fromString("00000000-0000-0000-0000-000000001101");
+            UUID secondAttackedResident =
+                    UUID.fromString("00000000-0000-0000-0000-000000001102");
+            UUID naturallyKilledAttackedResident =
+                    UUID.fromString("00000000-0000-0000-0000-000000001103");
+            UUID naturalResident =
+                    UUID.fromString("00000000-0000-0000-0000-000000002201");
+
+            EconomyState seed = EconomyState.fresh(13_579L, 0L, 0L);
+            EconomyState.VillageRecord attacked =
+                    marketVillage(seed, attackedVillageId, pack(0, 64, 0), 8, 12);
+            attacked.prosperity = 82.0;
+            attacked.safety = 88.0;
+            attacked.developmentTier = 3;
+            attacked.miningOutput = 2.4;
+            attacked.agricultureOutput = 5.6;
+            attacked.tradeOutput = 1.6;
+            attacked.redstoneOutput = 0.32;
+            attacked.alchemyOutput = 0.20;
+            attacked.transportOutput = 0.80;
+            attacked.securityOutput = 0.80;
+            addActiveResident(
+                    attacked, firstAttackedResident, "minecraft:farmer", pack(1, 64, 0));
+            addActiveResident(
+                    attacked, secondAttackedResident, "minecraft:cleric", pack(2, 64, 0));
+            addActiveResident(
+                    attacked,
+                    naturallyKilledAttackedResident,
+                    "minecraft:armorer",
+                    pack(3, 64, 0));
+
+            EconomyState.VillageRecord natural =
+                    marketVillage(seed, naturalVillageId, pack(400, 64, 0), 10, 14);
+            natural.prosperity = 38.0;
+            natural.safety = 52.0;
+            natural.developmentTier = 1;
+            natural.miningOutput = 0.90;
+            natural.agricultureOutput = 3.0;
+            natural.tradeOutput = 1.0;
+            natural.redstoneOutput = 0.10;
+            natural.alchemyOutput = 0.10;
+            natural.transportOutput = 0.50;
+            natural.securityOutput = 0.40;
+            addActiveResident(
+                    natural, naturalResident, "minecraft:toolsmith", pack(401, 64, 0));
+
+            seed.save(root.resolve("the_emerald_standard.properties"));
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 99L, 0L, 0L);
+
+            VillageProsperityEngine.VillageFundamentals before =
+                    service.snapshot().villageFundamentals();
+            require(before.eligibleVillages() == 2,
+                    "Two-village market-shadow fixture did not start fully eligible");
+            require(service.recordVillagerDeath(
+                            attackedVillageId,
+                            firstAttackedResident,
+                            "minecraft:farmer",
+                            pack(1, 64, 0),
+                            VillageProsperityEngine.IncidentCause.PLAYER,
+                            UUID.fromString("00000000-0000-0000-0000-000000009001")),
+                    "First player casualty was not recorded");
+
+            EconomyState afterFirstState = service.snapshot();
+            VillageProsperityEngine.VillageFundamentals afterFirst =
+                    afterFirstState.villageFundamentals();
+            requireSameFundamentals(
+                    before,
+                    afterFirst,
+                    "A player casualty changed the weighted market fundamentals");
+            EconomyState.VillageMarketShadow firstShadow =
+                    afterFirstState.villageMarketShadows.get(attackedVillageId);
+            require(firstShadow != null
+                            && firstShadow.present
+                            && firstShadow.contributionEligible
+                            && firstShadow.formulaVersion
+                                    == VillageProsperityEngine.MARKET_SHADOW_FORMULA_VERSION
+                            && firstShadow.counterfactualVillage != null
+                            && firstShadow.recoveryPopulation == 8,
+                    "Player casualty did not capture the pre-incident market contribution");
+
+            require(service.recordVillagerDeath(
+                            attackedVillageId,
+                            secondAttackedResident,
+                            "minecraft:cleric",
+                            pack(2, 64, 0),
+                            VillageProsperityEngine.IncidentCause.PLAYER,
+                            UUID.fromString("00000000-0000-0000-0000-000000009002")),
+                    "Repeated player casualty was not recorded");
+            EconomyState afterRepeatState = service.snapshot();
+            requireSameFundamentals(
+                    before,
+                    afterRepeatState.villageFundamentals(),
+                    "A repeated player casualty changed the shadowed contribution");
+            requireSameShadow(
+                    firstShadow,
+                    afterRepeatState.villageMarketShadows.get(attackedVillageId),
+                    "A repeated player casualty recaptured the market shadow");
+
+            EconomyState advancingShadowState = afterRepeatState.copy();
+            VillageProsperityEngine.VillageFundamentals shadowBeforeDay =
+                    singleVillageFundamentals(advancingShadowState, attackedVillageId);
+            EconomyState.VillageMarketShadow shadowStateBeforeDay =
+                    advancingShadowState.villageMarketShadows.get(attackedVillageId).copy();
+            advancingShadowState.advanceOneDay(true, false, true, true);
+            EconomyState.VillageMarketShadow shadowAfterDay =
+                    advancingShadowState.villageMarketShadows.get(attackedVillageId);
+            require(shadowAfterDay != null
+                            && shadowAfterDay.counterfactualVillage.lastSimulatedDay
+                                    == advancingShadowState.economicDay,
+                    "An active market shadow did not advance its counterfactual village");
+            require(!sameFundamentalsBits(
+                            shadowBeforeDay,
+                            singleVillageFundamentals(
+                                    advancingShadowState, attackedVillageId)),
+                    "An active market shadow held a static market contribution across a simulated day");
+            require(!sameShadowContributionBits(shadowStateBeforeDay, shadowAfterDay),
+                    "Daily counterfactual simulation did not re-price the active shadow");
+
+            require(service.recordVillagerDeath(
+                            attackedVillageId,
+                            naturallyKilledAttackedResident,
+                            "minecraft:armorer",
+                            pack(3, 64, 0),
+                            VillageProsperityEngine.IncidentCause.HOSTILE,
+                            null),
+                    "Hostile casualty in the already-shadowed village was not recorded");
+            EconomyState afterShadowedHostileState = service.snapshot();
+            EconomyState.VillageMarketShadow hostileShadow =
+                    afterShadowedHostileState.villageMarketShadows.get(attackedVillageId);
+            EconomyState.ResidentRecord counterfactualCasualty =
+                    hostileShadow.counterfactualVillage.residents.get(
+                            naturallyKilledAttackedResident);
+            require(hostileShadow.contributionEligible
+                            && hostileShadow.counterfactualVillage.population == 7
+                            && hostileShadow.counterfactualVillage.hostileCasualties == 1
+                            && counterfactualCasualty != null
+                            && counterfactualCasualty.status
+                                    == VillageProsperityEngine.ResidentStatus.DEAD,
+                    "A genuine casualty was not applied to the shadow counterfactual");
+            require(!sameFundamentalsBits(
+                            afterRepeatState.villageFundamentals(),
+                            afterShadowedHostileState.villageFundamentals()),
+                    "A genuine casualty in a shadowed village did not change its market fundamentals");
+
+            require(service.recordVillagerDeath(
+                            naturalVillageId,
+                            naturalResident,
+                            "minecraft:toolsmith",
+                            pack(401, 64, 0),
+                            VillageProsperityEngine.IncidentCause.ENVIRONMENT,
+                            null),
+                    "Natural casualty in the unshadowed village was not recorded");
+            EconomyState afterNaturalState = service.snapshot();
+            require(!sameFundamentalsBits(
+                            afterShadowedHostileState.villageFundamentals(),
+                            afterNaturalState.villageFundamentals()),
+                    "A natural casualty in an unshadowed village did not change fundamentals");
+            require(!afterNaturalState.villageMarketShadows.containsKey(naturalVillageId),
+                    "A natural casualty incorrectly created a market shadow");
+
+            EconomyState releaseState = afterNaturalState.copy();
+            EconomyState.VillageMarketShadow releaseShadow =
+                    releaseState.villageMarketShadows.get(attackedVillageId);
+            EconomyState.VillageRecord recovering =
+                    releaseState.existingVillage(attackedVillageId);
+            int recoveryPopulation = releaseShadow.recoveryPopulation;
+            recovering.lifecycle = VillageProsperityEngine.Lifecycle.ACTIVE;
+            recovering.population = recoveryPopulation;
+            releaseState.economicDay = releaseShadow.minimumReleaseDay - 2L;
+            releaseState.advanceOneDay(false, false, false, false);
+            require(releaseState.villageMarketShadows.containsKey(attackedVillageId),
+                    "Market shadow released before its cooldown elapsed");
+
+            recovering.lifecycle = VillageProsperityEngine.Lifecycle.THREATENED;
+            releaseState.advanceOneDay(false, false, false, false);
+            require(releaseState.villageMarketShadows.containsKey(attackedVillageId),
+                    "Market shadow released before the village returned to Active");
+
+            recovering.lifecycle = VillageProsperityEngine.Lifecycle.ACTIVE;
+            recovering.population = recoveryPopulation - 1;
+            releaseState.advanceOneDay(false, false, false, false);
+            require(releaseState.villageMarketShadows.containsKey(attackedVillageId),
+                    "Market shadow released before the population baseline recovered");
+
+            recovering.population = recoveryPopulation;
+            releaseState.advanceOneDay(false, false, false, false);
+            require(!releaseState.villageMarketShadows.containsKey(attackedVillageId),
+                    "Recovered Active village retained its expired market shadow");
+        } finally {
+            deleteTree(root);
+        }
+    }
+
+    private static void testMarketShadowResidentHistoryCap() throws Exception {
+        Path root = Files.createTempDirectory("emerald-market-shadow-resident-cap-");
+        try {
+            Path save = root.resolve("the_emerald_standard.properties");
+            UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000000303");
+            UUID shadowOnlyResident =
+                    UUID.fromString("00000000-0000-0000-0000-000000003301");
+            UUID unmatchedInfection =
+                    UUID.fromString("00000000-0000-0000-0000-000000003302");
+            UUID existingInfection = new UUID(0x303L, 1L);
+
+            EconomyState seed = EconomyState.fresh(30_303L, 0L, 0L);
+            EconomyState.VillageRecord village =
+                    marketVillage(seed, villageId, pack(800, 64, 800), 8, 12);
+            for (int index = 0;
+                    index < VillageProsperityEngine.RESIDENT_HISTORY_LIMIT - 1;
+                    index++) {
+                UUID residentId = new UUID(0x303L, index + 1L);
+                EconomyState.ResidentRecord resident = new EconomyState.ResidentRecord();
+                resident.residentId = residentId;
+                resident.profession = "minecraft:none";
+                resident.status = residentId.equals(existingInfection)
+                        ? VillageProsperityEngine.ResidentStatus.INFECTED
+                        : VillageProsperityEngine.ResidentStatus.EMIGRATED;
+                resident.lastSeenDay = seed.economicDay;
+                resident.lastKnownPos = pack(index * 32, 64, 0);
+                village.residents.put(residentId, resident);
+            }
+
+            EconomyState.VillageMarketShadow shadow =
+                    VillageProsperityEngine.captureMarketShadow(village, seed.economicDay, 60L);
+            require(shadow != null && shadow.counterfactualVillage != null,
+                    "Could not create resident-cap market-shadow fixture");
+            EconomyState.ResidentRecord shadowOnly = new EconomyState.ResidentRecord();
+            shadowOnly.residentId = shadowOnlyResident;
+            shadowOnly.profession = "minecraft:none";
+            shadowOnly.status = VillageProsperityEngine.ResidentStatus.EMIGRATED;
+            shadowOnly.lastSeenDay = seed.economicDay;
+            shadowOnly.lastKnownPos = pack(-800, 64, -800);
+            shadow.counterfactualVillage.residents.put(shadowOnlyResident, shadowOnly);
+            require(village.residents.size()
+                            == VillageProsperityEngine.RESIDENT_HISTORY_LIMIT - 1
+                            && shadow.counterfactualVillage.residents.size()
+                                    == VillageProsperityEngine.RESIDENT_HISTORY_LIMIT,
+                    "Resident-cap market-shadow fixture has the wrong history sizes");
+            seed.villageMarketShadows.put(villageId, shadow);
+            seed.save(save);
+
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 99L, 0L, 0L);
+            require(service.recordResidentStatus(
+                            villageId,
+                            unmatchedInfection,
+                            "minecraft:farmer",
+                            pack(4_000, 64, 4_000),
+                            VillageProsperityEngine.ResidentStatus.INFECTED),
+                    "Unmatched infection was rejected at the market-shadow resident cap");
+
+            EconomyState after = service.snapshot();
+            EconomyState.VillageMarketShadow afterShadow =
+                    after.villageMarketShadows.get(villageId);
+            require(after.existingVillage(villageId).residents.size()
+                            == VillageProsperityEngine.RESIDENT_HISTORY_LIMIT,
+                    "Live village did not remain at the resident-history cap");
+            require(afterShadow != null
+                            && afterShadow.counterfactualVillage != null
+                            && afterShadow.counterfactualVillage.residents.size()
+                                    == VillageProsperityEngine.RESIDENT_HISTORY_LIMIT,
+                    "Counterfactual exceeded the resident-history cap after an unmatched infection");
+            EconomyState.ResidentRecord counterfactualInfection =
+                    afterShadow.counterfactualVillage.residents.get(unmatchedInfection);
+            require(counterfactualInfection != null
+                            && counterfactualInfection.status
+                                    == VillageProsperityEngine.ResidentStatus.INFECTED,
+                    "Counterfactual did not retain the unmatched infection while trimming history");
+            require(afterShadow.counterfactualVillage.residents.containsKey(existingInfection),
+                    "Counterfactual trimming discarded an existing infection dedupe record");
+
+            int counterfactualPopulationBeforeRepeat =
+                    afterShadow.counterfactualVillage.population;
+            require(service.recordResidentStatus(
+                            villageId,
+                            existingInfection,
+                            "minecraft:none",
+                            pack(0, 64, 0),
+                            VillageProsperityEngine.ResidentStatus.INFECTED),
+                    "Repeated capped infection observation was rejected");
+            EconomyState afterRepeat = service.snapshot();
+            require(afterRepeat.villageMarketShadows.get(villageId)
+                            .counterfactualVillage.population
+                            == counterfactualPopulationBeforeRepeat,
+                    "A retained capped infection was counted twice");
+            afterRepeat.validate();
+            require(service.saveNowAt(0L, 0L),
+                    "Resident-capped counterfactual was not saveable: " + service.lastError());
+
+            EconomyState reloaded = EconomyState.load(save, 100L, 0L, 0L);
+            reloaded.validate();
+            EconomyState.VillageMarketShadow reloadedShadow =
+                    reloaded.villageMarketShadows.get(villageId);
+            EconomyState.ResidentRecord reloadedInfection = reloadedShadow == null
+                    || reloadedShadow.counterfactualVillage == null
+                    ? null
+                    : reloadedShadow.counterfactualVillage.residents.get(unmatchedInfection);
+            require(reloadedShadow != null
+                            && reloadedShadow.counterfactualVillage != null
+                            && reloadedShadow.counterfactualVillage.residents.size()
+                                    == VillageProsperityEngine.RESIDENT_HISTORY_LIMIT
+                            && reloadedInfection != null
+                            && reloadedInfection.status
+                                    == VillageProsperityEngine.ResidentStatus.INFECTED,
+                    "Resident-capped counterfactual did not round-trip through persistence");
+        } finally {
+            deleteTree(root);
+        }
+    }
+
     private static void testLifecycleAndRestoration() throws Exception {
         Path root = Files.createTempDirectory("emerald-village-lifecycle-");
         try {
@@ -105,8 +438,8 @@ public final class VillageProsperityRegressionTest {
             require(restored.lifecycle == VillageProsperityEngine.Lifecycle.RECOVERING, "Funded abandoned village did not enter recovery");
             require(restored.population == 0 && restored.pendingSettlers >= 2,
                     "Recovery created productive abstract residents before physical settlers");
-            require(mutable.villageFundamentals().eligibleVillages() == 0,
-                    "Empty recovering village influenced market fundamentals");
+            require(mutable.villageFundamentals().eligibleVillages() == 1,
+                    "Player-damaged village lost its captured contribution before full recovery");
         } finally { deleteTree(root); }
     }
 
@@ -198,6 +531,12 @@ public final class VillageProsperityRegressionTest {
             require(record != null && record.status == VillageProsperityEngine.ResidentStatus.EMIGRATED,
                     "Long-absent resident did not emigrate");
             require(after.village().population == 0, "Emigrated resident remained in productive population");
+            require(after.village().lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED,
+                    "Emigration left a zero-population village in a productive lifecycle");
+            require(after.village().pendingSettlers == 0,
+                    "Emigration incorrectly queued free replacement settlers");
+            require(after.fundamentals().eligibleVillages() == 0,
+                    "Emigration collapse continued influencing market fundamentals");
         } finally { deleteTree(root); }
     }
 
@@ -271,6 +610,8 @@ public final class VillageProsperityRegressionTest {
         try {
             EconomyService service = new EconomyService();
             service.startWithSeed(root, 777L, 0L, 0L);
+            require(service.markGeneratedBankRegion(101L, pack(0, 64, 0)),
+                    "Could not seed the coarse bank-region identity test");
             EconomyService.VillageSnapshot first = service.observeVillage(new EconomyService.VillageObservation(
                     "minecraft:overworld", pack(0,64,0), 101L, 0L, 4, 6, 0, false, List.of()));
             EconomyService.VillageSnapshot second = service.observeVillage(new EconomyService.VillageObservation(
@@ -278,11 +619,13 @@ public final class VillageProsperityRegressionTest {
             require(!first.village().villageId.equals(second.village().villageId),
                     "Separated villages unexpectedly shared identity");
             EconomyService.VillageSnapshot movedObservation = service.observeVillage(
-                    second.village().villageId,
-                    new EconomyService.VillageObservation(
-                            "minecraft:overworld", pack(55,64,0), 303L, 0L, 4, 6, 0, false, List.of()));
+                     second.village().villageId,
+                     new EconomyService.VillageObservation(
+                             "minecraft:overworld", pack(55,64,0), 101L, 0L, 4, 6, 0, false, List.of()));
             require(movedObservation.village().villageId.equals(second.village().villageId),
-                    "Persisted resident tags did not win over a closer unrelated village");
+                    "Persisted resident tags did not win over a conflicting coarse bank region");
+            require(service.villageIdForBankRegion(101L).equals(first.village().villageId),
+                    "A preferred identity stole another village's existing bank association");
         } finally { deleteTree(root); }
     }
 
@@ -300,6 +643,354 @@ public final class VillageProsperityRegressionTest {
         VillageProsperityEngine.advanceOneDay(village, state.seed, 1L, false, true);
         require(village.developmentTier == 0,
                 "Extinct village retained a permanently elevated functional tier");
+    }
+
+    private static void testZeroPopulationDiscoveryIsAbandoned() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-empty-discovery-");
+        try {
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 321L, 0L, 0L);
+            EconomyService.VillageSnapshot discovered = service.observeVillage(
+                    new EconomyService.VillageObservation(
+                            "minecraft:overworld", pack(0, 64, 0), 0L, 0L,
+                            0, 4, 0, false, List.of()));
+            require(discovered.village().lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED,
+                    "An empty discovered village was marked active");
+            require(discovered.fundamentals().eligibleVillages() == 0,
+                    "An empty discovered village influenced market fundamentals");
+
+            require(service.tickAt(20L * EconomyService.TICKS_PER_MINECRAFT_DAY, 0L),
+                    "Could not advance empty-village clock");
+            EconomyState.VillageRecord after = service.villageSnapshot(
+                    discovered.village().villageId).village();
+            require(after.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
+                            && after.population == 0
+                            && after.pendingSettlers == 0,
+                    "An untouched empty village invented recovery settlers");
+        } finally { deleteTree(root); }
+    }
+
+    private static void testSurvivorsCanRecoverFromDevastation() {
+        EconomyState state = EconomyState.fresh(432L, 0L, 0L);
+        EconomyState.VillageRecord village = village(state, 1, 8);
+        village.lifecycle = VillageProsperityEngine.Lifecycle.DEVASTATED;
+        village.lastIncidentDay = 0L;
+        village.lastIncidentCause = VillageProsperityEngine.IncidentCause.HOSTILE;
+        village.safety = 70.0;
+        village.prosperity = 60.0;
+        village.foodSupply = 1_000.0;
+        village.materialSupply = 1_000.0;
+        village.treasury = 1_000.0;
+
+        VillageProsperityEngine.advanceOneDay(village, state.seed, 8L, true, false);
+        require(village.lifecycle == VillageProsperityEngine.Lifecycle.RECOVERING,
+                "A safe village with living survivors remained permanently devastated");
+        for (long day = 9L; day <= 5_000L && village.population == 1; day++) {
+            VillageProsperityEngine.advanceOneDay(village, state.seed, day, true, false);
+        }
+        require(village.population > 1,
+                "A recovering survivor village never regained population");
+    }
+
+    private static void testProfessionSpecializationIsBounded() {
+        EconomyState state = EconomyState.fresh(456L, 0L, 0L);
+        EconomyState.VillageRecord baseline = village(state, 8, 12);
+        baseline.villageId = UUID.fromString("00000000-0000-0000-0000-000000000456");
+        EconomyState.VillageRecord specialized = baseline.copy();
+        for (int i = 0; i < 8; i++) {
+            EconomyState.ResidentRecord farmer = new EconomyState.ResidentRecord();
+            farmer.residentId = new UUID(0L, i + 1L);
+            farmer.profession = "minecraft:farmer";
+            farmer.status = VillageProsperityEngine.ResidentStatus.ACTIVE;
+            specialized.residents.put(farmer.residentId, farmer);
+        }
+        VillageProsperityEngine.advanceOneDay(baseline, state.seed, 1L, false, false);
+        VillageProsperityEngine.advanceOneDay(specialized, state.seed, 1L, false, false);
+        require(specialized.agricultureOutput > baseline.agricultureOutput,
+                "Farmer professions did not affect agriculture output");
+        require(specialized.agricultureOutput <= baseline.agricultureOutput * 1.1200001,
+                "Profession specialization exceeded its 12% sector cap");
+        require(Double.doubleToLongBits(specialized.miningOutput)
+                        == Double.doubleToLongBits(baseline.miningOutput),
+                "Farmer specialization leaked into unrelated mining output");
+    }
+
+    private static void testInfectedDeathDoesNotDoubleDecrement() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-infected-death-");
+        try {
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 654L, 0L, 0L);
+            UUID first = UUID.randomUUID();
+            UUID second = UUID.randomUUID();
+            long firstPos = pack(3, 64, 3);
+            EconomyService.VillageSnapshot observed = service.observeVillage(
+                    new EconomyService.VillageObservation(
+                            "minecraft:overworld", pack(4, 64, 3), 0L, 0L,
+                            2, 4, 0, false,
+                            List.of(
+                                    new EconomyService.ResidentObservation(
+                                            first, "minecraft:farmer", firstPos),
+                                    new EconomyService.ResidentObservation(
+                                            second, "minecraft:none", pack(5, 64, 3)))));
+            UUID villageId = observed.village().villageId;
+            UUID zombieId = UUID.randomUUID();
+            require(service.recordResidentStatus(
+                            villageId, zombieId, "minecraft:farmer", firstPos,
+                            VillageProsperityEngine.ResidentStatus.INFECTED),
+                    "Could not record infection before zombie death");
+            require(service.villageSnapshot(villageId).village().population == 1,
+                    "Infection did not remove exactly one productive resident");
+            require(service.recordVillagerDeath(
+                            villageId, zombieId, "minecraft:farmer", firstPos,
+                            VillageProsperityEngine.IncidentCause.PLAYER, UUID.randomUUID()),
+                    "Could not record infected villager death");
+            EconomyState.VillageRecord after = service.villageSnapshot(villageId).village();
+            require(after.population == 1,
+                    "An infected villager death decremented population a second time");
+            require(after.playerCasualties == 1,
+                    "Infected villager death did not retain its incident attribution");
+            require(after.residents.values().stream().anyMatch(
+                            resident -> resident.status == VillageProsperityEngine.ResidentStatus.DEAD),
+                    "Infected resident was not transitioned to dead");
+        } finally { deleteTree(root); }
+    }
+
+    private static void testProjectBoundsAndRetryRoundTrip() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-project-retry-");
+        try {
+            EconomyState seed = EconomyState.fresh(765L, 0L, 0L);
+            EconomyState.VillageRecord village = village(seed, 8, 12);
+            EconomyState.VillageProject project = new EconomyState.VillageProject();
+            project.projectId = 1L;
+            project.type = VillageProsperityEngine.ProjectType.COTTAGE;
+            project.economicProgress = 1.0;
+            project.economicComplete = true;
+            project.totalBlocks = project.type.nominalBlocks();
+            EconomyState.VillageProject unloadedProject = new EconomyState.VillageProject();
+            unloadedProject.projectId = 2L;
+            unloadedProject.type = VillageProsperityEngine.ProjectType.WAREHOUSE;
+            unloadedProject.economicProgress = 1.0;
+            unloadedProject.economicComplete = true;
+            unloadedProject.totalBlocks = unloadedProject.type.nominalBlocks();
+            unloadedProject.retryAfterGameTick = Long.MAX_VALUE;
+            village.projectSerial = 2L;
+            village.projects.add(project);
+            village.projects.add(unloadedProject);
+            Path save = root.resolve("the_emerald_standard.properties");
+            seed.save(save);
+
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 999L, 0L, 0L);
+            long origin = pack(20, 64, 20);
+            long boundsMin = pack(18, 63, 18);
+            long boundsMax = pack(25, 70, 25);
+            require(service.reserveVillageProjectSite(
+                            village.villageId, 1L, origin, boundsMin, boundsMax, 180),
+                    "Could not reserve bounded project site");
+            require(service.updateVillageProjectMaterialization(
+                            village.villageId, 1L, 3, false, false),
+                    "Could not record deterministic template prefix");
+            require(service.deferVillageProjectMaterialization(village.villageId, 1L, 1_000L),
+                    "Could not defer obstructed partial project");
+            EconomyState.VillageProject deferred = service.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(deferred.originPos == origin
+                            && deferred.boundsMinPos == boundsMin
+                            && deferred.boundsMaxPos == boundsMax,
+                    "A partial project lost its restart-safe reservation bounds");
+            require(deferred.retryAfterGameTick > 1_000L
+                            && deferred.materializationFailures == 1,
+                    "Project retry did not persist an exponential backoff state");
+            require(service.villageSnapshot(village.villageId).village()
+                            .nextVisualProject(deferred.retryAfterGameTick - 1L) == null,
+                    "Project retry gate was ignored before its due tick");
+
+            long unloadedOrigin = pack(40, 64, 40);
+            long unloadedMinimum = pack(38, 63, 38);
+            long unloadedMaximum = pack(47, 72, 47);
+            require(service.reserveVillageProjectSite(
+                            village.villageId,
+                            2L,
+                            unloadedOrigin,
+                            unloadedMinimum,
+                            unloadedMaximum,
+                            unloadedProject.totalBlocks),
+                    "Could not reserve unloaded-boundary project site");
+            require(service.deferVillageProjectMaterialization(
+                            village.villageId, 2L, 2_000L, true),
+                    "Could not defer unloaded-boundary project");
+            EconomyState.VillageProject unloadedDeferred = service.villageSnapshot(
+                    village.villageId).village().projects.get(1);
+            require(unloadedDeferred.originPos == unloadedOrigin
+                            && unloadedDeferred.boundsMinPos == unloadedMinimum
+                            && unloadedDeferred.boundsMaxPos == unloadedMaximum
+                            && unloadedDeferred.materializedBlocks == 0
+                            && unloadedDeferred.retryAfterGameTick > 2_000L,
+                    "Unloaded zero-progress project discarded its crash-recovery reservation");
+
+            EconomyService reloaded = new EconomyService();
+            reloaded.startWithSeed(root, 111L, 0L, 0L);
+            EconomyState.VillageProject loaded = reloaded.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(loaded.boundsMinPos == boundsMin
+                            && loaded.boundsMaxPos == boundsMax
+                            && loaded.retryAfterGameTick == deferred.retryAfterGameTick
+                            && loaded.materializationFailures == 1,
+                    "Project bounds/backoff did not survive restart");
+            require(reloaded.villageSnapshot(village.villageId).village()
+                            .nextVisualProject(loaded.retryAfterGameTick) != null,
+                    "Deferred project did not become eligible on its due tick");
+            EconomyState.VillageProject unloadedLoaded = reloaded.villageSnapshot(
+                    village.villageId).village().projects.get(1);
+            require(unloadedLoaded.originPos == unloadedOrigin
+                            && unloadedLoaded.boundsMinPos == unloadedMinimum
+                            && unloadedLoaded.boundsMaxPos == unloadedMaximum,
+                    "Unloaded project reservation did not survive restart");
+        } finally { deleteTree(root); }
+    }
+
+    private static void testNearbyVillageSnapshots() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-nearby-");
+        try {
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 876L, 0L, 0L);
+            EconomyService.VillageSnapshot near = service.observeVillage(
+                    new EconomyService.VillageObservation(
+                            "minecraft:overworld", pack(0, 64, 0), 0L, 0L,
+                            4, 6, 0, false, List.of()));
+            service.observeVillage(new EconomyService.VillageObservation(
+                    "minecraft:overworld", pack(1_000, 64, 0), 0L, 0L,
+                    4, 6, 0, false, List.of()));
+            service.observeVillage(new EconomyService.VillageObservation(
+                    "minecraft:the_nether", pack(0, 64, 0), 0L, 0L,
+                    4, 6, 0, false, List.of()));
+            List<EconomyService.VillageSnapshot> nearby = service.villageSnapshotsNear(
+                    "minecraft:overworld", List.of(pack(10, 64, 0)), 100.0);
+            require(nearby.size() == 1
+                            && nearby.get(0).village().villageId.equals(near.village().villageId),
+                    "Nearby snapshot query copied unrelated or cross-dimension villages");
+            require(service.villageSnapshotsNear(
+                            "minecraft:overworld", List.of(), 100.0).isEmpty(),
+                    "Empty proximity query returned village snapshots");
+        } finally { deleteTree(root); }
+    }
+
+    private static void testAdaptiveCatchUpBatch() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-adaptive-catchup-");
+        try {
+            EconomyState seed = EconomyState.fresh(987L, 0L, 0L);
+            for (int i = 0; i < 20; i++) {
+                EconomyState.VillageRecord village = village(seed, 4, 6);
+                village.centerPos = pack(i * 128, 64, 0);
+                seed.account(new UUID(1L, i + 1L));
+            }
+            seed.save(root.resolve("the_emerald_standard.properties"));
+            long future = 5_000L * EconomyService.MILLIS_PER_MINECRAFT_DAY;
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 123L, future, 0L);
+            require(service.snapshot().economicDay > 0L
+                            && service.snapshot().economicDay < 2_000L,
+                    "Startup catch-up did not adapt to village/account workload");
+            require(service.catchUpDaysRemaining() > 0L,
+                    "Adaptive catch-up unexpectedly consumed the entire backlog");
+        } finally { deleteTree(root); }
+    }
+
+    private static void testUnchangedBankAssociationDoesNotRewriteSave() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-bank-noop-");
+        try {
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 1_098L, 0L, 0L);
+            long region = 42L;
+            long anchor = pack(0, 64, 0);
+            require(service.markGeneratedBankRegion(region, anchor),
+                    "Could not register generated bank region");
+            EconomyService.VillageSnapshot village = service.observeVillage(
+                    new EconomyService.VillageObservation(
+                            "minecraft:overworld", anchor, region, anchor,
+                            4, 6, 0, false, List.of()));
+            require(service.associateBankRegionWithVillage(
+                            region, village.village().villageId, anchor),
+                    "Could not create bank-village association");
+            Path save = root.resolve("the_emerald_standard.properties");
+            FileTime sentinel = FileTime.fromMillis(1_234L);
+            Files.setLastModifiedTime(save, sentinel);
+            require(service.associateBankRegionWithVillage(
+                            region, village.village().villageId, anchor),
+                    "Unchanged bank-village association was rejected");
+            require(Files.getLastModifiedTime(save).equals(sentinel),
+                    "Unchanged bank-village association rewrote the entire save");
+        } finally { deleteTree(root); }
+    }
+
+    private static void testBankReplacementUsesPersistedAssociation() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-bank-routing-");
+        try {
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 1_154L, 0L, 0L);
+            long abandonedPosition = pack(0, 64, 0);
+            long activePosition = pack(80, 64, 0);
+            UUID abandoned = service.observeVillage(new EconomyService.VillageObservation(
+                            "minecraft:overworld", abandonedPosition, 0L, 0L,
+                            0, 4, 0, false, List.of()))
+                    .village().villageId;
+            UUID active = service.observeVillage(new EconomyService.VillageObservation(
+                            "minecraft:overworld", activePosition, 0L, 0L,
+                            4, 6, 0, false, List.of()))
+                    .village().villageId;
+
+            require(service.markGeneratedBankRegion(11L, activePosition)
+                            && service.associateBankRegionWithVillage(
+                                    11L, abandoned, activePosition),
+                    "Could not route a test bank to its abandoned village");
+            require(!service.allowBankerReplacementForRegion(11L, activePosition),
+                    "Banker replacement used a nearer active village instead of its association");
+
+            require(service.markGeneratedBankRegion(12L, abandonedPosition)
+                            && service.associateBankRegionWithVillage(
+                                    12L, active, abandonedPosition),
+                    "Could not route a test bank to its active village");
+            require(service.allowBankerReplacementForRegion(12L, abandonedPosition),
+                    "Banker replacement used a nearer abandoned village instead of its association");
+        } finally { deleteTree(root); }
+    }
+
+    private static void testNetWorthCannotOverflowLongAddition() {
+        EconomyState state = EconomyState.fresh(1_209L, 0L, 0L);
+        UUID player = UUID.randomUUID();
+        EconomyState.Account account = state.account(player);
+        account.cashMicro = Long.MAX_VALUE;
+        account.savingsMicro = Long.MAX_VALUE;
+        double expected = 2.0 * Long.MAX_VALUE / EconomyState.MICRO;
+        double actual = state.netWorth(player);
+        require(Double.isFinite(actual) && actual > 0.0,
+                "Net worth overflowed valid long balances");
+        require(Math.abs(actual - expected) <= Math.ulp(expected) * 2.0,
+                "Net worth lost a balance while avoiding overflow");
+    }
+
+    private static void testEpsilonOversellIsRejected() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-oversell-");
+        try {
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 1_320L, 0L, 0L);
+            UUID player = UUID.randomUUID();
+            require(service.deposit(player, 20L) && service.buy(player, "VILX", 10L),
+                    "Could not create holding for oversell regression");
+            EconomyService.PortfolioSnapshot before = service.portfolioSnapshot(player);
+            double held = before.account().shares.get("VILX");
+            require(!service.sell(player, "VILX", held + 5.0e-10),
+                    "Epsilon oversell was accepted");
+            EconomyService.PortfolioSnapshot after = service.portfolioSnapshot(player);
+            require(Double.doubleToLongBits(after.account().shares.get("VILX"))
+                            == Double.doubleToLongBits(held)
+                            && after.account().cashMicro == before.account().cashMicro,
+                    "Rejected oversell mutated the account");
+            require(service.sell(player, "VILX", held),
+                    "Exact full-position sale was rejected");
+            require(!service.portfolioSnapshot(player).account().shares.containsKey("VILX"),
+                    "Exact full-position sale left a dust holding");
+        } finally { deleteTree(root); }
     }
 
     private static EconomyState.VillageRecord village(EconomyState state, int population, int housing) {
@@ -321,6 +1012,188 @@ public final class VillageProsperityRegressionTest {
         village.prosperity = 55.0;
         village.safety = 70.0;
         return village;
+    }
+
+    private static EconomyState.VillageRecord marketVillage(
+            EconomyState state, UUID id, long center, int population, int housing) {
+        EconomyState.VillageRecord village = state.village(id);
+        village.dimensionKey = "minecraft:overworld";
+        village.centerPos = center;
+        village.discoveredDay = state.economicDay;
+        village.lastSimulatedDay = state.economicDay;
+        village.lastCensusDay = state.economicDay;
+        village.population = population;
+        village.observedPopulation = population;
+        village.housingCapacity = housing;
+        village.foodSupply = population * 24.0;
+        village.materialSupply = population * 12.0;
+        village.treasury = population * 2.0;
+        village.developmentPoints = population;
+        village.lifecycle = VillageProsperityEngine.Lifecycle.ACTIVE;
+        return village;
+    }
+
+    private static void addActiveResident(
+            EconomyState.VillageRecord village, UUID id, String profession, long position) {
+        EconomyState.ResidentRecord resident = new EconomyState.ResidentRecord();
+        resident.residentId = id;
+        resident.profession = profession;
+        resident.status = VillageProsperityEngine.ResidentStatus.ACTIVE;
+        resident.lastSeenDay = village.lastCensusDay;
+        resident.lastKnownPos = position;
+        village.residents.put(id, resident);
+    }
+
+    private static void requireSameFundamentals(
+            VillageProsperityEngine.VillageFundamentals expected,
+            VillageProsperityEngine.VillageFundamentals actual,
+            String message) {
+        require(sameFundamentalsBits(expected, actual), message);
+    }
+
+    private static boolean sameFundamentalsBits(
+            VillageProsperityEngine.VillageFundamentals first,
+            VillageProsperityEngine.VillageFundamentals second) {
+        return first != null
+                && second != null
+                && first.eligibleVillages() == second.eligibleVillages()
+                && Double.doubleToLongBits(first.broad()) == Double.doubleToLongBits(second.broad())
+                && Double.doubleToLongBits(first.mining()) == Double.doubleToLongBits(second.mining())
+                && Double.doubleToLongBits(first.agriculture())
+                        == Double.doubleToLongBits(second.agriculture())
+                && Double.doubleToLongBits(first.trade()) == Double.doubleToLongBits(second.trade())
+                && Double.doubleToLongBits(first.redstone())
+                        == Double.doubleToLongBits(second.redstone())
+                && Double.doubleToLongBits(first.alchemy())
+                        == Double.doubleToLongBits(second.alchemy())
+                && Double.doubleToLongBits(first.transport())
+                        == Double.doubleToLongBits(second.transport())
+                && Double.doubleToLongBits(first.security())
+                        == Double.doubleToLongBits(second.security());
+    }
+
+    private static VillageProsperityEngine.VillageFundamentals singleVillageFundamentals(
+            EconomyState state, UUID villageId) {
+        return VillageProsperityEngine.aggregateFundamentals(
+                List.of(state.existingVillage(villageId)),
+                state.villageMarketShadows,
+                state.economicDay);
+    }
+
+    private static boolean sameShadowContributionBits(
+            EconomyState.VillageMarketShadow first,
+            EconomyState.VillageMarketShadow second) {
+        return first != null
+                && second != null
+                && first.contributionEligible == second.contributionEligible
+                && first.formulaVersion == second.formulaVersion
+                && Double.doubleToLongBits(first.weight) == Double.doubleToLongBits(second.weight)
+                && Double.doubleToLongBits(first.broad) == Double.doubleToLongBits(second.broad)
+                && Double.doubleToLongBits(first.mining) == Double.doubleToLongBits(second.mining)
+                && Double.doubleToLongBits(first.agriculture)
+                        == Double.doubleToLongBits(second.agriculture)
+                && Double.doubleToLongBits(first.trade) == Double.doubleToLongBits(second.trade)
+                && Double.doubleToLongBits(first.redstone)
+                        == Double.doubleToLongBits(second.redstone)
+                && Double.doubleToLongBits(first.alchemy) == Double.doubleToLongBits(second.alchemy)
+                && Double.doubleToLongBits(first.transport)
+                        == Double.doubleToLongBits(second.transport)
+                && Double.doubleToLongBits(first.security)
+                        == Double.doubleToLongBits(second.security);
+    }
+
+    private static void requireSameShadow(
+            EconomyState.VillageMarketShadow expected,
+            EconomyState.VillageMarketShadow actual,
+            String message) {
+        require(expected != null
+                        && actual != null
+                        && expected.present == actual.present
+                        && expected.contributionEligible == actual.contributionEligible
+                        && expected.formulaVersion == actual.formulaVersion
+                        && expected.capturedDay == actual.capturedDay
+                        && expected.minimumReleaseDay == actual.minimumReleaseDay
+                        && expected.recoveryPopulation == actual.recoveryPopulation
+                        && Double.doubleToLongBits(expected.weight)
+                                == Double.doubleToLongBits(actual.weight)
+                        && Double.doubleToLongBits(expected.broad)
+                                == Double.doubleToLongBits(actual.broad)
+                        && Double.doubleToLongBits(expected.mining)
+                                == Double.doubleToLongBits(actual.mining)
+                        && Double.doubleToLongBits(expected.agriculture)
+                                == Double.doubleToLongBits(actual.agriculture)
+                        && Double.doubleToLongBits(expected.trade)
+                                == Double.doubleToLongBits(actual.trade)
+                        && Double.doubleToLongBits(expected.redstone)
+                                == Double.doubleToLongBits(actual.redstone)
+                        && Double.doubleToLongBits(expected.alchemy)
+                                == Double.doubleToLongBits(actual.alchemy)
+                        && Double.doubleToLongBits(expected.transport)
+                                == Double.doubleToLongBits(actual.transport)
+                        && Double.doubleToLongBits(expected.security)
+                                == Double.doubleToLongBits(actual.security)
+                        && sameCounterfactualVillage(
+                                expected.counterfactualVillage,
+                                actual.counterfactualVillage),
+                message);
+    }
+
+    private static boolean sameCounterfactualVillage(
+            EconomyState.VillageRecord expected,
+            EconomyState.VillageRecord actual) {
+        if (expected == null
+                || actual == null
+                || expected == actual
+                || !java.util.Objects.equals(expected.villageId, actual.villageId)
+                || !java.util.Objects.equals(expected.dimensionKey, actual.dimensionKey)
+                || expected.centerPos != actual.centerPos
+                || expected.lastSimulatedDay != actual.lastSimulatedDay
+                || expected.lastIncidentDay != actual.lastIncidentDay
+                || expected.marketSuppressedUntilDay != actual.marketSuppressedUntilDay
+                || expected.lifecycle != actual.lifecycle
+                || expected.lastIncidentCause != actual.lastIncidentCause
+                || expected.population != actual.population
+                || expected.observedPopulation != actual.observedPopulation
+                || expected.housingCapacity != actual.housingCapacity
+                || expected.hostileCasualties != actual.hostileCasualties
+                || expected.playerCasualties != actual.playerCasualties
+                || expected.environmentalCasualties != actual.environmentalCasualties
+                || Double.doubleToLongBits(expected.foodSupply)
+                        != Double.doubleToLongBits(actual.foodSupply)
+                || Double.doubleToLongBits(expected.materialSupply)
+                        != Double.doubleToLongBits(actual.materialSupply)
+                || Double.doubleToLongBits(expected.treasury)
+                        != Double.doubleToLongBits(actual.treasury)
+                || Double.doubleToLongBits(expected.prosperity)
+                        != Double.doubleToLongBits(actual.prosperity)
+                || Double.doubleToLongBits(expected.safety)
+                        != Double.doubleToLongBits(actual.safety)
+                || Double.doubleToLongBits(expected.miningOutput)
+                        != Double.doubleToLongBits(actual.miningOutput)
+                || Double.doubleToLongBits(expected.agricultureOutput)
+                        != Double.doubleToLongBits(actual.agricultureOutput)
+                || Double.doubleToLongBits(expected.tradeOutput)
+                        != Double.doubleToLongBits(actual.tradeOutput)
+                || expected.residents.size() != actual.residents.size()) {
+            return false;
+        }
+        for (var entry : expected.residents.entrySet()) {
+            EconomyState.ResidentRecord expectedResident = entry.getValue();
+            EconomyState.ResidentRecord actualResident = actual.residents.get(entry.getKey());
+            if (expectedResident == null
+                    || actualResident == null
+                    || expectedResident == actualResident
+                    || !java.util.Objects.equals(
+                            expectedResident.residentId, actualResident.residentId)
+                    || !java.util.Objects.equals(
+                            expectedResident.profession, actualResident.profession)
+                    || expectedResident.status != actualResident.status
+                    || expectedResident.lastSeenDay != actualResident.lastSeenDay
+                    || expectedResident.lastKnownPos != actualResident.lastKnownPos) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static long pack(int x, int y, int z) {

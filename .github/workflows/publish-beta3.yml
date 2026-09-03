@@ -10,11 +10,15 @@ permissions:
   actions: read
   contents: write
 
+concurrency:
+  group: publish-0.3.0-beta.3
+  cancel-in-progress: false
+
 jobs:
   publish:
     if: github.repository == 'chedidandrew/The_Emerald_Standard'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 75
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: v0.3.0-beta.3
@@ -24,6 +28,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate beta.3 source metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          fabric_version="$(sed -n 's/^mod_version=//p' fabric/gradle.properties)"
+          neoforge_version="$(sed -n 's/^mod_version=//p' neoforge/gradle.properties)"
+          [[ "$fabric_version" == "0.3.0-beta.3" ]]
+          [[ "$neoforge_version" == "$fabric_version" ]]
+          test -s release/RELEASE_NOTES-0.3.0-beta.3.md
+
       - name: Wait for verified build of this source commit
         id: verified
         shell: bash
@@ -31,35 +45,38 @@ jobs:
           set -euo pipefail
           target_sha="$GITHUB_SHA"
           run_id=""
-          for attempt in $(seq 1 50); do
+          for attempt in $(seq 1 60); do
             row="$(gh run list \
               --repo "$GITHUB_REPOSITORY" \
               --workflow build.yml \
               --commit "$target_sha" \
               --limit 10 \
-              --json databaseId,status,conclusion,headSha \
-              --jq '[.[] | select(.headSha == "'"$target_sha"'")] | first | [.databaseId,.status,.conclusion] | @tsv' 2>/dev/null || true)"
-            if [[ -n "$row" && "$row" != "null" ]]; then
+              --json databaseId,status,conclusion,headSha,event,headBranch \
+              --jq '(first(.[] | select(.headSha == "'"$target_sha"'" and .event == "push" and .headBranch == "main")) // empty) | [.databaseId,.status,.conclusion] | @tsv' 2>/dev/null || true)"
+            if [[ -n "$row" ]]; then
               IFS=$'\t' read -r candidate status conclusion <<< "$row"
-              run_id="$candidate"
-              if [[ "$status" == "completed" ]]; then
-                if [[ "$conclusion" != "success" ]]; then
-                  echo "Build run $run_id completed with $conclusion" >&2
-                  exit 1
-                fi
+              if [[ "$candidate" =~ ^[0-9]+$ ]]; then
+                run_id="$candidate"
                 break
               fi
             fi
-            sleep 12
+            sleep 10
           done
           if [[ -z "$run_id" ]]; then
             echo "No build workflow run found for $target_sha" >&2
             exit 1
           fi
-          final="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '[.status,.conclusion] | @tsv')"
-          IFS=$'\t' read -r final_status final_conclusion <<< "$final"
-          if [[ "$final_status" != "completed" || "$final_conclusion" != "success" ]]; then
-            echo "Build run $run_id was not successfully completed" >&2
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 10
+          final="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --json status,conclusion,headSha,event,headBranch \
+            --jq '[.status,.conclusion,.headSha,.event,.headBranch] | @tsv')"
+          IFS=$'\t' read -r final_status final_conclusion final_sha final_event final_branch <<< "$final"
+          if [[ "$final_status" != "completed" \
+              || "$final_conclusion" != "success" \
+              || "$final_sha" != "$target_sha" \
+              || "$final_event" != "push" \
+              || "$final_branch" != "main" ]]; then
+            echo "Build run $run_id was not a successful exact-source main push" >&2
             exit 1
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
@@ -77,6 +94,19 @@ jobs:
           gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
             --name "the-emerald-standard-neoforge-$target_sha" --dir dist/neoforge
 
+          mapfile -t fabric_jars < <(find dist/fabric -maxdepth 1 -type f -name '*.jar' -printf '%f\n' | sort)
+          mapfile -t neoforge_jars < <(find dist/neoforge -maxdepth 1 -type f -name '*.jar' -printf '%f\n' | sort)
+          expected_fabric=(
+            the-emerald-standard-fabric-0.3.0-beta.3-sources.jar
+            the-emerald-standard-fabric-0.3.0-beta.3.jar
+          )
+          expected_neoforge=(
+            the-emerald-standard-neoforge-0.3.0-beta.3-sources.jar
+            the-emerald-standard-neoforge-0.3.0-beta.3.jar
+          )
+          [[ "${fabric_jars[*]}" == "${expected_fabric[*]}" ]]
+          [[ "${neoforge_jars[*]}" == "${expected_neoforge[*]}" ]]
+
           cp dist/fabric/the-emerald-standard-fabric-0.3.0-beta.3.jar \
             dist/release/The-Emerald-Standard-Fabric-26.2-0.3.0-beta.3.jar
           cp dist/fabric/the-emerald-standard-fabric-0.3.0-beta.3-sources.jar \
@@ -93,20 +123,106 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          resolve_remote_tag() {
+            local direct peeled
+            direct="$(git ls-remote --tags origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
+            peeled="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk 'NR == 1 { print $1 }')"
+            printf '%s' "${peeled:-$direct}"
+          }
+          verify_release_contents() {
+            local expected_draft="$1"
+            local metadata expected_notes actual_notes verification_dir
+            metadata="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --json name,isDraft,isPrerelease \
+              --jq '[.name,.isDraft,.isPrerelease] | @tsv')"
+            if [[ "$metadata" != "$TITLE"$'\t'"$expected_draft"$'\t'"true" ]]; then
+              echo "$TAG has unexpected title, draft, or prerelease state" >&2
+              exit 1
+            fi
+            expected_notes="$(cat release/RELEASE_NOTES-0.3.0-beta.3.md)"
+            actual_notes="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --json body --jq '.body')"
+            if [[ "$actual_notes" != "$expected_notes" ]]; then
+              echo "$TAG release notes differ from the verified source" >&2
+              exit 1
+            fi
+
+            verification_dir="dist/release-verification"
+            mkdir -p "$verification_dir"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --dir "$verification_dir"
+            mapfile -t expected_names < <(find dist/release -maxdepth 1 -type f -printf '%f\n' | sort)
+            mapfile -t actual_names < <(find "$verification_dir" -maxdepth 1 -type f -printf '%f\n' | sort)
+            if [[ "${actual_names[*]}" != "${expected_names[*]}" ]]; then
+              echo "$TAG has an unexpected release-asset set" >&2
+              exit 1
+            fi
+            for asset_name in "${expected_names[@]}"; do
+              cmp -s "dist/release/$asset_name" "$verification_dir/$asset_name" || {
+                echo "$TAG release asset differs: $asset_name" >&2
+                exit 1
+              }
+            done
+          }
+
           assets=(dist/release/*)
           target_sha='${{ steps.verified.outputs.target_sha }}'
+          git fetch --no-tags origin main
+          remote_main="$(git rev-parse FETCH_HEAD)"
+          if [[ "$remote_main" != "$target_sha" ]]; then
+            echo "Refusing to publish $target_sha because origin/main is $remote_main" >&2
+            exit 1
+          fi
+
+          existing_tag_target="$(resolve_remote_tag)"
+          if [[ -n "$existing_tag_target" && "$existing_tag_target" != "$target_sha" ]]; then
+            echo "$TAG already resolves to $existing_tag_target, not $target_sha" >&2
+            exit 1
+          fi
+
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --target "$target_sha" --title "$TITLE" \
-              --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md --prerelease
+            existing_release="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --json isDraft --jq '.isDraft')"
+            existing_draft="$existing_release"
+            if [[ "$existing_draft" == "true" ]]; then
+              # Normalize and verify the entire draft before making any of its assets public.
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+                --target "$target_sha" --title "$TITLE" \
+                --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md \
+                --draft --prerelease
+              gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+              verify_release_contents true
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+                --target "$target_sha" --title "$TITLE" \
+                --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md \
+                --draft=false --prerelease
+            else
+              verify_release_contents false
+              echo "Existing public $TAG release is byte-for-byte identical; leaving it immutable"
+            fi
           else
             gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
               --target "$target_sha" --title "$TITLE" \
-              --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md --prerelease
+              --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md \
+              --draft --prerelease
+            verify_release_contents true
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$target_sha" --title "$TITLE" \
+              --notes-file release/RELEASE_NOTES-0.3.0-beta.3.md \
+              --draft=false --prerelease
           fi
 
-      - name: Record artifact provenance and remove one-shot workflow
+          published_tag_target="$(resolve_remote_tag)"
+          if [[ "$published_tag_target" != "$target_sha" ]]; then
+            echo "$TAG resolves to $published_tag_target after publication, not $target_sha" >&2
+            exit 1
+          fi
+          release_state="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease \
+            --jq '[.tagName,.isDraft,.isPrerelease] | @tsv')"
+          [[ "$release_state" == "$TAG"$'\t'"false"$'\t'"true" ]]
+
+      - name: Record artifact provenance
         shell: bash
         run: |
           set -euo pipefail
@@ -134,10 +250,48 @@ jobs:
           The release assets were downloaded from the successful build workflow for the exact tagged source commit and published without rebuilding.
           EOF
 
-          rm -f .github/workflows/publish-beta3.yml
+          cat > release/BUILD_STATUS.md <<EOF
+          # Build status for 0.3.0-beta.3
+
+          ## Publication status
+
+          - Source commit: $target_sha
+          - Full verification workflow run: $run_id
+          - GitHub prerelease: PUBLISHED as $TAG
+          - Fabric binary and source JARs: PUBLISHED FROM VERIFIED ARTIFACTS
+          - NeoForge binary and source JARs: PUBLISHED FROM VERIFIED ARTIFACTS
+
+          Exact workflow artifact IDs and digests plus release JAR SHA-256 checksums are recorded in release/ARTIFACTS-$short_sha.md. The release assets were downloaded from the successful full build for this exact source commit and were not rebuilt by the publisher.
+
+          ## Save compatibility
+
+          Beta.3 writes save format 7. Beta.1 and beta.2 format-6 worlds upgrade automatically, but those older builds reject a world after beta.3 saves it. Restore a pre-upgrade backup if a downgrade is required.
+
+          ## Verified gate
+
+          The exact source passed the loader-neutral economy, persistence, and Village Prosperity regression suites; both loader builds and packaged-JAR inspections; both dedicated-server startup checks; both client bootstrap and screen-registration checks; fatal-log checks; and artifact upload.
+
+          ## Known durability boundaries
+
+          - Project materialization trusts persisted prefix/completion progress and does not repair already-counted blocks removed by a player or lost through chunk rollback.
+          - Economy-file bank markers and Minecraft chunk saves are not atomic together. A crash in that window falls back to an eligible Banker rather than rebuilding blocks whose ownership is unknown.
+
+          ## Remaining beta validation
+
+          Automated checks do not certify subjective structure appearance, every GUI scale, unregistered third-party claim systems, unusual modded terrain, long multiplayer construction sessions, or very large persistent worlds. Village Banks remain Overworld-only. This release remains a prerelease while wider hands-on testing continues.
+          EOF
+
           git config user.name 'chedidandrew'
           git config user.email '145610849+chedidandrew@users.noreply.github.com'
-          git add -A release/ARTIFACTS-*.md .github/workflows/publish-beta3.yml
+          git add -A release/ARTIFACTS-*.md release/BUILD_STATUS.md
+          if git diff --cached --quiet; then
+            echo "Artifact provenance is already current"
+            exit 0
+          fi
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse FETCH_HEAD)" != "$target_sha" ]]; then
+            echo "origin/main advanced before provenance could be recorded" >&2
+            exit 1
+          fi
           git commit -m "Record verified 0.3.0-beta.3 release artifacts"
           git push origin HEAD:main
-          git push origin --delete fix/beta3-completion work/beta3-hardening || true

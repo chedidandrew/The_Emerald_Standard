@@ -585,8 +585,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         ? tr("village.mode.visual")
                         : tr("village.mode.off");
         graphics.text(font, mode, 16, 149, MUTED, false);
-        if (menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.ABANDONED
-                || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT) {
+        boolean restoration = menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.ABANDONED
+                || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT;
+        if (restoration) {
             graphics.text(font,
                     tr("village.restoration",
                             String.format(Locale.ROOT, "%.1f", menu.villageRestorationFund()),
@@ -594,6 +595,23 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     171,
                     149,
                     GOLD,
+                    false);
+        } else if (menu.villageIncidentCause()
+                != VillageProsperityEngine.IncidentCause.NONE) {
+            Component age = menu.villageIncidentAge() == 0
+                    ? tr("village.news.today")
+                    : tr("village.news.days_ago", menu.villageIncidentAge());
+            graphics.text(font,
+                    tr("village.news",
+                            tr("village.incident."
+                                    + menu.villageIncidentCause()
+                                            .name().toLowerCase(Locale.ROOT)),
+                            age),
+                    171,
+                    149,
+                    menu.villageIncidentCause() == VillageProsperityEngine.IncidentCause.PLAYER
+                            ? NEGATIVE
+                            : GOLD,
                     false);
         }
     }

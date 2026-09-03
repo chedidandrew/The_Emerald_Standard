@@ -1,7 +1,9 @@
 package com.chedidandrew.emeraldstandard.core;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 /** Loader-neutral village prosperity, development, and market-fundamentals simulation. */
@@ -10,6 +12,7 @@ public final class VillageProsperityEngine {
     public static final int MAX_PROJECTS_PER_VILLAGE = 12;
     public static final int INCIDENT_HISTORY_LIMIT = 16;
     public static final int RESIDENT_HISTORY_LIMIT = 128;
+    public static final int MARKET_SHADOW_FORMULA_VERSION = 1;
     public static final double RESTORATION_EMERALD_TARGET = 25.0;
 
     private static final long GROWTH_SALT = 0x47524F575448L;
@@ -151,21 +154,29 @@ public final class VillageProsperityEngine {
         };
         double productivity = safetyFactor * prosperityFactor * lifecycleFactor;
         double population = village.population;
+        ProfessionMultipliers profession = professionMultipliers(village);
 
         village.agricultureOutput = population * 0.58 * productivity
-                * (1.0 + 0.04 * village.developmentTier);
+                * (1.0 + 0.04 * village.developmentTier)
+                * profession.agriculture();
         village.miningOutput = population * 0.22 * productivity
-                * (1.0 + 0.32 * mines);
+                * (1.0 + 0.32 * mines)
+                * profession.mining();
         village.tradeOutput = population * 0.18 * productivity
-                * (1.0 + 0.22 * warehouses);
+                * (1.0 + 0.22 * warehouses)
+                * profession.trade();
         village.redstoneOutput = population * 0.018 * productivity
-                * Math.max(0, village.developmentTier - 1);
+                * Math.max(0, village.developmentTier - 1)
+                * profession.redstone();
         village.alchemyOutput = population * 0.015 * productivity
-                * Math.max(0, village.developmentTier - 1);
+                * Math.max(0, village.developmentTier - 1)
+                * profession.alchemy();
         village.transportOutput = population * 0.10 * productivity
-                * (1.0 + 0.15 * warehouses);
+                * (1.0 + 0.15 * warehouses)
+                * profession.transport();
         village.securityOutput = population * 0.08
-                * clamp(0.5 + village.safety / 100.0, 0.4, 1.5);
+                * clamp(0.5 + village.safety / 100.0, 0.4, 1.5)
+                * profession.security();
 
         double foodUse = population * 0.46;
         double foodSpoilage = village.foodSupply * 0.0008;
@@ -280,6 +291,18 @@ public final class VillageProsperityEngine {
             if (village.population >= 4 && village.safety >= 50.0 && village.prosperity >= 35.0) {
                 village.lifecycle = Lifecycle.ACTIVE;
             }
+            return;
+        }
+        if ((village.lifecycle == Lifecycle.DEVASTATED
+                        || village.lifecycle == Lifecycle.THREATENED)
+                && village.population <= 2
+                && sinceIncident > 7L
+                && village.safety >= 35.0
+                && village.prosperity >= 20.0) {
+            // A settlement with living survivors must have a path back. RECOVERING enables
+            // bounded population growth; fully extinct player-caused settlements still require
+            // explicit restoration through the separate zero-population recovery rules.
+            village.lifecycle = Lifecycle.RECOVERING;
             return;
         }
         if (sinceIncident <= 7L || village.safety < 30.0) {
@@ -491,6 +514,17 @@ public final class VillageProsperityEngine {
 
     public static VillageFundamentals aggregateFundamentals(
             Collection<EconomyState.VillageRecord> villages, long day) {
+        return aggregateFundamentals(villages, Map.of(), day);
+    }
+
+    /**
+     * Aggregates live villages while substituting evolving no-player-damage counterfactuals for
+     * villages recovering from player-caused damage.
+     */
+    public static VillageFundamentals aggregateFundamentals(
+            Collection<EconomyState.VillageRecord> villages,
+            Map<UUID, EconomyState.VillageMarketShadow> marketShadows,
+            long day) {
         if (villages == null || villages.isEmpty()) {
             return VillageFundamentals.neutral();
         }
@@ -505,31 +539,60 @@ public final class VillageProsperityEngine {
         double totalWeight = 0.0;
         int eligible = 0;
 
-        for (EconomyState.VillageRecord village : villages) {
-            if (village == null
-                    || village.population <= 0
-                    || day < village.marketSuppressedUntilDay
-                    || village.lifecycle == Lifecycle.ABANDONED
-                    || village.lifecycle == Lifecycle.EXTINCT) {
-                continue;
+        // Properties do not preserve insertion order after a reload. Stable UUID ordering keeps
+        // floating-point aggregation bit-for-bit deterministic across save round trips.
+        for (EconomyState.VillageRecord village : villages.stream()
+                .filter(candidate -> candidate != null && candidate.villageId != null)
+                .sorted(Comparator.comparing(candidate -> candidate.villageId))
+                .toList()) {
+            EconomyState.VillageMarketShadow shadow = marketShadows == null
+                    ? null
+                    : marketShadows.get(village.villageId);
+            double weight;
+            double broadScore;
+            double miningScore;
+            double agricultureScore;
+            double tradeScore;
+            double redstoneScore;
+            double alchemyScore;
+            double transportScore;
+            double securityScore;
+            if (shadow != null && shadow.present) {
+                if (!shadow.contributionEligible) {
+                    continue;
+                }
+                weight = shadow.weight;
+                broadScore = shadow.broad;
+                miningScore = shadow.mining;
+                agricultureScore = shadow.agriculture;
+                tradeScore = shadow.trade;
+                redstoneScore = shadow.redstone;
+                alchemyScore = shadow.alchemy;
+                transportScore = shadow.transport;
+                securityScore = shadow.security;
+            } else {
+                if (!isMarketEligible(village, day)) {
+                    continue;
+                }
+                MarketContribution contribution = marketContribution(village);
+                weight = contribution.weight();
+                broadScore = contribution.broad();
+                miningScore = contribution.mining();
+                agricultureScore = contribution.agriculture();
+                tradeScore = contribution.trade();
+                redstoneScore = contribution.redstone();
+                alchemyScore = contribution.alchemy();
+                transportScore = contribution.transport();
+                securityScore = contribution.security();
             }
-            double rawWeight = StrictMath.sqrt(Math.max(1.0, village.population));
-            double weight = Math.min(6.0, rawWeight);
-            double population = Math.max(1.0, village.population);
-            double broadScore = clamp(
-                    (village.prosperity - 50.0) / 50.0 * 0.55
-                            + (village.safety - 55.0) / 45.0 * 0.35
-                            + (village.developmentTier - 1.0) / 5.0 * 0.10,
-                    -1.0,
-                    1.0);
             broad += broadScore * weight;
-            mining += outputScore(village.miningOutput / population, 0.18) * weight;
-            agriculture += outputScore(village.agricultureOutput / population, 0.48) * weight;
-            trade += outputScore(village.tradeOutput / population, 0.15) * weight;
-            redstone += outputScore(village.redstoneOutput / population, 0.02) * weight;
-            alchemy += outputScore(village.alchemyOutput / population, 0.015) * weight;
-            transport += outputScore(village.transportOutput / population, 0.085) * weight;
-            security += outputScore(village.securityOutput / population, 0.075) * weight;
+            mining += miningScore * weight;
+            agriculture += agricultureScore * weight;
+            trade += tradeScore * weight;
+            redstone += redstoneScore * weight;
+            alchemy += alchemyScore * weight;
+            transport += transportScore * weight;
+            security += securityScore * weight;
             totalWeight += weight;
             eligible++;
         }
@@ -547,6 +610,145 @@ public final class VillageProsperityEngine {
                 clamp(security / totalWeight, -1.0, 1.0),
                 eligible);
     }
+
+    /** Returns whether a village would contribute to market fundamentals without a shadow. */
+    static boolean isMarketEligible(EconomyState.VillageRecord village, long day) {
+        return village != null
+                && village.population > 0
+                && day >= village.marketSuppressedUntilDay
+                && village.lifecycle != Lifecycle.ABANDONED
+                && village.lifecycle != Lifecycle.EXTINCT;
+    }
+
+    /** Captures an exact, weighted market contribution before player damage is applied. */
+    static EconomyState.VillageMarketShadow captureMarketShadow(
+            EconomyState.VillageRecord village, long day, long cooldownDays) {
+        if (!isMarketEligible(village, day)) {
+            return null;
+        }
+        MarketContribution contribution = marketContribution(village);
+        EconomyState.VillageMarketShadow shadow = new EconomyState.VillageMarketShadow();
+        shadow.present = true;
+        shadow.formulaVersion = MARKET_SHADOW_FORMULA_VERSION;
+        shadow.contributionEligible = true;
+        shadow.capturedDay = day;
+        shadow.minimumReleaseDay = day > Long.MAX_VALUE - Math.max(0L, cooldownDays)
+                ? Long.MAX_VALUE
+                : day + Math.max(0L, cooldownDays);
+        shadow.recoveryPopulation = village.population;
+        shadow.weight = contribution.weight();
+        shadow.broad = contribution.broad();
+        shadow.mining = contribution.mining();
+        shadow.agriculture = contribution.agriculture();
+        shadow.trade = contribution.trade();
+        shadow.redstone = contribution.redstone();
+        shadow.alchemy = contribution.alchemy();
+        shadow.transport = contribution.transport();
+        shadow.security = contribution.security();
+        shadow.counterfactualVillage = village.copy();
+        return shadow;
+    }
+
+    /** Advances and re-prices the no-player-damage village state held by an active shadow. */
+    static void advanceMarketShadow(
+            EconomyState.VillageMarketShadow shadow,
+            long worldSeed,
+            long day,
+            boolean automaticRecovery) {
+        if (shadow == null || !shadow.present || shadow.counterfactualVillage == null) {
+            return;
+        }
+        advanceOneDay(
+                shadow.counterfactualVillage,
+                worldSeed,
+                day,
+                automaticRecovery,
+                false);
+        refreshMarketShadow(shadow, day);
+    }
+
+    /** Recalculates the contribution after a genuine non-player incident. */
+    static void refreshMarketShadow(EconomyState.VillageMarketShadow shadow, long day) {
+        if (shadow == null || shadow.counterfactualVillage == null) {
+            return;
+        }
+        EconomyState.VillageRecord village = shadow.counterfactualVillage;
+        shadow.contributionEligible = isMarketEligible(village, day);
+        if (!shadow.contributionEligible) {
+            return;
+        }
+        MarketContribution contribution = marketContribution(village);
+        shadow.weight = contribution.weight();
+        shadow.broad = contribution.broad();
+        shadow.mining = contribution.mining();
+        shadow.agriculture = contribution.agriculture();
+        shadow.trade = contribution.trade();
+        shadow.redstone = contribution.redstone();
+        shadow.alchemy = contribution.alchemy();
+        shadow.transport = contribution.transport();
+        shadow.security = contribution.security();
+    }
+
+    /** Confirms that persisted cached scores exactly match their counterfactual source record. */
+    static boolean isMarketShadowCurrent(
+            EconomyState.VillageMarketShadow shadow, long day) {
+        if (shadow == null || shadow.counterfactualVillage == null) {
+            return false;
+        }
+        boolean eligible = isMarketEligible(shadow.counterfactualVillage, day);
+        if (eligible != shadow.contributionEligible) {
+            return false;
+        }
+        if (!eligible) {
+            return true;
+        }
+        MarketContribution contribution = marketContribution(shadow.counterfactualVillage);
+        return sameBits(shadow.weight, contribution.weight())
+                && sameBits(shadow.broad, contribution.broad())
+                && sameBits(shadow.mining, contribution.mining())
+                && sameBits(shadow.agriculture, contribution.agriculture())
+                && sameBits(shadow.trade, contribution.trade())
+                && sameBits(shadow.redstone, contribution.redstone())
+                && sameBits(shadow.alchemy, contribution.alchemy())
+                && sameBits(shadow.transport, contribution.transport())
+                && sameBits(shadow.security, contribution.security());
+    }
+
+    private static boolean sameBits(double first, double second) {
+        return Double.doubleToLongBits(first) == Double.doubleToLongBits(second);
+    }
+
+    private static MarketContribution marketContribution(EconomyState.VillageRecord village) {
+        double population = Math.max(1.0, village.population);
+        double weight = Math.min(6.0, StrictMath.sqrt(population));
+        double broad = clamp(
+                (village.prosperity - 50.0) / 50.0 * 0.55
+                        + (village.safety - 55.0) / 45.0 * 0.35
+                        + (village.developmentTier - 1.0) / 5.0 * 0.10,
+                -1.0,
+                1.0);
+        return new MarketContribution(
+                weight,
+                broad,
+                outputScore(village.miningOutput / population, 0.18),
+                outputScore(village.agricultureOutput / population, 0.48),
+                outputScore(village.tradeOutput / population, 0.15),
+                outputScore(village.redstoneOutput / population, 0.02),
+                outputScore(village.alchemyOutput / population, 0.015),
+                outputScore(village.transportOutput / population, 0.085),
+                outputScore(village.securityOutput / population, 0.075));
+    }
+
+    private record MarketContribution(
+            double weight,
+            double broad,
+            double mining,
+            double agriculture,
+            double trade,
+            double redstone,
+            double alchemy,
+            double transport,
+            double security) {}
 
     /** Annual drift contribution. It is intentionally capped so world activity cannot guarantee returns. */
     public static double assetAnnualDrift(String ticker, VillageFundamentals fundamentals) {
@@ -597,6 +799,75 @@ public final class VillageProsperityEngine {
 
     private static int countProjects(EconomyState.VillageRecord village, ProjectType type) {
         return (int) village.projects.stream().filter(project -> project.type == type).count();
+    }
+
+    private static ProfessionMultipliers professionMultipliers(
+            EconomyState.VillageRecord village) {
+        double agriculture = 0.0;
+        double mining = 0.0;
+        double trade = 0.0;
+        double redstone = 0.0;
+        double alchemy = 0.0;
+        double transport = 0.0;
+        double security = 0.0;
+        for (EconomyState.ResidentRecord resident : village.residents.values()) {
+            if (resident == null || resident.status != ResidentStatus.ACTIVE) {
+                continue;
+            }
+            String profession = resident.profession == null
+                    ? ""
+                    : resident.profession.toLowerCase(Locale.ROOT);
+            int namespace = profession.lastIndexOf(':');
+            if (namespace >= 0) {
+                profession = profession.substring(namespace + 1);
+            }
+            switch (profession) {
+                case "farmer", "fisherman", "shepherd", "butcher" -> agriculture += 1.0;
+                case "armorer", "toolsmith", "weaponsmith", "mason" -> mining += 1.0;
+                case "cartographer" -> {
+                    trade += 0.7;
+                    transport += 1.0;
+                }
+                case "fletcher", "leatherworker" -> trade += 1.0;
+                case "librarian" -> {
+                    trade += 0.4;
+                    redstone += 1.0;
+                }
+                case "cleric" -> alchemy += 1.0;
+                default -> {
+                    // Unemployed, nitwit, and modded professions keep the calibrated baseline.
+                }
+            }
+            if (profession.equals("armorer")
+                    || profession.equals("weaponsmith")
+                    || profession.equals("fletcher")) {
+                security += 1.0;
+            }
+        }
+        double population = Math.max(1.0, village.population);
+        return new ProfessionMultipliers(
+                sectorMultiplier(agriculture, population),
+                sectorMultiplier(mining, population),
+                sectorMultiplier(trade, population),
+                sectorMultiplier(redstone, population),
+                sectorMultiplier(alchemy, population),
+                sectorMultiplier(transport, population),
+                sectorMultiplier(security, population));
+    }
+
+    private static double sectorMultiplier(double relevantWorkers, double population) {
+        // A fully specialized workforce is noticeable, but cannot add more than 12% output.
+        return 1.0 + Math.min(0.12, 0.30 * Math.max(0.0, relevantWorkers) / population);
+    }
+
+    private record ProfessionMultipliers(
+            double agriculture,
+            double mining,
+            double trade,
+            double redstone,
+            double alchemy,
+            double transport,
+            double security) {
     }
 
     private static int completedProjects(EconomyState.VillageRecord village, ProjectType type) {

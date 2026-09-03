@@ -27,6 +27,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
@@ -47,6 +48,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
+                VillageProsperityManager.resetRuntimeState();
                 EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
                 ECONOMY.configureVillageProsperity(
                         config.villageProsperitySimulationEnabled(),
@@ -75,6 +77,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 LOGGER.error("Could not save The Emerald Standard economy: {}",
                         ECONOMY.lastError());
             }
+            VillageProsperityManager.resetRuntimeState();
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -89,6 +92,9 @@ public final class EmeraldStandardFabric implements ModInitializer {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (entity instanceof Villager villager) {
                 VillageProsperityManager.onVillagerDeath(villager, damageSource, ECONOMY);
+            } else if (entity instanceof ZombieVillager zombieVillager) {
+                VillageProsperityManager.onZombieVillagerDeath(
+                        zombieVillager, damageSource, ECONOMY);
             }
         });
 

@@ -153,6 +153,8 @@ final class EconomyPersistence {
                         villageId.toString()));
         state.villages.forEach((villageId, village) ->
                 writeVillage(properties, villageId, village));
+        state.villageMarketShadows.forEach((villageId, shadow) ->
+                writeVillageMarketShadow(properties, villageId, shadow));
 
         for (Map.Entry<UUID, EconomyState.Account> entry : state.accounts.entrySet()) {
             writeAccount(properties, entry.getKey(), entry.getValue());
@@ -168,7 +170,13 @@ final class EconomyPersistence {
             Properties properties,
             UUID villageId,
             EconomyState.VillageRecord village) {
-        String prefix = "village." + villageId + ".";
+        writeVillageRecord(properties, "village." + villageId + ".", village);
+    }
+
+    private static void writeVillageRecord(
+            Properties properties,
+            String prefix,
+            EconomyState.VillageRecord village) {
         properties.setProperty(prefix + "dimension", village.dimensionKey);
         properties.setProperty(prefix + "center", Long.toString(village.centerPos));
         properties.setProperty(prefix + "bank_region", Long.toString(village.bankRegionKey));
@@ -224,6 +232,10 @@ final class EconomyPersistence {
             properties.setProperty(projectPrefix + "progress", Double.toString(project.economicProgress));
             properties.setProperty(projectPrefix + "economic_complete", Boolean.toString(project.economicComplete));
             properties.setProperty(projectPrefix + "origin", Long.toString(project.originPos));
+            properties.setProperty(projectPrefix + "bounds_min", Long.toString(project.boundsMinPos));
+            properties.setProperty(projectPrefix + "bounds_max", Long.toString(project.boundsMaxPos));
+            properties.setProperty(projectPrefix + "retry_after_tick", Long.toString(project.retryAfterGameTick));
+            properties.setProperty(projectPrefix + "materialization_failures", Integer.toString(project.materializationFailures));
             properties.setProperty(projectPrefix + "blocks", Integer.toString(project.materializedBlocks));
             properties.setProperty(projectPrefix + "total_blocks", Integer.toString(project.totalBlocks));
             properties.setProperty(projectPrefix + "materialized_complete", Boolean.toString(project.materializedComplete));
@@ -240,6 +252,34 @@ final class EconomyPersistence {
                     incident.responsiblePlayer == null ? "" : incident.responsiblePlayer.toString());
             properties.setProperty(incidentPrefix + "market", Boolean.toString(incident.marketEligible));
         }
+    }
+
+    private static void writeVillageMarketShadow(
+            Properties properties,
+            UUID villageId,
+            EconomyState.VillageMarketShadow shadow) {
+        String prefix = "market.shadow." + villageId + ".";
+        properties.setProperty(prefix + "present", Boolean.toString(shadow.present));
+        properties.setProperty(prefix + "formula_version", Integer.toString(shadow.formulaVersion));
+        properties.setProperty(
+                prefix + "contribution_eligible",
+                Boolean.toString(shadow.contributionEligible));
+        properties.setProperty(prefix + "captured_day", Long.toString(shadow.capturedDay));
+        properties.setProperty(prefix + "minimum_release_day", Long.toString(shadow.minimumReleaseDay));
+        properties.setProperty(prefix + "recovery_population", Integer.toString(shadow.recoveryPopulation));
+        properties.setProperty(prefix + "weight", Double.toString(shadow.weight));
+        properties.setProperty(prefix + "broad", Double.toString(shadow.broad));
+        properties.setProperty(prefix + "mining", Double.toString(shadow.mining));
+        properties.setProperty(prefix + "agriculture", Double.toString(shadow.agriculture));
+        properties.setProperty(prefix + "trade", Double.toString(shadow.trade));
+        properties.setProperty(prefix + "redstone", Double.toString(shadow.redstone));
+        properties.setProperty(prefix + "alchemy", Double.toString(shadow.alchemy));
+        properties.setProperty(prefix + "transport", Double.toString(shadow.transport));
+        properties.setProperty(prefix + "security", Double.toString(shadow.security));
+        writeVillageRecord(
+                properties,
+                prefix + "counterfactual.",
+                shadow.counterfactualVillage);
     }
 
     private static void writeAccount(
@@ -382,6 +422,9 @@ final class EconomyPersistence {
                 loadVillages(state, properties);
                 loadBankVillageAssociations(state, properties);
             }
+            if (format >= 7) {
+                loadVillageMarketShadows(state, properties);
+            }
 
             if (format >= 2) {
                 loadCurrentAccounts(state, properties);
@@ -437,6 +480,82 @@ final class EconomyPersistence {
             EconomyState.VillageRecord village = state.villages.get(entry.getKey());
             if (village != null) {
                 village.incidents.addAll(entry.getValue().values());
+            }
+        }
+    }
+
+    private static void loadVillageMarketShadows(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "market.shadow.";
+        Map<UUID, Map<Long, EconomyState.VillageProject>> projects = new TreeMap<>();
+        Map<UUID, Map<Integer, EconomyState.VillageIncident>> incidents = new TreeMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            int uuidEnd = key.indexOf('.', prefix.length());
+            if (uuidEnd < 0) {
+                throw new IOException("Invalid village market-shadow property " + key);
+            }
+            UUID villageId = UUID.fromString(key.substring(prefix.length(), uuidEnd));
+            String field = key.substring(uuidEnd + 1);
+            EconomyState.VillageMarketShadow shadow = state.villageMarketShadows.computeIfAbsent(
+                    villageId, ignored -> new EconomyState.VillageMarketShadow());
+            String value = properties.getProperty(key);
+            if (field.startsWith("counterfactual.")) {
+                String villageField = field.substring("counterfactual.".length());
+                if (shadow.counterfactualVillage == null) {
+                    shadow.counterfactualVillage = new EconomyState.VillageRecord();
+                    shadow.counterfactualVillage.villageId = villageId;
+                }
+                if (villageField.startsWith("resident.")) {
+                    applyResidentField(shadow.counterfactualVillage, villageField, value);
+                } else if (villageField.startsWith("project.")) {
+                    applyProjectField(projects, villageId, villageField, value);
+                } else if (villageField.startsWith("incident.")) {
+                    applyIncidentField(incidents, villageId, villageField, value);
+                } else {
+                    applyVillageField(shadow.counterfactualVillage, villageField, value);
+                }
+            } else {
+                applyVillageMarketShadowField(shadow, field, value);
+            }
+        }
+        for (Map.Entry<UUID, Map<Long, EconomyState.VillageProject>> entry : projects.entrySet()) {
+            EconomyState.VillageMarketShadow shadow = state.villageMarketShadows.get(entry.getKey());
+            if (shadow != null && shadow.counterfactualVillage != null) {
+                shadow.counterfactualVillage.projects.addAll(entry.getValue().values());
+            }
+        }
+        for (Map.Entry<UUID, Map<Integer, EconomyState.VillageIncident>> entry : incidents.entrySet()) {
+            EconomyState.VillageMarketShadow shadow = state.villageMarketShadows.get(entry.getKey());
+            if (shadow != null && shadow.counterfactualVillage != null) {
+                shadow.counterfactualVillage.incidents.addAll(entry.getValue().values());
+            }
+        }
+    }
+
+    private static void applyVillageMarketShadowField(
+            EconomyState.VillageMarketShadow shadow, String field, String value) {
+        switch (field) {
+            case "present" -> shadow.present = Boolean.parseBoolean(value);
+            case "formula_version" -> shadow.formulaVersion = Integer.parseInt(value);
+            case "contribution_eligible" ->
+                    shadow.contributionEligible = Boolean.parseBoolean(value);
+            case "captured_day" -> shadow.capturedDay = Long.parseLong(value);
+            case "minimum_release_day" -> shadow.minimumReleaseDay = Long.parseLong(value);
+            case "recovery_population" -> shadow.recoveryPopulation = Integer.parseInt(value);
+            case "weight" -> shadow.weight = Double.parseDouble(value);
+            case "broad" -> shadow.broad = Double.parseDouble(value);
+            case "mining" -> shadow.mining = Double.parseDouble(value);
+            case "agriculture" -> shadow.agriculture = Double.parseDouble(value);
+            case "trade" -> shadow.trade = Double.parseDouble(value);
+            case "redstone" -> shadow.redstone = Double.parseDouble(value);
+            case "alchemy" -> shadow.alchemy = Double.parseDouble(value);
+            case "transport" -> shadow.transport = Double.parseDouble(value);
+            case "security" -> shadow.security = Double.parseDouble(value);
+            default -> {
+                // Ignore unknown optional fields from the current save format.
             }
         }
     }
@@ -541,6 +660,10 @@ final class EconomyPersistence {
             case "progress" -> project.economicProgress = Double.parseDouble(value);
             case "economic_complete" -> project.economicComplete = Boolean.parseBoolean(value);
             case "origin" -> project.originPos = Long.parseLong(value);
+            case "bounds_min" -> project.boundsMinPos = Long.parseLong(value);
+            case "bounds_max" -> project.boundsMaxPos = Long.parseLong(value);
+            case "retry_after_tick" -> project.retryAfterGameTick = Long.parseLong(value);
+            case "materialization_failures" -> project.materializationFailures = Integer.parseInt(value);
             case "blocks" -> project.materializedBlocks = Integer.parseInt(value);
             case "total_blocks" -> project.totalBlocks = Integer.parseInt(value);
             case "materialized_complete" -> project.materializedComplete = Boolean.parseBoolean(value);

@@ -2,6 +2,47 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## 0.3.0-beta.3 - 2026-09-02
+
+### Added
+
+- A cooperative, loader-neutral `VillageDevelopmentProtection.register(PlacementGuard)` veto API for Village Bank and prosperity-project placement; guard exceptions fail closed.
+- Persisted project footprint bounds, retry deadlines, and materialization-failure counts, with migration coverage for format-5 accounts/bank anchors and beta.1/beta.2 format-6 saves.
+- Bounded resident profession bonuses for agriculture, mining, trade, redstone, alchemy, transport, and security output.
+- Lightweight look, arm-swing, and particle activity cues for nearby villagers while projects advance.
+- Server-synchronized local incident cause and age on the Village dashboard.
+- Loader hooks for tracked zombie-villager deaths.
+- Persisted full-village market counterfactuals containing the exact state and contribution captured before the first player-caused casualty.
+
+### Changed
+
+- Bumped Fabric and NeoForge versions to `0.3.0-beta.3`.
+- Advanced persistence to format 7. Beta.1 and beta.2 format-6 saves upgrade in place; older beta readers reject the resulting format-7 file instead of silently stripping the new safety data.
+- Village Prosperity census and materialization now operate dimension-aware across loaded server levels; Village Bank generation remains intentionally Overworld-only.
+- Physical development queries only settlements near loaded players, rotates its bounded global block budget, and uses exact persisted project bounds for overlap checks.
+- Offline catch-up batch size now adapts to known account and settlement counts.
+- New villages receive stable per-village bank keys when a coarse legacy grid key is already owned, while existing region associations remain compatible.
+- Bank discovery now uses the persisted stable settlement center for keying and site selection instead of using the player's current position after identity resolution.
+- Scoped bank identity now routes Banker replacement, Village dashboard lookup, and support/restoration actions to the associated settlement.
+- Active resident professions can improve their relevant sector by at most 12 percent; modded and unmatched professions retain the baseline.
+- NeoForge Banker and bank-counter handling now ignores off-hand interaction, matching Fabric behavior.
+- Replaced the obsolete alpha.3 publication workflow with an exact-source beta.3 prerelease publisher and refreshed issue forms for the beta line.
+- Player-damaged villages now use a daily-advancing no-player-damage counterfactual rather than a static contribution freeze. It is re-priced after each enabled simulation day and genuine non-player casualty, while repeated player hits do not recapture it; cooldown and full recovery still gate release.
+
+### Fixed
+
+- Prevented Village Banks from replacing terrain, paths, containers, solid blocks, or occupied space; floors now sit above flat natural ground and every applied block state is verified before generation is recorded.
+- Rejected mud and thin snow as Bank support, rolled failed builds back by authored block identity so neighbor-updated panes and fences are included, and left failed or incompletely loaded searches unmarked so a safe candidate can be tried later while a fallback Banker remains available.
+- Replaced permanent project obstruction with persisted exponential retry backoff. Unstarted projects relocate; partial deterministic prefixes retain their site for safe continuation.
+- Retained an unstarted project's reservation when its boundary chunk is unloaded, preventing a possibly written but not yet journaled prefix from being orphaned while the retry delay runs.
+- Prevented extinct or newly discovered empty settlements from constructing buildings or inventing automatic settlers.
+- Restored a bounded recovery path for small survivor settlements after the seven-day stabilization window and minimum safety/prosperity conditions.
+- Prevented a spawned settler from consuming the queue before the authoritative census observes it, and added food, fluid, support, and collision checks to spawn selection.
+- Prevented an infected resident's later zombie-form death from decrementing productive population twice while preserving casualty attribution.
+- Prevented two nearby or cross-dimension villages from silently taking the same bank association.
+- Prevented a same-coordinate lectern in another dimension from being mistaken for an Overworld bank counter.
+- Prevented valid large account balances from overflowing during net-worth calculation and rejected epsilon-sized investment oversells.
+
 ## 0.3.0-beta.2 - 2026-09-02
 
 ### Added

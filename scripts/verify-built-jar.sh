@@ -9,6 +9,7 @@ fi
 LOADER="$1"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB_DIR="$ROOT/$LOADER/build/libs"
+PYTHON_BIN="${PYTHON:-python3}"
 
 mapfile -t jars < <(find "$LIB_DIR" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | sort)
 if [[ ${#jars[@]} -ne 1 ]]; then
@@ -47,7 +48,7 @@ for entry in "${required[@]}"; do
 done
 
 if ! unzip -p "$jar_file" assets/the_emerald_standard/lang/en_us.json \
-        | python3 -m json.tool >/dev/null; then
+        | "$PYTHON_BIN" -m json.tool >/dev/null; then
     echo "$jar_file contains invalid English language JSON" >&2
     exit 1
 fi

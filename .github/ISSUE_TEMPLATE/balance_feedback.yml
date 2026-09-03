@@ -7,7 +7,7 @@ body:
     id: version
     attributes:
       label: The Emerald Standard version
-      placeholder: 0.2.0-alpha.3
+      placeholder: 0.3.0-beta.3
     validations:
       required: true
   - type: input
@@ -27,6 +27,7 @@ body:
         - VILX
         - Individual investments
         - Commodity exchange
+        - Village Prosperity
         - Overall progression
     validations:
       required: true

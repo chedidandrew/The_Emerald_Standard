@@ -16,7 +16,7 @@ body:
     id: version
     attributes:
       label: The Emerald Standard version
-      placeholder: 0.2.0-alpha.3
+      placeholder: 0.3.0-beta.3
     validations:
       required: true
   - type: input
@@ -33,7 +33,7 @@ body:
     id: description
     attributes:
       label: What happened?
-      description: Mention steep terrain, water, nearby structures, duplicated Bankers, or an existing-world upgrade.
+      description: Mention steep terrain, water, nearby structures, duplicated Bankers, protection guards, or an existing-world upgrade.
     validations:
       required: true
   - type: textarea

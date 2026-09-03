@@ -15,10 +15,12 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -60,6 +62,7 @@ public final class EmeraldStandardNeoForge {
     public void onServerStarted(ServerStartedEvent event) {
         try {
             var server = event.getServer();
+            VillageProsperityManager.resetRuntimeState();
             EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
             ECONOMY.configureVillageProsperity(
                     config.villageProsperitySimulationEnabled(),
@@ -90,6 +93,7 @@ public final class EmeraldStandardNeoForge {
             LOGGER.error("Could not save The Emerald Standard economy: {}",
                     ECONOMY.lastError());
         }
+        VillageProsperityManager.resetRuntimeState();
     }
 
     @SubscribeEvent
@@ -106,6 +110,9 @@ public final class EmeraldStandardNeoForge {
     public void onLivingDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof Villager villager) {
             VillageProsperityManager.onVillagerDeath(villager, event.getSource(), ECONOMY);
+        } else if (event.getEntity() instanceof ZombieVillager zombieVillager) {
+            VillageProsperityManager.onZombieVillagerDeath(
+                    zombieVillager, event.getSource(), ECONOMY);
         }
     }
 
@@ -126,7 +133,8 @@ public final class EmeraldStandardNeoForge {
 
     @SubscribeEvent
     public void onBlockInteract(PlayerInteractEvent.RightClickBlock event) {
-        if (event.getEntity().level().isClientSide()
+        if (event.getHand() != InteractionHand.MAIN_HAND
+                || event.getEntity().level().isClientSide()
                 || !(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
@@ -142,7 +150,8 @@ public final class EmeraldStandardNeoForge {
 
     @SubscribeEvent
     public void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        if (!BankerAccess.isBanker(event.getTarget())) {
+        if (event.getHand() != InteractionHand.MAIN_HAND
+                || !BankerAccess.isBanker(event.getTarget())) {
             return;
         }
         if (!event.getEntity().level().isClientSide()

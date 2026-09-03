@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -26,6 +27,25 @@ public final class BankerAccess {
 
     public static boolean isBankerForRegion(Entity entity, long regionKey) {
         return isBanker(entity) && entity.entityTags().contains(regionTag(regionKey));
+    }
+
+    /** Returns the persistent bank key carried by a scoped Banker, or null for legacy access. */
+    public static Long bankRegionKey(Entity entity) {
+        if (!isBanker(entity)) {
+            return null;
+        }
+        for (String tag : entity.entityTags()) {
+            if (!tag.startsWith(BANK_REGION_TAG_PREFIX)) {
+                continue;
+            }
+            try {
+                return Long.parseUnsignedLong(
+                        tag.substring(BANK_REGION_TAG_PREFIX.length()), 36);
+            } catch (IllegalArgumentException ignored) {
+                // Ignore malformed third-party or manually edited tags.
+            }
+        }
+        return null;
     }
 
     public static boolean isLegacyUnscopedBanker(Entity entity) {
@@ -92,11 +112,32 @@ public final class BankerAccess {
 
     public static boolean open(
             ServerPlayer player, EconomyService economy, Entity banker) {
-        return openAt(player, economy, banker == null ? null : banker.blockPosition());
+        return openAt(
+                player,
+                economy,
+                banker == null ? null : banker.blockPosition(),
+                bankRegionKey(banker));
     }
 
     public static boolean openAt(
             ServerPlayer player, EconomyService economy, BlockPos accessPoint) {
+        Long regionKey = null;
+        if (accessPoint != null) {
+            long packedAccessPoint = accessPoint.asLong();
+            regionKey = economy.generatedBankAnchorsSnapshot().entrySet().stream()
+                    .filter(entry -> entry.getValue() == packedAccessPoint)
+                    .map(Map.Entry::getKey)
+                    .findFirst()
+                    .orElse(null);
+        }
+        return openAt(player, economy, accessPoint, regionKey);
+    }
+
+    private static boolean openAt(
+            ServerPlayer player,
+            EconomyService economy,
+            BlockPos accessPoint,
+            Long regionKey) {
         BankTransactionCoordinator.reconcile(player, economy);
         return player.openMenu(new SimpleMenuProvider(
                         (containerId, inventory, ignored) ->
@@ -105,7 +146,8 @@ public final class BankerAccess {
                                         inventory,
                                         economy,
                                         player,
-                                        accessPoint),
+                                        accessPoint,
+                                        regionKey),
                         Component.translatable("gui.the_emerald_standard.banker.title")))
                 .isPresent();
     }
