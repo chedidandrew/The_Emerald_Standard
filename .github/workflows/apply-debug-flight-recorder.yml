@@ -38,8 +38,8 @@ jobs:
             scripts/debug-payload.part01 \
             scripts/debug-payload.part02 \
             scripts/debug-payload.part03 \
-            | base64 --decode | gzip -d > /tmp/apply-debug-flight-recorder.py
-          python /tmp/apply-debug-flight-recorder.py
+            | base64 --decode | gzip -d > scripts/apply-debug-flight-recorder.py
+          python scripts/apply-debug-flight-recorder.py
       - name: Run loader-neutral regression tests
         run: bash scripts/run-common-tests.sh
       - name: Build Fabric candidate
@@ -56,7 +56,7 @@ jobs:
           rm -f scripts/debug-payload.part01
           rm -f scripts/debug-payload.part02
           rm -f scripts/debug-payload.part03
-          rm -f /tmp/apply-debug-flight-recorder.py
+          rm -f scripts/apply-debug-flight-recorder.py
           rm -f .github/workflows/apply-debug-flight-recorder.yml
       - name: Commit and push candidate
         run: |
