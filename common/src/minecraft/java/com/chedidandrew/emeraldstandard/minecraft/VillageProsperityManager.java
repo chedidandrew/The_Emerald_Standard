@@ -547,13 +547,22 @@ public final class VillageProsperityManager {
             Villager villager, VillageProsperityEngine.ProjectType projectType) {
         String profession = professionId(villager.getVillagerData().profession());
         boolean preferred = switch (projectType) {
-            case MINE_ENTRANCE -> profession.contains("mason")
+            case MINE_ENTRANCE, SMITHY -> profession.contains("mason")
                     || profession.contains("toolsmith")
+                    || profession.contains("weaponsmith")
                     || profession.contains("armorer");
-            case WAREHOUSE -> profession.contains("cartographer")
+            case WAREHOUSE, MARKET_SQUARE, EXCHANGE_HALL -> profession.contains("cartographer")
                     || profession.contains("librarian")
                     || profession.contains("cleric");
-            case COTTAGE -> profession.contains("none") || profession.contains("nitwit");
+            case GRANARY -> profession.contains("farmer")
+                    || profession.contains("fisherman")
+                    || profession.contains("butcher");
+            case GUARD_POST -> profession.contains("armorer")
+                    || profession.contains("weaponsmith")
+                    || profession.contains("toolsmith");
+            case COTTAGE, HOUSE, INN -> profession.contains("none")
+                    || profession.contains("nitwit")
+                    || profession.contains("farmer");
         };
         return preferred ? 0 : 1;
     }
