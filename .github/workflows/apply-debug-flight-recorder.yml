@@ -40,6 +40,8 @@ jobs:
             scripts/debug-payload.part03 \
             | base64 --decode | gzip -d > scripts/apply-debug-flight-recorder.py
           python scripts/apply-debug-flight-recorder.py
+          sed -i 's/owner\.displayClientMessage(/owner.sendSystemMessage(/' common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/DebugFlightRecorder.java
+          sed -i 's/session\.eventCount)), true);/session.eventCount)));/' common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/DebugFlightRecorder.java
       - name: Run loader-neutral regression tests
         run: bash scripts/run-common-tests.sh
       - name: Build Fabric candidate
