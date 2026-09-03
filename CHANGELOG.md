@@ -1,3 +1,22 @@
+## 0.4.0-beta.1 - 2026-09-03
+
+### Added
+- Expanded visible Village Prosperity progression from 3 to 10 curated project types: Cottage, House, Inn, Warehouse, Mine Entrance, Market Square, Smithy, Granary, Guard Post, and Exchange Hall.
+- Added adaptive project prioritization so threatened, food-poor, crowded, and mature villages choose different development paths instead of following a fixed order.
+- Added biome-aware bounded physical templates for every new project while preserving the no-force-load and protected-placement rules.
+- Added visible local economic-impact guidance on the Village dashboard without exposing deterministic return formulas.
+- Added regression coverage for the expanded project catalog and template size bounds.
+
+### Changed
+- Village production now responds to relevant physical development: granaries help agriculture, smithies help mining, markets and inns help trade, guard posts help security, and exchange halls help mature trade and transport.
+- Development tiers now require more diverse infrastructure at the highest levels, making late-game settlement growth visibly distinct.
+- Fabric and NeoForge versions advanced together to `0.4.0-beta.1`.
+
+### Safety and compatibility
+- Existing project enum identifiers keep their original names and order, so beta.4 worlds remain migration-safe.
+- The abstract simulation remains authoritative. New physical construction stays bounded, never force-loads chunks, never mines arbitrary terrain, and continues honoring `VillageDevelopmentProtection` guards.
+- Player borrowing and negative balances remain impossible.
+
 # Changelog
 
 All notable changes to The Emerald Standard are documented here.

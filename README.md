@@ -4,7 +4,7 @@
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.3.0-beta.4`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
+> Current status: `0.4.0-beta.1`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
 
 ## Core rule
 
@@ -42,7 +42,9 @@ Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `A
 
 The global simulation includes expansion, bull, boom, stagnation, recession, crash, and recovery regimes. Rare events create company- and commodity-specific shocks. Prices, rates, lending outcomes, commodities, and settlement fundamentals continue to evolve while the world is closed.
 
-## Village Prosperity System
+## Village Prosperity
+
+The 0.4 beta expands visible settlement progression to **10 curated village projects** with need-driven priorities, biome-aware templates, and bounded sector effects. Threatened villages can prioritize defenses, food-poor villages can prioritize storage, crowded villages can prioritize housing, and mature villages can grow into markets, smithies, inns, and an Exchange Hall. System
 
 Village Prosperity connects the market to persistent local settlements without turning villagers into expensive autonomous agents. Offline advancement updates compact data records only. It does **not** force-load chunks, pathfind villagers, mine real ores, simulate raids while offline, or place structures during startup.
 

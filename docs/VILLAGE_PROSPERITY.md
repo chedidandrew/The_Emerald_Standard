@@ -219,3 +219,21 @@ Village Prosperity is designed around bounded work:
 - No real resource mining for simulated output
 
 For very large public servers, future storage partitioning may still be warranted, but single-player and ordinary multiplayer remain the primary beta target.
+
+
+## 0.4 visible development catalog
+
+The physical layer now uses ten intentionally small, deterministic project templates. The abstract economy remains authoritative, while loaded villages materialize a bounded number of blocks only when a player is nearby.
+
+| Need | Project | Primary visible/economic role |
+| --- | --- | --- |
+| Housing | Cottage, House, Village Inn | Adds housing and supports larger settlements |
+| Storage | Warehouse | Improves trade and transport capacity |
+| Production | Mine Entrance, Smithy, Granary | Improves mining, processing, or agriculture |
+| Commerce | Market Square | Improves local trade and transport |
+| Safety | Guard Post | Improves security output and recovery resilience |
+| Finance | Exchange Hall | Late-tier civic finance landmark with bounded trade/transport benefit |
+
+Project selection is need-driven. Safety emergencies can prioritize a Guard Post, low food reserves can prioritize a Granary, housing pressure can prioritize housing, and high-tier prosperous villages can eventually build an Exchange Hall. This keeps the same village from following an identical scripted build order every world.
+
+The market link remains intentionally bounded and informational. The GUI reports whether local conditions are weak, neutral, positive, or strong, but it never exposes a formula that lets the player guarantee a future market return.

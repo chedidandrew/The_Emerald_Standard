@@ -153,5 +153,16 @@
   "gui.the_emerald_standard.village.mode.off": "Mode: disabled",
   "gui.the_emerald_standard.status.village_funded": "Village development received your contribution.",
   "gui.the_emerald_standard.status.village_restoration_ready": "The restoration target was reached. Settlers can return after the safety cooldown.",
-  "gui.the_emerald_standard.status.no_village": "No managed village is available from this bank."
+  "gui.the_emerald_standard.status.no_village": "No managed village is available from this bank.",
+  "gui.the_emerald_standard.village.project.house": "House",
+  "gui.the_emerald_standard.village.project.inn": "Village Inn",
+  "gui.the_emerald_standard.village.project.market_square": "Market Square",
+  "gui.the_emerald_standard.village.project.smithy": "Smithy",
+  "gui.the_emerald_standard.village.project.granary": "Granary",
+  "gui.the_emerald_standard.village.project.guard_post": "Guard Post",
+  "gui.the_emerald_standard.village.project.exchange_hall": "Exchange Hall",
+  "gui.the_emerald_standard.village.impact.strong": "Local impact: strong",
+  "gui.the_emerald_standard.village.impact.positive": "Local impact: positive",
+  "gui.the_emerald_standard.village.impact.neutral": "Local impact: neutral",
+  "gui.the_emerald_standard.village.impact.weak": "Local impact: weak"
 }

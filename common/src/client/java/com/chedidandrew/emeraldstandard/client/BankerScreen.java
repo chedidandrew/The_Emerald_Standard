@@ -585,6 +585,15 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         ? tr("village.mode.visual")
                         : tr("village.mode.off");
         graphics.text(font, mode, 16, 149, MUTED, false);
+        double localImpactScore = (menu.villageProsperity() + menu.villageSafety()) / 2.0;
+        Component localImpact = localImpactScore >= 72.0
+                ? tr("village.impact.strong")
+                : localImpactScore >= 52.0
+                        ? tr("village.impact.positive")
+                        : localImpactScore >= 32.0
+                                ? tr("village.impact.neutral")
+                                : tr("village.impact.weak");
+        graphics.text(font, localImpact, 16, 163, localImpactScore >= 52.0 ? POSITIVE : GOLD, false);
         boolean restoration = menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.ABANDONED
                 || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT;
         if (restoration) {
