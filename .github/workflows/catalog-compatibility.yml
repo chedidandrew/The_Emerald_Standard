@@ -1,0 +1,22 @@
+name: Persisted project catalog compatibility
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  legacy-project-identifiers:
+    name: Preserve beta project identifiers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Run project catalog compatibility guard
+        run: bash scripts/run-milestone-compatibility.sh
