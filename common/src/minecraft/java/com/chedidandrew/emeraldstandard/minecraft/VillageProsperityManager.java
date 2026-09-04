@@ -867,10 +867,14 @@ public final class VillageProsperityManager {
                 }
                 if (placement.state.is(Blocks.BARREL)
                         || placement.state.is(Blocks.LECTERN)
-                        || placement.state.is(Blocks.CARTOGRAPHY_TABLE)) {
+                        || placement.state.is(Blocks.CARTOGRAPHY_TABLE)
+                        || placement.state.is(Blocks.EMERALD_BLOCK)
+                        || placement.state.is(Blocks.DIAMOND_BLOCK)
+                        || placement.state.is(Blocks.GOLD_BLOCK)
+                        || placement.state.is(Blocks.NETHERITE_BLOCK)) {
                     throw new IllegalStateException(
                             "Prosperity template " + type
-                                    + " contains an unintended villager workstation at "
+                                    + " contains an unintended workstation or currency block at "
                                     + relative);
                 }
             }
@@ -1006,7 +1010,7 @@ public final class VillageProsperityManager {
         }
         placements.add(new Placement(3, 1, 7, Blocks.ENDER_CHEST.defaultBlockState()));
         placements.add(new Placement(9, 1, 7, Blocks.BELL.defaultBlockState()));
-        placements.add(new Placement(6, 1, 7, Blocks.EMERALD_BLOCK.defaultBlockState()));
+        placements.add(new Placement(6, 1, 7, Blocks.BOOKSHELF.defaultBlockState()));
         return placements;
     }
 

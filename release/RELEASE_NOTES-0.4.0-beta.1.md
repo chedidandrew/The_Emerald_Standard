@@ -25,4 +25,6 @@ The repository's manual test matrix remains authoritative for GUI scales, diffic
 
 ## Recovery hardening
 
+The recovered candidate stores worlds as format 8. Existing beta.4 format-7 worlds migrate forward automatically, while beta.4 readers reject the upgraded file as a future format. Keep a pre-upgrade world backup before testing if a downgrade may be needed. The Exchange Hall no longer generates an emerald block, and live template validation rejects high-value currency blocks. Debug reports now identify the candidate as `0.4.0-beta.1`.
+
 The initial experimental milestone branch contained generated payloads, self-modifying workflows, and a Minecraft 26.2 compile error. The release candidate was rebuilt from the last verified beta.4 main branch and includes only reviewed production source, tests, and documentation. It also fixes a duplicate Inn placement and removes accidental villager-workstation blocks from non-industrial templates.

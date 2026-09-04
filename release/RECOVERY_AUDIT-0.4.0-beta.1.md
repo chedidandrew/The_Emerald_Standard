@@ -20,6 +20,9 @@ The draft `milestone-95` branch was 38 commits ahead of the last verified main b
 - Replaced the unavailable `ServerPlayer.displayClientMessage` call with the supported server system-message API.
 - Removed a duplicate Inn coordinate where a crafting table overwrote a bed head and blocked materialization.
 - Replaced accidental barrel, lectern, and cartography-table job sites in non-industrial prosperity templates.
+- Removed the Exchange Hall emerald block and added validation that no prosperity template generates emerald, diamond, gold, or netherite blocks that could be converted into bank capital.
+- Advanced persistence to format 8 so beta.4 readers reject the expanded project catalog before attempting project deserialization or stale-backup recovery.
+- Updated the debug flight-recorder version label to `0.4.0-beta.1`.
 - Added live template uniqueness and unintended-workstation validation to the dedicated-server integration smoke test.
 - Reused the same broad village-fundamental score for both market math and the qualitative Village-page indicator.
 - Moved the Village support button so the new outlook line does not overlap it.

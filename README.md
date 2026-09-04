@@ -120,7 +120,7 @@ Administrators can inspect or reload configuration without restarting:
 
 - One unified economic-time accumulator prevents online and offline time from being counted twice.
 - Up to 180 economic days of chart history are persisted per investment.
-- Save format 7 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
+- Save format 8 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
 - Unsupported future formats stop loading instead of silently falling back to stale backups.
 - Corrupt current-format saves can recover from a validated backup.
 - Inventory-linked deposits, withdrawals, and exchanges use a durable recovery journal.
@@ -129,7 +129,7 @@ Administrators can inspect or reload configuration without restarting:
 - Village identities, residents, incidents, full pre-player-damage village counterfactuals, projects, exact project bounds, construction retry state and progress, bank anchors, and lifecycle state are persistent.
 - A configurable transaction cooldown protects servers from repeated button or packet spam.
 
-Beta.3 upgrades beta.1 and beta.2 format-6 worlds to format 7. Once beta.3 has saved a world, beta.1 and beta.2 deliberately reject that newer file instead of loading it and silently discarding the new safety state. Keep a pre-upgrade world backup if you may need to downgrade.
+The 0.4 beta upgrades beta.4 format-7 worlds to format 8 because the expanded persistent project catalog adds new project identifiers. Beta.4 deliberately rejects format 8 instead of parsing unknown projects or falling back to stale data. Keep a pre-upgrade world backup if you may need to downgrade.
 
 Beta durability boundary: materialization trusts already-persisted project progress, so blocks removed later or lost through chunk rollback are not auto-repaired. Bank markers and Minecraft chunk saves are also not cross-file atomic; a crash between those writes can yield a fallback Banker without a rebuilt structure. Player financial data remains world-level and intact in both cases.
 

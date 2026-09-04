@@ -27,6 +27,9 @@ All notable changes to The Emerald Standard are documented here.
 - Fixed the Minecraft 26.2 first-visit message API so both loader projects compile.
 - Fixed a duplicate Inn placement that could permanently block construction.
 - Removed unintended barrel, lectern, and cartography-table job sites from prosperity templates.
+- Removed the Exchange Hall emerald block and added a smoke-test ban on generated emerald, diamond, gold, and netherite blocks so village construction cannot mint investable currency.
+- Advanced persistent storage to format 8 so beta.4 cleanly rejects saves containing the expanded project catalog instead of attempting to parse unknown identifiers.
+- Updated diagnostic report metadata to identify `0.4.0-beta.1` correctly.
 - Added live template validation to server smoke tests and integrated the 100, 500, and 1,000-village scale guard into the normal read-only regression suite.
 - Restored the standard read-only GitHub Actions workflow and excluded temporary payload, transformation, finalizer, and validation workflows from the recovered candidate.
 
