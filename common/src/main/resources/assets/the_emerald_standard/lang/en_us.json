@@ -164,5 +164,6 @@
   "gui.the_emerald_standard.village.impact.strong": "Local impact: strong",
   "gui.the_emerald_standard.village.impact.positive": "Local impact: positive",
   "gui.the_emerald_standard.village.impact.neutral": "Local impact: neutral",
-  "gui.the_emerald_standard.village.impact.weak": "Local impact: weak"
+  "gui.the_emerald_standard.village.impact.weak": "Local impact: weak",
+  "message.the_emerald_standard.first_banker_visit": "Welcome to the Village Bank. Safe deposits cannot lose value; CDs lock funds for a term; villager lending and market investments can lose value. You can never owe emeralds."
 }
