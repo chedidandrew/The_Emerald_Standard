@@ -1,0 +1,97 @@
+# 0.4 Manual Beta Test Matrix
+
+This document is the human-play evidence gate for The Emerald Standard 0.4 and later stable releases. Automated CI validates deterministic logic, persistence, loader compilation, packaged JAR contents, and client/server startup. It does not claim that a screen feels clear, terrain placement looks natural, or multiplayer play remains enjoyable for hours.
+
+## Evidence rules
+
+- Test both Fabric and NeoForge on Minecraft 26.2.
+- Record the exact mod commit, loader version, world origin, test date, and tester.
+- Attach `/emerald debug` ZIP reports whenever a row fails or behaves ambiguously.
+- Never mark a row passed from source review alone.
+- Retest all financial safety rows after any persistence, menu, transaction, or migration change.
+- A stable release requires every Critical row to pass on both loaders.
+
+## Build identity
+
+| Field | Fabric | NeoForge |
+| --- | --- | --- |
+| Commit | Unverified | Unverified |
+| Mod version | 0.4.0-beta.1 candidate | 0.4.0-beta.1 candidate |
+| Loader version | Unverified | Unverified |
+| Tester | Unverified | Unverified |
+| Date | Unverified | Unverified |
+
+## Critical financial and persistence checks
+
+| Test | Fabric | NeoForge | Required evidence |
+| --- | --- | --- | --- |
+| Fresh-world bank discovery without commands | Not run | Not run | Screenshot, world seed, debug ZIP |
+| Deposit and withdrawal preserve exact value | Not run | Not run | Before/after inventory and account values |
+| Full inventory withdrawal recovery | Not run | Not run | Debug ZIP and reconnect result |
+| Disconnect during deposit preparation | Not run | Not run | Debug ZIP and exact recovered value |
+| Disconnect after bank commit | Not run | Not run | Debug ZIP and exact recovered value |
+| Buy, partial sell, and sell-all accounting | Not run | Not run | Transaction sequence and final balance |
+| Savings deposit and withdrawal | Not run | Not run | Before/after values |
+| CD open, maturity, and early close rules | Not run | Not run | Economic days and payouts |
+| Villager lending repayment and default | Not run | Not run | Both outcomes and no negative player balance |
+| Resource exchange quote and inventory mutation | Not run | Not run | Quote, count, and balance |
+| Village donation and restoration | Not run | Not run | Funding result and village state |
+| Death, reconnect, and server restart preserve account | Not run | Not run | Three checkpoints |
+| Upgrade from 0.3.0-beta.3 | Not run | Not run | Backup hash, migration log, account comparison |
+| Upgrade from 0.3.0-beta.4 | Not run | Not run | Backup hash, migration log, account comparison |
+| No route creates player debt or negative balance | Not run | Not run | Debug validation report |
+
+## GUI and onboarding checks
+
+| Test | Fabric | NeoForge | Required evidence |
+| --- | --- | --- | --- |
+| GUI scale Auto | Not run | Not run | Screenshot of every page |
+| GUI scale Small | Not run | Not run | Screenshot of every page |
+| GUI scale Normal | Not run | Not run | Screenshot of every page |
+| GUI scale Large | Not run | Not run | Screenshot of every page |
+| Keyboard navigation and Escape behavior | Not run | Not run | Notes and any blocked control |
+| Color-independent gain/loss understanding | Not run | Not run | Tester description without relying on color |
+| First-time player completes an investment in under one minute | Not run | Not run | Timed observation |
+| Savings, CD, lending, VILX, and businesses are distinguishable | Not run | Not run | Tester explanation in their own words |
+| Empty states and unavailable actions are clear | Not run | Not run | Screenshots and notes |
+
+## Village and physical-world checks
+
+| Test | Fabric | NeoForge | Required evidence |
+| --- | --- | --- | --- |
+| Plains bank and projects | Not run | Not run | Wide and close screenshots |
+| Desert bank and projects | Not run | Not run | Wide and close screenshots |
+| Savanna bank and projects | Not run | Not run | Wide and close screenshots |
+| Taiga or snowy bank and projects | Not run | Not run | Wide and close screenshots |
+| Sloped or uneven terrain | Not run | Not run | Before/after screenshots and debug ZIP |
+| Water-edge or ravine-adjacent village | Not run | Not run | No unsafe placement evidence |
+| Obstructed construction lot | Not run | Not run | Retry behavior and no overwritten blocks |
+| Chunk unload during construction | Not run | Not run | Reload result and debug ZIP |
+| Two villages inside nearby scan regions | Not run | Not run | Correct identities and separate projects |
+| Cottage, House, Inn, Warehouse | Not run | Not run | Completed examples |
+| Mine Entrance, Smithy, Granary | Not run | Not run | Completed examples |
+| Market Square, Guard Post, Exchange Hall | Not run | Not run | Completed examples |
+| Village extinction and funded restoration | Not run | Not run | Timeline and resident counts |
+| Zombie infection and curing | Not run | Not run | Resident identity preserved |
+| Pillager casualty attribution | Not run | Not run | Incident panel and debug ZIP |
+| Player casualty counterfactual protection | Not run | Not run | Market contribution before/after |
+| Player-removed project blocks | Not run | Not run | Reconciliation or repair behavior |
+| Missing bank with existing marker | Not run | Not run | Detection and safe repair behavior |
+
+## Multiplayer and scale checks
+
+| Test | Fabric | NeoForge | Required evidence |
+| --- | --- | --- | --- |
+| Two players bank simultaneously | Not run | Not run | Exact balances and debug ZIPs |
+| Two players support one village simultaneously | Not run | Not run | Treasury and donation records |
+| Player disconnect during another player's transaction | Not run | Not run | Both account results |
+| 100 stored villages | Not run | Not run | Tick/save/load percentiles |
+| 500 stored villages | Not run | Not run | Tick/save/load percentiles |
+| 1,000 stored villages | Not run | Not run | Tick/save/load percentiles |
+| Large offline catch-up | Not run | Not run | Days advanced, elapsed time, validation report |
+| Multi-hour multiplayer session | Not run | Not run | Session length, peak players, debug ZIP |
+| Claim/protection integration | Not run | Not run | Protected blocks remain untouched |
+
+## Release gate
+
+A candidate may be called public beta when CI passes and every Critical automated invariant passes. It may be called stable only after this matrix contains real evidence for every Critical row and no unresolved issue can duplicate, destroy, or create financial value incorrectly.
