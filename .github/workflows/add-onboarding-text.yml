@@ -1,0 +1,45 @@
+name: Add Banker onboarding translation once
+
+on:
+  push:
+    branches: [milestone-95]
+
+permissions:
+  contents: write
+
+jobs:
+  add-text:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: milestone-95
+          fetch-depth: 0
+      - name: Add translation and remove this one-time workflow
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          path = Path('common/src/main/resources/assets/the_emerald_standard/lang/en_us.json')
+          data = json.loads(path.read_text())
+          data['message.the_emerald_standard.first_banker_visit'] = (
+              'Welcome to the Village Bank. Safe deposits cannot lose value; CDs lock funds for a term; '
+              'villager lending and market investments can lose value. You can never owe emeralds.'
+          )
+          path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
+          PY
+          git rm .github/workflows/add-onboarding-text.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add common/src/main/resources/assets/the_emerald_standard/lang/en_us.json
+          git commit -m 'Add first-Banker risk orientation text'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:milestone-95; then
+              exit 0
+            fi
+            git pull --rebase origin milestone-95
+          done
+          exit 1
