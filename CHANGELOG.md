@@ -2,6 +2,34 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## 0.4.0-beta.1 - 2026-09-04
+
+### Added
+- Expanded visible Village Prosperity progression from 3 to 10 curated project types: Cottage, House, Inn, Warehouse, Mine Entrance, Market Square, Smithy, Granary, Guard Post, and Exchange Hall.
+- Added adaptive project prioritization so threatened, food-poor, crowded, and mature villages choose different development paths instead of following a fixed order.
+- Added biome-aware bounded physical templates for every new project while preserving the no-force-load and protected-placement rules.
+- Added visible local economic-impact guidance on the Village dashboard without exposing deterministic return formulas.
+- Added regression coverage for the expanded project catalog and template size bounds.
+
+### Changed
+- Village production now responds to relevant physical development: granaries help agriculture, smithies help mining, markets and inns help trade, guard posts help security, and exchange halls help mature trade and transport.
+- New need-driven projects add late-game variety while preserving the proven development-tier thresholds used by existing worlds.
+- Fabric and NeoForge versions advanced together to `0.4.0-beta.1`.
+
+### Safety and compatibility
+- Existing project enum identifiers keep their original names and order, so beta.4 worlds remain migration-safe.
+- The abstract simulation remains authoritative. New physical construction stays bounded, never force-loads chunks, never mines arbitrary terrain, and continues honoring `VillageDevelopmentProtection` guards.
+- Player borrowing and negative balances remain impossible.
+
+### Recovered and fixed
+
+- Rebuilt the candidate from the last verified beta.4 main branch instead of merging generated payloads and self-modifying workflows.
+- Fixed the Minecraft 26.2 first-visit message API so both loader projects compile.
+- Fixed a duplicate Inn placement that could permanently block construction.
+- Removed unintended barrel, lectern, and cartography-table job sites from prosperity templates.
+- Added live template validation to server smoke tests and integrated the 100, 500, and 1,000-village scale guard into the normal read-only regression suite.
+- Restored the standard read-only GitHub Actions workflow and excluded temporary payload, transformation, finalizer, and validation workflows from the recovered candidate.
+
 ## 0.3.0-beta.4 - 2026-09-03
 
 ### Added

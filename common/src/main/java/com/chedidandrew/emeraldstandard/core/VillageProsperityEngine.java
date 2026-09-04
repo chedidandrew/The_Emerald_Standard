@@ -49,7 +49,14 @@ public final class VillageProsperityEngine {
     public enum ProjectType {
         COTTAGE(80.0, 8.0, 4, 180),
         WAREHOUSE(130.0, 18.0, 0, 260),
-        MINE_ENTRANCE(160.0, 25.0, 0, 230);
+        MINE_ENTRANCE(160.0, 25.0, 0, 230),
+        HOUSE(120.0, 14.0, 6, 250),
+        INN(190.0, 28.0, 8, 360),
+        MARKET_SQUARE(175.0, 32.0, 0, 260),
+        SMITHY(185.0, 30.0, 0, 285),
+        GRANARY(145.0, 22.0, 0, 245),
+        GUARD_POST(165.0, 26.0, 0, 240),
+        EXCHANGE_HALL(280.0, 60.0, 0, 430);
 
         private final double materialCost;
         private final double treasuryCost;
@@ -141,8 +148,15 @@ public final class VillageProsperityEngine {
         }
 
         int cottages = completedProjects(village, ProjectType.COTTAGE);
+        int houses = completedProjects(village, ProjectType.HOUSE);
+        int inns = completedProjects(village, ProjectType.INN);
         int warehouses = completedProjects(village, ProjectType.WAREHOUSE);
         int mines = completedProjects(village, ProjectType.MINE_ENTRANCE);
+        int markets = completedProjects(village, ProjectType.MARKET_SQUARE);
+        int smithies = completedProjects(village, ProjectType.SMITHY);
+        int granaries = completedProjects(village, ProjectType.GRANARY);
+        int guardPosts = completedProjects(village, ProjectType.GUARD_POST);
+        int exchanges = completedProjects(village, ProjectType.EXCHANGE_HALL);
         double safetyFactor = clamp(0.25 + village.safety / 125.0, 0.25, 1.05);
         double prosperityFactor = clamp(0.55 + village.prosperity / 180.0, 0.55, 1.12);
         double lifecycleFactor = switch (village.lifecycle) {
@@ -157,13 +171,13 @@ public final class VillageProsperityEngine {
         ProfessionMultipliers profession = professionMultipliers(village);
 
         village.agricultureOutput = population * 0.58 * productivity
-                * (1.0 + 0.04 * village.developmentTier)
+                * (1.0 + 0.04 * village.developmentTier + 0.16 * granaries)
                 * profession.agriculture();
         village.miningOutput = population * 0.22 * productivity
-                * (1.0 + 0.32 * mines)
+                * (1.0 + 0.32 * mines + 0.18 * smithies)
                 * profession.mining();
         village.tradeOutput = population * 0.18 * productivity
-                * (1.0 + 0.22 * warehouses)
+                * (1.0 + 0.22 * warehouses + 0.20 * markets + 0.16 * inns + 0.22 * exchanges)
                 * profession.trade();
         village.redstoneOutput = population * 0.018 * productivity
                 * Math.max(0, village.developmentTier - 1)
@@ -172,16 +186,27 @@ public final class VillageProsperityEngine {
                 * Math.max(0, village.developmentTier - 1)
                 * profession.alchemy();
         village.transportOutput = population * 0.10 * productivity
-                * (1.0 + 0.15 * warehouses)
+                * (1.0 + 0.15 * warehouses + 0.12 * markets + 0.10 * exchanges)
                 * profession.transport();
         village.securityOutput = population * 0.08
+                * (1.0 + 0.35 * guardPosts)
                 * clamp(0.5 + village.safety / 100.0, 0.4, 1.5)
                 * profession.security();
 
         double foodUse = population * 0.46;
         double foodSpoilage = village.foodSupply * 0.0008;
-        double infrastructureUpkeep = cottages * 0.03 + warehouses * 0.08 + mines * 0.10;
-        double materialUpkeep = (cottages + warehouses + mines) * 0.015;
+        double infrastructureUpkeep = cottages * 0.03
+                + houses * 0.05
+                + inns * 0.08
+                + warehouses * 0.08
+                + mines * 0.10
+                + markets * 0.07
+                + smithies * 0.09
+                + granaries * 0.05
+                + guardPosts * 0.08
+                + exchanges * 0.12;
+        double materialUpkeep = (cottages + houses + inns + warehouses + mines + markets
+                + smithies + granaries + guardPosts + exchanges) * 0.015;
         village.foodSupply = clamp(
                 village.foodSupply + village.agricultureOutput - foodUse - foodSpoilage,
                 0.0,
@@ -365,8 +390,15 @@ public final class VillageProsperityEngine {
                 worldSeed, village.villageId, day, PROJECT_SALT ^ active.projectId);
         double denominator = switch (active.type) {
             case COTTAGE -> 120.0;
+            case HOUSE -> 165.0;
+            case INN -> 235.0;
             case WAREHOUSE -> 190.0;
             case MINE_ENTRANCE -> 220.0;
+            case MARKET_SQUARE -> 205.0;
+            case SMITHY -> 215.0;
+            case GRANARY -> 180.0;
+            case GUARD_POST -> 185.0;
+            case EXCHANGE_HALL -> 285.0;
         };
         double developmentSpend = Math.min(village.developmentPoints, 0.75);
         village.developmentPoints -= developmentSpend;
@@ -392,32 +424,60 @@ public final class VillageProsperityEngine {
         }
 
         ProjectType desired = null;
-        int cottageCount = countProjects(village, ProjectType.COTTAGE);
+        int housingProjects = countProjects(village, ProjectType.COTTAGE)
+                + countProjects(village, ProjectType.HOUSE)
+                + countProjects(village, ProjectType.INN);
         boolean hasWarehouse = countProjects(village, ProjectType.WAREHOUSE) > 0;
         boolean hasMine = countProjects(village, ProjectType.MINE_ENTRANCE) > 0;
-        if (village.population + village.pendingSettlers >= village.housingCapacity - 1
-                && cottageCount < 5) {
-            desired = ProjectType.COTTAGE;
-        } else if (!hasWarehouse
-                && village.population >= 6
-                && village.prosperity >= 42.0) {
+        boolean hasMarket = countProjects(village, ProjectType.MARKET_SQUARE) > 0;
+        boolean hasSmithy = countProjects(village, ProjectType.SMITHY) > 0;
+        boolean hasGranary = countProjects(village, ProjectType.GRANARY) > 0;
+        boolean hasGuardPost = countProjects(village, ProjectType.GUARD_POST) > 0;
+        boolean hasExchange = countProjects(village, ProjectType.EXCHANGE_HALL) > 0;
+        int committedPopulation = village.population + village.pendingSettlers;
+        double foodDays = village.foodSupply / Math.max(1.0, village.population * 0.46);
+
+        // Local need wins over prestige. A village under pressure builds what solves its
+        // current problem instead of following one fixed structure sequence.
+        if ((village.lifecycle == Lifecycle.THREATENED || village.safety < 42.0)
+                && !hasGuardPost && village.population >= 4) {
+            desired = ProjectType.GUARD_POST;
+        } else if (foodDays < 18.0 && !hasGranary && village.population >= 5) {
+            desired = ProjectType.GRANARY;
+        } else if (committedPopulation >= village.housingCapacity - 1 && housingProjects < 6) {
+            desired = village.developmentTier >= 3
+                    ? ProjectType.INN
+                    : village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
+        } else if (!hasWarehouse && village.population >= 6 && village.prosperity >= 42.0) {
             desired = ProjectType.WAREHOUSE;
-        } else if (!hasMine
-                && village.population >= 5
-                && village.developmentTier >= 1) {
+        } else if (!hasMine && village.population >= 5 && village.developmentTier >= 1) {
             desired = ProjectType.MINE_ENTRANCE;
-        } else if (cottageCount < 5
-                && village.population >= village.housingCapacity - 2
+        } else if (!hasMarket && village.population >= 9 && village.prosperity >= 50.0) {
+            desired = ProjectType.MARKET_SQUARE;
+        } else if (!hasSmithy && village.population >= 10 && village.developmentTier >= 2) {
+            desired = ProjectType.SMITHY;
+        } else if (!hasExchange
+                && village.population >= 18
+                && village.developmentTier >= 4
+                && village.prosperity >= 68.0) {
+            desired = ProjectType.EXCHANGE_HALL;
+        } else if (housingProjects < 6
+                && committedPopulation >= village.housingCapacity - 2
                 && unit(worldSeed, village.villageId, day, PROJECT_SALT) < 0.012) {
-            desired = ProjectType.COTTAGE;
+            desired = village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
         }
 
-        double requiredDevelopment = switch (desired == null
-                ? ProjectType.COTTAGE
-                : desired) {
+        double requiredDevelopment = switch (desired == null ? ProjectType.COTTAGE : desired) {
             case COTTAGE -> 8.0;
+            case HOUSE -> 11.0;
+            case INN -> 18.0;
             case WAREHOUSE -> 14.0;
             case MINE_ENTRANCE -> 16.0;
+            case MARKET_SQUARE -> 17.0;
+            case SMITHY -> 18.0;
+            case GRANARY -> 13.0;
+            case GUARD_POST -> 14.0;
+            case EXCHANGE_HALL -> 24.0;
         };
         if (desired == null
                 || village.materialSupply < desired.materialCost()
@@ -449,7 +509,9 @@ public final class VillageProsperityEngine {
                 .filter(project -> project.economicComplete
                         && !project.materializedComplete
                         && !project.abstractOnly
-                        && project.type == ProjectType.COTTAGE)
+                        && (project.type == ProjectType.COTTAGE
+                                || project.type == ProjectType.HOUSE
+                                || project.type == ProjectType.INN))
                 .findFirst()
                 .ifPresent(project -> project.abstractOnly = true);
     }
@@ -718,15 +780,22 @@ public final class VillageProsperityEngine {
         return Double.doubleToLongBits(first) == Double.doubleToLongBits(second);
     }
 
+    /** Qualitative broad village score used by the market and player-facing outlook. */
+    public static double broadFundamentalScore(
+            double prosperity, double safety, int developmentTier) {
+        return clamp(
+                (prosperity - 50.0) / 50.0 * 0.55
+                        + (safety - 55.0) / 45.0 * 0.35
+                        + (developmentTier - 1.0) / 5.0 * 0.10,
+                -1.0,
+                1.0);
+    }
+
     private static MarketContribution marketContribution(EconomyState.VillageRecord village) {
         double population = Math.max(1.0, village.population);
         double weight = Math.min(6.0, StrictMath.sqrt(population));
-        double broad = clamp(
-                (village.prosperity - 50.0) / 50.0 * 0.55
-                        + (village.safety - 55.0) / 45.0 * 0.35
-                        + (village.developmentTier - 1.0) / 5.0 * 0.10,
-                -1.0,
-                1.0);
+        double broad = broadFundamentalScore(
+                village.prosperity, village.safety, village.developmentTier);
         return new MarketContribution(
                 weight,
                 broad,

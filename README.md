@@ -4,7 +4,7 @@
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.3.0-beta.4`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
+> Current status: `0.4.0-beta.1`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
 
 ## Core rule
 
@@ -44,6 +44,8 @@ The global simulation includes expansion, bull, boom, stagnation, recession, cra
 
 ## Village Prosperity System
 
+The 0.4 beta expands visible settlement progression to **10 curated village projects** with need-driven priorities, biome-aware templates, and bounded sector effects. Threatened villages can prioritize defenses, food-poor villages can prioritize storage, crowded villages can prioritize housing, and mature villages can grow into markets, smithies, inns, and an Exchange Hall.
+
 Village Prosperity connects the market to persistent local settlements without turning villagers into expensive autonomous agents. Offline advancement updates compact data records only. It does **not** force-load chunks, pathfind villagers, mine real ores, simulate raids while offline, or place structures during startup.
 
 Each managed village receives a stable identity and tracks:
@@ -57,7 +59,7 @@ Each managed village receives a stable identity and tracks:
 - Resident status and incident history
 - Development projects and physical construction progress
 
-The first development projects are a **Cottage**, **Warehouse**, and **Mine Entrance**. Completed economic projects enter a bounded visual queue and materialize only while players are nearby and the required chunks are already loaded.
+The curated project catalog contains **Cottage, House, Village Inn, Warehouse, Mine Entrance, Market Square, Smithy, Granary, Guard Post, and Exchange Hall**. Completed economic projects enter a bounded visual queue and materialize only while players are nearby and the required chunks are already loaded.
 
 The beta hardening rules include:
 
