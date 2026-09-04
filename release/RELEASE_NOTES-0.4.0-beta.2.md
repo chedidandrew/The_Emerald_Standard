@@ -1,6 +1,6 @@
 # The Emerald Standard 0.4.0-beta.2
 
-> Candidate release notes. `0.4.0-beta.2` has not been tagged or published. The automated gate passed candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`; hands-on testing is not claimed.
+> Public prerelease notes. [`v0.4.0-beta.2`](https://github.com/chedidandrew/The_Emerald_Standard/releases/tag/v0.4.0-beta.2) is tagged at exact release-source commit `ae8e5d8a2a4eeea8ea8846291efbe0a75515d07a`. The full automated gate passed; hands-on testing is not claimed.
 
 This beta completes the investment-accounting, multi-position banking, village-funding, physical-integrity, and presentation work planned after beta.1.
 
@@ -68,4 +68,4 @@ The Banker synchronization layout changed during unreleased beta.2 development. 
 
 ## Verification boundary
 
-GitHub Actions workflow [`33894198970`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33894198970) passed the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks for earlier candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`. All subsequent changes, including GUI, onboarding, configuration, packet synchronization, and release-integrity work, require a new successful exact-commit `main` workflow before publication. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run`; no tag or public prerelease has been created.
+GitHub Actions workflow [`33908389175`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33908389175) passed the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks for exact release-source commit `ae8e5d8a2a4eeea8ea8846291efbe0a75515d07a`. That commit is tagged as [`v0.4.0-beta.2`](https://github.com/chedidandrew/The_Emerald_Standard/releases/tag/v0.4.0-beta.2), and all four JARs plus `SHA256SUMS` and `RELEASE_MANIFEST.txt` were published and independently redownloaded successfully. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run`; this prerelease is not a stable-release claim.

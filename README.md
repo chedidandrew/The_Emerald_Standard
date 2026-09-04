@@ -4,7 +4,7 @@
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.4.0-beta.2` candidate (unreleased). Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
+> Current status: [`0.4.0-beta.2` public prerelease](https://github.com/chedidandrew/The_Emerald_Standard/releases/tag/v0.4.0-beta.2). Its exact source commit passed the full automated gate; hands-on matrix results are still `Not run`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
 
 ## Core rule
 
@@ -13,7 +13,7 @@ Players provide emerald capital to the villager economy. **Players can never bor
 ## Quick start
 
 1. Back up the world before installing or upgrading this beta.
-2. Install one matching Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, and do not mix builds from different commits.
+2. Download exactly one playable JAR from the [`0.4.0-beta.2` prerelease](https://github.com/chedidandrew/The_Emerald_Standard/releases/tag/v0.4.0-beta.2), then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits.
 3. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
 4. Right-click the Banker or an Exchange Desk to open the seven-page dashboard.
 5. On **Overview**, choose an amount and deposit physical emeralds into bank cash. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk.

@@ -2,7 +2,7 @@
 
 All notable changes to The Emerald Standard are documented here.
 
-## 0.4.0-beta.2 - Unreleased
+## 0.4.0-beta.2 - 2026-09-04
 
 ### Added
 
@@ -60,7 +60,7 @@ All notable changes to The Emerald Standard are documented here.
 
 ### Verification status
 
-- Automated common tests, dual-loader builds, packaged-JAR checks, both dedicated-server startups, and both client bootstraps passed for earlier candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd` in workflow `33894198970`; the current unpublished changes require a new exact-commit workflow.
+- Automated common tests, dual-loader builds, packaged-JAR checks, both dedicated-server startups, and both client bootstraps passed for exact release-source commit `ae8e5d8a2a4eeea8ea8846291efbe0a75515d07a` in [workflow `33908389175`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33908389175). The tagged artifacts and checksums are published in the [`v0.4.0-beta.2` prerelease](https://github.com/chedidandrew/The_Emerald_Standard/releases/tag/v0.4.0-beta.2).
 - Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run` until tested by a person on the exact Fabric and NeoForge candidate.
 
 ## 0.4.0-beta.1 - 2026-09-04
