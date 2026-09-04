@@ -4,10 +4,13 @@ import com.chedidandrew.emeraldstandard.core.EconomyService;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.villager.Villager;
@@ -16,6 +19,7 @@ import net.minecraft.world.entity.npc.villager.VillagerProfession;
 /** Identifies Banker villagers and opens the graphical banking dashboard. */
 public final class BankerAccess {
     public static final String BANKER_TAG = "the_emerald_standard_banker";
+    public static final String FIRST_BANKER_VISIT_TAG = "the_emerald_standard_first_banker_visit";
     private static final String BANK_REGION_TAG_PREFIX = "the_emerald_standard_bank_";
 
     private BankerAccess() {
@@ -139,7 +143,7 @@ public final class BankerAccess {
             BlockPos accessPoint,
             Long regionKey) {
         BankTransactionCoordinator.reconcile(player, economy);
-        return player.openMenu(new SimpleMenuProvider(
+        boolean opened = player.openMenu(new SimpleMenuProvider(
                         (containerId, inventory, ignored) ->
                                 new BankerMenu(
                                         containerId,
@@ -150,6 +154,39 @@ public final class BankerAccess {
                                         regionKey),
                         Component.translatable("gui.the_emerald_standard.banker.title")))
                 .isPresent();
+        if (!opened) {
+            return false;
+        }
+
+        boolean firstVisit = !player.entityTags().contains(FIRST_BANKER_VISIT_TAG);
+        if (firstVisit) {
+            player.addTag(FIRST_BANKER_VISIT_TAG);
+            player.displayClientMessage(
+                    Component.translatable("message.the_emerald_standard.first_banker_visit"),
+                    false);
+        }
+        if (player.level() instanceof ServerLevel level) {
+            level.playSound(
+                    null,
+                    player.blockPosition(),
+                    SoundEvents.VILLAGER_TRADE,
+                    SoundSource.NEUTRAL,
+                    0.65F,
+                    firstVisit ? 1.15F : 1.0F);
+            if (firstVisit) {
+                level.sendParticles(
+                        ParticleTypes.HAPPY_VILLAGER,
+                        player.getX(),
+                        player.getY() + 1.0,
+                        player.getZ(),
+                        6,
+                        0.35,
+                        0.45,
+                        0.35,
+                        0.02);
+            }
+        }
+        return true;
     }
 
     private static String regionTag(long regionKey) {
