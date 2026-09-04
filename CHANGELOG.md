@@ -9,7 +9,7 @@
 
 ### Changed
 - Village production now responds to relevant physical development: granaries help agriculture, smithies help mining, markets and inns help trade, guard posts help security, and exchange halls help mature trade and transport.
-- Development tiers now require more diverse infrastructure at the highest levels, making late-game settlement growth visibly distinct.
+- New need-driven projects add late-game variety while preserving the proven development-tier thresholds used by existing worlds.
 - Fabric and NeoForge versions advanced together to `0.4.0-beta.1`.
 
 ### Safety and compatibility

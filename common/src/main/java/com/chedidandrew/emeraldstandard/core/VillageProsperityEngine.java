@@ -522,20 +522,12 @@ public final class VillageProsperityEngine {
                 .count();
         boolean warehouse = completedProjects(village, ProjectType.WAREHOUSE) > 0;
         boolean mine = completedProjects(village, ProjectType.MINE_ENTRANCE) > 0;
-        boolean market = completedProjects(village, ProjectType.MARKET_SQUARE) > 0;
-        boolean exchange = completedProjects(village, ProjectType.EXCHANGE_HALL) > 0;
         int tier;
         if (village.population <= 0) {
             tier = 0;
-        } else if (village.population >= 28
-                && village.prosperity >= 75.0
-                && completed >= 8
-                && exchange) {
+        } else if (village.population >= 28 && village.prosperity >= 75.0 && completed >= 6) {
             tier = 5;
-        } else if (village.population >= 18
-                && village.prosperity >= 65.0
-                && completed >= 5
-                && market) {
+        } else if (village.population >= 18 && village.prosperity >= 65.0 && completed >= 4) {
             tier = 4;
         } else if (village.population >= 12 && village.prosperity >= 55.0 && warehouse && mine) {
             tier = 3;

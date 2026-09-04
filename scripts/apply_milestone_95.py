@@ -52,11 +52,11 @@ engine = replace_once(engine,
 "visual backlog")
 engine = replace_once(engine,
 '''        boolean warehouse = completedProjects(village, ProjectType.WAREHOUSE) > 0;\n        boolean mine = completedProjects(village, ProjectType.MINE_ENTRANCE) > 0;''',
-'''        boolean warehouse = completedProjects(village, ProjectType.WAREHOUSE) > 0;\n        boolean mine = completedProjects(village, ProjectType.MINE_ENTRANCE) > 0;\n        boolean market = completedProjects(village, ProjectType.MARKET_SQUARE) > 0;\n        boolean exchange = completedProjects(village, ProjectType.EXCHANGE_HALL) > 0;''',
+'''        boolean warehouse = completedProjects(village, ProjectType.WAREHOUSE) > 0;\n        boolean mine = completedProjects(village, ProjectType.MINE_ENTRANCE) > 0;''',
 "tier project flags")
 engine = replace_once(engine,
 '''        } else if (village.population >= 28 && village.prosperity >= 75.0 && completed >= 6) {\n            tier = 5;\n        } else if (village.population >= 18 && village.prosperity >= 65.0 && completed >= 4) {\n            tier = 4;''',
-'''        } else if (village.population >= 28\n                && village.prosperity >= 75.0\n                && completed >= 8\n                && exchange) {\n            tier = 5;\n        } else if (village.population >= 18\n                && village.prosperity >= 65.0\n                && completed >= 5\n                && market) {\n            tier = 4;''',
+'''        } else if (village.population >= 28 && village.prosperity >= 75.0 && completed >= 6) {\n            tier = 5;\n        } else if (village.population >= 18 && village.prosperity >= 65.0 && completed >= 4) {\n            tier = 4;''',
 "tier conditions")
 write(engine_path, engine)
 
