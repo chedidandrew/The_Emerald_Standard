@@ -1,0 +1,386 @@
+name: Complete and release the 0.4 village milestone
+
+on:
+  push:
+    branches: [milestone-95]
+    paths-ignore:
+      - release/CI_STATUS-0.4.0-beta.1.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: complete-phase-a
+  cancel-in-progress: true
+
+jobs:
+  complete:
+    name: Apply, validate, clean, merge, and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: milestone-95
+          fetch-depth: 0
+
+      - name: Prepare exact source candidate
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -q 'EXCHANGE_HALL' common/src/main/java/com/chedidandrew/emeraldstandard/core/VillageProsperityEngine.java; then
+            test -f scripts/apply_milestone_95.py
+            python3 scripts/apply_milestone_95.py
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          lang = Path('common/src/main/resources/assets/the_emerald_standard/lang/en_us.json')
+          data = json.loads(lang.read_text())
+          data['message.the_emerald_standard.first_banker_visit'] = (
+              'Welcome to the Village Bank. Safe deposits cannot lose value; CDs lock funds for a term; '
+              'villager lending and market investments can lose value. You can never owe emeralds.'
+          )
+          lang.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
+
+          runner = Path('scripts/run-common-tests.sh')
+          text = runner.read_text()
+          marker = 'java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageProsperityRegressionTest\n'
+          additions = [
+              'java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.Milestone95RegressionTest\n',
+              'java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ProjectCatalogCompatibilityRegressionTest\n',
+          ]
+          if marker not in text:
+              raise SystemExit('Common regression insertion marker is missing')
+          insertion = marker
+          for addition in additions:
+              if addition not in text:
+                  insertion += addition
+          if insertion != marker:
+              text = text.replace(marker, insertion, 1)
+              runner.write_text(text)
+          PY
+
+          grep -q '^mod_version=0.4.0-beta.1$' fabric/gradle.properties
+          grep -q '^mod_version=0.4.0-beta.1$' neoforge/gradle.properties
+          grep -q 'FIRST_BANKER_VISIT_TAG' common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/BankerAccess.java
+          test -f docs/MANUAL_TEST_MATRIX-0.4.md
+          test -f release/IMPLEMENTATION_LOG-0.4.0-beta.1.md
+          test -f common/src/test/java/com/chedidandrew/emeraldstandard/core/LargeWorldStressRegressionTest.java
+          test -f common/src/test/java/com/chedidandrew/emeraldstandard/core/ProjectCatalogCompatibilityRegressionTest.java
+
+          rm -f .github/workflows/milestone-validation.yml
+          rm -f .github/workflows/finalize-milestone.yml
+          rm -f .github/workflows/patch-finalizer-once.yml
+          rm -f .github/workflows/add-onboarding-text.yml
+          rm -f .github/workflows/add-catalog-test-once.yml
+          rm -f .github/workflows/patch-finalizer-once.yml
+
+          cat > .github/workflows/build.yml <<'YAML'
+          name: Build, test, and launch Minecraft 26.2
+
+          on:
+            push:
+            pull_request:
+
+          permissions:
+            contents: read
+
+          jobs:
+            common-tests:
+              name: Common economy regression tests
+              runs-on: ubuntu-latest
+              timeout-minutes: 10
+              steps:
+                - uses: actions/checkout@v7
+                - uses: actions/setup-java@v6
+                  with:
+                    distribution: temurin
+                    java-version: '25'
+                - name: Compile and test the loader-neutral economy
+                  run: bash scripts/run-common-tests.sh
+
+            loader-builds:
+              name: Build ${{ matrix.loader }}
+              needs: common-tests
+              runs-on: ubuntu-latest
+              timeout-minutes: 30
+              strategy:
+                fail-fast: false
+                matrix:
+                  loader: [fabric, neoforge]
+              steps:
+                - uses: actions/checkout@v7
+                - uses: actions/setup-java@v6
+                  with:
+                    distribution: temurin
+                    java-version: '25'
+                - uses: gradle/actions/setup-gradle@v6
+                - name: Build ${{ matrix.loader }}
+                  run: bash "${{ matrix.loader }}/gradlew" --no-daemon -p "${{ matrix.loader }}" build --stacktrace
+                - name: Verify packaged ${{ matrix.loader }} JAR
+                  run: bash scripts/verify-built-jar.sh "${{ matrix.loader }}"
+                - uses: actions/upload-artifact@v7
+                  with:
+                    name: the-emerald-standard-${{ matrix.loader }}-${{ github.sha }}
+                    path: ${{ matrix.loader }}/build/libs/*.jar
+                    if-no-files-found: error
+
+            dedicated-server-smoke:
+              name: Launch ${{ matrix.loader }} dedicated server
+              needs: loader-builds
+              runs-on: ubuntu-latest
+              timeout-minutes: 15
+              strategy:
+                fail-fast: false
+                matrix:
+                  loader: [fabric, neoforge]
+              steps:
+                - uses: actions/checkout@v7
+                - uses: actions/setup-java@v6
+                  with:
+                    distribution: temurin
+                    java-version: '25'
+                - uses: gradle/actions/setup-gradle@v6
+                - name: Launch Minecraft server and verify mod startup
+                  run: bash scripts/smoke-server.sh "${{ matrix.loader }}"
+                - uses: actions/upload-artifact@v7
+                  if: always()
+                  with:
+                    name: server-smoke-log-${{ matrix.loader }}-${{ github.sha }}
+                    path: build/server-smoke/${{ matrix.loader }}.log
+                    if-no-files-found: warn
+
+            client-bootstrap-smoke:
+              name: Launch ${{ matrix.loader }} client
+              needs: loader-builds
+              runs-on: ubuntu-latest
+              timeout-minutes: 15
+              strategy:
+                fail-fast: false
+                matrix:
+                  loader: [fabric, neoforge]
+              steps:
+                - uses: actions/checkout@v7
+                - uses: actions/setup-java@v6
+                  with:
+                    distribution: temurin
+                    java-version: '25'
+                - uses: gradle/actions/setup-gradle@v6
+                - name: Install virtual display dependencies
+                  run: |
+                    sudo apt-get update
+                    sudo apt-get install -y --no-install-recommends xvfb libgl1
+                - name: Launch Minecraft client and verify screen registration
+                  run: bash scripts/smoke-client.sh "${{ matrix.loader }}"
+                - uses: actions/upload-artifact@v7
+                  if: always()
+                  with:
+                    name: client-smoke-log-${{ matrix.loader }}-${{ github.sha }}
+                    path: build/client-smoke/${{ matrix.loader }}.log
+                    if-no-files-found: warn
+          YAML
+          sed -i 's/^          //' .github/workflows/build.yml
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'pushed=false' >> "$GITHUB_OUTPUT"
+          else
+            git commit -m 'Prepare exact 0.4.0 beta source candidate'
+            git push origin HEAD:milestone-95
+            echo 'pushed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stop after committing a newly prepared candidate
+        if: steps.prepare.outputs.pushed == 'true'
+        run: echo 'A new workflow run will validate the committed candidate.'
+
+      - uses: actions/setup-java@v6
+        if: steps.prepare.outputs.pushed != 'true'
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+        if: steps.prepare.outputs.pushed != 'true'
+
+      - name: Install client smoke dependencies
+        if: steps.prepare.outputs.pushed != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1
+
+      - name: Run complete validation matrix
+        if: steps.prepare.outputs.pushed != 'true'
+        id: validate
+        shell: bash
+        run: |
+          set +e
+          mkdir -p build/phase-a-validation release
+          : > build/phase-a-validation/results.tsv
+
+          run_check() {
+            local name="$1"
+            shift
+            local log="build/phase-a-validation/${name}.log"
+            echo "Running ${name}"
+            "$@" >"$log" 2>&1
+            local code=$?
+            if [[ $code -eq 0 ]]; then
+              printf '%s\tPASS\t%s\n' "$name" "$code" >> build/phase-a-validation/results.tsv
+            else
+              printf '%s\tFAIL\t%s\n' "$name" "$code" >> build/phase-a-validation/results.tsv
+            fi
+          }
+
+          run_check common-tests bash scripts/run-common-tests.sh
+          run_check catalog-compatibility bash scripts/run-milestone-compatibility.sh
+          run_check scale-tests bash scripts/run-scale-tests.sh
+          run_check fabric-build bash fabric/gradlew --no-daemon -p fabric build --stacktrace
+          run_check fabric-package bash scripts/verify-built-jar.sh fabric
+          run_check neoforge-build bash neoforge/gradlew --no-daemon -p neoforge build --stacktrace
+          run_check neoforge-package bash scripts/verify-built-jar.sh neoforge
+          run_check fabric-server bash scripts/smoke-server.sh fabric
+          run_check neoforge-server bash scripts/smoke-server.sh neoforge
+          run_check fabric-client bash scripts/smoke-client.sh fabric
+          run_check neoforge-client bash scripts/smoke-client.sh neoforge
+
+          failures=$(awk -F '\t' '$2 == "FAIL" {count++} END {print count+0}' build/phase-a-validation/results.tsv)
+          echo "failures=$failures" >> "$GITHUB_OUTPUT"
+          tested_commit=$(git rev-parse HEAD)
+          echo "tested_commit=$tested_commit" >> "$GITHUB_OUTPUT"
+
+          {
+            echo '# The Emerald Standard 0.4.0-beta.1 CI Status'
+            echo
+            echo '- Tested commit: `'"$tested_commit"'`'
+            echo '- Workflow run: `'"${GITHUB_RUN_ID}"'`'
+            echo '- Generated: `'"$(date -u +'%Y-%m-%dT%H:%M:%SZ')"'`'
+            echo '- Automated failures: **'"$failures"'**'
+            echo
+            echo '| Check | Result | Exit code |'
+            echo '| --- | --- | ---: |'
+            while IFS=$'\t' read -r name result code; do
+              echo "| ${name} | ${result} | ${code} |"
+            done < build/phase-a-validation/results.tsv
+            echo
+            echo 'Human gameplay checks remain accurately marked in `docs/MANUAL_TEST_MATRIX-0.4.md`.'
+          } > release/CI_STATUS-0.4.0-beta.1.md
+
+          if [[ $failures -ne 0 ]]; then
+            {
+              echo
+              echo '## Failure excerpts'
+            } >> release/CI_STATUS-0.4.0-beta.1.md
+            for log in build/phase-a-validation/*.log; do
+              if grep -qE 'FAIL|FAILED|error:|Exception|Caused by:' "$log"; then
+                {
+                  echo
+                  echo '```text'
+                  echo "# $(basename "$log")"
+                  tail -n 100 "$log"
+                  echo '```'
+                } >> release/CI_STATUS-0.4.0-beta.1.md
+              fi
+            done
+          fi
+          exit 0
+
+      - name: Upload validation logs
+        if: steps.prepare.outputs.pushed != 'true' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase-a-validation-${{ github.sha }}
+          path: build/phase-a-validation/
+          if-no-files-found: warn
+
+      - name: Record failed validation without merging
+        if: steps.prepare.outputs.pushed != 'true' && steps.validate.outputs.failures != '0'
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add release/CI_STATUS-0.4.0-beta.1.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'Record failed 0.4.0 beta validation evidence'
+            git push origin HEAD:milestone-95
+          fi
+          exit 1
+
+      - name: Remove temporary release machinery
+        if: steps.prepare.outputs.pushed != 'true' && steps.validate.outputs.failures == '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tested_commit='${{ steps.validate.outputs.tested_commit }}'
+          rm -f scripts/apply_milestone_95.py
+          rm -f .github/workflows/complete-phase-a.yml
+          git add -A release/CI_STATUS-0.4.0-beta.1.md
+          git add -u
+          bash scripts/run-common-tests.sh
+          bash scripts/run-scale-tests.sh
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Finalize verified 0.4.0 beta milestone'
+          final_commit=$(git rev-parse HEAD)
+          disallowed=$(git diff --name-only "$tested_commit" "$final_commit" | grep -vE '^(release/CI_STATUS-0.4.0-beta.1.md|scripts/apply_milestone_95.py|.github/workflows/complete-phase-a.yml)$' || true)
+          if [[ -n "$disallowed" ]]; then
+            echo "Cleanup changed untested source paths:" >&2
+            echo "$disallowed" >&2
+            exit 1
+          fi
+          git push origin HEAD:milestone-95
+
+      - name: Merge exact verified tree
+        if: steps.prepare.outputs.pushed != 'true' && steps.validate.outputs.failures == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr ready 6 || true
+          gh pr merge 6 --merge --delete-branch \
+            --subject 'Release 0.4.0 beta village progression milestone' \
+            --body 'Adds ten need-driven village projects, bounded biome-aware physical progression, local economic-impact guidance, onboarding, scale guards, compatibility tests, and an explicit human-play evidence matrix. The complete automated matrix passed before merge.'
+          git fetch origin main
+          git checkout --detach origin/main
+          grep -q '^mod_version=0.4.0-beta.1$' fabric/gradle.properties
+          grep -q '^mod_version=0.4.0-beta.1$' neoforge/gradle.properties
+          bash scripts/run-common-tests.sh
+          bash scripts/run-scale-tests.sh
+          bash fabric/gradlew --no-daemon -p fabric build --stacktrace
+          bash scripts/verify-built-jar.sh fabric
+          bash neoforge/gradlew --no-daemon -p neoforge build --stacktrace
+          bash scripts/verify-built-jar.sh neoforge
+
+      - name: Publish prerelease artifacts
+        if: steps.prepare.outputs.pushed != 'true' && steps.validate.outputs.failures == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/release-0.4.0-beta.1
+          cp fabric/build/libs/*.jar build/release-0.4.0-beta.1/
+          cp neoforge/build/libs/*.jar build/release-0.4.0-beta.1/
+          (
+            cd build/release-0.4.0-beta.1
+            sha256sum *.jar > SHA256SUMS.txt
+          )
+          tag='v0.4.0-beta.1'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" build/release-0.4.0-beta.1/* --clobber
+          else
+            gh release create "$tag" build/release-0.4.0-beta.1/* \
+              --target main \
+              --prerelease \
+              --title 'The Emerald Standard 0.4.0-beta.1' \
+              --notes-file release/RELEASE_NOTES-0.4.0-beta.1.md
+          fi
