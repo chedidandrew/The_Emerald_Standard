@@ -31,50 +31,45 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(label + ' was not found')
+              return text.replace(old, new, 1)
+
           manager = Path('common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java')
           text = manager.read_text(encoding='utf-8')
-          old = '        placements.add(new Placement(6, 1, 7, Blocks.EMERALD_BLOCK.defaultBlockState()));'
-          new = '        placements.add(new Placement(6, 1, 7, Blocks.GREEN_STAINED_GLASS.defaultBlockState()));'
-          if old not in text:
-              raise SystemExit('Exchange Hall emerald block was not found')
-          text = text.replace(old, new, 1)
-          old_guard = '''                if (placement.state.is(Blocks.BARREL)
-                        || placement.state.is(Blocks.LECTERN)
-                        || placement.state.is(Blocks.CARTOGRAPHY_TABLE)) {
-                    throw new IllegalStateException(
-                            "Prosperity template " + type
-                                    + " contains an unintended villager workstation at "
-                                    + relative);'''
-          new_guard = '''                if (placement.state.is(Blocks.BARREL)
-                        || placement.state.is(Blocks.LECTERN)
-                        || placement.state.is(Blocks.CARTOGRAPHY_TABLE)
+          text = replace_once(
+              text,
+              '        placements.add(new Placement(6, 1, 7, Blocks.EMERALD_BLOCK.defaultBlockState()));',
+              '        placements.add(new Placement(6, 1, 7, Blocks.GREEN_STAINED_GLASS.defaultBlockState()));',
+              'Exchange Hall emerald block')
+          text = replace_once(
+              text,
+              '                        || placement.state.is(Blocks.CARTOGRAPHY_TABLE)) {',
+              '''                        || placement.state.is(Blocks.CARTOGRAPHY_TABLE)
                         || placement.state.is(Blocks.EMERALD_BLOCK)
                         || placement.state.is(Blocks.DIAMOND_BLOCK)
                         || placement.state.is(Blocks.GOLD_BLOCK)
-                        || placement.state.is(Blocks.NETHERITE_BLOCK)) {
-                    throw new IllegalStateException(
-                            "Prosperity template " + type
-                                    + " contains an unintended workstation or currency block at "
-                                    + relative);'''
-          if old_guard not in text:
-              raise SystemExit('Template safety guard was not found')
-          manager.write_text(text.replace(old_guard, new_guard, 1), encoding='utf-8')
+                        || placement.state.is(Blocks.NETHERITE_BLOCK)) {''',
+              'Template safety condition')
+          text = replace_once(
+              text,
+              '                                    + " contains an unintended villager workstation at "',
+              '                                    + " contains an unintended workstation or currency block at "',
+              'Template safety message')
+          manager.write_text(text, encoding='utf-8')
 
           changelog = Path('CHANGELOG.md')
           text = changelog.read_text(encoding='utf-8')
           marker = '- Removed unintended barrel, lectern, and cartography-table job sites from prosperity templates.\n'
           addition = marker + '- Replaced the Exchange Hall emerald block with decorative green glass and added a smoke-test ban on generated emerald, diamond, gold, and netherite blocks so village construction cannot mint investable currency.\n'
-          if marker not in text:
-              raise SystemExit('Changelog recovery marker was not found')
-          changelog.write_text(text.replace(marker, addition, 1), encoding='utf-8')
+          changelog.write_text(replace_once(text, marker, addition, 'Changelog recovery marker'), encoding='utf-8')
 
           audit = Path('release/RECOVERY_AUDIT-0.4.0-beta.1.md')
           text = audit.read_text(encoding='utf-8')
           marker = '- Replaced accidental barrel, lectern, and cartography-table job sites in non-industrial prosperity templates.\n'
           addition = marker + '- Removed the Exchange Hall emerald block and added validation that no prosperity template generates emerald, diamond, gold, or netherite blocks that could be converted into bank capital.\n'
-          if marker not in text:
-              raise SystemExit('Recovery audit marker was not found')
-          audit.write_text(text.replace(marker, addition, 1), encoding='utf-8')
+          audit.write_text(replace_once(text, marker, addition, 'Recovery audit marker'), encoding='utf-8')
 
           notes = Path('release/RELEASE_NOTES-0.4.0-beta.1.md')
           text = notes.read_text(encoding='utf-8')
