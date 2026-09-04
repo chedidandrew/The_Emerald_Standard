@@ -24,8 +24,13 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Apply final reviewed hardening
-        run: python3 scripts/finalize_0_4_recovery.py
+      - name: Correct migration fixture and apply final reviewed hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/cottage.approvedDay = 1L;/cottage.approvedDay = 0L;/' scripts/finalize_0_4_recovery.py
+          sed -i 's/house.approvedDay = 2L;/house.approvedDay = 0L;/' scripts/finalize_0_4_recovery.py
+          python3 scripts/finalize_0_4_recovery.py
 
       - name: Run regressions, migration coverage, and both loader builds
         shell: bash
