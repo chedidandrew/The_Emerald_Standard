@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
 public final class DebugFlightRecorder {
     public static final int DEFAULT_MINUTES = 5;
     public static final int MAX_MINUTES = 15;
-    public static final String MOD_VERSION = "0.3.0-beta.4";
+    public static final String MOD_VERSION = "0.4.0-beta.1";
 
     private static final Logger LOGGER = LoggerFactory.getLogger("the_emerald_standard_debug");
     private static final DateTimeFormatter FILE_TIME =

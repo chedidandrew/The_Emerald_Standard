@@ -16,6 +16,7 @@ The suite verifies:
 - Unified wall-clock/game-tick progression and bounded catch-up
 - Save migration, checksums, backup recovery, rollback, retry backoff, and no-debt invariants
 - Genuine format-5 account/bank-anchor migration, beta.1/beta.2 format-6 upgrade, safe defaults for older project records, and rejection of future formats without stale-backup fallback
+- Format-7 to format-8 migration for the expanded Village Prosperity project catalog, including persistence of a new House project identifier
 - Inventory transaction-journal lifecycle
 - Village Prosperity simulation and project approval
 - Independent simulation, visual, market-integration, and automatic-recovery behavior
@@ -115,9 +116,9 @@ Inspect Village Banks, Cottage, Warehouse, and Mine Entrance in all vanilla vill
 
 ## Publication gate
 
-The beta.3 prerelease publisher requires a successful `main`-push `build.yml` run for the exact source commit, downloads rather than rebuilds that run's exact Fabric and NeoForge binary/source artifacts, stages them in a draft, verifies the complete public filename set and bytes, and records artifact IDs, workflow digests, and release-asset SHA-256 checksums.
+Any 0.4 beta prerelease publisher must require a successful `main`-push `build.yml` run for the exact source commit, download rather than rebuild that run's exact Fabric and NeoForge binary/source artifacts, verify the complete public filename set and bytes, and record artifact IDs, workflow digests, and release-asset SHA-256 checksums.
 
-The manual checklist above remains required evidence before promoting the mod to a stable release. Automated startup cannot certify subjective structure appearance, third-party claim integrations, every GUI scale, long multiplayer behavior, project-block reconciliation after chunk rollback, or cross-file bank-marker/chunk atomicity; beta.3 is intentionally published as a prerelease while that wider validation continues.
+The manual checklist above remains required evidence before promoting the mod to a stable release. Automated startup cannot certify subjective structure appearance, third-party claim integrations, every GUI scale, long multiplayer behavior, project-block reconciliation after chunk rollback, or cross-file bank-marker/chunk atomicity; the 0.4 line remains a beta while that wider validation continues.
 
 
 ## One-command diagnostic capture

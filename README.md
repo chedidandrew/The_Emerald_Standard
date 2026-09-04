@@ -4,7 +4,7 @@
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.3.0-beta.4`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
+> Current status: `0.4.0-beta.1`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
 
 ## Core rule
 
@@ -44,6 +44,8 @@ The global simulation includes expansion, bull, boom, stagnation, recession, cra
 
 ## Village Prosperity System
 
+The 0.4 beta expands visible settlement progression to **10 curated village projects** with need-driven priorities, biome-aware templates, and bounded sector effects. Threatened villages can prioritize defenses, food-poor villages can prioritize storage, crowded villages can prioritize housing, and mature villages can grow into markets, smithies, inns, and an Exchange Hall.
+
 Village Prosperity connects the market to persistent local settlements without turning villagers into expensive autonomous agents. Offline advancement updates compact data records only. It does **not** force-load chunks, pathfind villagers, mine real ores, simulate raids while offline, or place structures during startup.
 
 Each managed village receives a stable identity and tracks:
@@ -57,7 +59,7 @@ Each managed village receives a stable identity and tracks:
 - Resident status and incident history
 - Development projects and physical construction progress
 
-The first development projects are a **Cottage**, **Warehouse**, and **Mine Entrance**. Completed economic projects enter a bounded visual queue and materialize only while players are nearby and the required chunks are already loaded.
+The curated project catalog contains **Cottage, House, Village Inn, Warehouse, Mine Entrance, Market Square, Smithy, Granary, Guard Post, and Exchange Hall**. Completed economic projects enter a bounded visual queue and materialize only while players are nearby and the required chunks are already loaded.
 
 The beta hardening rules include:
 
@@ -118,7 +120,7 @@ Administrators can inspect or reload configuration without restarting:
 
 - One unified economic-time accumulator prevents online and offline time from being counted twice.
 - Up to 180 economic days of chart history are persisted per investment.
-- Save format 7 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
+- Save format 8 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
 - Unsupported future formats stop loading instead of silently falling back to stale backups.
 - Corrupt current-format saves can recover from a validated backup.
 - Inventory-linked deposits, withdrawals, and exchanges use a durable recovery journal.
@@ -127,7 +129,7 @@ Administrators can inspect or reload configuration without restarting:
 - Village identities, residents, incidents, full pre-player-damage village counterfactuals, projects, exact project bounds, construction retry state and progress, bank anchors, and lifecycle state are persistent.
 - A configurable transaction cooldown protects servers from repeated button or packet spam.
 
-Beta.3 upgrades beta.1 and beta.2 format-6 worlds to format 7. Once beta.3 has saved a world, beta.1 and beta.2 deliberately reject that newer file instead of loading it and silently discarding the new safety state. Keep a pre-upgrade world backup if you may need to downgrade.
+The 0.4 beta upgrades beta.4 format-7 worlds to format 8 because the expanded persistent project catalog adds new project identifiers. Beta.4 deliberately rejects format 8 instead of parsing unknown projects or falling back to stale data. Keep a pre-upgrade world backup if you may need to downgrade.
 
 Beta durability boundary: materialization trusts already-persisted project progress, so blocks removed later or lost through chunk rollback are not auto-repaired. Bank markers and Minecraft chunk saves are also not cross-file atomic; a crash between those writes can yield a fallback Banker without a rebuilt structure. Player financial data remains world-level and intact in both cases.
 

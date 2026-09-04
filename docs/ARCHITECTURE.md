@@ -112,9 +112,9 @@ One emerald equals 1,000,000 micro-emeralds. Cash, savings, CDs, villager lendin
 
 No player account contains a debt balance. Village support is a contribution, not borrowing, and a player can never owe more emeralds than were voluntarily committed.
 
-## Persistent data format 7
+## Persistent data format 8
 
-Format 7 includes:
+Format 8 includes:
 
 - Required magic identifier and explicit format number
 - SHA-256 checksum over sorted state properties
@@ -127,7 +127,7 @@ Format 7 includes:
 - Per-village no-player-damage counterfactual state, its daily re-priced market contribution and weight, and its capture/release metadata
 - Project approval, economic completion, site reservation, exact bounds, physical progress, retry deadline, and materialization-failure count
 
-Beta.1 and beta.2 format-6 saves migrate forward to format 7. After beta.3 writes the upgraded save, beta.1 and beta.2 reject it as a future format instead of silently falling back to an older backup and stripping the new state. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 7 are likewise rejected without overwriting them.
+The 0.4 beta migrates beta.4 format-7 saves forward to format 8. The version boundary is required because the persistent Village Prosperity project catalog now contains identifiers that beta.4 does not understand. Beta.4 rejects format 8 as a future format without stale-backup fallback. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 8 are likewise rejected without overwriting them.
 
 ## Save process
 

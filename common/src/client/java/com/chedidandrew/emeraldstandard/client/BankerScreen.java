@@ -236,7 +236,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 : restoration ? tr("action.restore_village") : tr("action.support_village");
         addConfirmingActionButton(
                 label,
-                leftPos + 100,
+                leftPos + 188,
                 topPos + 165,
                 120,
                 BankerMenu.ACTION_SUPPORT_VILLAGE,
@@ -585,6 +585,19 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         ? tr("village.mode.visual")
                         : tr("village.mode.off");
         graphics.text(font, mode, 16, 149, MUTED, false);
+        double localImpactScore = VillageProsperityEngine.broadFundamentalScore(
+                menu.villageProsperity(), menu.villageSafety(), menu.villageTier());
+        Component localImpact = localImpactScore >= 0.45
+                ? tr("village.impact.strong")
+                : localImpactScore >= 0.10
+                        ? tr("village.impact.positive")
+                        : localImpactScore >= -0.20
+                                ? tr("village.impact.neutral")
+                                : tr("village.impact.weak");
+        int impactColor = localImpactScore >= 0.10
+                ? POSITIVE
+                : localImpactScore >= -0.20 ? GOLD : NEGATIVE;
+        graphics.text(font, localImpact, 16, 163, impactColor, false);
         boolean restoration = menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.ABANDONED
                 || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT;
         if (restoration) {

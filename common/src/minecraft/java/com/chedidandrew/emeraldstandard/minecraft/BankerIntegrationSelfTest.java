@@ -69,6 +69,7 @@ public final class BankerIntegrationSelfTest {
                         Blocks.LANTERN.defaultBlockState()),
                 "Rollback ownership accepted a different replacement block");
         verifyProtectionGuards(level);
+        VillageProsperityManager.validateProjectTemplates(level);
 
         Villager named = create(level);
         named.setCustomName(Component.literal("Keep Me"));

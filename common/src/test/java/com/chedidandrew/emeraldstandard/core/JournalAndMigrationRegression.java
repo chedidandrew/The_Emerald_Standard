@@ -27,6 +27,7 @@ final class JournalAndMigrationRegression {
         testFormatFourMigration(root.resolve("format-four"));
         testFormatFiveMigration(root.resolve("format-five"));
         testLegacyProjectMetadataDefaults(root.resolve("format-six-project-defaults"));
+        testFormatSevenProjectCatalogMigration(root.resolve("format-seven-project-catalog"));
         testVillageMarketShadowPersistence(root.resolve("market-shadow"));
         testLegacySuppressedVillageWithoutShadow(
                 root.resolve("format-six-suppression-without-shadow"));
@@ -266,6 +267,52 @@ final class JournalAndMigrationRegression {
                 "A legacy blocked project remained permanently ineligible after migration");
     }
 
+    private static void testFormatSevenProjectCatalogMigration(Path directory)
+            throws Exception {
+        Path save = directory.resolve("the_emerald_standard.properties");
+        EconomyState state = EconomyState.fresh(901L, 0L, 0L);
+        UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000009501");
+        EconomyState.VillageRecord village = state.village(villageId);
+        EconomyState.VillageProject cottage = new EconomyState.VillageProject();
+        cottage.projectId = 1L;
+        cottage.type = VillageProsperityEngine.ProjectType.COTTAGE;
+        cottage.approvedDay = 0L;
+        cottage.totalBlocks = cottage.type.nominalBlocks();
+        village.projects.add(cottage);
+        village.projectSerial = 1L;
+        state.save(save);
+
+        Properties formatSeven = readProperties(save);
+        formatSeven.setProperty("format", "7");
+        refreshChecksum(formatSeven);
+        writeProperties(save, formatSeven);
+
+        EconomyState migrated = EconomyState.load(save, 999L, 0L, 0L);
+        require(migrated.existingVillage(villageId) != null
+                        && migrated.existingVillage(villageId).projects.size() == 1
+                        && migrated.existingVillage(villageId).projects.getFirst().type
+                                == VillageProsperityEngine.ProjectType.COTTAGE,
+                "Format 7 project catalog did not load into format 8");
+
+        EconomyState.VillageProject house = new EconomyState.VillageProject();
+        house.projectId = 2L;
+        house.type = VillageProsperityEngine.ProjectType.HOUSE;
+        house.approvedDay = 0L;
+        house.totalBlocks = house.type.nominalBlocks();
+        migrated.existingVillage(villageId).projects.add(house);
+        migrated.existingVillage(villageId).projectSerial = 2L;
+        migrated.save(save);
+
+        Properties upgraded = readProperties(save);
+        require("8".equals(upgraded.getProperty("format")),
+                "Format 7 save did not upgrade to format 8");
+        EconomyState reloaded = EconomyState.load(save, 999L, 0L, 0L);
+        require(reloaded.existingVillage(villageId).projects.stream()
+                        .anyMatch(project -> project.type
+                                == VillageProsperityEngine.ProjectType.HOUSE),
+                "Expanded project identifier did not survive format 8 reload");
+    }
+
     private static void testVillageMarketShadowPersistence(Path directory) throws Exception {
         UUID resident = UUID.fromString("00000000-0000-0000-0000-000000003301");
         EconomyService service = new EconomyService();
@@ -317,7 +364,7 @@ final class JournalAndMigrationRegression {
         Properties savedProperties = readProperties(save);
         require(Integer.toString(EconomyState.FORMAT_VERSION)
                         .equals(savedProperties.getProperty("format")),
-                "Market-shadow save was not written in format 7");
+                "Market-shadow save was not written in the current format");
         EconomyState loaded = EconomyState.load(save, 999L, 0L, 0L);
         EconomyState.VillageMarketShadow actual = loaded.villageMarketShadows.get(villageId);
         requireSameShadow(expected, actual,

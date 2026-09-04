@@ -547,13 +547,22 @@ public final class VillageProsperityManager {
             Villager villager, VillageProsperityEngine.ProjectType projectType) {
         String profession = professionId(villager.getVillagerData().profession());
         boolean preferred = switch (projectType) {
-            case MINE_ENTRANCE -> profession.contains("mason")
+            case MINE_ENTRANCE, SMITHY -> profession.contains("mason")
                     || profession.contains("toolsmith")
+                    || profession.contains("weaponsmith")
                     || profession.contains("armorer");
-            case WAREHOUSE -> profession.contains("cartographer")
+            case WAREHOUSE, MARKET_SQUARE, EXCHANGE_HALL -> profession.contains("cartographer")
                     || profession.contains("librarian")
                     || profession.contains("cleric");
-            case COTTAGE -> profession.contains("none") || profession.contains("nitwit");
+            case GRANARY -> profession.contains("farmer")
+                    || profession.contains("fisherman")
+                    || profession.contains("butcher");
+            case GUARD_POST -> profession.contains("armorer")
+                    || profession.contains("weaponsmith")
+                    || profession.contains("toolsmith");
+            case COTTAGE, HOUSE, INN -> profession.contains("none")
+                    || profession.contains("nitwit")
+                    || profession.contains("farmer");
         };
         return preferred ? 0 : 1;
     }
@@ -827,9 +836,49 @@ public final class VillageProsperityManager {
         Palette palette = palette(level, origin);
         return switch (type) {
             case COTTAGE -> cottage(palette);
+            case HOUSE -> house(palette);
+            case INN -> inn(palette);
             case WAREHOUSE -> warehouse(palette);
             case MINE_ENTRANCE -> mineEntrance(palette);
+            case MARKET_SQUARE -> marketSquare(palette);
+            case SMITHY -> smithy(palette);
+            case GRANARY -> granary(palette);
+            case GUARD_POST -> guardPost(palette);
+            case EXCHANGE_HALL -> exchangeHall(palette);
         };
+    }
+
+    /** Validates every authored template during the live server smoke test. */
+    static void validateProjectTemplates(ServerLevel level) {
+        BlockPos origin = new BlockPos(0, 64, 0);
+        for (VillageProsperityEngine.ProjectType type
+                : VillageProsperityEngine.ProjectType.values()) {
+            List<Placement> placements = template(level, origin, type);
+            if (placements.isEmpty() || placements.size() > 600) {
+                throw new IllegalStateException(
+                        "Invalid physical template size for " + type + ": " + placements.size());
+            }
+            Set<BlockPos> occupied = new HashSet<>();
+            for (Placement placement : placements) {
+                BlockPos relative = new BlockPos(placement.dx, placement.dy, placement.dz);
+                if (!occupied.add(relative)) {
+                    throw new IllegalStateException(
+                            "Duplicate physical placement for " + type + " at " + relative);
+                }
+                if (placement.state.is(Blocks.BARREL)
+                        || placement.state.is(Blocks.LECTERN)
+                        || placement.state.is(Blocks.CARTOGRAPHY_TABLE)
+                        || placement.state.is(Blocks.EMERALD_BLOCK)
+                        || placement.state.is(Blocks.DIAMOND_BLOCK)
+                        || placement.state.is(Blocks.GOLD_BLOCK)
+                        || placement.state.is(Blocks.NETHERITE_BLOCK)) {
+                    throw new IllegalStateException(
+                            "Prosperity template " + type
+                                    + " contains an unintended workstation or currency block at "
+                                    + relative);
+                }
+            }
+        }
     }
 
     private static List<Placement> cottage(Palette palette) {
@@ -848,6 +897,24 @@ public final class VillageProsperityManager {
             placements.add(new Placement(bedX, 1, 2, bedFoot));
             placements.add(new Placement(bedX, 1, 3, bedHead));
         }
+        return placements;
+    }
+
+    private static List<Placement> house(Palette palette) {
+        List<Placement> placements = simpleBuilding(palette, 9, 9, 4);
+        addBeds(placements, 9, 9, 6);
+        placements.add(new Placement(2, 1, 6, Blocks.BOOKSHELF.defaultBlockState()));
+        placements.add(new Placement(6, 1, 6, Blocks.CHEST.defaultBlockState()));
+        return placements;
+    }
+
+    private static List<Placement> inn(Palette palette) {
+        List<Placement> placements = simpleBuilding(palette, 11, 9, 4);
+        addBeds(placements, 11, 9, 8);
+        for (int x = 2; x <= 8; x += 2) {
+            placements.add(new Placement(x, 1, 7, Blocks.CHEST.defaultBlockState()));
+        }
+        placements.add(new Placement(5, 1, 4, Blocks.CRAFTING_TABLE.defaultBlockState()));
         return placements;
     }
 
@@ -885,6 +952,90 @@ public final class VillageProsperityManager {
         placements.add(new Placement(2, 1, 1, Blocks.LANTERN.defaultBlockState()));
         placements.add(new Placement(4, 1, 1, Blocks.LANTERN.defaultBlockState()));
         return placements;
+    }
+
+    private static List<Placement> marketSquare(Palette palette) {
+        int width = 11;
+        int depth = 11;
+        List<Placement> placements = new ArrayList<>();
+        floor(placements, width, depth, Blocks.STONE_BRICKS);
+        for (int x : new int[] {1, 4, 7, 9}) {
+            placements.add(new Placement(x, 1, 2, Blocks.CHEST.defaultBlockState()));
+            placements.add(new Placement(x, 1, 8, Blocks.CHEST.defaultBlockState()));
+        }
+        placements.add(new Placement(5, 1, 5, Blocks.BELL.defaultBlockState()));
+        for (int[] corner : new int[][] {{1,1},{9,1},{1,9},{9,9}}) {
+            placements.add(new Placement(corner[0], 1, corner[1], palette.corner.defaultBlockState()));
+            placements.add(new Placement(corner[0], 2, corner[1], Blocks.LANTERN.defaultBlockState()));
+        }
+        return placements;
+    }
+
+    private static List<Placement> smithy(Palette palette) {
+        List<Placement> placements = simpleBuilding(palette, 9, 7, 4);
+        placements.add(new Placement(2, 1, 4, Blocks.ANVIL.defaultBlockState()));
+        placements.add(new Placement(4, 1, 4, Blocks.BLAST_FURNACE.defaultBlockState()));
+        placements.add(new Placement(6, 1, 4, Blocks.SMITHING_TABLE.defaultBlockState()));
+        placements.add(new Placement(7, 1, 2, Blocks.CHEST.defaultBlockState()));
+        return placements;
+    }
+
+    private static List<Placement> granary(Palette palette) {
+        List<Placement> placements = simpleBuilding(palette, 9, 7, 4);
+        for (int x = 1; x <= 7; x += 2) {
+            placements.add(new Placement(x, 1, 4, Blocks.CHEST.defaultBlockState()));
+            placements.add(new Placement(x, 2, 4, Blocks.HAY_BLOCK.defaultBlockState()));
+        }
+        return placements;
+    }
+
+    private static List<Placement> guardPost(Palette palette) {
+        int width = 7;
+        int depth = 7;
+        List<Placement> placements = new ArrayList<>();
+        floor(placements, width, depth, Blocks.STONE_BRICKS);
+        shell(placements, width, depth, 4, palette.wall, palette.corner, false);
+        roof(placements, width, depth, 5, Blocks.STONE_BRICKS);
+        placements.add(new Placement(2, 1, 4, Blocks.CHEST.defaultBlockState()));
+        placements.add(new Placement(4, 1, 4, Blocks.IRON_BARS.defaultBlockState()));
+        placements.add(new Placement(1, 2, 1, Blocks.LANTERN.defaultBlockState()));
+        placements.add(new Placement(5, 2, 1, Blocks.LANTERN.defaultBlockState()));
+        return placements;
+    }
+
+    private static List<Placement> exchangeHall(Palette palette) {
+        List<Placement> placements = simpleBuilding(palette, 13, 9, 5);
+        for (int x = 2; x <= 10; x += 2) {
+            placements.add(new Placement(x, 1, 5, Blocks.BOOKSHELF.defaultBlockState()));
+        }
+        placements.add(new Placement(3, 1, 7, Blocks.ENDER_CHEST.defaultBlockState()));
+        placements.add(new Placement(9, 1, 7, Blocks.BELL.defaultBlockState()));
+        placements.add(new Placement(6, 1, 7, Blocks.BOOKSHELF.defaultBlockState()));
+        return placements;
+    }
+
+    private static List<Placement> simpleBuilding(Palette palette, int width, int depth, int height) {
+        List<Placement> placements = new ArrayList<>();
+        floor(placements, width, depth, palette.floor);
+        shell(placements, width, depth, height, palette.wall, palette.corner, true);
+        roof(placements, width, depth, height + 1, palette.roof);
+        return placements;
+    }
+
+    private static void addBeds(List<Placement> placements, int width, int depth, int count) {
+        BlockState foot = Blocks.BED.white().defaultBlockState().setValue(BedBlock.FACING, Direction.SOUTH);
+        BlockState head = foot.setValue(BedBlock.PART, BedPart.HEAD);
+        int placed = 0;
+        for (int x = 1; x < width - 1 && placed < count; x += 2) {
+            placements.add(new Placement(x, 1, 2, foot));
+            placements.add(new Placement(x, 1, 3, head));
+            placed++;
+        }
+        for (int x = 1; x < width - 1 && placed < count; x += 2) {
+            placements.add(new Placement(x, 1, depth - 4, foot));
+            placements.add(new Placement(x, 1, depth - 3, head));
+            placed++;
+        }
     }
 
     private static void floor(List<Placement> placements, int width, int depth, Block block) {
@@ -974,8 +1125,12 @@ public final class VillageProsperityManager {
 
     private static StructureSize size(VillageProsperityEngine.ProjectType type) {
         return switch (type) {
-            case COTTAGE, MINE_ENTRANCE -> new StructureSize(7, 7, 5);
-            case WAREHOUSE -> new StructureSize(9, 7, 5);
+            case COTTAGE, MINE_ENTRANCE, GUARD_POST -> new StructureSize(7, 7, 6);
+            case HOUSE -> new StructureSize(9, 9, 6);
+            case INN -> new StructureSize(11, 9, 6);
+            case WAREHOUSE, SMITHY, GRANARY -> new StructureSize(9, 7, 6);
+            case MARKET_SQUARE -> new StructureSize(11, 11, 4);
+            case EXCHANGE_HALL -> new StructureSize(13, 9, 7);
         };
     }
 

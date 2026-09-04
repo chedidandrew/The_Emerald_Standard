@@ -1,55 +1,31 @@
-# Build status for 0.3.0-beta.4
+# Build status for 0.4.0-beta.1
 
-## Release scope
+## Candidate status
 
-Beta.4 adds the one-command debug flight recorder used for hands-on reproduction and support.
+- Baseline: verified `0.3.0-beta.4` main branch
+- Candidate branch: `fix/recover-0.4.0-beta.1`
+- Final executable source commit: `d22ecefe2e4f4be19bcc7869d1255dc505cbfeea`
+- Persistent format: 8
+- Final recovery preflight workflow: `33833217344`, successful
+- Standard seven-job verification: running for this documentation-only head
+- Manual test matrix: `docs/MANUAL_TEST_MATRIX-0.4.md`, not yet completed
 
-The implementation includes:
+## Final hardening included
 
-- `/emerald debug` start/stop toggle with a five-minute default
-- Optional 1 to 15 minute duration, marker, and explicit stop subcommands
-- Incremental crash-resilient JSON Lines logging
-- Sanitized ZIP report packaging and bounded report retention
-- Market, portfolio, village, construction, casualty, settler, GUI-action, validation, and performance capture
-- Automatic packaging of interrupted sessions on the next server start
-- Fabric and NeoForge lifecycle integration
-- Updated README, changelog, architecture, testing, debugging, issue-reporting, and release documentation
+- Safe recovery of the intended 10-project Village Prosperity update from the verified beta.4 baseline
+- Minecraft 26.2 first-visit message API correction
+- Duplicate-template and unintended-workstation validation
+- Ban on generated emerald, diamond, gold, and netherite blocks
+- Format-7 to format-8 migration coverage for the expanded project catalog
+- Correct `0.4.0-beta.1` debug-report metadata
+- Removal of generated payloads, repository-transform scripts, stale CI files, and self-modifying temporary workflows from the candidate
 
-## Verified source
+## Preflight results
 
-Source commit: `8881fe957cf5c19d940002921697e39969059d44`
+The final executable source passed:
 
-Pull request: `#5`
-
-Full verification workflow run: `33791785017`
-
-Publication workflow run: `33792321436`
-
-## Automated verification
-
-The exact release source passed:
-
-- Common economy, persistence, and Village Prosperity regression suites
+- Loader-neutral economy, persistence, Village Prosperity, project-catalog, milestone, and large-world scale regressions
 - Fabric 26.2 build and packaged-JAR verification
 - NeoForge 26.2 build and packaged-JAR verification
-- Fabric dedicated-server startup
-- NeoForge dedicated-server startup
-- Fabric client bootstrap and screen registration
-- NeoForge client bootstrap and screen registration
-- Fatal-log checks and artifact upload
-- Prerelease metadata validation
-- Byte-for-byte post-publication release-asset verification
 
-## Publication status
-
-- GitHub prerelease `v0.3.0-beta.4`: PUBLISHED
-- Fabric playable and source JARs: INCLUDED
-- NeoForge playable and source JARs: INCLUDED
-- Combined SHA-256 checksum file: INCLUDED
-- Artifact provenance: `release/ARTIFACTS-8881fe95.md`
-
-## Manual beta validation
-
-Use `/emerald debug` during real GUI, market, village, construction, raid, recovery, and multiplayer tests. Share the resulting ZIP together with any marker numbers and a short description of what appeared wrong.
-
-Automated client bootstrap proves loading and screen registration, but it does not replace hands-on testing of subjective visual quality, every terrain layout, all mod combinations, or long multiplayer sessions.
+The normal read-only pull-request workflow must also pass both dedicated-server launches and both client bootstrap jobs for this exact documentation head before merge. This file will be updated after merge with the final main-branch workflow and release status.

@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 7;
+    public static final int FORMAT_VERSION = 8;
     public static final int HISTORY_DAYS = 180;
     public static final long MICRO = 1_000_000L;
     public static final int MAX_PENDING_INVENTORY_ITEMS = 100_000;

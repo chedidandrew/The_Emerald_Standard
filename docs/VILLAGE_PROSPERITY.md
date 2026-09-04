@@ -2,7 +2,7 @@
 
 The Village Prosperity System connects The Emerald Standard's global market to persistent local Minecraft settlements while preserving the mod's lightweight identity.
 
-The key architectural rule is simple: **offline progression changes data, not chunks or entities**. Physical village growth materializes gradually only when players are nearby and the relevant chunks are already loaded. Prosperity observation and materialization are dimension-aware; the separate Village Bank structure remains Overworld-only in beta.3.
+The key architectural rule is simple: **offline progression changes data, not chunks or entities**. Physical village growth materializes gradually only when players are nearby and the relevant chunks are already loaded. Prosperity observation and materialization are dimension-aware; the separate Village Bank structure remains Overworld-only in the 0.4 beta.
 
 ## Configuration
 
@@ -99,11 +99,18 @@ A village's **functional tier can now rise or fall** as population and prosperit
 
 ## Development projects
 
-Beta 3 includes three physical project types:
+The 0.4 beta includes ten physical project types:
 
 - Cottage
+- House
+- Village Inn
 - Warehouse
 - Mine Entrance
+- Market Square
+- Smithy
+- Granary
+- Guard Post
+- Exchange Hall
 
 Projects require population, resources, treasury, prosperity, safety, and development points. Offline simulation may complete their economic phase, but physical construction stays in a bounded visual backlog.
 
@@ -125,9 +132,9 @@ The materializer follows conservative rules:
 - Development lots use exact bounding-box overlap checks and cannot overlap the Village Bank anchor
 - Unsafe terrain, water, steep sites, and occupied air volumes are rejected
 
-Warehouses and cottages use chests rather than barrels so prosperity buildings do not unintentionally create fisherman workstations.
+Housing, storage, commerce, agriculture, and finance templates use non-workstation storage or decoration blocks so they do not silently create unrelated villager jobs. Smithies intentionally contain a small industrial workstation set as part of their gameplay identity.
 
-Cottages include four real beds. Physical settler reconciliation requires actual available beds, keeping visible population tied to usable village housing.
+Cottages, Houses, and Inns include real beds. Physical settler reconciliation requires actual available beds, keeping visible population tied to usable village housing.
 
 Default construction speed is intentionally slower than beta.1: two blocks every ten server ticks. Servers may tune the values in configuration.
 
@@ -168,7 +175,7 @@ A Threatened or Devastated village that retains one or two productive survivors 
 
 Direct player kills and player-owned projectile kills are attributed to the player when Minecraft exposes that ownership. A player-caused extinction becomes Abandoned and does not automatically replenish victims.
 
-Immediately before the first player-caused casualty changes an eligible village, beta.3 persists its exact state and current market contribution. The copy becomes a full no-player-damage counterfactual: on each enabled simulation day it advances under ordinary abstract village simulation and recalculates its market eligibility, contribution, and aggregation weight. Genuine non-player casualties are also applied to this branch and re-priced, while the player-caused damage is omitted.
+Immediately before the first player-caused casualty changes an eligible village, the 0.4 beta preserves its exact state and current market contribution. The copy becomes a full no-player-damage counterfactual: on each enabled simulation day it advances under ordinary abstract village simulation and recalculates its market eligibility, contribution, and aggregation weight. Genuine non-player casualties are also applied to this branch and re-priced, while the player-caused damage is omitted.
 
 Repeated player hits do not recapture or rebase the counterfactual, although they can extend the cooldown. Market aggregation uses it until that cooldown has elapsed and the live village has fully recovered. The model is village-local and does not freeze other settlements; live-only changes outside the counterfactual path do not rewrite it before release.
 
@@ -219,3 +226,21 @@ Village Prosperity is designed around bounded work:
 - No real resource mining for simulated output
 
 For very large public servers, future storage partitioning may still be warranted, but single-player and ordinary multiplayer remain the primary beta target.
+
+
+## 0.4 visible development catalog
+
+The physical layer now uses ten intentionally small, deterministic project templates. The abstract economy remains authoritative, while loaded villages materialize a bounded number of blocks only when a player is nearby.
+
+| Need | Project | Primary visible/economic role |
+| --- | --- | --- |
+| Housing | Cottage, House, Village Inn | Adds housing and supports larger settlements |
+| Storage | Warehouse | Improves trade and transport capacity |
+| Production | Mine Entrance, Smithy, Granary | Improves mining, processing, or agriculture |
+| Commerce | Market Square | Improves local trade and transport |
+| Safety | Guard Post | Improves security output and recovery resilience |
+| Finance | Exchange Hall | Late-tier civic finance landmark with bounded trade/transport benefit |
+
+Project selection is need-driven. Safety emergencies can prioritize a Guard Post, low food reserves can prioritize a Granary, housing pressure can prioritize housing, and high-tier prosperous villages can eventually build an Exchange Hall. This keeps the same village from following an identical scripted build order every world.
+
+The market link remains intentionally bounded and informational. The GUI reports whether local conditions are weak, neutral, positive, or strong, but it never exposes a formula that lets the player guarantee a future market return.
