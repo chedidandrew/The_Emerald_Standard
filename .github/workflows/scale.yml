@@ -1,0 +1,22 @@
+name: Loader-neutral village scale guard
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  village-scale-regression:
+    name: Simulate 100, 500, and 1,000 villages
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Run deterministic scale guard
+        run: bash scripts/run-scale-tests.sh
