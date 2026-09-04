@@ -1,0 +1,40 @@
+name: Inspect Minecraft content APIs
+
+on:
+  push:
+    branches: [milestone-95]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Resolve mapped Minecraft workspace
+        run: bash fabric/gradlew --no-daemon -p fabric classes
+      - name: Inspect mapped content APIs
+        run: |
+          JAR="$HOME/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.2/minecraft-merged-deobf-26.2.jar"
+          for cls in \
+            net.minecraft.world.level.block.Block \
+            net.minecraft.world.level.block.state.BlockBehaviour\$Properties \
+            net.minecraft.world.item.Item\$Properties \
+            net.minecraft.world.item.BlockItem \
+            net.minecraft.resources.ResourceKey \
+            net.minecraft.core.registries.Registries \
+            net.minecraft.core.Holder \
+            net.minecraft.world.entity.npc.villager.VillagerData \
+            net.minecraft.server.PlayerAdvancements \
+            net.minecraft.advancements.AdvancementHolder \
+            net.minecraft.server.ServerAdvancementManager; do
+            echo "===== $cls ====="
+            javap -classpath "$JAR" -public "$cls"
+          done
