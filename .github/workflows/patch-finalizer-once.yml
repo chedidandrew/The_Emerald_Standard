@@ -1,0 +1,44 @@
+name: Harden milestone finalizer once
+
+on:
+  push:
+    branches: [milestone-95]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: milestone-95
+          fetch-depth: 0
+      - name: Bind the report to the exact source commit
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/finalize-milestone.yml')
+          text = path.read_text()
+          needle = """      - name: Require a completely green evidence report\n        run: |\n          grep -Fq 'Automated failures: **0**' release/CI_STATUS-milestone-95.md\n"""
+          replacement = """      - name: Require a completely green evidence report for the exact source head\n        shell: bash\n        run: |\n          tested_commit=$(sed -n 's/^- Tested commit: `\\([0-9a-f]\\{40\\}\\)`$/\\1/p' release/CI_STATUS-milestone-95.md)\n          report_parent=$(git rev-parse HEAD^)\n          [[ -n \"$tested_commit\" ]]\n          [[ \"$tested_commit\" == \"$report_parent\" ]]\n          [[ \"$(git diff --name-only HEAD^ HEAD)\" == 'release/CI_STATUS-milestone-95.md' ]]\n          grep -Fq 'Automated failures: **0**' release/CI_STATUS-milestone-95.md\n"""
+          if needle not in text:
+              raise SystemExit('finalizer patch anchor missing')
+          path.write_text(text.replace(needle, replacement, 1))
+          PY
+          git rm .github/workflows/patch-finalizer-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/finalize-milestone.yml
+          git commit -m 'Bind milestone merge gate to exact tested commit'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:milestone-95; then
+              exit 0
+            fi
+            git pull --rebase origin milestone-95
+          done
+          exit 1
