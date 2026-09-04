@@ -1,0 +1,67 @@
+name: Sanitize phase A branch writers once
+
+on:
+  push:
+    branches: [milestone-95]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sanitize-phase-a-branch-writers
+  cancel-in-progress: false
+
+jobs:
+  sanitize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: milestone-95
+          fetch-depth: 0
+      - name: Keep one exact-source writer and remove superseded experiments
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/complete-phase-a.yml')
+          if not path.exists():
+              raise SystemExit('Exact-source completion workflow is missing')
+          text = path.read_text()
+          start_marker = "          cat > .github/workflows/build.yml <<'YAML'\n"
+          end_marker = "          sed -i 's/^          //' .github/workflows/build.yml\n"
+          start = text.find(start_marker)
+          if start >= 0:
+              end = text.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit('Incomplete generated-YAML block in completion workflow')
+              end += len(end_marker)
+              text = text[:start] + "          git show origin/main:.github/workflows/build.yml > .github/workflows/build.yml\n" + text[end:]
+              path.write_text(text)
+          if "cat > .github/workflows/build.yml <<'YAML'" in path.read_text():
+              raise SystemExit('Generated-YAML parser hazard remains')
+          PY
+
+          rm -f .github/workflows/milestone-validation.yml
+          rm -f .github/workflows/finalize-milestone.yml
+          rm -f .github/workflows/patch-finalizer-once.yml
+          rm -f .github/workflows/add-onboarding-text.yml
+          rm -f .github/workflows/add-catalog-test-once.yml
+          rm -f .github/workflows/fix-phase-a-workflow-once.yml
+          rm -f .github/workflows/sanitize-phase-a-workflows-once.yml
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Consolidate phase A into one exact-source release gate'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:milestone-95; then
+              exit 0
+            fi
+            git pull --rebase origin milestone-95
+          done
+          exit 1
