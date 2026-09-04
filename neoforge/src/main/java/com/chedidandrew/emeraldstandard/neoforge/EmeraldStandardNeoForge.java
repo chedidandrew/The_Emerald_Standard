@@ -55,6 +55,7 @@ public final class EmeraldStandardNeoForge {
             });
 
     public EmeraldStandardNeoForge(IEventBus modEventBus) {
+        BankerProfessionNeoForge.register(modEventBus);
         MENUS.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
     }
@@ -65,11 +66,7 @@ public final class EmeraldStandardNeoForge {
             var server = event.getServer();
             VillageProsperityManager.resetRuntimeState();
             EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
-            ECONOMY.configureVillageProsperity(
-                    config.villageProsperitySimulationEnabled(),
-                    config.villageVisualProgressionEnabled(),
-                    config.villageMarketIntegrationEnabled(),
-                    config.villageAutomaticRecoveryEnabled());
+            config.applyTo(ECONOMY);
             ECONOMY.start(
                     server.getWorldPath(LevelResource.DATA),
                     server.overworld().getSeed(),

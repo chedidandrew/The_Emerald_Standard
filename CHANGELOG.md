@@ -2,6 +2,43 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## 0.4.0-beta.2 - Unreleased
+
+### Added
+
+- Added persistent portfolio accounting for share cost basis, average purchase price, realized and unrealized gain, total contributions and withdrawals, allocation, a bounded transaction ledger, and personal net-worth history.
+- Extended asset history to five economic years and added matching commodity history plus 30-day, 90-day, one-year, and all-history dashboard ranges.
+- Added up to eight independently identified and selectable CD positions and eight villager business-lending positions per player.
+- Added the village-owned Prosperity Fund with Direct Grants, protected-principal Endowments, Project Sponsorships, seven targeted purposes, emergency reserves, bounded spending, contribution records, and non-financial donor recognition.
+- Registered a true Banker villager profession, craftable Exchange Desk block and acquirable POI, direct Banker/desk dashboard access, cross-loader assets, and scoped legacy lectern compatibility.
+- Added low-frequency authored-project integrity reconciliation and guarded repair.
+- Added a rebuildable per-dimension village spatial index and measured query/save/load regression coverage at 100, 500, and 1,000 villages and accounts.
+- Added focused debug ownership, watched-village filtering, privacy, report-limit, and timing-boundary regression coverage.
+
+### Changed
+
+- Expanded the dashboard from five pages to six with a dedicated Fund page, commodity and personal charts, richer portfolio fields, and position selectors.
+- Fund amounts now use an additive server-owned `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear` draft.
+- Project Sponsorship now binds to the displayed active economically unfinished project, derives its purpose from the project type, preserves unused value at saturated inputs, and rolls any post-completion remainder into that purpose.
+- Passive savings-interest ledger events now coalesce so routine accrual cannot evict active transactions from the bounded history.
+- CD closure and matured-loan collection commands accept exact stable position IDs and refuse ambiguous no-ID requests.
+- Sell-all, CD closure, lending funding, and Fund contributions now use a time-limited two-step confirmation enforced by the server.
+- Visual-mode housing and production benefits now wait for verified physical materialization. If an authored block later disappears, the project loses those benefits until safe repair completes.
+- Construction theatre may issue an occasional one-shot, low-speed navigation request to at most two suitable residents without installing persistent AI or influencing economic progress.
+- Fabric and NeoForge candidate versions advance together to `0.4.0-beta.2`.
+
+### Configuration and compatibility
+
+- Added independent Prosperity Fund toggles plus configurable endowment payout, emergency-reserve share, and monthly spending cap. Defaults preserve endowment principal and release 4 percent annually.
+- Advanced persistence to format 9. Format-8 and earlier holdings without execution history receive an explicitly inferred migration-day basis, and legacy scalar CD and lending products are promoted to identified positions.
+- Format-9 saves preserve five-year asset, commodity, and personal history, portfolio analytics, multiple term positions, village Fund balances, and donor records. Older builds reject the future format instead of silently stripping it.
+- Player borrowing, negative balances, and debt remain impossible. Fund contributions are voluntary, irreversible gifts and never become player assets or claims.
+
+### Verification status
+
+- Automated common tests, dual-loader builds, packaged-JAR checks, dedicated-server startup, and client bootstrap are required for the exact beta.2 candidate commit but are not claimed here before that run completes.
+- Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run` until tested by a person on the exact Fabric and NeoForge candidate.
+
 ## 0.4.0-beta.1 - 2026-09-04
 
 ### Added

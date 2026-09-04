@@ -96,13 +96,17 @@ public final class VillageBankManager {
                     continue;
                 }
                 boolean intactCounter = packedAnchor != null
-                        && level.getBlockState(anchor.north()).is(Blocks.LECTERN);
+                        && BankerProfessionSupport.isBankWorkstation(
+                                level.getBlockState(anchor.north()));
+                boolean survivingCounterFrame = packedAnchor != null
+                        && hasBankCounterFrame(level, anchor);
                 // Old saves do not retain per-block bank ownership. If a counter is gone, never
-                // rebuild over that site: preserve account access through a fallback Banker.
+                // recreate a drop-bearing block that could be farmed. A surviving barrel frame is
+                // enough to restore the scoped Banker at the known bank; otherwise use the village.
                 ensureBanker(
                         level,
-                        intactCounter ? anchor : villagePosition,
-                        intactCounter,
+                        intactCounter || survivingCounterFrame ? anchor : villagePosition,
+                        intactCounter || survivingCounterFrame,
                         bankKey,
                         economy);
                 continue;
@@ -219,7 +223,7 @@ public final class VillageBankManager {
         // Every replacement first prefers an untouched unemployed adult. Established villagers,
         // including traded librarians, are never converted or reset.
         Villager candidate = villagers.stream()
-                .filter(BankerAccess::isEligibleUnemployedVillager)
+                .filter(BankerAccess::isEligibleBankerCandidate)
                 .min(Comparator.comparingDouble(villager ->
                         villager.distanceToSqr(
                                 bankerAnchor.getX() + 0.5,
@@ -243,20 +247,25 @@ public final class VillageBankManager {
         return spawnBanker(level, spawnPosition, generatedStructure, regionKey);
     }
 
-    /** Returns the persisted Banker access point when the clicked lectern is a bank counter. */
+    /** Returns a dashboard access point for generated counters and player-placed Exchange Desks. */
     public static BlockPos bankAccessPoint(
             ServerLevel level, BlockPos clicked, EconomyService economy) {
-        if (level != level.getServer().overworld()
-                || !level.getBlockState(clicked).is(Blocks.LECTERN)) {
+        BlockState clickedState = level.getBlockState(clicked);
+        if (!BankerProfessionSupport.isBankWorkstation(clickedState)) {
             return null;
         }
-        for (long packedAnchor : economy.generatedBankAnchorsSnapshot().values()) {
-            BlockPos anchor = BlockPos.of(packedAnchor);
-            if (anchor.north().equals(clicked)) {
-                return anchor;
+        if (level == level.getServer().overworld()) {
+            for (long packedAnchor : economy.generatedBankAnchorsSnapshot().values()) {
+                BlockPos anchor = BlockPos.of(packedAnchor);
+                if (anchor.north().equals(clicked)) {
+                    return anchor;
+                }
             }
         }
-        return null;
+        // A crafted Exchange Desk is valid personal-bank access. Its position also scopes the
+        // optional Fund and Village pages to the nearest managed village; an arbitrary lectern
+        // remains inert unless it belongs to a persisted legacy bank.
+        return BankerProfessionSupport.isExchangeDesk(clickedState) ? clicked : null;
     }
 
     /**
@@ -428,6 +437,15 @@ public final class VillageBankManager {
                 Math.floorDiv(position.getX(), 16), Math.floorDiv(position.getZ(), 16));
     }
 
+    /** Recognizes only the authored barrel pair around a generated counter, without placing it. */
+    private static boolean hasBankCounterFrame(ServerLevel level, BlockPos bankerAnchor) {
+        BlockPos counter = bankerAnchor.north();
+        return isLoaded(level, counter.west())
+                && isLoaded(level, counter.east())
+                && level.getBlockState(counter.west()).is(Blocks.BARREL)
+                && level.getBlockState(counter.east()).is(Blocks.BARREL);
+    }
+
     private static BankBuildResult buildBank(
             ServerLevel level, BlockPos origin, UUID villageId, long bankKey) {
         List<BankPlacement> plan = bankPlan(origin, paletteFor(level, origin));
@@ -518,7 +536,7 @@ public final class VillageBankManager {
             placements.add(new BankPlacement(
                     origin.offset(x, 1, counterZ),
                     x == BANK_WIDTH / 2
-                            ? Blocks.LECTERN.defaultBlockState()
+                            ? BankerProfessionSupport.exchangeDeskOrLectern().defaultBlockState()
                             : Blocks.BARREL.defaultBlockState()));
         }
         placements.add(new BankPlacement(

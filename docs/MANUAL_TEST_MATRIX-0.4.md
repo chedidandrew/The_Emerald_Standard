@@ -16,7 +16,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Field | Fabric | NeoForge |
 | --- | --- | --- |
 | Commit | Unverified | Unverified |
-| Mod version | 0.4.0-beta.1 candidate | 0.4.0-beta.1 candidate |
+| Mod version | 0.4.0-beta.2 candidate | 0.4.0-beta.2 candidate |
 | Loader version | Unverified | Unverified |
 | Tester | Unverified | Unverified |
 | Date | Unverified | Unverified |
@@ -31,14 +31,20 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Disconnect during deposit preparation | Not run | Not run | Debug ZIP and exact recovered value |
 | Disconnect after bank commit | Not run | Not run | Debug ZIP and exact recovered value |
 | Buy, partial sell, and sell-all accounting | Not run | Not run | Transaction sequence and final balance |
+| Cost basis, average price, allocation, realized/unrealized gain, contributions, and ledger | Not run | Not run | Hand calculation and before/after screenshots |
 | Savings deposit and withdrawal | Not run | Not run | Before/after values |
 | CD open, maturity, and early close rules | Not run | Not run | Economic days and payouts |
+| Eight independent CDs and position-specific closure | Not run | Not run | All position IDs, terms, and unaffected balances |
 | Villager lending repayment and default | Not run | Not run | Both outcomes and no negative player balance |
+| Eight independent lending positions and position-specific collection | Not run | Not run | All position IDs, outcomes, and unaffected balances |
 | Resource exchange quote and inventory mutation | Not run | Not run | Quote, count, and balance |
-| Village donation and restoration | Not run | Not run | Funding result and village state |
+| All Fund types and purposes, additive draft, and server confirmation | Not run | Not run | Funding ledger, packets, and village-owned balances |
+| Endowment principal, payout, emergency reserve, and spending cap | Not run | Not run | Multi-day balance trace and configuration |
+| Village donation and restoration | Not run | Not run | Funding result, donor recognition, and village state |
 | Death, reconnect, and server restart preserve account | Not run | Not run | Three checkpoints |
 | Upgrade from 0.3.0-beta.3 | Not run | Not run | Backup hash, migration log, account comparison |
 | Upgrade from 0.3.0-beta.4 | Not run | Not run | Backup hash, migration log, account comparison |
+| Upgrade from format 8 to format 9 | Not run | Not run | Position migration, inferred basis flag, histories, and Fund defaults |
 | No route creates player debt or negative balance | Not run | Not run | Debug validation report |
 
 ## GUI and onboarding checks
@@ -54,6 +60,8 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | First Banker visit explains safe and risky products without blocking the GUI | Not run | Not run | Screenshot and tester summary |
 | First-time player completes an investment in under one minute | Not run | Not run | Timed observation |
 | Savings, CD, lending, VILX, and businesses are distinguishable | Not run | Not run | Tester explanation in their own words |
+| Six pages, chart range selectors, and Fund controls remain readable | Not run | Not run | Screenshot of each range and Fund state |
+| Server-owned confirmation expires and cancels on selection changes | Not run | Not run | Debug timeline and visible status |
 | Empty states and unavailable actions are clear | Not run | Not run | Screenshots and notes |
 
 ## Village and physical-world checks
@@ -73,26 +81,30 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Non-industrial templates do not create unintended villager job sites | Not run | Not run | Profession census before and after construction |
 | Mine Entrance, Smithy, Granary | Not run | Not run | Completed examples |
 | Market Square, Guard Post, Exchange Hall | Not run | Not run | Completed examples |
+| True Banker profession and Exchange Desk POI | Not run | Not run | Profession/POI inspection on both loaders |
+| Bounded construction worker movement | Not run | Not run | Video or timeline showing at most two workers and no idle task |
 | Village extinction and funded restoration | Not run | Not run | Timeline and resident counts |
 | Zombie infection and curing | Not run | Not run | Resident identity preserved |
 | Pillager casualty attribution | Not run | Not run | Incident panel and debug ZIP |
 | Player casualty counterfactual protection | Not run | Not run | Market contribution before/after |
-| Player-removed project blocks | Not run | Not run | Reconciliation or repair behavior |
-| Missing bank with existing marker | Not run | Not run | Detection and safe repair behavior |
+| Project benefits wait for verified physical completion | Not run | Not run | Output/housing values before and after materialization |
+| Player-removed project blocks | Not run | Not run | Benefit suspension and safe repair behavior |
+| Missing bank with existing marker | Not run | Not run | Fallback Banker access and confirmation that no bank blocks are auto-rebuilt |
 
 ## Multiplayer and scale checks
 
 | Test | Fabric | NeoForge | Required evidence |
 | --- | --- | --- | --- |
 | Two players bank simultaneously | Not run | Not run | Exact balances and debug ZIPs |
-| Two players support one village simultaneously | Not run | Not run | Treasury and donation records |
+| Two players support one village simultaneously | Not run | Not run | Fund balances and separate donor records |
 | Player disconnect during another player's transaction | Not run | Not run | Both account results |
-| 100 stored villages | Not run | Not run | Tick/save/load percentiles |
-| 500 stored villages | Not run | Not run | Tick/save/load percentiles |
-| 1,000 stored villages | Not run | Not run | Tick/save/load percentiles |
+| 100 stored villages and accounts | Not run | Not run | Indexed query and save/load percentiles |
+| 500 stored villages and accounts | Not run | Not run | Indexed query and save/load percentiles |
+| 1,000 stored villages and accounts | Not run | Not run | Indexed query and save/load percentiles |
 | Large offline catch-up | Not run | Not run | Days advanced, elapsed time, validation report |
 | Multi-hour multiplayer session | Not run | Not run | Session length, peak players, debug ZIP |
 | Claim/protection integration | Not run | Not run | Protected blocks remain untouched |
+| Debug owner/privacy/timing boundaries | Not run | Not run | Two-operator attempt and inspected sanitized ZIP |
 
 ## Release gate
 

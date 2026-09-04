@@ -1,5 +1,7 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
+import com.chedidandrew.emeraldstandard.core.EconomyService;
+import com.chedidandrew.emeraldstandard.core.EconomyState;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -31,6 +33,15 @@ public final class EmeraldConfig {
     private final int villageConstructionBlocksPerTick;
     private final int villageSettlerSpawnIntervalTicks;
 
+    private final boolean prosperityFundEnabled;
+    private final boolean prosperityFundEndowmentsEnabled;
+    private final boolean prosperityFundProjectSponsorshipEnabled;
+    private final boolean prosperityFundTargetedDonationsEnabled;
+    private final boolean prosperityFundDonorRecognitionEnabled;
+    private final int prosperityFundEndowmentAnnualPayoutBps;
+    private final int prosperityFundMinimumEmergencyReservePercent;
+    private final int prosperityFundMaximumMonthlySpending;
+
     private EmeraldConfig(
             boolean villageBanksEnabled,
             int villageScanIntervalTicks,
@@ -45,7 +56,15 @@ public final class EmeraldConfig {
             int villageDevelopmentRadius,
             int villageConstructionIntervalTicks,
             int villageConstructionBlocksPerTick,
-            int villageSettlerSpawnIntervalTicks) {
+            int villageSettlerSpawnIntervalTicks,
+            boolean prosperityFundEnabled,
+            boolean prosperityFundEndowmentsEnabled,
+            boolean prosperityFundProjectSponsorshipEnabled,
+            boolean prosperityFundTargetedDonationsEnabled,
+            boolean prosperityFundDonorRecognitionEnabled,
+            int prosperityFundEndowmentAnnualPayoutBps,
+            int prosperityFundMinimumEmergencyReservePercent,
+            int prosperityFundMaximumMonthlySpending) {
         this.villageBanksEnabled = villageBanksEnabled;
         this.villageScanIntervalTicks = villageScanIntervalTicks;
         this.villageRegionSize = villageRegionSize;
@@ -60,6 +79,15 @@ public final class EmeraldConfig {
         this.villageConstructionIntervalTicks = villageConstructionIntervalTicks;
         this.villageConstructionBlocksPerTick = villageConstructionBlocksPerTick;
         this.villageSettlerSpawnIntervalTicks = villageSettlerSpawnIntervalTicks;
+        this.prosperityFundEnabled = prosperityFundEnabled;
+        this.prosperityFundEndowmentsEnabled = prosperityFundEndowmentsEnabled;
+        this.prosperityFundProjectSponsorshipEnabled = prosperityFundProjectSponsorshipEnabled;
+        this.prosperityFundTargetedDonationsEnabled = prosperityFundTargetedDonationsEnabled;
+        this.prosperityFundDonorRecognitionEnabled = prosperityFundDonorRecognitionEnabled;
+        this.prosperityFundEndowmentAnnualPayoutBps = prosperityFundEndowmentAnnualPayoutBps;
+        this.prosperityFundMinimumEmergencyReservePercent =
+                prosperityFundMinimumEmergencyReservePercent;
+        this.prosperityFundMaximumMonthlySpending = prosperityFundMaximumMonthlySpending;
     }
 
     public static synchronized EmeraldConfig load(Path worldDataDirectory) throws IOException {
@@ -85,7 +113,15 @@ public final class EmeraldConfig {
                 bounded(properties, "village_prosperity.development_radius", 96, 48, 192),
                 bounded(properties, "village_prosperity.construction_interval_ticks", 10, 1, 200),
                 bounded(properties, "village_prosperity.construction_blocks_per_tick", 2, 1, 64),
-                bounded(properties, "village_prosperity.settler_spawn_interval_ticks", 1_200, 200, 24_000));
+                bounded(properties, "village_prosperity.settler_spawn_interval_ticks", 1_200, 200, 24_000),
+                bool(properties, "village_prosperity.donations_enabled", true),
+                bool(properties, "village_prosperity.endowments_enabled", true),
+                bool(properties, "village_prosperity.project_sponsorship_enabled", true),
+                bool(properties, "village_prosperity.targeted_donations_enabled", true),
+                bool(properties, "village_prosperity.donor_recognition_enabled", true),
+                bounded(properties, "village_prosperity.endowment_annual_payout_bps", 400, 0, 10_000),
+                bounded(properties, "village_prosperity.minimum_emergency_reserve_percent", 20, 0, 90),
+                bounded(properties, "village_prosperity.max_monthly_treasury_spending", 24, 1, 1_000_000));
         return current;
     }
 
@@ -156,6 +192,56 @@ public final class EmeraldConfig {
         return villageSettlerSpawnIntervalTicks;
     }
 
+    public boolean prosperityFundEnabled() {
+        return prosperityFundEnabled;
+    }
+
+    public boolean prosperityFundEndowmentsEnabled() {
+        return prosperityFundEndowmentsEnabled;
+    }
+
+    public boolean prosperityFundProjectSponsorshipEnabled() {
+        return prosperityFundProjectSponsorshipEnabled;
+    }
+
+    public boolean prosperityFundTargetedDonationsEnabled() {
+        return prosperityFundTargetedDonationsEnabled;
+    }
+
+    public boolean prosperityFundDonorRecognitionEnabled() {
+        return prosperityFundDonorRecognitionEnabled;
+    }
+
+    public double prosperityFundEndowmentAnnualPayoutRate() {
+        return prosperityFundEndowmentAnnualPayoutBps / 10_000.0;
+    }
+
+    public double prosperityFundEmergencyReserveFraction() {
+        return prosperityFundMinimumEmergencyReservePercent / 100.0;
+    }
+
+    public int prosperityFundMaximumMonthlySpending() {
+        return prosperityFundMaximumMonthlySpending;
+    }
+
+    /** Applies every simulation option atomically to the shared economy service. */
+    public void applyTo(EconomyService economy) {
+        economy.configureVillageProsperity(
+                villageProsperitySimulationEnabled,
+                villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled,
+                villageAutomaticRecoveryEnabled);
+        long dailyCapMicro = Math.max(
+                1L,
+                Math.round(prosperityFundMaximumMonthlySpending
+                        * (double) EconomyState.MICRO / 30.0));
+        economy.configureProsperityFund(new EconomyService.ProsperityFundPolicy(
+                prosperityFundEnabled && villageProsperitySimulationEnabled,
+                prosperityFundEndowmentAnnualPayoutRate(),
+                prosperityFundEmergencyReserveFraction(),
+                dailyCapMicro));
+    }
+
     public String summary() {
         return String.format(
                 Locale.ROOT,
@@ -163,7 +249,9 @@ public final class EmeraldConfig {
                         + "transaction cooldown=%d ticks, prosperity simulation=%s, visual progression=%s, "
                         + "market integration=%s, automatic recovery=%s, prosperity scan=%d ticks, "
                         + "development radius=%d, construction=%d block(s)/%d tick(s), "
-                        + "settler interval=%d ticks",
+                        + "settler interval=%d ticks, prosperity fund=%s, endowments=%s, "
+                        + "project sponsorship=%s, targeted donations=%s, donor recognition=%s, "
+                        + "endowment payout=%.2f%%, emergency reserve=%d%%, monthly spending cap=%d",
                 villageBanksEnabled,
                 villageScanIntervalTicks,
                 villageRegionSize,
@@ -177,7 +265,15 @@ public final class EmeraldConfig {
                 villageDevelopmentRadius,
                 villageConstructionBlocksPerTick,
                 villageConstructionIntervalTicks,
-                villageSettlerSpawnIntervalTicks);
+                villageSettlerSpawnIntervalTicks,
+                prosperityFundEnabled,
+                prosperityFundEndowmentsEnabled,
+                prosperityFundProjectSponsorshipEnabled,
+                prosperityFundTargetedDonationsEnabled,
+                prosperityFundDonorRecognitionEnabled,
+                prosperityFundEndowmentAnnualPayoutBps / 100.0,
+                prosperityFundMinimumEmergencyReservePercent,
+                prosperityFundMaximumMonthlySpending);
     }
 
     private static EmeraldConfig defaults() {
@@ -195,7 +291,15 @@ public final class EmeraldConfig {
                 96,
                 10,
                 2,
-                1_200);
+                1_200,
+                true,
+                true,
+                true,
+                true,
+                true,
+                400,
+                20,
+                24);
     }
 
     private static void writeDefaults(Path path) throws IOException {
@@ -215,6 +319,14 @@ public final class EmeraldConfig {
         properties.setProperty("village_prosperity.construction_interval_ticks", "10");
         properties.setProperty("village_prosperity.construction_blocks_per_tick", "2");
         properties.setProperty("village_prosperity.settler_spawn_interval_ticks", "1200");
+        properties.setProperty("village_prosperity.donations_enabled", "true");
+        properties.setProperty("village_prosperity.endowments_enabled", "true");
+        properties.setProperty("village_prosperity.project_sponsorship_enabled", "true");
+        properties.setProperty("village_prosperity.targeted_donations_enabled", "true");
+        properties.setProperty("village_prosperity.donor_recognition_enabled", "true");
+        properties.setProperty("village_prosperity.endowment_annual_payout_bps", "400");
+        properties.setProperty("village_prosperity.minimum_emergency_reserve_percent", "20");
+        properties.setProperty("village_prosperity.max_monthly_treasury_spending", "24");
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try (OutputStream output = Files.newOutputStream(temporary)) {
             properties.store(output, "The Emerald Standard world configuration");

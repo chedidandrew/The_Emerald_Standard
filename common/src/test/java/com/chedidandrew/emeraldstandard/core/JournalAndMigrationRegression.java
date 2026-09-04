@@ -292,7 +292,7 @@ final class JournalAndMigrationRegression {
                         && migrated.existingVillage(villageId).projects.size() == 1
                         && migrated.existingVillage(villageId).projects.getFirst().type
                                 == VillageProsperityEngine.ProjectType.COTTAGE,
-                "Format 7 project catalog did not load into format 8");
+                "Format 7 project catalog did not load into the current format");
 
         EconomyState.VillageProject house = new EconomyState.VillageProject();
         house.projectId = 2L;
@@ -304,13 +304,14 @@ final class JournalAndMigrationRegression {
         migrated.save(save);
 
         Properties upgraded = readProperties(save);
-        require("8".equals(upgraded.getProperty("format")),
-                "Format 7 save did not upgrade to format 8");
+        require(Integer.toString(EconomyState.FORMAT_VERSION)
+                        .equals(upgraded.getProperty("format")),
+                "Format 7 save did not upgrade to the current format");
         EconomyState reloaded = EconomyState.load(save, 999L, 0L, 0L);
         require(reloaded.existingVillage(villageId).projects.stream()
                         .anyMatch(project -> project.type
                                 == VillageProsperityEngine.ProjectType.HOUSE),
-                "Expanded project identifier did not survive format 8 reload");
+                "Expanded project identifier did not survive current-format reload");
     }
 
     private static void testVillageMarketShadowPersistence(Path directory) throws Exception {

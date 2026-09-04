@@ -37,11 +37,11 @@ With visual progression enabled, pending settlers do not produce output until th
 
 Savings rates vary by regime and average near 3 percent across the long-run regime distribution.
 
-CDs support 30, 90, 180, and 365-day terms. The rate locks at opening, interest stops at maturity, and closing early returns principal minus a 1 percent penalty while forfeiting accrued interest.
+CDs support 30, 90, 180, and 365-day terms. The rate locks at opening, interest stops at maturity, and closing early returns principal minus a 1 percent penalty while forfeiting accrued interest. Each player may hold up to eight independent CD positions and select the specific position to inspect or close.
 
 ## Villager business lending
 
-Players can fund villager businesses but can never borrow from them. Lending can fully repay, partially default, or fully default. A player's maximum loss is the amount voluntarily funded. There is no debt balance and no additional repayment obligation.
+Players can fund villager businesses but can never borrow from them. Lending can fully repay, partially default, or fully default. A player's maximum loss is the amount voluntarily funded. There is no debt balance and no additional repayment obligation. Each player may hold up to eight independent lending positions and select the specific resolved position to collect.
 
 Current path-based tests target approximate expected annualized returns after defaults of roughly 6.7 percent for 30 days, 7.5 percent for 90 days, 8.0 percent for 180 days, and 12.2 percent for 365 days.
 
@@ -52,3 +52,23 @@ Diamond, gold, netherite, and emerald-ore values follow mean-reverting markets w
 ## Trading friction
 
 Stock and index trades use a 0.25 percent spread on each side to discourage cost-free rapid trading.
+
+## Portfolio accounting and history
+
+Stock purchases add their actual execution cost to a per-symbol cost basis. Partial sales remove the proportional basis and record the difference between proceeds and removed basis as realized gain or loss. The portfolio view also reports average purchase price, unrealized gain or loss, total cost basis, allocations, lifetime external contributions and withdrawals, and the value of open term positions.
+
+A bounded 256-entry transaction ledger records authoritative deposits, withdrawals, savings movement and interest, stock executions, CD and lending activity, and Prosperity Fund contributions. Repeated passive savings-interest credits coalesce into an aggregate entry so routine accrual does not crowd active transactions out of the bounded history. Market prices, commodity quotes, and personal net worth retain up to 1,825 economic days (five in-game economic years). Dashboard range selection offers 30 days, 90 days, one year, and all retained data.
+
+Format-8 and older holdings did not record their executions. During format-9 migration, the mod initializes their basis from the migration-day market price and marks it as inferred rather than presenting it as exact historical performance.
+
+## Village Prosperity Fund
+
+Contributions are voluntary, irreversible transfers from bank cash to a village-owned fund. They never create a player receivable, promised return, borrowing balance, or debt. The three contribution types are:
+
+- **Direct Grant:** enters a purpose-specific spendable balance. Non-restoration grants place the configured fraction into an emergency reserve.
+- **Endowment:** preserves principal permanently and creates only a configurable annual payout, 4 percent by default, for bounded village spending.
+- **Project Sponsorship:** follows the village's current economically unfinished project, derives its accounting purpose from that project type, and supplies bounded material and development inputs. Once the economic project completes, any unused sponsorship balance becomes ordinary spendable funding for that derived purpose.
+
+Purposes are General, Housing, Food, Infrastructure, Security, Trade, and Restoration. An abandoned or extinct village automatically routes a Direct Grant to Restoration. Purpose balances affect ordinary local inputs rather than directly writing investment returns or market output. The Fund debits only value that its bounded destination can accept, so saturated inputs retain unused funding. Automatic spending respects a configured monthly treasury ceiling, converted to a daily cap, and uses the emergency reserve only during restoration, acute food shortage, or low safety.
+
+Lifetime contribution totals and non-financial donor titles may be displayed when recognition is enabled. Recognition changes no prices, payouts, permissions, or economic outcomes.

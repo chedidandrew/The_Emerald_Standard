@@ -47,7 +47,7 @@ The recovery comparison is intentionally capped by the original transaction quan
 
 ## Why all online players are flushed
 
-Minecraft exposes a public all-player save operation, while the single-player save method is protected. Alpha.2 therefore flushes all online player data before clearing a transaction journal. This is heavier than an ideal per-player write, but it closes the inventory persistence window using supported public APIs and keeps Fabric and NeoForge behavior identical.
+Minecraft exposes a public all-player save operation, while the single-player save method is protected. The current implementation therefore flushes all online player data before clearing a transaction journal. This is heavier than an ideal per-player write, but it closes the inventory persistence window using supported public APIs and keeps Fabric and NeoForge behavior identical.
 
 A later server-scale persistence layer can replace this flush with player-attached bank data or a loader-specific safe bridge without changing the journal semantics.
 

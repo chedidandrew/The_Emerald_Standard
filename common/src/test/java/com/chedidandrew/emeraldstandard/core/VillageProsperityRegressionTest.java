@@ -36,6 +36,8 @@ public final class VillageProsperityRegressionTest {
         testNetWorthCannotOverflowLongAddition();
         testEpsilonOversellIsRejected();
         testProjectBoundsAndRetryRoundTrip();
+        testPhysicalProjectBenefitsWaitForMaterialization();
+        testSimulationOnlyProjectsRemainFunctional();
         System.out.println("PASS VillageProsperityRegressionTest");
     }
 
@@ -846,7 +848,118 @@ public final class VillageProsperityRegressionTest {
                             && unloadedLoaded.boundsMinPos == unloadedMinimum
                             && unloadedLoaded.boundsMaxPos == unloadedMaximum,
                     "Unloaded project reservation did not survive restart");
+            require(reloaded.updateVillageProjectMaterialization(
+                            village.villageId, 1L, loaded.totalBlocks, true, false),
+                    "Could not complete a project before integrity reconciliation");
+            require(reloaded.reconcileVillageProjectMaterialization(
+                            village.villageId, 1L, 2, loaded.totalBlocks, false),
+                    "Could not reconcile a damaged completed project");
+            EconomyState.VillageProject damaged = reloaded.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(!damaged.materializedComplete
+                            && damaged.materializedBlocks == 2
+                            && reloaded.villageSnapshot(village.villageId).village()
+                                    .nextVisualProject(Long.MAX_VALUE) != null,
+                    "Damaged project retained benefits or failed to re-enter repair queue");
         } finally { deleteTree(root); }
+    }
+
+    private static void testPhysicalProjectBenefitsWaitForMaterialization() {
+        EconomyState state = EconomyState.fresh(4_040L, 0L, 0L);
+        EconomyState.VillageRecord baseline = village(state, 12, 18);
+        baseline.villageId = UUID.fromString("00000000-0000-0000-0000-000000004040");
+        baseline.foodSupply = 2_000.0;
+        baseline.materialSupply = 2_000.0;
+        baseline.treasury = 2_000.0;
+        baseline.prosperity = 60.0;
+        baseline.safety = 70.0;
+
+        EconomyState.VillageRecord unbuilt = baseline.copy();
+        EconomyState.VillageProject unbuiltWarehouse = completedProject(
+                1L, VillageProsperityEngine.ProjectType.WAREHOUSE, false, false);
+        unbuilt.projects.add(unbuiltWarehouse);
+
+        EconomyState.VillageRecord built = baseline.copy();
+        EconomyState.VillageProject builtWarehouse = completedProject(
+                1L, VillageProsperityEngine.ProjectType.WAREHOUSE, true, false);
+        built.projects.add(builtWarehouse);
+
+        VillageProsperityEngine.advanceOneDay(baseline, state.seed, 1L, false, true);
+        VillageProsperityEngine.advanceOneDay(unbuilt, state.seed, 1L, false, true);
+        VillageProsperityEngine.advanceOneDay(built, state.seed, 1L, false, true);
+        require(Double.doubleToLongBits(unbuilt.tradeOutput)
+                        == Double.doubleToLongBits(baseline.tradeOutput),
+                "An unbuilt Warehouse affected village production");
+        require(built.tradeOutput > unbuilt.tradeOutput,
+                "A physically complete Warehouse did not affect village production");
+        require(!VillageProsperityEngine.isProjectOperational(unbuiltWarehouse)
+                        && VillageProsperityEngine.isProjectOperational(builtWarehouse),
+                "Physical project authority did not follow materialization state");
+
+        EconomyState.VillageRecord oldCompressedBacklog = baseline.copy();
+        EconomyState.VillageProject oldAbstractWarehouse = completedProject(
+                3L, VillageProsperityEngine.ProjectType.WAREHOUSE, false, true);
+        oldCompressedBacklog.projects.add(oldAbstractWarehouse);
+        VillageProsperityEngine.advanceOneDay(
+                oldCompressedBacklog, state.seed, 1L, false, true);
+        require(!oldAbstractWarehouse.abstractOnly
+                        && !VillageProsperityEngine.isProjectOperational(oldAbstractWarehouse),
+                "Visual mode retained an old abstract-backlog benefit without a structure");
+
+        EconomyState.VillageRecord housing = baseline.copy();
+        int originalHousing = housing.housingCapacity;
+        housing.housingCapacity += VillageProsperityEngine.ProjectType.COTTAGE.housingGain();
+        EconomyState.VillageProject cottage = completedProject(
+                2L, VillageProsperityEngine.ProjectType.COTTAGE, false, false);
+        housing.projects.add(cottage);
+        require(VillageProsperityEngine.effectiveHousingCapacity(housing) == originalHousing,
+                "Unbuilt Cottage granted usable housing");
+        cottage.materializedComplete = true;
+        require(VillageProsperityEngine.effectiveHousingCapacity(housing)
+                        == originalHousing + VillageProsperityEngine.ProjectType.COTTAGE.housingGain(),
+                "Completed Cottage did not grant usable housing");
+    }
+
+    private static void testSimulationOnlyProjectsRemainFunctional() {
+        EconomyState state = EconomyState.fresh(4_041L, 0L, 0L);
+        EconomyState.VillageRecord abstractVillage = village(state, 12, 18);
+        abstractVillage.villageId = UUID.fromString("00000000-0000-0000-0000-000000004041");
+        abstractVillage.foodSupply = 2_000.0;
+        abstractVillage.materialSupply = 2_000.0;
+        abstractVillage.treasury = 2_000.0;
+        abstractVillage.prosperity = 60.0;
+        abstractVillage.safety = 70.0;
+        EconomyState.VillageProject warehouse = completedProject(
+                1L, VillageProsperityEngine.ProjectType.WAREHOUSE, false, false);
+        abstractVillage.projects.add(warehouse);
+
+        EconomyState.VillageRecord physicalEquivalent = abstractVillage.copy();
+        physicalEquivalent.projects.get(0).materializedComplete = true;
+        VillageProsperityEngine.advanceOneDay(abstractVillage, state.seed, 1L, false, false);
+        VillageProsperityEngine.advanceOneDay(physicalEquivalent, state.seed, 1L, false, true);
+
+        require(warehouse.abstractOnly && VillageProsperityEngine.isProjectOperational(warehouse),
+                "Simulation-only project was left waiting for a block world");
+        require(Double.doubleToLongBits(abstractVillage.tradeOutput)
+                        == Double.doubleToLongBits(physicalEquivalent.tradeOutput),
+                "Simulation-only project lost its calibrated production benefit");
+    }
+
+    private static EconomyState.VillageProject completedProject(
+            long projectId,
+            VillageProsperityEngine.ProjectType type,
+            boolean materialized,
+            boolean abstractOnly) {
+        EconomyState.VillageProject project = new EconomyState.VillageProject();
+        project.projectId = projectId;
+        project.type = type;
+        project.economicProgress = 1.0;
+        project.economicComplete = true;
+        project.materializedBlocks = materialized ? type.nominalBlocks() : 0;
+        project.totalBlocks = type.nominalBlocks();
+        project.materializedComplete = materialized;
+        project.abstractOnly = abstractOnly;
+        return project;
     }
 
     private static void testNearbyVillageSnapshots() throws Exception {

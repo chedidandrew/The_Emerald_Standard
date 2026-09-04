@@ -4,30 +4,26 @@ import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
+import com.chedidandrew.emeraldstandard.debug.DebugCapturePolicy;
+import com.chedidandrew.emeraldstandard.debug.DebugReportFiles;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -47,18 +43,41 @@ import org.slf4j.LoggerFactory;
 public final class DebugFlightRecorder {
     public static final int DEFAULT_MINUTES = 5;
     public static final int MAX_MINUTES = 15;
-    public static final String MOD_VERSION = "0.4.0-beta.1";
 
     private static final Logger LOGGER = LoggerFactory.getLogger("the_emerald_standard_debug");
+    private static final String MOD_VERSION =
+            DebugReportFiles.runtimeVersion(DebugFlightRecorder.class);
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss", Locale.ROOT).withZone(ZoneOffset.UTC);
     private static final Map<MinecraftServer, Session> SESSIONS = new WeakHashMap<>();
     private static final long SAMPLE_INTERVAL_TICKS = 20L;
     private static final long SNAPSHOT_INTERVAL_TICKS = 600L;
     private static final long STATUS_INTERVAL_TICKS = 400L;
-    private static final int MAX_EVENTS = 50_000;
-    private static final long MAX_TIMELINE_BYTES = 25L * 1024L * 1024L;
-    private static final int RETAINED_REPORTS = 5;
+    private static final int NEWLINE_BYTES =
+            System.lineSeparator().getBytes(StandardCharsets.UTF_8).length;
+    private static final Set<String> PUBLIC_CONFIG_KEYS = Set.of(
+            "village_banks.enabled",
+            "village_banks.scan_interval_ticks",
+            "village_banks.region_size",
+            "banker.restriction_radius",
+            "transactions.cooldown_ticks",
+            "village_prosperity.simulation_enabled",
+            "village_prosperity.visual_progression_enabled",
+            "village_prosperity.market_integration_enabled",
+            "village_prosperity.automatic_recovery_enabled",
+            "village_prosperity.scan_interval_ticks",
+            "village_prosperity.development_radius",
+            "village_prosperity.construction_interval_ticks",
+            "village_prosperity.construction_blocks_per_tick",
+            "village_prosperity.settler_spawn_interval_ticks",
+            "village_prosperity.donations_enabled",
+            "village_prosperity.endowments_enabled",
+            "village_prosperity.project_sponsorship_enabled",
+            "village_prosperity.targeted_donations_enabled",
+            "village_prosperity.donor_recognition_enabled",
+            "village_prosperity.endowment_annual_payout_bps",
+            "village_prosperity.minimum_emergency_reserve_percent",
+            "village_prosperity.max_monthly_treasury_spending");
 
     private DebugFlightRecorder() {
     }
@@ -71,8 +90,10 @@ public final class DebugFlightRecorder {
         try {
             Path root = reportRoot(server);
             Files.createDirectories(root);
-            recoverInterruptedCaptures(root);
-            rotateReports(root);
+            for (Path report : DebugReportFiles.recoverInterruptedCaptures(root)) {
+                LOGGER.info("Recovered interrupted debug capture {}", report.toAbsolutePath());
+            }
+            DebugReportFiles.rotateReports(root);
         } catch (IOException exception) {
             LOGGER.warn("Could not initialize The Emerald Standard debug reports", exception);
         }
@@ -90,6 +111,10 @@ public final class DebugFlightRecorder {
         MinecraftServer server = player.level().getServer();
         Session existing = SESSIONS.get(server);
         if (existing != null) {
+            if (!DebugCapturePolicy.isOwner(existing.ownerId, player.getUUID())) {
+                return CommandResult.failure(
+                        "A debug capture is already active for another operator. Only its owner can stop or mark it.");
+            }
             return finish(server, economy, existing, "manual_stop", false);
         }
 
@@ -97,8 +122,10 @@ public final class DebugFlightRecorder {
         try {
             Path root = reportRoot(server);
             Files.createDirectories(root);
-            recoverInterruptedCaptures(root);
-            rotateReports(root);
+            for (Path report : DebugReportFiles.recoverInterruptedCaptures(root)) {
+                LOGGER.info("Recovered interrupted debug capture {}", report.toAbsolutePath());
+            }
+            DebugReportFiles.rotateReports(root);
 
             String id = FILE_TIME.format(Instant.now())
                     + "-"
@@ -124,7 +151,8 @@ public final class DebugFlightRecorder {
                     timeline,
                     writer,
                     dimensionKey(player),
-                    player.blockPosition());
+                    player.blockPosition(),
+                    economy);
             SESSIONS.put(server, session);
             session.event("capture", "started", fields(
                     "durationMinutes", minutes,
@@ -133,6 +161,9 @@ public final class DebugFlightRecorder {
                     "modVersion", MOD_VERSION,
                     "reportId", id));
             session.sample(server, economy, true);
+            session.nextSampleTick = gameTick + SAMPLE_INTERVAL_TICKS;
+            session.nextSnapshotTick = gameTick + SNAPSHOT_INTERVAL_TICKS;
+            session.nextStatusTick = gameTick + STATUS_INTERVAL_TICKS;
             LOGGER.info(
                     "The Emerald Standard debug capture {} started for {} for {} minute(s)",
                     id,
@@ -161,6 +192,10 @@ public final class DebugFlightRecorder {
         if (session == null) {
             return CommandResult.failure("No debug capture is active. Run /emerald debug to start one.");
         }
+        if (!DebugCapturePolicy.isOwner(session.ownerId, player.getUUID())) {
+            return CommandResult.failure(
+                    "Only the operator who started this debug capture can stop it.");
+        }
         return finish(server, economy, session, "manual_stop", false);
     }
 
@@ -173,6 +208,10 @@ public final class DebugFlightRecorder {
         Session session = SESSIONS.get(server);
         if (session == null) {
             return CommandResult.failure("No debug capture is active. Run /emerald debug first.");
+        }
+        if (!DebugCapturePolicy.isOwner(session.ownerId, player.getUUID())) {
+            return CommandResult.failure(
+                    "Only the operator who started this debug capture can add markers.");
         }
         try {
             session.markerCount++;
@@ -206,6 +245,7 @@ public final class DebugFlightRecorder {
         if (session == null) {
             return;
         }
+        long recorderStarted = System.nanoTime();
         long now = System.currentTimeMillis();
         long gameTick = server.overworld().getGameTime();
         try {
@@ -215,9 +255,9 @@ public final class DebugFlightRecorder {
                 notifyPlayer(owner, result.message());
                 return;
             }
-            if (session.eventCount >= MAX_EVENTS
-                    || (Files.exists(session.timeline)
-                            && Files.size(session.timeline) >= MAX_TIMELINE_BYTES)) {
+            if (session.timelineLimitReached
+                    || DebugReportFiles.atTimelineLimit(
+                            session.eventCount, session.timelineBytes)) {
                 ServerPlayer owner = server.getPlayerList().getPlayer(session.ownerId);
                 CommandResult result = finish(server, economy, session, "report_limit_reached", false);
                 notifyPlayer(owner, result.message());
@@ -228,7 +268,7 @@ public final class DebugFlightRecorder {
                 session.nextSampleTick = gameTick + SAMPLE_INTERVAL_TICKS;
             }
             if (gameTick >= session.nextSnapshotTick) {
-                session.event("capture", "periodic_snapshot", session.fullSnapshot(server, economy));
+                session.recordFullSnapshot(server, economy, "periodic_snapshot");
                 session.nextSnapshotTick = gameTick + SNAPSHOT_INTERVAL_TICKS;
             }
             if (gameTick >= session.nextStatusTick) {
@@ -250,6 +290,10 @@ public final class DebugFlightRecorder {
             ServerPlayer owner = server.getPlayerList().getPlayer(session.ownerId);
             CommandResult result = finish(server, economy, session, "capture_error", true);
             notifyPlayer(owner, result.message());
+        } finally {
+            if (SESSIONS.get(server) == session) {
+                session.recordActiveTick(System.nanoTime() - recorderStarted);
+            }
         }
     }
 
@@ -276,18 +320,87 @@ public final class DebugFlightRecorder {
     /** Records one GUI action for the active tester without exposing any unrelated account. */
     public static synchronized void recordBankAction(
             ServerPlayer player, int actionId, int requestedAmount, int statusCode) {
+        recordBankAction(
+                player, actionId, requestedAmount, statusCode, null, null);
+    }
+
+    /** Records a confirmed Prosperity Fund action with its server-owned routing choices. */
+    public static synchronized void recordFundAction(
+            ServerPlayer player,
+            int actionId,
+            int requestedAmount,
+            int statusCode,
+            EconomyState.ProsperityFundType type,
+            EconomyState.DonationPurpose purpose) {
+        recordBankAction(
+                player,
+                actionId,
+                requestedAmount,
+                statusCode,
+                type == null ? null : type.name(),
+                purpose == null ? null : purpose.name());
+    }
+
+    /** Records draft changes before any emerald is debited. */
+    public static synchronized void recordFundDraft(
+            ServerPlayer player,
+            String event,
+            int previousDraft,
+            int currentDraft,
+            EconomyState.ProsperityFundType type,
+            EconomyState.DonationPurpose purpose) {
         Session session = sessionFor(player);
-        if (session == null || !session.ownerId.equals(player.getUUID())) {
+        if (session == null || !DebugCapturePolicy.isOwner(session.ownerId, player.getUUID())) {
             return;
         }
         try {
+            session.event("donations", event, fields(
+                    "previousDraft", previousDraft,
+                    "currentDraft", currentDraft,
+                    "type", type == null ? null : type.name(),
+                    "purpose", purpose == null ? null : purpose.name(),
+                    "dimension", dimensionKey(player),
+                    "position", positionMap(player.blockPosition())));
+        } catch (IOException exception) {
+            session.captureErrors.add("Prosperity Fund event failed: " + message(exception));
+        }
+    }
+
+    private static void recordBankAction(
+            ServerPlayer player,
+            int actionId,
+            int requestedAmount,
+            int statusCode,
+            String fundType,
+            String fundPurpose) {
+        Session session = sessionFor(player);
+        if (session == null || !DebugCapturePolicy.isOwner(session.ownerId, player.getUUID())) {
+            return;
+        }
+        try {
+            EconomyService.PortfolioSnapshot postAction =
+                    session.economy.portfolioSnapshot(session.ownerId);
+            EconomyService.MarketSnapshot market = session.economy.marketSnapshot();
+            session.bankActionCount++;
             session.event("banking", "gui_action", fields(
+                    "sequence", session.bankActionCount,
                     "action", bankActionName(actionId),
                     "actionId", actionId,
                     "requestedAmount", requestedAmount,
+                    "status", bankStatusName(statusCode),
                     "statusCode", statusCode,
+                    "successful", statusCode >= BankingOperations.READY,
+                    "fundType", fundType,
+                    "fundPurpose", fundPurpose,
+                    "recoveryPending", statusCode == BankingOperations.RECOVERY_PENDING,
+                    "persistenceFailed", statusCode == BankingOperations.PERSISTENCE_FAILED,
+                    "postAction", bankBalanceFields(postAction),
+                    "persistence", persistenceFields(
+                            market, postAction, session.economy.lastError()),
                     "dimension", dimensionKey(player),
                     "position", positionMap(player.blockPosition())));
+            session.latestPortfolio = postAction;
+            session.latestMarket = market;
         } catch (IOException exception) {
             session.captureErrors.add("Banking event failed: " + message(exception));
         }
@@ -300,8 +413,8 @@ public final class DebugFlightRecorder {
             return;
         }
         EconomyState.VillageRecord village = snapshot.village();
-        if (session.watchedVillageId != null
-                && !session.watchedVillageId.equals(village.villageId)) {
+        if (!DebugCapturePolicy.isWatchedVillage(
+                session.watchedVillageId, village.villageId)) {
             return;
         }
         try {
@@ -319,15 +432,17 @@ public final class DebugFlightRecorder {
             UUID responsiblePlayer,
             BlockPos position) {
         Session session = sessionFor(level);
-        if (session == null) {
+        if (session == null
+                || !DebugCapturePolicy.isWatchedVillage(session.watchedVillageId, villageId)) {
             return;
         }
         try {
             session.event("village", "resident_death", fields(
                     "villageId", villageId,
-                    "residentId", residentId,
+                    "residentTracked", residentId != null,
                     "cause", cause,
-                    "responsiblePlayer", responsiblePlayer,
+                    "responsibleTester", DebugCapturePolicy.isResponsibleTester(
+                            session.ownerId, responsiblePlayer),
                     "dimension", level.dimension().identifier().toString(),
                     "position", positionMap(position)));
         } catch (IOException exception) {
@@ -346,7 +461,8 @@ public final class DebugFlightRecorder {
             int totalBlocks,
             String reason) {
         Session session = sessionFor(level);
-        if (session == null) {
+        if (session == null
+                || !DebugCapturePolicy.isWatchedVillage(session.watchedVillageId, villageId)) {
             return;
         }
         String milestoneKey = villageId + ":" + projectId;
@@ -375,13 +491,14 @@ public final class DebugFlightRecorder {
     public static synchronized void recordSettler(
             ServerLevel level, UUID villageId, UUID settlerId, BlockPos position) {
         Session session = sessionFor(level);
-        if (session == null) {
+        if (session == null
+                || !DebugCapturePolicy.isWatchedVillage(session.watchedVillageId, villageId)) {
             return;
         }
         try {
             session.event("village", "settler_spawned", fields(
                     "villageId", villageId,
-                    "settlerId", settlerId,
+                    "settlerTracked", settlerId != null,
                     "dimension", level.dimension().identifier().toString(),
                     "position", positionMap(position)));
         } catch (IOException exception) {
@@ -419,9 +536,9 @@ public final class DebugFlightRecorder {
             session.writer.close();
             report = reportRoot(server).resolve("TES-debug-" + session.id
                     + (captureFailed ? "-INCOMPLETE" : "") + ".zip");
-            zipDirectory(session.sessionDirectory, report);
-            deleteTree(session.sessionDirectory);
-            rotateReports(reportRoot(server));
+            DebugReportFiles.zipDirectory(session.sessionDirectory, report);
+            DebugReportFiles.deleteTree(session.sessionDirectory);
+            DebugReportFiles.rotateReports(reportRoot(server));
             LOGGER.info(
                     "The Emerald Standard debug capture {} finished: {}",
                     session.id,
@@ -455,99 +572,6 @@ public final class DebugFlightRecorder {
 
     private static Path reportRoot(MinecraftServer server) {
         return server.getWorldPath(LevelResource.DATA).resolve("the_emerald_standard_debug");
-    }
-
-    private static void recoverInterruptedCaptures(Path root) throws IOException {
-        if (!Files.isDirectory(root)) {
-            return;
-        }
-        try (var stream = Files.list(root)) {
-            for (Path directory : stream
-                    .filter(Files::isDirectory)
-                    .filter(path -> path.getFileName().toString().startsWith(".active-"))
-                    .toList()) {
-                String id = directory.getFileName().toString().substring(".active-".length());
-                writeText(
-                        directory.resolve("INCOMPLETE-CRASH.txt"),
-                        "This capture was interrupted before a normal stop, most likely by a crash or forced process exit.\n"
-                                + "The incremental timeline remains valid up to the last flushed event.\n");
-                Path destination = root.resolve("TES-debug-" + id + "-INCOMPLETE-CRASH.zip");
-                zipDirectory(directory, destination);
-                deleteTree(directory);
-                LOGGER.info("Recovered interrupted debug capture {}", destination.toAbsolutePath());
-            }
-        }
-    }
-
-    private static void rotateReports(Path root) throws IOException {
-        if (!Files.isDirectory(root)) {
-            return;
-        }
-        List<Path> reports;
-        try (var stream = Files.list(root)) {
-            reports = stream
-                    .filter(path -> path.getFileName().toString().endsWith(".zip"))
-                    .sorted(Comparator.comparingLong(DebugFlightRecorder::lastModified).reversed())
-                    .toList();
-        }
-        for (int index = RETAINED_REPORTS; index < reports.size(); index++) {
-            Files.deleteIfExists(reports.get(index));
-        }
-    }
-
-    private static long lastModified(Path path) {
-        try {
-            return Files.getLastModifiedTime(path).toMillis();
-        } catch (IOException exception) {
-            return Long.MIN_VALUE;
-        }
-    }
-
-    private static void zipDirectory(Path directory, Path destination) throws IOException {
-        Path temporary = destination.resolveSibling(destination.getFileName() + ".tmp");
-        Files.deleteIfExists(temporary);
-        try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(temporary))) {
-            try (var stream = Files.walk(directory)) {
-                for (Path path : stream.filter(Files::isRegularFile).sorted().toList()) {
-                    String name = directory.relativize(path).toString().replace('\\', '/');
-                    output.putNextEntry(new ZipEntry(name));
-                    Files.copy(path, output);
-                    output.closeEntry();
-                }
-            }
-        }
-        try {
-            Files.move(
-                    temporary,
-                    destination,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
-        } catch (java.nio.file.AtomicMoveNotSupportedException exception) {
-            Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private static void deleteTree(Path root) throws IOException {
-        if (!Files.exists(root)) {
-            return;
-        }
-        Files.walkFileTree(root, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.deleteIfExists(file);
-                return FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult postVisitDirectory(Path directory, IOException exception)
-                    throws IOException {
-                if (exception != null) {
-                    throw exception;
-                }
-                Files.deleteIfExists(directory);
-                return FileVisitResult.CONTINUE;
-            }
-        });
     }
 
     private static void writeText(Path path, String value) throws IOException {
@@ -593,6 +617,79 @@ public final class DebugFlightRecorder {
         };
     }
 
+    private static String bankStatusName(int statusCode) {
+        return switch (statusCode) {
+            case BankingOperations.READY -> "ready";
+            case BankingOperations.DEPOSITED -> "deposited";
+            case BankingOperations.WITHDREW -> "withdrew";
+            case BankingOperations.SAVED -> "savings_deposited";
+            case BankingOperations.UNSAVED -> "savings_withdrawn";
+            case BankingOperations.BOUGHT -> "bought";
+            case BankingOperations.SOLD -> "sold";
+            case BankingOperations.CD_OPENED -> "cd_opened";
+            case BankingOperations.CD_CLOSED -> "cd_closed";
+            case BankingOperations.LENDING_FUNDED -> "lending_funded";
+            case BankingOperations.LENDING_COLLECTED -> "lending_collected";
+            case BankingOperations.EXCHANGED -> "exchanged";
+            case BankingOperations.RECOVERED -> "recovered";
+            case BankingOperations.RECOVERY_PENDING -> "recovery_pending";
+            case BankingOperations.VILLAGE_FUNDED -> "village_funded";
+            case BankingOperations.VILLAGE_RESTORATION_READY -> "village_restoration_ready";
+            case BankingOperations.VILLAGE_ENDOWED -> "village_endowed";
+            case BankingOperations.VILLAGE_PROJECT_SPONSORED -> "village_project_sponsored";
+            case BankingOperations.BUSY -> "busy";
+            case BankingOperations.INSUFFICIENT -> "insufficient";
+            case BankingOperations.INVENTORY_FULL -> "inventory_full";
+            case BankingOperations.PRODUCT_ACTIVE -> "product_active";
+            case BankingOperations.NOT_READY -> "not_ready";
+            case BankingOperations.PERSISTENCE_FAILED -> "persistence_failed";
+            case BankingOperations.UNSUPPORTED -> "unsupported";
+            case BankingOperations.NO_VILLAGE -> "no_village";
+            case BankingOperations.POSITION_LIMIT -> "position_limit";
+            default -> "unknown_" + statusCode;
+        };
+    }
+
+    private static Map<String, Object> bankBalanceFields(
+            EconomyService.PortfolioSnapshot portfolio) {
+        if (portfolio == null) {
+            return fields("ready", false);
+        }
+        EconomyState.Account account = portfolio.account();
+        EconomyState.PendingInventoryTransaction pending = portfolio.pendingTransaction();
+        return fields(
+                "ready", true,
+                "economicDay", portfolio.economicDay(),
+                "cashEmeralds", account.cashMicro / (double) EconomyState.MICRO,
+                "savingsEmeralds", account.savingsMicro / (double) EconomyState.MICRO,
+                "cdPositionCount", account.cdPositions.size(),
+                "cdValueEmeralds", account.totalCdValueMicro() / (double) EconomyState.MICRO,
+                "lendingPositionCount", account.loanPositions.size(),
+                "lendingValueEmeralds",
+                        account.totalLoanValueMicro() / (double) EconomyState.MICRO,
+                "netWorthEmeralds", portfolio.netWorth(),
+                "pendingTransactionKind", pending == null ? null : pending.kind,
+                "pendingTransactionStage", pending == null ? null : pending.stage,
+                "pendingItemCount", pending == null ? 0 : pending.itemCount,
+                "catchUpDays", portfolio.catchUpDaysRemaining());
+    }
+
+    private static Map<String, Object> persistenceFields(
+            EconomyService.MarketSnapshot market,
+            EconomyService.PortfolioSnapshot portfolio,
+            String lastError) {
+        EconomyState.PendingInventoryTransaction pending = portfolio == null
+                ? null
+                : portfolio.pendingTransaction();
+        return fields(
+                "stateDirty", market != null && market.dirty(),
+                "serviceHealthy", lastError == null || lastError.isBlank(),
+                "testerJournalPending", pending != null,
+                "testerJournalKind", pending == null ? null : pending.kind,
+                "testerJournalStage", pending == null ? null : pending.stage,
+                "catchUpDays", market == null ? 0L : market.catchUpDaysRemaining());
+    }
+
     private static Map<String, Object> marketFields(EconomyService.MarketSnapshot market) {
         if (market == null) {
             return fields("ready", false);
@@ -633,21 +730,39 @@ public final class DebugFlightRecorder {
                 "savingsEmeralds", account.savingsMicro / (double) EconomyState.MICRO,
                 "netWorthEmeralds", portfolio.netWorth(),
                 "shares", account.shares,
-                "cd", account.hasCd() ? fields(
-                        "valueEmeralds", account.cdValueMicro / (double) EconomyState.MICRO,
-                        "principalEmeralds", account.cdPrincipalMicro / (double) EconomyState.MICRO,
-                        "annualRate", account.cdAnnualRate,
-                        "openDay", account.cdOpenDay,
-                        "maturityDay", account.cdMaturityDay) : Map.of(),
-                "lending", account.hasLoan() ? fields(
-                        "valueEmeralds", account.loanValueMicro / (double) EconomyState.MICRO,
-                        "principalEmeralds", account.loanPrincipalMicro / (double) EconomyState.MICRO,
-                        "annualRate", account.loanAnnualRate,
-                        "openDay", account.loanOpenDay,
-                        "maturityDay", account.loanMaturityDay,
-                        "resolved", account.loanResolved,
-                        "outcome", account.loanOutcome,
-                        "recoveryRate", account.loanRecoveryRate) : Map.of(),
+                "shareCostBasisEmeralds", account.shareCostBasisMicro.entrySet().stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey,
+                                entry -> entry.getValue() / (double) EconomyState.MICRO)),
+                "realizedGainEmeralds",
+                        account.realizedGainMicro / (double) EconomyState.MICRO,
+                "totalContributionsEmeralds",
+                        account.totalContributionsMicro / (double) EconomyState.MICRO,
+                "cdPositions", account.cdPositions.values().stream()
+                        .map(position -> fields(
+                                "positionId", position.positionId,
+                                "valueEmeralds", position.valueMicro
+                                        / (double) EconomyState.MICRO,
+                                "principalEmeralds", position.principalMicro
+                                        / (double) EconomyState.MICRO,
+                                "annualRate", position.annualRate,
+                                "openDay", position.openDay,
+                                "maturityDay", position.maturityDay))
+                        .toList(),
+                "lendingPositions", account.loanPositions.values().stream()
+                        .map(position -> fields(
+                                "positionId", position.positionId,
+                                "valueEmeralds", position.valueMicro
+                                        / (double) EconomyState.MICRO,
+                                "principalEmeralds", position.principalMicro
+                                        / (double) EconomyState.MICRO,
+                                "annualRate", position.annualRate,
+                                "openDay", position.openDay,
+                                "maturityDay", position.maturityDay,
+                                "resolved", position.resolved,
+                                "outcome", position.outcome,
+                                "recoveryRate", position.recoveryRate))
+                        .toList(),
                 "pendingInventoryTransaction", pending,
                 "catchUpDays", portfolio.catchUpDaysRemaining());
     }
@@ -691,6 +806,21 @@ public final class DebugFlightRecorder {
                 "food", village.foodSupply,
                 "materials", village.materialSupply,
                 "treasury", village.treasury,
+                "prosperityFundSpendableEmeralds",
+                        village.prosperityFund.spendableTotalMicro()
+                                / (double) EconomyState.MICRO,
+                "prosperityFundEndowmentEmeralds",
+                        village.prosperityFund.endowmentPrincipalTotalMicro()
+                                / (double) EconomyState.MICRO,
+                "prosperityFundEmergencyReserveEmeralds",
+                        village.prosperityFund.emergencyReserveMicro
+                                / (double) EconomyState.MICRO,
+                "prosperityFundLifetimeReceivedEmeralds",
+                        village.prosperityFund.lifetimeReceivedMicro
+                                / (double) EconomyState.MICRO,
+                "prosperityFundLifetimeSpentEmeralds",
+                        village.prosperityFund.lifetimeSpentMicro
+                                / (double) EconomyState.MICRO,
                 "agricultureOutput", village.agricultureOutput,
                 "miningOutput", village.miningOutput,
                 "tradeOutput", village.tradeOutput,
@@ -809,6 +939,7 @@ public final class DebugFlightRecorder {
         final Path sessionDirectory;
         final Path timeline;
         final BufferedWriter writer;
+        final EconomyService economy;
         final List<String> captureErrors = new ArrayList<>();
         final List<String> validationWarnings = new ArrayList<>();
         final Map<String, Integer> projectMilestones = new HashMap<>();
@@ -817,15 +948,31 @@ public final class DebugFlightRecorder {
         long nextStatusTick;
         int eventCount;
         int markerCount;
+        int bankActionCount;
+        long timelineBytes;
+        boolean timelineLimitReached;
         long sampleCount;
         long sampleTotalNanos;
         long sampleMaximumNanos;
+        long activeTickCount;
+        long activeTickTotalNanos;
+        long activeTickMaximumNanos;
+        long eventWriteCount;
+        long eventWriteTotalNanos;
+        long eventWriteMaximumNanos;
+        long fullSnapshotCount;
+        long fullSnapshotTotalNanos;
+        long fullSnapshotMaximumNanos;
+        long stateCopyCount;
+        long stateCopyTotalNanos;
+        long stateCopyMaximumNanos;
         long previousEconomicDay = Long.MIN_VALUE;
         EconomyEngine.Regime previousRegime;
         EconomyEngine.MarketEvent previousMarketEvent;
         Map<String, Double> previousPrices = Map.of();
         String previousPortfolioFingerprint = "";
         String previousVillageFingerprint = "";
+        String previousPersistenceFingerprint = "";
         UUID watchedVillageId;
         String lastDimension;
         BlockPos lastPosition;
@@ -844,7 +991,8 @@ public final class DebugFlightRecorder {
                 Path timeline,
                 BufferedWriter writer,
                 String lastDimension,
-                BlockPos lastPosition) {
+                BlockPos lastPosition,
+                EconomyService economy) {
             this.id = id;
             this.ownerId = ownerId;
             this.ownerName = ownerName;
@@ -854,6 +1002,7 @@ public final class DebugFlightRecorder {
             this.sessionDirectory = sessionDirectory;
             this.timeline = timeline;
             this.writer = writer;
+            this.economy = economy;
             this.lastDimension = lastDimension;
             this.lastPosition = lastPosition.immutable();
             this.nextSampleTick = startedGameTick;
@@ -868,10 +1017,34 @@ public final class DebugFlightRecorder {
             line.put("category", category);
             line.put("event", event);
             line.putAll(details);
-            writer.write(json(line));
-            writer.newLine();
-            writer.flush();
-            eventCount++;
+            String encoded = json(line);
+            long encodedBytes = encoded.getBytes(StandardCharsets.UTF_8).length + NEWLINE_BYTES;
+            if (DebugReportFiles.wouldExceedTimelineLimit(
+                    eventCount, timelineBytes, encodedBytes)) {
+                timelineLimitReached = true;
+                return;
+            }
+            long started = System.nanoTime();
+            try {
+                writer.write(encoded);
+                writer.newLine();
+                writer.flush();
+                eventCount++;
+                timelineBytes += encodedBytes;
+                timelineLimitReached = DebugReportFiles.atTimelineLimit(
+                        eventCount, timelineBytes);
+            } finally {
+                long elapsed = System.nanoTime() - started;
+                eventWriteCount++;
+                eventWriteTotalNanos += elapsed;
+                eventWriteMaximumNanos = Math.max(eventWriteMaximumNanos, elapsed);
+            }
+        }
+
+        void recordActiveTick(long elapsedNanos) {
+            activeTickCount++;
+            activeTickTotalNanos += elapsedNanos;
+            activeTickMaximumNanos = Math.max(activeTickMaximumNanos, elapsedNanos);
         }
 
         void sample(MinecraftServer server, EconomyService economy, boolean force) throws IOException {
@@ -884,11 +1057,20 @@ public final class DebugFlightRecorder {
                 }
                 latestMarket = economy.marketSnapshot();
                 latestPortfolio = economy.portfolioSnapshot(ownerId);
-                latestVillage = lastPosition == null
-                        ? null
-                        : economy.nearestVillageSnapshot(lastDimension, lastPosition.asLong(), 256.0);
-                if (latestVillage != null) {
-                    watchedVillageId = latestVillage.village().villageId;
+                if (watchedVillageId == null && lastPosition != null) {
+                    EconomyService.VillageSnapshot nearest = economy.nearestVillageSnapshot(
+                            lastDimension, lastPosition.asLong(), 256.0);
+                    if (nearest != null) {
+                        watchedVillageId = nearest.village().villageId;
+                        latestVillage = nearest;
+                        event("village", "watch_started", fields(
+                                "villageId", watchedVillageId,
+                                "dimension", nearest.village().dimensionKey,
+                                "center", positionMap(BlockPos.of(
+                                        nearest.village().centerPos))));
+                    }
+                } else if (watchedVillageId != null) {
+                    latestVillage = economy.villageSnapshot(watchedVillageId);
                 }
 
                 if (latestMarket != null
@@ -936,6 +1118,14 @@ public final class DebugFlightRecorder {
                             : villageFields(latestVillage.village()));
                     previousVillageFingerprint = villageFingerprint;
                 }
+
+                Map<String, Object> persistence = persistenceFields(
+                        latestMarket, latestPortfolio, economy.lastError());
+                String persistenceFingerprint = json(persistence);
+                if (force || !persistenceFingerprint.equals(previousPersistenceFingerprint)) {
+                    event("persistence", "service_state_changed", persistence);
+                    previousPersistenceFingerprint = persistenceFingerprint;
+                }
             } finally {
                 long elapsed = System.nanoTime() - started;
                 sampleCount++;
@@ -944,8 +1134,22 @@ public final class DebugFlightRecorder {
             }
         }
 
+        void recordFullSnapshot(
+                MinecraftServer server, EconomyService economy, String eventName) throws IOException {
+            long started = System.nanoTime();
+            try {
+                event("capture", eventName, fullSnapshot(server, economy));
+            } finally {
+                long elapsed = System.nanoTime() - started;
+                fullSnapshotCount++;
+                fullSnapshotTotalNanos += elapsed;
+                fullSnapshotMaximumNanos = Math.max(fullSnapshotMaximumNanos, elapsed);
+            }
+        }
+
         Map<String, Object> fullSnapshot(MinecraftServer server, EconomyService economy) {
             ServerPlayer owner = server.getPlayerList().getPlayer(ownerId);
+            EconomyState state = timedStateCopy(economy);
             return fields(
                     "testerOnline", owner != null,
                     "tester", ownerName,
@@ -959,9 +1163,31 @@ public final class DebugFlightRecorder {
                     "village", latestVillage == null
                             ? fields("present", false)
                             : villageFields(latestVillage.village()),
-                    "knownVillages", economy.snapshot() == null
-                            ? 0
-                            : economy.snapshot().villages.size());
+                    "persistence", fields(
+                            "format", EconomyState.FORMAT_VERSION,
+                            "knownVillages", state == null ? 0 : state.villages.size(),
+                            "pendingInventoryJournals", state == null
+                                    ? 0
+                                    : state.pendingInventoryTransactions.size(),
+                            "lastPersistedGameTick", state == null ? 0L : state.lastGameTicks,
+                            "pendingEconomicMillis", state == null
+                                    ? 0L
+                                    : state.pendingEconomicMillis,
+                            "stateDirty", latestMarket != null && latestMarket.dirty(),
+                            "serviceHealthy", economy.lastError() == null
+                                    || economy.lastError().isBlank()));
+        }
+
+        EconomyState timedStateCopy(EconomyService economy) {
+            long started = System.nanoTime();
+            try {
+                return economy.snapshot();
+            } finally {
+                long elapsed = System.nanoTime() - started;
+                stateCopyCount++;
+                stateCopyTotalNanos += elapsed;
+                stateCopyMaximumNanos = Math.max(stateCopyMaximumNanos, elapsed);
+            }
         }
 
         String markerSummary(EconomyService economy) {
@@ -991,7 +1217,8 @@ public final class DebugFlightRecorder {
                 EconomyService economy,
                 String reason,
                 boolean captureFailed) throws IOException {
-            Validation validation = validate(economy);
+            EconomyState reportState = timedStateCopy(economy);
+            Validation validation = validate(reportState, economy.catchUpDaysRemaining());
             validationWarnings.clear();
             validationWarnings.addAll(validation.warnings);
             long durationMs = Math.max(0L, System.currentTimeMillis() - startedAtMs);
@@ -1024,16 +1251,13 @@ public final class DebugFlightRecorder {
                             + "Maximum JVM memory bytes: " + Runtime.getRuntime().maxMemory() + "\n"
                             + "Dimension: " + lastDimension + "\n");
             writeText(sessionDirectory.resolve("market-snapshot.json"),
-                    json(marketFields(economy.marketSnapshot())) + "\n");
+                    json(marketFields(latestMarket)) + "\n");
             writeText(sessionDirectory.resolve("player-snapshot.json"),
-                    json(portfolioFields(economy.portfolioSnapshot(ownerId))) + "\n");
-            EconomyService.VillageSnapshot village = lastPosition == null
-                    ? null
-                    : economy.nearestVillageSnapshot(lastDimension, lastPosition.asLong(), 256.0);
+                    json(portfolioFields(latestPortfolio)) + "\n");
             writeText(sessionDirectory.resolve("village-snapshot.json"),
-                    json(village == null
+                    json(latestVillage == null
                             ? fields("present", false)
-                            : villageFields(village.village())) + "\n");
+                            : villageFields(latestVillage.village())) + "\n");
             double averageMs = sampleCount == 0
                     ? 0.0
                     : sampleTotalNanos / 1_000_000.0 / sampleCount;
@@ -1042,8 +1266,27 @@ public final class DebugFlightRecorder {
                             "samples", sampleCount,
                             "averageSampleMs", averageMs,
                             "maximumSampleMs", sampleMaximumNanos / 1_000_000.0,
+                            "activeRecorderTicks", activeTickCount,
+                            "averageActiveRecorderTickMs", averageMillis(
+                                    activeTickTotalNanos, activeTickCount),
+                            "maximumActiveRecorderTickMs", activeTickMaximumNanos / 1_000_000.0,
+                            "eventWrites", eventWriteCount,
+                            "averageEventWriteMs", averageMillis(
+                                    eventWriteTotalNanos, eventWriteCount),
+                            "maximumEventWriteMs", eventWriteMaximumNanos / 1_000_000.0,
+                            "fullSnapshots", fullSnapshotCount,
+                            "averageFullSnapshotMs", averageMillis(
+                                    fullSnapshotTotalNanos, fullSnapshotCount),
+                            "maximumFullSnapshotMs", fullSnapshotMaximumNanos / 1_000_000.0,
+                            "economyStateCopies", stateCopyCount,
+                            "averageEconomyStateCopyMs", averageMillis(
+                                    stateCopyTotalNanos, stateCopyCount),
+                            "maximumEconomyStateCopyMs", stateCopyMaximumNanos / 1_000_000.0,
                             "events", eventCount,
-                            "timelineBytes", Files.exists(timeline) ? Files.size(timeline) : 0L)) + "\n");
+                            "timelineBytes", timelineBytes,
+                            "timelineFileBytes", Files.exists(timeline) ? Files.size(timeline) : 0L,
+                            "timelineLimitReached", timelineLimitReached,
+                            "metricsOverlap", true)) + "\n");
             if (!captureErrors.isEmpty()) {
                 writeText(
                         sessionDirectory.resolve("capture-errors.txt"),
@@ -1052,17 +1295,16 @@ public final class DebugFlightRecorder {
             Path config = server.getWorldPath(LevelResource.DATA)
                     .resolve("the_emerald_standard-config.properties");
             if (Files.isRegularFile(config)) {
-                Files.copy(
+                DebugReportFiles.copyAllowedProperties(
                         config,
                         sessionDirectory.resolve("config.properties"),
-                        StandardCopyOption.REPLACE_EXISTING);
+                        PUBLIC_CONFIG_KEYS);
             }
         }
 
-        private Validation validate(EconomyService economy) {
+        private Validation validate(EconomyState state, long catchUpDaysRemaining) {
             List<String> warnings = new ArrayList<>();
             StringBuilder text = new StringBuilder("The Emerald Standard validation\n\n");
-            EconomyState state = economy.snapshot();
             if (state == null) {
                 text.append("Economy state: FAIL - unavailable\n");
                 return new Validation(false, warnings, text.toString());
@@ -1073,9 +1315,8 @@ public final class DebugFlightRecorder {
                 text.append("Core persisted-state invariants: PASS\n");
             } catch (IOException exception) {
                 valid = false;
-                text.append("Core persisted-state invariants: FAIL - ")
-                        .append(message(exception))
-                        .append('\n');
+                text.append("Core persisted-state invariants: FAIL"
+                        + " - detailed identifiers withheld by report privacy policy\n");
             }
             for (Map.Entry<String, Double> entry : state.prices.entrySet()) {
                 if (!Double.isFinite(entry.getValue()) || entry.getValue() <= 0.0) {
@@ -1083,7 +1324,10 @@ public final class DebugFlightRecorder {
                     warnings.add("Invalid market price for " + entry.getKey());
                 }
             }
-            for (EconomyState.VillageRecord village : state.villages.values()) {
+            EconomyState.VillageRecord village = watchedVillageId == null
+                    ? null
+                    : state.villages.get(watchedVillageId);
+            if (village != null) {
                 if (village.population <= 0
                         && (village.agricultureOutput > 1.0e-9
                                 || village.miningOutput > 1.0e-9
@@ -1107,8 +1351,8 @@ public final class DebugFlightRecorder {
                 warnings.add(state.pendingInventoryTransactions.size()
                         + " inventory transaction journal(s) remain pending.");
             }
-            if (economy.catchUpDaysRemaining() > 0L) {
-                warnings.add("The economy still has " + economy.catchUpDaysRemaining()
+            if (catchUpDaysRemaining > 0L) {
+                warnings.add("The economy still has " + catchUpDaysRemaining
                         + " catch-up day(s) remaining.");
             }
             text.append("Market prices: ").append(valid ? "PASS" : "CHECK WARNINGS").append('\n');
@@ -1119,6 +1363,10 @@ public final class DebugFlightRecorder {
                 text.append("- ").append(warning).append('\n');
             }
             return new Validation(valid, warnings, text.toString());
+        }
+
+        private static double averageMillis(long totalNanos, long count) {
+            return count == 0L ? 0.0 : totalNanos / 1_000_000.0 / count;
         }
     }
 

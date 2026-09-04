@@ -4,7 +4,7 @@
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current status: `0.4.0-beta.1`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
+> Current status: `0.4.0-beta.2` candidate (unreleased). Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
 
 ## Core rule
 
@@ -12,21 +12,24 @@ Players provide emerald capital to the villager economy. **Players can never bor
 
 ## Banking and investing
 
-When a player discovers a loaded Overworld village, The Emerald Standard can establish a compact **Village Bank and Exchange** nearby. The bank uses a biome-aware palette, includes a banking counter, and contains a persistent Banker villager. New banks require flat natural ground and completely empty loaded space, place their floor above the existing surface, preflight every block through the cooperative protection API, and verify every resulting block state before recording generation. If no site is safe, the mod uses an untouched unemployed adult villager or spawns a new Banker. Established villagers with professions, XP, trades, custom names, or other player investment are never repurposed.
+When a player discovers a loaded Overworld village, The Emerald Standard can establish a compact **Village Bank and Exchange** nearby. The bank uses a biome-aware palette, includes a dedicated Exchange Desk workstation, and contains a persistent villager with the registered Banker profession. New banks require flat natural ground and completely empty loaded space, place their floor above the existing surface, preflight every block through the cooperative protection API, and verify every resulting block state before recording generation. If no site is safe, the mod uses an untouched unemployed adult villager or spawns a new Banker. Established villagers with professions, XP, trades, custom names, or other player investment are never repurposed.
 
 New settlements receive stable per-village bank identities even when two villages share the same legacy 256-block region. Existing bank-region associations and anchors remain authoritative for upgraded worlds. Village Bank generation is intentionally Overworld-only in this beta; Village Prosperity records may exist in other dimensions.
 
-Right-click a Banker or a generated bank lectern to open the dashboard.
+Right-click a Banker or any Exchange Desk to open the dashboard. Exchange Desks are craftable and placeable; an unscoped desk or naturally employed Banker uses the nearest managed settlement in the same dimension within 160 blocks for its Village and Fund pages, while the player's financial account remains globally available. Lectern counters from older worlds remain valid only at their persisted Overworld bank locations.
 
-The dashboard has five pages:
+The dashboard has six pages:
 
-- **Overview:** net worth, cash, savings, physical emeralds, current market regime, news, and chart history.
-- **Market:** VILX plus eight Minecraft-themed businesses, holdings, sectors, risk labels, charts, buy, and sell actions.
-- **Banking:** savings, locked-rate CDs, and player-funded villager business lending with visible yield and default risk.
-- **Exchange:** diamonds, gold, netherite materials, valuable ores, and blocks converted into bank cash at dynamic commodity prices.
-- **Village:** local population, housing, prosperity, safety, supplies, production, development tier, current project, backlog, lifecycle, and restoration support.
+- **Overview:** net worth, cash, savings, total contributions, realized and unrealized performance, current market regime, news, and personal net-worth history.
+- **Market:** VILX plus eight Minecraft-themed businesses, holdings, allocation, average purchase price, cost basis, charts, buy, and sell actions.
+- **Banking:** savings plus up to eight independently selectable locked-rate CDs and eight player-funded villager-lending positions.
+- **Exchange:** diamonds, gold, netherite materials, valuable ores, and blocks converted into bank cash at dynamic commodity prices, with commodity history.
+- **Village:** local population, housing, prosperity, safety, supplies, production, development tier, current project, backlog, lifecycle, incidents, and restoration status.
+- **Fund:** voluntary Direct Grants, protected-principal Endowments, and Project Sponsorships for the associated settlement.
 
-Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `All`. Risky or destructive actions require confirmation.
+Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `All`. The Fund keeps a server-owned additive draft with `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear`. Risky, destructive, and irreversible actions use a time-limited two-step confirmation owned by the server rather than trusted client state.
+
+Portfolio accounting persists share cost basis, average purchase prices, total contributions and withdrawals, realized and unrealized gains, allocation, a bounded transaction ledger, and personal net-worth history. Market, commodity, and personal histories retain up to five economic years and can be viewed as 30 days, 90 days, one year, or all retained history.
 
 ## Investments
 
@@ -75,13 +78,15 @@ The beta hardening rules include:
 - Village Bank and prosperity construction expose `VillageDevelopmentProtection.register(PlacementGuard)` for claim/protection integrations. Every guard is consulted before placement and exceptions deny the placement; a claim mod must register a guard for its rules to participate.
 - Obstructed projects retry with persistent exponential backoff. Exact project bounds prevent overlap, unstarted projects may relocate, and a partial deterministic template keeps its site for safe continuation after restart.
 - Active villager professions provide small sector-specific output bonuses capped at 12 percent. Nearby residents show bounded work particles, looks, and arm swings while construction advances; these are visual cues, not autonomous custom AI.
+- In visual mode, housing and production benefits do not become active merely because the abstract project is paid for. They wait for verified physical materialization. A low-frequency integrity audit suspends a completed project's benefits when an authored block is missing and lets the normal guarded queue repair only safe air or replaceable positions.
+- Construction activity can issue an occasional low-speed, one-shot navigation request to at most two nearby suitable residents, in addition to bounded looks, arm swings, and particles. This does not install a persistent AI goal or control economic progress.
 - Physical census and construction are dimension-aware, query only settlements near loaded players, share a rotating global block budget, and never force chunks. Offline catch-up batch size adapts to the number of stored settlements and accounts.
 - Settler placement checks food, beds, fluids, support, and entity collision. The pending-settler queue changes only after a later authoritative census observes the arrival.
 - Village centers prefer a nearby bell when one exists. Persisted villager tags are also preferred when resolving an already-known settlement, reducing identity drift and accidental merging as villagers move around. Once a settlement is known, Bank keying and plot search use that persisted stable center rather than the discovering player's moving position.
 - Player-caused projectile deaths are attributed through projectile ownership when Minecraft exposes the owner.
 - The first player-caused casualty captures the village's exact pre-damage state and market contribution as a persistent counterfactual. That no-player-damage branch advances and is re-priced on each enabled simulation day, and genuine non-player casualties are applied to it. Repeated player hits do not recapture or rebase it; the damage cooldown and full recovery are both required before the live village replaces it.
 - The Village dashboard reports the cause and age of the latest local incident when restoration status is not displayed.
-- The persisted bank key scopes Banker replacement and routes the Village dashboard plus support/restoration actions to that exact associated settlement.
+- The persisted bank key scopes Banker replacement and routes the Village dashboard plus Prosperity Fund and restoration contributions to that exact associated settlement.
 
 ## World configuration
 
@@ -94,6 +99,14 @@ village_prosperity.simulation_enabled=true
 village_prosperity.visual_progression_enabled=true
 village_prosperity.market_integration_enabled=true
 village_prosperity.automatic_recovery_enabled=true
+village_prosperity.donations_enabled=true
+village_prosperity.endowments_enabled=true
+village_prosperity.project_sponsorship_enabled=true
+village_prosperity.targeted_donations_enabled=true
+village_prosperity.donor_recognition_enabled=true
+village_prosperity.endowment_annual_payout_bps=400
+village_prosperity.minimum_emergency_reserve_percent=20
+village_prosperity.max_monthly_treasury_spending=24
 ```
 
 Typical combinations:
@@ -105,7 +118,7 @@ Typical combinations:
 | Off | On | Loaded villages may finish visual development without affecting the simulated market |
 | Off | Off | Original banking, investing, and global economy only |
 
-`market_integration_enabled` independently controls whether village fundamentals influence assets and commodities. `automatic_recovery_enabled` independently controls automatic recovery from recoverable extinction.
+`market_integration_enabled` independently controls whether village fundamentals influence assets and commodities. `automatic_recovery_enabled` independently controls automatic recovery from recoverable extinction. Fund switches can disable contributions, endowments, sponsorships, targeted purposes, or visible donor titles separately. The default endowment payout is 4 percent annually; endowment principal itself is never spent. Non-restoration Direct Grants reserve 20 percent for emergencies by default, and all automatic Fund spending is limited by the configured monthly treasury cap.
 
 Construction is deliberately bounded. Defaults are two blocks every ten server ticks, one active visual project per settlement, no forced chunks, and no surface replacement.
 
@@ -119,19 +132,21 @@ Administrators can inspect or reload configuration without restarting:
 ## Reliability and persistence
 
 - One unified economic-time accumulator prevents online and offline time from being counted twice.
-- Up to 180 economic days of chart history are persisted per investment.
-- Save format 8 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
+- Up to 1,825 economic days of investment, commodity, and personal net-worth history are persisted.
+- Save format 9 uses a required magic identifier, mandatory core fields, and SHA-256 checksums.
 - Unsupported future formats stop loading instead of silently falling back to stale backups.
 - Corrupt current-format saves can recover from a validated backup.
 - Inventory-linked deposits, withdrawals, and exchanges use a durable recovery journal.
 - Overflow recovery remains journal-protected instead of dropping recoverable value into the world.
 - Player accounts are world-level and are never owned by one Banker or one village.
+- Share cost basis, realized performance, contributions, a 256-entry transaction ledger, up to eight CDs, and up to eight villager-lending positions are world-persistent.
+- Village-owned Prosperity Fund balances, protected endowment principal, project sponsorships, bounded contribution history, and donor recognition are persistent and never become player debt.
 - Village identities, residents, incidents, full pre-player-damage village counterfactuals, projects, exact project bounds, construction retry state and progress, bank anchors, and lifecycle state are persistent.
 - A configurable transaction cooldown protects servers from repeated button or packet spam.
 
-The 0.4 beta upgrades beta.4 format-7 worlds to format 8 because the expanded persistent project catalog adds new project identifiers. Beta.4 deliberately rejects format 8 instead of parsing unknown projects or falling back to stale data. Keep a pre-upgrade world backup if you may need to downgrade.
+The 0.4 line first upgraded beta.4 format-7 worlds to format 8 for the expanded project catalog. Beta.2 advances those worlds to format 9 for portfolio analytics, multiple term positions, commodity and personal history, Prosperity Funds, and donor records. Older holdings receive an explicitly inferred opening cost basis because their historical executions were not recorded. Older builds deliberately reject format 9 instead of silently discarding its fields or falling back to stale data. Keep a pre-upgrade world backup if you may need to downgrade.
 
-Beta durability boundary: materialization trusts already-persisted project progress, so blocks removed later or lost through chunk rollback are not auto-repaired. Bank markers and Minecraft chunk saves are also not cross-file atomic; a crash between those writes can yield a fallback Banker without a rebuilt structure. Player financial data remains world-level and intact in both cases.
+Materialized projects are now audited gradually. A missing authored block removes that project's economic authority and safely re-enters it into the guarded construction queue; repairs never overwrite solid player blocks, block entities, protected placements, or unloaded chunks. Bank markers and Minecraft chunk saves are still not cross-file atomic, so a crash between those writes can yield fallback Banker access without an automatically rebuilt bank. Player financial data remains world-level and intact.
 
 ## One-command debug flight recorder
 
@@ -141,9 +156,9 @@ Mod testing does not require memorizing a diagnostic command tree. An operator c
 /emerald debug
 ```
 
-The command enables a full five-minute capture of the testing player's banking actions, market changes, nearby village state, construction, settlers, persistence state, validation warnings, and performance sampling. Running the same command again stops early. `/emerald debug <1-15>` selects a duration, and `/emerald debug mark` adds an optional numbered moment marker.
+The command enables a full five-minute capture of the testing player's banking actions, market changes, watched village state, construction, settlers, persistence state, validation warnings, and performance sampling. Running the same command again stops early. `/emerald debug <1-15>` selects a duration, and `/emerald debug mark` adds an optional numbered moment marker. Only the operator who started a capture may mark or stop it.
 
-The capture is written incrementally for crash resilience and then packaged under the world's `data/the_emerald_standard_debug` directory as a shareable `TES-debug-*.zip`. Reports exclude the private economy seed, world seed, chat, server address, and unrelated player accounts. Interrupted captures are packaged automatically on the next server start.
+The capture is written incrementally for crash resilience and then packaged under the world's `data/the_emerald_standard_debug` directory as a shareable `TES-debug-*.zip`. Reports exclude the private economy seed, world seed, chat, server address, resident UUIDs, and unrelated player or settlement data. Timing fields distinguish sampling, active recorder ticks, writes, snapshots, and full-state copies instead of presenting overlapping measurements as a subsystem profile. Interrupted captures are packaged automatically on the next server start.
 
 ## Administrator commands
 
@@ -162,9 +177,9 @@ Normal gameplay does not require commands. The `/emerald` tree requires permissi
 /emerald buy <ticker> <emeralds>
 /emerald sell <ticker> <shares>
 /emerald cd open <emeralds> <30|90|180|365>
-/emerald cd close
+/emerald cd close <position-id>
 /emerald loan fund <emeralds> <30|90|180|365>
-/emerald loan collect
+/emerald loan collect <position-id>
 /emerald exchange <resource> <count>
 ```
 

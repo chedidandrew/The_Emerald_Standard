@@ -41,6 +41,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        BankerProfessionFabric.register();
         MenuType<BankerMenu> bankerMenu = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(MOD_ID, "banker"),
@@ -51,11 +52,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
             try {
                 VillageProsperityManager.resetRuntimeState();
                 EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
-                ECONOMY.configureVillageProsperity(
-                        config.villageProsperitySimulationEnabled(),
-                        config.villageVisualProgressionEnabled(),
-                        config.villageMarketIntegrationEnabled(),
-                        config.villageAutomaticRecoveryEnabled());
+                config.applyTo(ECONOMY);
                 ECONOMY.start(
                         server.getWorldPath(LevelResource.DATA),
                         server.overworld().getSeed(),

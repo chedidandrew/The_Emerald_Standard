@@ -27,6 +27,9 @@ public final class BankingOperations {
     static final int RECOVERY_PENDING = 13;
     static final int VILLAGE_FUNDED = 14;
     static final int VILLAGE_RESTORATION_READY = 15;
+    static final int CONFIRM_REQUIRED = 16;
+    static final int VILLAGE_ENDOWED = 17;
+    static final int VILLAGE_PROJECT_SPONSORED = 18;
 
     static final int BUSY = -1;
     static final int INSUFFICIENT = -2;
@@ -36,6 +39,7 @@ public final class BankingOperations {
     static final int PERSISTENCE_FAILED = -6;
     static final int UNSUPPORTED = -7;
     static final int NO_VILLAGE = -8;
+    static final int POSITION_LIMIT = -9;
 
     private BankingOperations() {
     }
@@ -202,24 +206,29 @@ public final class BankingOperations {
             return readiness;
         }
         EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
-        if (account.hasCd()) {
-            return PRODUCT_ACTIVE;
+        if (account.cdPositions.size() >= EconomyState.MAX_TERM_POSITIONS) {
+            return POSITION_LIMIT;
         }
         int amount = cappedFinancialAmount(requested, account.cashMicro / EconomyState.MICRO);
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        return economy.openCd(player.getUUID(), amount, termDays)
-                ? CD_OPENED
-                : PERSISTENCE_FAILED;
+        return economy.openCdPosition(player.getUUID(), amount, termDays) > 0L
+                ? CD_OPENED : PERSISTENCE_FAILED;
     }
 
     static int closeCd(ServerPlayer player, EconomyService economy) {
+        return closeCd(player, economy, 0L);
+    }
+
+    static int closeCd(ServerPlayer player, EconomyService economy, long positionId) {
         int readiness = prepare(player, economy);
         if (readiness != READY) {
             return readiness;
         }
-        EconomyService.CdCloseResult result = economy.closeCd(player.getUUID());
+        EconomyService.CdCloseResult result = positionId > 0L
+                ? economy.closeCd(player.getUUID(), positionId)
+                : economy.closeCd(player.getUUID());
         return result.closed() ? CD_CLOSED : NOT_READY;
     }
 
@@ -233,24 +242,30 @@ public final class BankingOperations {
             return readiness;
         }
         EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
-        if (account.hasLoan()) {
-            return PRODUCT_ACTIVE;
+        if (account.loanPositions.size() >= EconomyState.MAX_TERM_POSITIONS) {
+            return POSITION_LIMIT;
         }
         int amount = cappedFinancialAmount(requested, account.cashMicro / EconomyState.MICRO);
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        return economy.fundLoan(player.getUUID(), amount, termDays)
-                ? LENDING_FUNDED
-                : PERSISTENCE_FAILED;
+        return economy.openLoanPosition(player.getUUID(), amount, termDays) > 0L
+                ? LENDING_FUNDED : PERSISTENCE_FAILED;
     }
 
     static int collectLending(ServerPlayer player, EconomyService economy) {
+        return collectLending(player, economy, 0L);
+    }
+
+    static int collectLending(
+            ServerPlayer player, EconomyService economy, long positionId) {
         int readiness = prepare(player, economy);
         if (readiness != READY) {
             return readiness;
         }
-        EconomyService.LoanCollectionResult result = economy.collectLoan(player.getUUID());
+        EconomyService.LoanCollectionResult result = positionId > 0L
+                ? economy.collectLoan(player.getUUID(), positionId)
+                : economy.collectLoan(player.getUUID());
         return result.collected() ? LENDING_COLLECTED : NOT_READY;
     }
 
@@ -312,7 +327,9 @@ public final class BankingOperations {
             ServerPlayer player,
             EconomyService economy,
             java.util.UUID villageId,
-            int requested) {
+            int requested,
+            EconomyState.ProsperityFundType type,
+            EconomyState.DonationPurpose purpose) {
         int readiness = prepare(player, economy);
         if (readiness != READY) {
             return readiness;
@@ -320,20 +337,40 @@ public final class BankingOperations {
         if (villageId == null) {
             return NO_VILLAGE;
         }
+        EmeraldConfig config = EmeraldConfig.current();
+        if (!config.prosperityFundEnabled()
+                || !economy.villageProsperitySimulationEnabled()
+                || type == null
+                || purpose == null) {
+            return UNSUPPORTED;
+        }
+        if ((type == EconomyState.ProsperityFundType.ENDOWMENT
+                        && !config.prosperityFundEndowmentsEnabled())
+                || (type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                        && !config.prosperityFundProjectSponsorshipEnabled())
+                || (type != EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                        && purpose != EconomyState.DonationPurpose.GENERAL
+                        && !config.prosperityFundTargetedDonationsEnabled())) {
+            return UNSUPPORTED;
+        }
         long cash = economy.portfolioSnapshot(player.getUUID()).account().cashMicro
                 / EconomyState.MICRO;
         int amount = cappedFinancialAmount(requested, cash);
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        EconomyService.VillageFundingResult result =
-                economy.fundVillage(player.getUUID(), villageId, amount);
-        if (!result.funded()) {
-            return PERSISTENCE_FAILED;
+        EconomyService.VillageFundContributionResult result =
+                economy.contributeToVillageFund(
+                        player.getUUID(), villageId, amount, type, purpose);
+        if (!result.contributed()) {
+            return type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                    ? NOT_READY : PERSISTENCE_FAILED;
         }
-        return result.restorationActivated()
-                ? VILLAGE_RESTORATION_READY
-                : VILLAGE_FUNDED;
+        return switch (type) {
+            case ENDOWMENT -> VILLAGE_ENDOWED;
+            case PROJECT_SPONSORSHIP -> VILLAGE_PROJECT_SPONSORED;
+            case DIRECT_GRANT -> VILLAGE_FUNDED;
+        };
     }
 
     private static int prepare(ServerPlayer player, EconomyService economy) {

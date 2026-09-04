@@ -140,6 +140,8 @@ final class EconomyPersistence {
                 properties.setProperty("commodity." + key, Double.toString(value)));
         state.priceHistory.forEach((ticker, values) ->
                 properties.setProperty("history." + ticker, encodeHistory(values)));
+        state.commodityHistory.forEach((commodity, values) ->
+                properties.setProperty("commodity.history." + commodity, encodeHistory(values)));
         state.generatedBankRegions.forEach(region ->
                 properties.setProperty(
                         "bank.region." + Long.toUnsignedString(region, 16), "true"));
@@ -159,6 +161,7 @@ final class EconomyPersistence {
         for (Map.Entry<UUID, EconomyState.Account> entry : state.accounts.entrySet()) {
             writeAccount(properties, entry.getKey(), entry.getValue());
         }
+        state.donors.forEach((donorId, donor) -> writeDonor(properties, donorId, donor));
         for (Map.Entry<UUID, EconomyState.PendingInventoryTransaction> entry
                 : state.pendingInventoryTransactions.entrySet()) {
             writeTransaction(properties, entry.getKey(), entry.getValue());
@@ -216,6 +219,7 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "development_points", Double.toString(village.developmentPoints));
         properties.setProperty(prefix + "restoration_funded", Boolean.toString(village.restorationFunded));
         properties.setProperty(prefix + "project_serial", Long.toString(village.projectSerial));
+        writeProsperityFund(properties, prefix + "fund.", village.prosperityFund);
 
         village.residents.forEach((residentId, resident) -> {
             String residentPrefix = prefix + "resident." + residentId + ".";
@@ -304,8 +308,93 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "loan.recovery", Double.toString(account.loanRecoveryRate));
         properties.setProperty(prefix + "loan.resolved", Boolean.toString(account.loanResolved));
         properties.setProperty(prefix + "loan.outcome", account.loanOutcome.name());
+        properties.setProperty(
+                prefix + "position.next", Long.toString(account.nextTermPositionId));
         account.shares.forEach((ticker, shares) ->
                 properties.setProperty(prefix + "share." + ticker, Double.toString(shares)));
+        account.cdPositions.forEach((positionId, position) -> {
+            String positionPrefix = prefix + "cdpos." + positionId + ".";
+            properties.setProperty(positionPrefix + "principal", Long.toString(position.principalMicro));
+            properties.setProperty(positionPrefix + "value", Long.toString(position.valueMicro));
+            properties.setProperty(positionPrefix + "open", Long.toString(position.openDay));
+            properties.setProperty(positionPrefix + "maturity", Long.toString(position.maturityDay));
+            properties.setProperty(positionPrefix + "rate", Double.toString(position.annualRate));
+        });
+        account.loanPositions.forEach((positionId, position) -> {
+            String positionPrefix = prefix + "loanpos." + positionId + ".";
+            properties.setProperty(positionPrefix + "principal", Long.toString(position.principalMicro));
+            properties.setProperty(positionPrefix + "value", Long.toString(position.valueMicro));
+            properties.setProperty(positionPrefix + "open", Long.toString(position.openDay));
+            properties.setProperty(positionPrefix + "maturity", Long.toString(position.maturityDay));
+            properties.setProperty(positionPrefix + "serial", Long.toString(position.serial));
+            properties.setProperty(positionPrefix + "rate", Double.toString(position.annualRate));
+            properties.setProperty(positionPrefix + "stress", Double.toString(position.stress));
+            properties.setProperty(positionPrefix + "recovery", Double.toString(position.recoveryRate));
+            properties.setProperty(positionPrefix + "resolved", Boolean.toString(position.resolved));
+            properties.setProperty(positionPrefix + "outcome", position.outcome.name());
+        });
+        account.shareCostBasisMicro.forEach((ticker, basis) ->
+                properties.setProperty(prefix + "portfolio.basis." + ticker, Long.toString(basis)));
+        properties.setProperty(prefix + "portfolio.realized", Long.toString(account.realizedGainMicro));
+        properties.setProperty(prefix + "portfolio.contributions", Long.toString(account.totalContributionsMicro));
+        properties.setProperty(prefix + "portfolio.withdrawals", Long.toString(account.totalWithdrawalsMicro));
+        properties.setProperty(prefix + "portfolio.inferred", Boolean.toString(account.costBasisInferred));
+        for (int index = 0; index < account.transactionLedger.size(); index++) {
+            EconomyState.PortfolioTransaction transaction = account.transactionLedger.get(index);
+            String transactionPrefix = prefix + "portfolio.ledger." + index + ".";
+            properties.setProperty(transactionPrefix + "day", Long.toString(transaction.day));
+            properties.setProperty(transactionPrefix + "kind", transaction.kind.name());
+            properties.setProperty(transactionPrefix + "symbol", transaction.symbol);
+            properties.setProperty(transactionPrefix + "reference", Long.toString(transaction.referenceId));
+            properties.setProperty(transactionPrefix + "quantity", Double.toString(transaction.quantity));
+            properties.setProperty(transactionPrefix + "amount", Long.toString(transaction.amountMicro));
+            properties.setProperty(transactionPrefix + "basis", Long.toString(transaction.costBasisMicro));
+            properties.setProperty(transactionPrefix + "realized", Long.toString(transaction.realizedGainMicro));
+        }
+        for (int index = 0; index < account.netWorthHistory.size(); index++) {
+            EconomyState.PortfolioValuePoint point = account.netWorthHistory.get(index);
+            String historyPrefix = prefix + "portfolio.history." + index + ".";
+            properties.setProperty(historyPrefix + "day", Long.toString(point.day));
+            properties.setProperty(historyPrefix + "value", Long.toString(point.valueMicro));
+        }
+    }
+
+    private static void writeProsperityFund(
+            Properties properties, String prefix, EconomyState.ProsperityFund fund) {
+        properties.setProperty(prefix + "reserve", Long.toString(fund.emergencyReserveMicro));
+        properties.setProperty(prefix + "lifetime_received", Long.toString(fund.lifetimeReceivedMicro));
+        properties.setProperty(prefix + "lifetime_spent", Long.toString(fund.lifetimeSpentMicro));
+        properties.setProperty(prefix + "last_spending_day", Long.toString(fund.lastSpendingDay));
+        properties.setProperty(prefix + "spent_today", Long.toString(fund.spentTodayMicro));
+        fund.spendableMicro.forEach((purpose, amount) ->
+                properties.setProperty(prefix + "spendable." + purpose.name(), Long.toString(amount)));
+        fund.endowmentPrincipalMicro.forEach((purpose, amount) ->
+                properties.setProperty(prefix + "endowment." + purpose.name(), Long.toString(amount)));
+        fund.projectSponsorshipMicro.forEach((projectId, amount) ->
+                properties.setProperty(prefix + "sponsorship." + projectId, Long.toString(amount)));
+        fund.donorTotalsMicro.forEach((donorId, amount) ->
+                properties.setProperty(prefix + "donor." + donorId, Long.toString(amount)));
+        for (int index = 0; index < fund.contributions.size(); index++) {
+            EconomyState.FundContribution contribution = fund.contributions.get(index);
+            String contributionPrefix = prefix + "contribution." + index + ".";
+            properties.setProperty(contributionPrefix + "day", Long.toString(contribution.day));
+            properties.setProperty(contributionPrefix + "donor", contribution.donorId.toString());
+            properties.setProperty(contributionPrefix + "type", contribution.type.name());
+            properties.setProperty(contributionPrefix + "purpose", contribution.purpose.name());
+            properties.setProperty(contributionPrefix + "project", Long.toString(contribution.projectId));
+            properties.setProperty(contributionPrefix + "amount", Long.toString(contribution.amountMicro));
+        }
+    }
+
+    private static void writeDonor(
+            Properties properties, UUID donorId, EconomyState.DonorRecord donor) {
+        String prefix = "donor." + donorId + ".";
+        properties.setProperty(prefix + "lifetime", Long.toString(donor.lifetimeContributionMicro));
+        properties.setProperty(prefix + "count", Integer.toString(donor.contributionCount));
+        donor.byTypeMicro.forEach((type, amount) ->
+                properties.setProperty(prefix + "type." + type.name(), Long.toString(amount)));
+        donor.byPurposeMicro.forEach((purpose, amount) ->
+                properties.setProperty(prefix + "purpose." + purpose.name(), Long.toString(amount)));
     }
 
     private static void writeTransaction(
@@ -411,6 +500,15 @@ final class EconomyPersistence {
                                 "commodity." + commodity.id(),
                                 commodity.anchorPrice());
                 state.commodityPrices.put(commodity.id(), price);
+                if (format >= 9) {
+                    state.commodityHistory.put(
+                            commodity.id(),
+                            decodeHistory(requireValue(
+                                    properties, "commodity.history." + commodity.id())));
+                } else {
+                    state.commodityHistory.put(
+                            commodity.id(), new ArrayList<>(List.of(price)));
+                }
             }
             if (format >= 4) {
                 loadGeneratedBankRegions(state, properties);
@@ -433,6 +531,13 @@ final class EconomyPersistence {
             }
             if (format >= 3) {
                 loadTransactions(state, properties);
+            }
+            if (format >= 9) {
+                loadDonors(state, properties);
+            }
+            for (EconomyState.Account account : state.accounts.values()) {
+                EconomyState.ensurePositionCollections(account);
+                PortfolioAnalytics.migrateLegacyBasis(account, state);
             }
             state.validate();
             return state;
@@ -562,6 +667,11 @@ final class EconomyPersistence {
 
     private static void applyVillageField(
             EconomyState.VillageRecord village, String field, String value) {
+        if (field.startsWith("fund.")) {
+            applyProsperityFundField(
+                    village.prosperityFund, field.substring("fund.".length()), value);
+            return;
+        }
         switch (field) {
             case "dimension" -> village.dimensionKey = value;
             case "center" -> village.centerPos = Long.parseLong(value);
@@ -605,6 +715,65 @@ final class EconomyPersistence {
             case "project_serial" -> village.projectSerial = Long.parseLong(value);
             default -> {
                 // Ignore unknown fields from this supported format.
+            }
+        }
+    }
+
+    private static void applyProsperityFundField(
+            EconomyState.ProsperityFund fund, String field, String value) {
+        switch (field) {
+            case "reserve" -> fund.emergencyReserveMicro = Long.parseLong(value);
+            case "lifetime_received" -> fund.lifetimeReceivedMicro = Long.parseLong(value);
+            case "lifetime_spent" -> fund.lifetimeSpentMicro = Long.parseLong(value);
+            case "last_spending_day" -> fund.lastSpendingDay = Long.parseLong(value);
+            case "spent_today" -> fund.spentTodayMicro = Long.parseLong(value);
+            default -> {
+                if (field.startsWith("spendable.")) {
+                    EconomyState.DonationPurpose purpose = EconomyState.DonationPurpose.valueOf(
+                            field.substring("spendable.".length()));
+                    fund.spendableMicro.put(purpose, Long.parseLong(value));
+                } else if (field.startsWith("endowment.")) {
+                    EconomyState.DonationPurpose purpose = EconomyState.DonationPurpose.valueOf(
+                            field.substring("endowment.".length()));
+                    fund.endowmentPrincipalMicro.put(purpose, Long.parseLong(value));
+                } else if (field.startsWith("sponsorship.")) {
+                    fund.projectSponsorshipMicro.put(
+                            Long.parseLong(field.substring("sponsorship.".length())),
+                            Long.parseLong(value));
+                } else if (field.startsWith("donor.")) {
+                    fund.donorTotalsMicro.put(
+                            UUID.fromString(field.substring("donor.".length())),
+                            Long.parseLong(value));
+                } else if (field.startsWith("contribution.")) {
+                    applyFundContributionField(fund, field, value);
+                }
+            }
+        }
+    }
+
+    private static void applyFundContributionField(
+            EconomyState.ProsperityFund fund, String field, String value) {
+        int indexStart = "contribution.".length();
+        int indexEnd = field.indexOf('.', indexStart);
+        if (indexEnd < 0) {
+            return;
+        }
+        int index = Integer.parseInt(field.substring(indexStart, indexEnd));
+        if (index < 0 || index >= EconomyState.MAX_FUND_LEDGER_ENTRIES) {
+            throw new IllegalArgumentException("Invalid fund contribution index");
+        }
+        while (fund.contributions.size() <= index) {
+            fund.contributions.add(new EconomyState.FundContribution());
+        }
+        EconomyState.FundContribution contribution = fund.contributions.get(index);
+        switch (field.substring(indexEnd + 1)) {
+            case "day" -> contribution.day = Long.parseLong(value);
+            case "donor" -> contribution.donorId = UUID.fromString(value);
+            case "type" -> contribution.type = EconomyState.ProsperityFundType.valueOf(value);
+            case "purpose" -> contribution.purpose = EconomyState.DonationPurpose.valueOf(value);
+            case "project" -> contribution.projectId = Long.parseLong(value);
+            case "amount" -> contribution.amountMicro = Long.parseLong(value);
+            default -> {
             }
         }
     }
@@ -737,6 +906,18 @@ final class EconomyPersistence {
             EconomyState.Account account,
             String field,
             String value) {
+        if (field.startsWith("cdpos.")) {
+            applyCdPositionField(account, field, value);
+            return;
+        }
+        if (field.startsWith("loanpos.")) {
+            applyLoanPositionField(account, field, value);
+            return;
+        }
+        if (field.startsWith("portfolio.")) {
+            applyPortfolioField(account, field.substring("portfolio.".length()), value);
+            return;
+        }
         switch (field) {
             case "cash" -> account.cashMicro = Long.parseLong(value);
             case "savings" -> account.savingsMicro = Long.parseLong(value);
@@ -755,12 +936,158 @@ final class EconomyPersistence {
             case "loan.recovery" -> account.loanRecoveryRate = Double.parseDouble(value);
             case "loan.resolved" -> account.loanResolved = Boolean.parseBoolean(value);
             case "loan.outcome" -> account.loanOutcome = EconomyEngine.LoanOutcome.valueOf(value);
+            case "position.next" -> account.nextTermPositionId = Long.parseLong(value);
             default -> {
                 if (field.startsWith("share.")) {
                     account.shares.put(
                             field.substring("share.".length()).toUpperCase(Locale.ROOT),
                             Double.parseDouble(value));
                 }
+            }
+        }
+    }
+
+    private static void applyCdPositionField(
+            EconomyState.Account account, String field, String value) {
+        int idStart = "cdpos.".length();
+        int idEnd = field.indexOf('.', idStart);
+        if (idEnd < 0) return;
+        long id = Long.parseLong(field.substring(idStart, idEnd));
+        EconomyState.CdPosition position = account.cdPositions.computeIfAbsent(id, ignored -> {
+            EconomyState.CdPosition created = new EconomyState.CdPosition();
+            created.positionId = id;
+            return created;
+        });
+        switch (field.substring(idEnd + 1)) {
+            case "principal" -> position.principalMicro = Long.parseLong(value);
+            case "value" -> position.valueMicro = Long.parseLong(value);
+            case "open" -> position.openDay = Long.parseLong(value);
+            case "maturity" -> position.maturityDay = Long.parseLong(value);
+            case "rate" -> position.annualRate = Double.parseDouble(value);
+            default -> {
+            }
+        }
+    }
+
+    private static void applyLoanPositionField(
+            EconomyState.Account account, String field, String value) {
+        int idStart = "loanpos.".length();
+        int idEnd = field.indexOf('.', idStart);
+        if (idEnd < 0) return;
+        long id = Long.parseLong(field.substring(idStart, idEnd));
+        EconomyState.LoanPosition position = account.loanPositions.computeIfAbsent(id, ignored -> {
+            EconomyState.LoanPosition created = new EconomyState.LoanPosition();
+            created.positionId = id;
+            return created;
+        });
+        switch (field.substring(idEnd + 1)) {
+            case "principal" -> position.principalMicro = Long.parseLong(value);
+            case "value" -> position.valueMicro = Long.parseLong(value);
+            case "open" -> position.openDay = Long.parseLong(value);
+            case "maturity" -> position.maturityDay = Long.parseLong(value);
+            case "serial" -> position.serial = Long.parseLong(value);
+            case "rate" -> position.annualRate = Double.parseDouble(value);
+            case "stress" -> position.stress = Double.parseDouble(value);
+            case "recovery" -> position.recoveryRate = Double.parseDouble(value);
+            case "resolved" -> position.resolved = Boolean.parseBoolean(value);
+            case "outcome" -> position.outcome = EconomyEngine.LoanOutcome.valueOf(value);
+            default -> {
+            }
+        }
+    }
+
+    private static void applyPortfolioField(
+            EconomyState.Account account, String field, String value) {
+        switch (field) {
+            case "realized" -> account.realizedGainMicro = Long.parseLong(value);
+            case "contributions" -> account.totalContributionsMicro = Long.parseLong(value);
+            case "withdrawals" -> account.totalWithdrawalsMicro = Long.parseLong(value);
+            case "inferred" -> account.costBasisInferred = Boolean.parseBoolean(value);
+            default -> {
+                if (field.startsWith("basis.")) {
+                    account.shareCostBasisMicro.put(
+                            field.substring("basis.".length()).toUpperCase(Locale.ROOT),
+                            Long.parseLong(value));
+                } else if (field.startsWith("ledger.")) {
+                    applyPortfolioLedgerField(account, field, value);
+                } else if (field.startsWith("history.")) {
+                    applyPortfolioHistoryField(account, field, value);
+                }
+            }
+        }
+    }
+
+    private static void applyPortfolioLedgerField(
+            EconomyState.Account account, String field, String value) {
+        int indexStart = "ledger.".length();
+        int indexEnd = field.indexOf('.', indexStart);
+        if (indexEnd < 0) return;
+        int index = Integer.parseInt(field.substring(indexStart, indexEnd));
+        if (index < 0 || index >= EconomyState.MAX_PORTFOLIO_LEDGER_ENTRIES) {
+            throw new IllegalArgumentException("Invalid portfolio ledger index");
+        }
+        while (account.transactionLedger.size() <= index) {
+            account.transactionLedger.add(new EconomyState.PortfolioTransaction());
+        }
+        EconomyState.PortfolioTransaction transaction = account.transactionLedger.get(index);
+        switch (field.substring(indexEnd + 1)) {
+            case "day" -> transaction.day = Long.parseLong(value);
+            case "kind" -> transaction.kind = EconomyState.PortfolioTransactionKind.valueOf(value);
+            case "symbol" -> transaction.symbol = value;
+            case "reference" -> transaction.referenceId = Long.parseLong(value);
+            case "quantity" -> transaction.quantity = Double.parseDouble(value);
+            case "amount" -> transaction.amountMicro = Long.parseLong(value);
+            case "basis" -> transaction.costBasisMicro = Long.parseLong(value);
+            case "realized" -> transaction.realizedGainMicro = Long.parseLong(value);
+            default -> {
+            }
+        }
+    }
+
+    private static void applyPortfolioHistoryField(
+            EconomyState.Account account, String field, String value) {
+        int indexStart = "history.".length();
+        int indexEnd = field.indexOf('.', indexStart);
+        if (indexEnd < 0) return;
+        int index = Integer.parseInt(field.substring(indexStart, indexEnd));
+        if (index < 0 || index >= EconomyState.HISTORY_DAYS) {
+            throw new IllegalArgumentException("Invalid net-worth history index");
+        }
+        while (account.netWorthHistory.size() <= index) {
+            account.netWorthHistory.add(new EconomyState.PortfolioValuePoint());
+        }
+        EconomyState.PortfolioValuePoint point = account.netWorthHistory.get(index);
+        switch (field.substring(indexEnd + 1)) {
+            case "day" -> point.day = Long.parseLong(value);
+            case "value" -> point.valueMicro = Long.parseLong(value);
+            default -> {
+            }
+        }
+    }
+
+    private static void loadDonors(EconomyState state, Properties properties) {
+        String prefix = "donor.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) continue;
+            int uuidEnd = key.indexOf('.', prefix.length());
+            if (uuidEnd < 0) continue;
+            UUID donorId = UUID.fromString(key.substring(prefix.length(), uuidEnd));
+            EconomyState.DonorRecord donor = state.donors.computeIfAbsent(
+                    donorId, ignored -> new EconomyState.DonorRecord());
+            String field = key.substring(uuidEnd + 1);
+            String value = properties.getProperty(key);
+            if (field.equals("lifetime")) {
+                donor.lifetimeContributionMicro = Long.parseLong(value);
+            } else if (field.equals("count")) {
+                donor.contributionCount = Integer.parseInt(value);
+            } else if (field.startsWith("type.")) {
+                donor.byTypeMicro.put(
+                        EconomyState.ProsperityFundType.valueOf(field.substring("type.".length())),
+                        Long.parseLong(value));
+            } else if (field.startsWith("purpose.")) {
+                donor.byPurposeMicro.put(
+                        EconomyState.DonationPurpose.valueOf(field.substring("purpose.".length())),
+                        Long.parseLong(value));
             }
         }
     }

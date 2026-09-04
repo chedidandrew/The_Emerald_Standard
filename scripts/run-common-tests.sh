@@ -19,6 +19,9 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageProsperityRegress
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ProjectCatalogCompatibilityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.Milestone95RegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.LargeWorldStressRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.FinanceRoadmapRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ScalingAndSpatialIndexRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.debug.DebugReportFilesRegressionTest
 
 fabric_version="$(grep '^mod_version=' "$ROOT/fabric/gradle.properties" | cut -d= -f2-)"
 neo_version="$(grep '^mod_version=' "$ROOT/neoforge/gradle.properties" | cut -d= -f2-)"

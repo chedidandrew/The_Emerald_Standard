@@ -36,6 +36,8 @@ public final class EconomyService {
                     + MILLIS_PER_MINECRAFT_DAY - 1L;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
+    /** Rebuildable acceleration only; {@link EconomyState#villages} remains authoritative. */
+    private final VillageSpatialIndex villageSpatialIndex = new VillageSpatialIndex();
     private EconomyState state;
     private Path path;
     private String lastError = "";
@@ -47,6 +49,7 @@ public final class EconomyService {
     private boolean villageVisualProgressionEnabled = true;
     private boolean villageMarketIntegrationEnabled = true;
     private boolean villageAutomaticRecoveryEnabled = true;
+    private ProsperityFundPolicy prosperityFundPolicy = ProsperityFundPolicy.defaults();
 
     public synchronized void configureVillageProsperity(
             boolean simulationEnabled, boolean visualProgressionEnabled) {
@@ -70,6 +73,30 @@ public final class EconomyService {
 
     public synchronized boolean villageVisualProgressionEnabled() {
         return villageVisualProgressionEnabled;
+    }
+
+    public synchronized void configureProsperityFund(ProsperityFundPolicy policy) {
+        prosperityFundPolicy = Objects.requireNonNull(policy, "policy");
+    }
+
+    public synchronized void configureProsperityFund(
+            boolean enabled,
+            double endowmentAnnualPayoutRate,
+            double emergencyReserveFraction,
+            long dailySpendingCapEmeralds) {
+        Long capMicro = dailySpendingCapEmeralds <= 0L
+                        || dailySpendingCapEmeralds > MAX_WHOLE_EMERALD_TRANSACTION
+                ? null
+                : wholeEmeraldsToMicro(dailySpendingCapEmeralds);
+        if (capMicro == null) {
+            throw new IllegalArgumentException("Daily prosperity-fund spending cap is invalid");
+        }
+        configureProsperityFund(new ProsperityFundPolicy(
+                enabled, endowmentAnnualPayoutRate, emergencyReserveFraction, capMicro));
+    }
+
+    public synchronized ProsperityFundPolicy prosperityFundPolicy() {
+        return prosperityFundPolicy;
     }
 
     public synchronized void start(Path worldDataDirectory, long worldSeed, long gameTicks)
@@ -98,6 +125,7 @@ public final class EconomyService {
         path = worldDataDirectory.resolve("the_emerald_standard.properties");
         try {
             state = EconomyState.load(path, fallbackSeed, now, gameTicks);
+            villageSpatialIndex.rebuild(state.villages);
             observeProgress(now, gameTicks, STARTUP_CATCH_UP_BATCH_DAYS);
             state.save(path);
             dirty = false;
@@ -206,6 +234,20 @@ public final class EconomyService {
                 state.netWorth(id),
                 transaction == null ? null : transaction.copy(),
                 catchUpDaysRemainingInternal());
+    }
+
+    public synchronized PortfolioAnalytics.PortfolioSnapshot portfolioAnalyticsSnapshot(UUID id) {
+        if (state == null) {
+            return PortfolioAnalytics.PortfolioSnapshot.empty();
+        }
+        EconomyState.Account account = state.existingAccount(id);
+        return account == null
+                ? PortfolioAnalytics.PortfolioSnapshot.empty()
+                : PortfolioAnalytics.snapshot(account.copy(), state);
+    }
+
+    public synchronized Map<String, List<Double>> commodityHistorySnapshot() {
+        return state == null ? Map.of() : copyHistory(state.commodityHistory);
     }
 
     public synchronized String lastError() {
@@ -320,6 +362,7 @@ public final class EconomyService {
                 resetSaveSchedule(state.lastWallClockMs);
             }
             lastError = "";
+            villageSpatialIndex.upsert(village);
             return villageSnapshot(village);
         } catch (IOException | RuntimeException exception) {
             if (before == null) {
@@ -394,20 +437,15 @@ public final class EconomyService {
                 || maximumDistance < 0.0) {
             return List.of();
         }
-        double maximumDistanceSquared = maximumDistance * maximumDistance;
-        if (!Double.isFinite(maximumDistanceSquared)) {
-            maximumDistanceSquared = Double.MAX_VALUE;
-        }
+        ensureVillageSpatialIndex();
         VillageProsperityEngine.VillageFundamentals fundamentals =
                 villageMarketIntegrationEnabled
                         ? state.villageFundamentals()
                         : VillageProsperityEngine.VillageFundamentals.neutral();
-        List<VillageSnapshot> snapshots = new ArrayList<>();
-        for (EconomyState.VillageRecord village : state.villages.values()) {
-            if (!Objects.equals(village.dimensionKey, dimensionKey)
-                    || !isNearAny(village.centerPos, packedPositions, maximumDistanceSquared)) {
-                continue;
-            }
+        List<EconomyState.VillageRecord> nearby = villageSpatialIndex.nearAny(
+                state.villages, dimensionKey, packedPositions, maximumDistance);
+        List<VillageSnapshot> snapshots = new ArrayList<>(nearby.size());
+        for (EconomyState.VillageRecord village : nearby) {
             snapshots.add(new VillageSnapshot(
                     village.copy(),
                     fundamentals,
@@ -859,54 +897,261 @@ public final class EconomyService {
 
     public synchronized VillageFundingResult fundVillage(
             UUID playerId, UUID villageId, long emeralds) {
-        Long micro = wholeEmeraldsToMicro(emeralds);
-        if (state == null || path == null || micro == null || villageId == null) {
-            return VillageFundingResult.notFunded();
+        VillageFundContributionResult result = contributeToVillageFund(
+                playerId,
+                villageId,
+                emeralds,
+                EconomyState.ProsperityFundType.DIRECT_GRANT,
+                EconomyState.DonationPurpose.GENERAL);
+        if (!result.contributed()) return VillageFundingResult.notFunded();
+        boolean restorationActivated = false;
+        if (result.purpose() == EconomyState.DonationPurpose.RESTORATION) {
+            spendVillageFund(villageId, result.purpose(), result.amountMicro(), 0L);
+            EconomyState.VillageRecord village = state == null ? null : state.existingVillage(villageId);
+            restorationActivated = village != null && village.restorationFunded;
+        }
+        return new VillageFundingResult(true, restorationActivated, result.amountMicro());
+    }
+
+    public synchronized VillageFundContributionResult contributeToVillageFund(
+            UUID playerId,
+            UUID villageId,
+            long wholeEmeralds,
+            EconomyState.ProsperityFundType type,
+            EconomyState.DonationPurpose purpose) {
+        long projectId = 0L;
+        if (type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP && state != null) {
+            EconomyState.VillageRecord village = state.existingVillage(villageId);
+            if (village != null) {
+                projectId = village.projects.stream()
+                        .filter(project -> !project.economicComplete)
+                        .mapToLong(project -> project.projectId)
+                        .findFirst()
+                        .orElse(0L);
+            }
+        }
+        return contributeToVillageFund(
+                playerId, villageId, wholeEmeralds, type, purpose, projectId);
+    }
+
+    /** Atomically debits the donor and credits an irreversible, village-owned fund balance. */
+    public synchronized VillageFundContributionResult contributeToVillageFund(
+            UUID playerId,
+            UUID villageId,
+            long wholeEmeralds,
+            EconomyState.ProsperityFundType type,
+            EconomyState.DonationPurpose purpose,
+            long projectId) {
+        Long amountMicro = wholeEmeraldsToMicro(wholeEmeralds);
+        if (!prosperityFundPolicy.enabled()
+                || state == null
+                || path == null
+                || playerId == null
+                || villageId == null
+                || amountMicro == null
+                || type == null
+                || purpose == null) {
+            return VillageFundContributionResult.notContributed();
         }
         EconomyState.Account account = state.existingAccount(playerId);
         EconomyState.VillageRecord village = state.existingVillage(villageId);
-        if (account == null || village == null || account.cashMicro < micro) {
-            return VillageFundingResult.notFunded();
+        if (account == null || village == null || account.cashMicro < amountMicro) {
+            return VillageFundContributionResult.notContributed();
         }
-        EconomyState.Account accountBefore = account.copy();
-        EconomyState.VillageRecord villageBefore = village.copy();
+        EconomyState.VillageProject sponsoredProject = type
+                        == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                ? findProject(village, projectId)
+                : null;
+        if (type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                && (projectId <= 0L
+                        || sponsoredProject == null
+                        || sponsoredProject.economicComplete)) {
+            return VillageFundContributionResult.notContributed();
+        }
+        EconomyState.DonationPurpose actualPurpose =
+                type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                        ? EconomyState.donationPurposeForProject(sponsoredProject)
+                        : type == EconomyState.ProsperityFundType.DIRECT_GRANT
+                                && (village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
+                                        || village.lifecycle
+                                                == VillageProsperityEngine.Lifecycle.EXTINCT)
+                        ? EconomyState.DonationPurpose.RESTORATION
+                        : purpose;
+
+        EconomyState before = state.copy();
         try {
-            account.cashMicro -= micro;
-            double amount = emeralds;
-            village.treasury = Math.min(1_000_000.0, village.treasury + amount * 0.75);
-            village.developmentPoints = Math.min(
-                    1_000_000.0, village.developmentPoints + amount * 0.65);
-            EconomyState.VillageProject active = village.projects.stream()
-                    .filter(project -> !project.economicComplete)
-                    .findFirst()
-                    .orElse(null);
-            if (active != null) {
-                active.economicProgress = Math.min(
-                        1.0, active.economicProgress + Math.min(0.20, amount / 250.0));
-            }
-            boolean restorationActivated = false;
-            if (village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
-                    || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT) {
-                village.restorationFund = Math.min(
-                        1_000_000.0, village.restorationFund + amount);
-                if (village.restorationFund >= VillageProsperityEngine.RESTORATION_EMERALD_TARGET) {
-                    village.restorationFunded = true;
-                    village.recoveryEligibleDay = Math.min(
-                            village.recoveryEligibleDay, state.economicDay + 3L);
-                    restorationActivated = true;
+            account.cashMicro -= amountMicro;
+            EconomyState.ProsperityFund fund = village.prosperityFund;
+            switch (type) {
+                case DIRECT_GRANT -> {
+                    long reserve = actualPurpose == EconomyState.DonationPurpose.RESTORATION
+                            ? 0L
+                            : Math.max(0L, Math.round(
+                                    amountMicro * prosperityFundPolicy.emergencyReserveFraction()));
+                    fund.emergencyReserveMicro = PortfolioAnalytics.add(
+                            fund.emergencyReserveMicro, reserve);
+                    fund.spendableMicro.merge(
+                            actualPurpose, amountMicro - reserve, PortfolioAnalytics::add);
                 }
+                case ENDOWMENT -> fund.endowmentPrincipalMicro.merge(
+                        actualPurpose, amountMicro, PortfolioAnalytics::add);
+                case PROJECT_SPONSORSHIP -> fund.projectSponsorshipMicro.merge(
+                        projectId, amountMicro, PortfolioAnalytics::add);
             }
+            fund.lifetimeReceivedMicro = PortfolioAnalytics.add(
+                    fund.lifetimeReceivedMicro, amountMicro);
+            fund.donorTotalsMicro.merge(playerId, amountMicro, PortfolioAnalytics::add);
+            EconomyState.FundContribution contribution = new EconomyState.FundContribution();
+            contribution.day = state.economicDay;
+            contribution.donorId = playerId;
+            contribution.type = type;
+            contribution.purpose = actualPurpose;
+            contribution.projectId = projectId;
+            contribution.amountMicro = amountMicro;
+            fund.contributions.add(contribution);
+            trimFront(fund.contributions, EconomyState.MAX_FUND_LEDGER_ENTRIES);
+
+            EconomyState.DonorRecord donor = state.donors.computeIfAbsent(
+                    playerId, ignored -> new EconomyState.DonorRecord());
+            donor.lifetimeContributionMicro = PortfolioAnalytics.add(
+                    donor.lifetimeContributionMicro, amountMicro);
+            if (donor.contributionCount < Integer.MAX_VALUE) donor.contributionCount++;
+            donor.byTypeMicro.merge(type, amountMicro, PortfolioAnalytics::add);
+            donor.byPurposeMicro.merge(actualPurpose, amountMicro, PortfolioAnalytics::add);
+
+            EconomyState.PortfolioTransactionKind transactionKind = switch (type) {
+                case DIRECT_GRANT -> EconomyState.PortfolioTransactionKind.DIRECT_GRANT;
+                case ENDOWMENT -> EconomyState.PortfolioTransactionKind.ENDOWMENT;
+                case PROJECT_SPONSORSHIP ->
+                        EconomyState.PortfolioTransactionKind.PROJECT_SPONSORSHIP;
+            };
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    state.economicDay,
+                    transactionKind,
+                    actualPurpose.name(),
+                    projectId,
+                    0.0,
+                    amountMicro,
+                    0L,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, state, state.economicDay);
             state.save(path);
             dirty = false;
             resetSaveSchedule(state.lastWallClockMs);
             lastError = "";
-            return new VillageFundingResult(true, restorationActivated, micro);
+            return new VillageFundContributionResult(
+                    true,
+                    amountMicro,
+                    type,
+                    actualPurpose,
+                    projectId,
+                    donor.lifetimeContributionMicro,
+                    donor.title());
         } catch (IOException | RuntimeException exception) {
-            state.accounts.put(playerId, accountBefore);
-            state.villages.put(villageId, villageBefore);
+            state = before;
             lastError = message(exception);
-            return VillageFundingResult.notFunded();
+            return VillageFundContributionResult.notContributed();
         }
+    }
+
+    /**
+     * Releases a bounded amount into ordinary village resources. It never writes market output
+     * directly, so donations influence markets only through sustained village simulation.
+     */
+    public synchronized VillageFundSpendingResult spendVillageFund(
+            UUID villageId,
+            EconomyState.DonationPurpose purpose,
+            long requestedMicro,
+            long sponsoredProjectId) {
+        if (!prosperityFundPolicy.enabled()
+                || state == null
+                || path == null
+                || villageId == null
+                || purpose == null
+                || requestedMicro <= 0L) {
+            return VillageFundSpendingResult.notSpent();
+        }
+        EconomyState before = state.copy();
+        try {
+            EconomyState.VillageRecord village = state.existingVillage(villageId);
+            if (village == null) return VillageFundSpendingResult.notSpent();
+            EconomyState.ProsperityFund fund = village.prosperityFund;
+            long spentToday = fund.lastSpendingDay == state.economicDay
+                    ? fund.spentTodayMicro
+                    : 0L;
+            long capRemaining = Math.max(
+                    0L, prosperityFundPolicy.dailySpendingCapMicro() - spentToday);
+            long source = sponsoredProjectId > 0L
+                    ? fund.projectSponsorshipMicro.getOrDefault(sponsoredProjectId, 0L)
+                    : fund.spendableMicro.getOrDefault(purpose, 0L);
+            long requested = Math.min(requestedMicro, Math.min(source, capRemaining));
+            if (requested <= 0L) return VillageFundSpendingResult.notSpent();
+            long spent;
+            EconomyState.DonationPurpose actualPurpose = purpose;
+            if (sponsoredProjectId > 0L) {
+                EconomyState.VillageProject project = findProject(village, sponsoredProjectId);
+                if (project == null || project.economicComplete) {
+                    return VillageFundSpendingResult.notSpent();
+                }
+                actualPurpose = EconomyState.donationPurposeForProject(project);
+                spent = EconomyState.applyProjectSponsorshipInputs(
+                        village, project, requested, state.economicDay);
+                if (spent <= 0L) return VillageFundSpendingResult.notSpent();
+                subtractOrRemove(fund.projectSponsorshipMicro, sponsoredProjectId, spent);
+            } else {
+                spent = EconomyState.applyFundInputs(
+                        village, purpose, requested, state.economicDay);
+                if (spent <= 0L) return VillageFundSpendingResult.notSpent();
+                subtractOrRemove(fund.spendableMicro, purpose, spent);
+            }
+            if (fund.lastSpendingDay != state.economicDay) {
+                fund.lastSpendingDay = state.economicDay;
+                fund.spentTodayMicro = 0L;
+            }
+            fund.spentTodayMicro = PortfolioAnalytics.add(fund.spentTodayMicro, spent);
+            fund.lifetimeSpentMicro = PortfolioAnalytics.add(fund.lifetimeSpentMicro, spent);
+            state.save(path);
+            dirty = false;
+            resetSaveSchedule(state.lastWallClockMs);
+            lastError = "";
+            return new VillageFundSpendingResult(
+                    true, spent, actualPurpose, sponsoredProjectId);
+        } catch (IOException | RuntimeException exception) {
+            state = before;
+            lastError = message(exception);
+            return VillageFundSpendingResult.notSpent();
+        }
+    }
+
+    public synchronized VillageFundSnapshot villageFundSnapshot(UUID villageId) {
+        if (state == null || villageId == null) return VillageFundSnapshot.empty();
+        EconomyState.VillageRecord village = state.existingVillage(villageId);
+        if (village == null) return VillageFundSnapshot.empty();
+        EconomyState.ProsperityFund fund = village.prosperityFund.copy();
+        return new VillageFundSnapshot(
+                fund.spendableTotalMicro(),
+                fund.endowmentPrincipalTotalMicro(),
+                fund.emergencyReserveMicro,
+                fund.lifetimeReceivedMicro,
+                fund.lifetimeSpentMicro,
+                Map.copyOf(fund.spendableMicro),
+                Map.copyOf(fund.endowmentPrincipalMicro),
+                Map.copyOf(fund.projectSponsorshipMicro),
+                Map.copyOf(fund.donorTotalsMicro),
+                List.copyOf(fund.contributions));
+    }
+
+    public synchronized DonorSnapshot donorSnapshot(UUID playerId) {
+        if (state == null || playerId == null) return DonorSnapshot.empty();
+        EconomyState.DonorRecord donor = state.donors.get(playerId);
+        if (donor == null) return DonorSnapshot.empty();
+        return new DonorSnapshot(
+                donor.lifetimeContributionMicro,
+                donor.contributionCount,
+                donor.title(),
+                Map.copyOf(donor.byTypeMicro),
+                Map.copyOf(donor.byPurposeMicro));
     }
 
     public synchronized boolean reserveVillageProjectSite(
@@ -1039,6 +1284,38 @@ public final class EconomyService {
         });
     }
 
+    /**
+     * Reconciles persisted visual progress with a fully loaded, verified authored template.
+     * Unlike normal construction progress this may move the verified prefix backwards after
+     * player damage or save recovery.
+     */
+    public synchronized boolean reconcileVillageProjectMaterialization(
+            UUID villageId,
+            long projectId,
+            int verifiedPrefix,
+            int expectedTotal,
+            boolean structurallyComplete) {
+        if (expectedTotal <= 0 || verifiedPrefix < 0) {
+            return false;
+        }
+        return mutateVillage(villageId, true, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null || project.originPos == 0L || project.abstractOnly) {
+                return false;
+            }
+            project.totalBlocks = expectedTotal;
+            project.materializedBlocks = Math.min(expectedTotal, verifiedPrefix);
+            project.materializedComplete = structurallyComplete
+                    && project.materializedBlocks >= expectedTotal;
+            if (project.materializedComplete) {
+                project.blocked = false;
+                project.retryAfterGameTick = 0L;
+                project.materializationFailures = 0;
+            }
+            return true;
+        });
+    }
+
     public synchronized boolean consumePendingSettler(UUID villageId) {
         return mutateVillage(villageId, false, village -> {
             if (village.pendingSettlers <= 0) {
@@ -1150,27 +1427,15 @@ public final class EconomyService {
         if (state == null) {
             return null;
         }
-        long x = unpackX(packedPosition);
-        long y = unpackY(packedPosition);
-        long z = unpackZ(packedPosition);
-        double maximumDistanceSquared = maximumDistance * maximumDistance;
-        EconomyState.VillageRecord best = null;
-        double bestDistance = maximumDistanceSquared;
-        for (EconomyState.VillageRecord village : state.villages.values()) {
-            if (!Objects.equals(village.dimensionKey, dimensionKey)) {
-                continue;
-            }
-            long center = village.centerPos;
-            double dx = unpackX(center) - x;
-            double dy = unpackY(center) - y;
-            double dz = unpackZ(center) - z;
-            double distance = dx * dx + dy * dy + dz * dz;
-            if (distance <= bestDistance) {
-                best = village;
-                bestDistance = distance;
-            }
+        ensureVillageSpatialIndex();
+        return villageSpatialIndex.nearest(
+                state.villages, dimensionKey, packedPosition, maximumDistance);
+    }
+
+    private void ensureVillageSpatialIndex() {
+        if (state != null && villageSpatialIndex.size() != state.villages.size()) {
+            villageSpatialIndex.rebuild(state.villages);
         }
-        return best;
     }
 
     private void initializeVillage(
@@ -1389,19 +1654,6 @@ public final class EconomyService {
         return dx * dx + dy * dy + dz * dz;
     }
 
-    private static boolean isNearAny(
-            long packedPosition,
-            Collection<Long> candidates,
-            double maximumDistanceSquared) {
-        for (Long candidate : candidates) {
-            if (candidate != null
-                    && distanceSquared(packedPosition, candidate) <= maximumDistanceSquared) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private static int unpackX(long packed) {
         return (int) (packed >> 38);
     }
@@ -1443,6 +1695,19 @@ public final class EconomyService {
                 return false;
             }
             account.cashMicro += microEmeralds;
+            account.totalContributionsMicro = PortfolioAnalytics.add(
+                    account.totalContributionsMicro, microEmeralds);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.CASH_IN,
+                    "CASH",
+                    0L,
+                    0.0,
+                    microEmeralds,
+                    0L,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             return true;
         });
     }
@@ -1458,6 +1723,19 @@ public final class EconomyService {
                 return false;
             }
             account.cashMicro -= micro;
+            account.totalWithdrawalsMicro = PortfolioAnalytics.add(
+                    account.totalWithdrawalsMicro, micro);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.CASH_OUT,
+                    "CASH",
+                    0L,
+                    0.0,
+                    micro,
+                    0L,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             return true;
         }) ? emeralds : 0L;
     }
@@ -1475,114 +1753,251 @@ public final class EconomyService {
                 }
                 account.cashMicro -= micro;
                 account.savingsMicro += micro;
+                PortfolioAnalytics.recordTransaction(
+                        account,
+                        current.economicDay,
+                        EconomyState.PortfolioTransactionKind.SAVINGS_DEPOSIT,
+                        "SAVINGS",
+                        0L,
+                        0.0,
+                        micro,
+                        0L,
+                        0L);
             } else {
                 if (account.savingsMicro < micro || !canAdd(account.cashMicro, micro)) {
                     return false;
                 }
                 account.savingsMicro -= micro;
                 account.cashMicro += micro;
+                PortfolioAnalytics.recordTransaction(
+                        account,
+                        current.economicDay,
+                        EconomyState.PortfolioTransactionKind.SAVINGS_WITHDRAW,
+                        "SAVINGS",
+                        0L,
+                        0.0,
+                        micro,
+                        0L,
+                        0L);
             }
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             return true;
         });
     }
 
     public synchronized boolean openCd(UUID id, long emeralds, int termDays) {
+        return openCdPosition(id, emeralds, termDays) > 0L;
+    }
+
+    /** Opens another independently maturing CD and returns its stable position id, or zero. */
+    public synchronized long openCdPosition(UUID id, long emeralds, int termDays) {
         if (!supportedTerm(termDays)) {
-            return false;
+            return 0L;
         }
         Long micro = wholeEmeraldsToMicro(emeralds);
         if (micro == null) {
-            return false;
+            return 0L;
         }
-        return mutatePlayer(id, false, current -> {
+        long[] openedId = {0L};
+        boolean opened = mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
-            if (account.cashMicro < micro || account.hasCd()) {
+            EconomyState.ensurePositionCollections(account);
+            if (account.cashMicro < micro
+                    || account.cdPositions.size() >= EconomyState.MAX_TERM_POSITIONS) {
                 return false;
             }
             account.cashMicro -= micro;
-            account.cdPrincipalMicro = micro;
-            account.cdValueMicro = micro;
-            account.cdOpenDay = current.economicDay;
-            account.cdMaturityDay = current.economicDay + termDays;
-            account.cdAnnualRate = EconomyEngine.cdAnnualRate(current.regime, termDays);
+            EconomyState.CdPosition position = new EconomyState.CdPosition();
+            position.positionId = EconomyState.nextPositionId(account);
+            position.principalMicro = micro;
+            position.valueMicro = micro;
+            position.openDay = current.economicDay;
+            position.maturityDay = current.economicDay + termDays;
+            position.annualRate = EconomyEngine.cdAnnualRate(current.regime, termDays);
+            account.cdPositions.put(position.positionId, position);
+            EconomyState.syncLegacyProductViews(account);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.CD_OPEN,
+                    "CD",
+                    position.positionId,
+                    0.0,
+                    micro,
+                    micro,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
+            openedId[0] = position.positionId;
             return true;
         });
+        return opened ? openedId[0] : 0L;
     }
 
     public synchronized CdCloseResult closeCd(UUID id) {
+        if (state == null) {
+            return CdCloseResult.notClosed();
+        }
+        EconomyState.Account account = state.existingAccount(id);
+        if (account == null) {
+            return CdCloseResult.notClosed();
+        }
+        EconomyState.ensurePositionCollections(account);
+        Long positionId = account.cdPositions.keySet().stream().findFirst().orElse(null);
+        return positionId == null ? CdCloseResult.notClosed() : closeCd(id, positionId);
+    }
+
+    public synchronized CdCloseResult closeCd(UUID id, long positionId) {
         CdCloseResult[] result = {CdCloseResult.notClosed()};
         boolean success = mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
-            if (!account.hasCd()) {
+            EconomyState.ensurePositionCollections(account);
+            EconomyState.CdPosition position = account.cdPositions.get(positionId);
+            if (position == null) {
                 return false;
             }
-            boolean matured = current.economicDay >= account.cdMaturityDay;
+            boolean matured = current.economicDay >= position.maturityDay;
             long penalty = matured
                     ? 0L
-                    : Math.max(1L, Math.round(account.cdPrincipalMicro * 0.01));
+                    : Math.max(1L, Math.round(position.principalMicro * 0.01));
             long payout = matured
-                    ? account.cdValueMicro
-                    : Math.max(0L, account.cdPrincipalMicro - penalty);
+                    ? position.valueMicro
+                    : Math.max(0L, position.principalMicro - penalty);
             if (!canAdd(account.cashMicro, payout)) {
                 return false;
             }
             account.cashMicro += payout;
             result[0] = new CdCloseResult(true, payout, penalty, matured);
-            clearCd(account);
+            long realized = PortfolioAnalytics.subtract(payout, position.principalMicro);
+            account.realizedGainMicro = PortfolioAnalytics.add(
+                    account.realizedGainMicro, realized);
+            account.cdPositions.remove(positionId);
+            EconomyState.syncLegacyProductViews(account);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.CD_CLOSE,
+                    "CD",
+                    positionId,
+                    0.0,
+                    payout,
+                    position.principalMicro,
+                    realized);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             return true;
         });
         return success ? result[0] : CdCloseResult.notClosed();
     }
 
     public synchronized boolean fundLoan(UUID id, long emeralds, int termDays) {
+        return openLoanPosition(id, emeralds, termDays) > 0L;
+    }
+
+    /** Funds another independent villager loan and returns its stable position id, or zero. */
+    public synchronized long openLoanPosition(UUID id, long emeralds, int termDays) {
         if (!supportedTerm(termDays)) {
-            return false;
+            return 0L;
         }
         Long micro = wholeEmeraldsToMicro(emeralds);
         if (micro == null) {
-            return false;
+            return 0L;
         }
-        return mutatePlayer(id, false, current -> {
+        long[] openedId = {0L};
+        boolean opened = mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
-            if (account.cashMicro < micro || account.hasLoan()) {
+            EconomyState.ensurePositionCollections(account);
+            if (account.cashMicro < micro
+                    || account.loanPositions.size() >= EconomyState.MAX_TERM_POSITIONS) {
                 return false;
             }
             account.cashMicro -= micro;
-            account.loanPrincipalMicro = micro;
-            account.loanValueMicro = micro;
-            account.loanOpenDay = current.economicDay;
-            account.loanMaturityDay = current.economicDay + termDays;
-            account.loanSerial++;
-            account.loanAnnualRate = EconomyEngine.villagerLoanAnnualYield(
+            EconomyState.LoanPosition position = new EconomyState.LoanPosition();
+            position.positionId = EconomyState.nextPositionId(account);
+            position.principalMicro = micro;
+            position.valueMicro = micro;
+            position.openDay = current.economicDay;
+            position.maturityDay = current.economicDay + termDays;
+            position.serial = account.loanSerial == Long.MAX_VALUE
+                    ? Long.MAX_VALUE
+                    : account.loanSerial + 1L;
+            account.loanSerial = position.serial;
+            position.annualRate = EconomyEngine.villagerLoanAnnualYield(
                     current.regime, termDays);
-            account.loanStress = 0.0;
-            account.loanRecoveryRate = 1.0;
-            account.loanResolved = false;
-            account.loanOutcome = EconomyEngine.LoanOutcome.REPAID;
+            account.loanPositions.put(position.positionId, position);
+            EconomyState.syncLegacyProductViews(account);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.LENDING_OPEN,
+                    "LENDING",
+                    position.positionId,
+                    0.0,
+                    micro,
+                    micro,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
+            openedId[0] = position.positionId;
             return true;
         });
+        return opened ? openedId[0] : 0L;
     }
 
     public synchronized LoanCollectionResult collectLoan(UUID id) {
+        if (state == null) {
+            return LoanCollectionResult.notCollected();
+        }
+        EconomyState.Account account = state.existingAccount(id);
+        if (account == null) {
+            return LoanCollectionResult.notCollected();
+        }
+        EconomyState.ensurePositionCollections(account);
+        Long positionId = account.loanPositions.values().stream()
+                .filter(position -> position.resolved && state.economicDay >= position.maturityDay)
+                .map(position -> position.positionId)
+                .findFirst()
+                .orElse(null);
+        return positionId == null
+                ? LoanCollectionResult.notCollected()
+                : collectLoan(id, positionId);
+    }
+
+    public synchronized LoanCollectionResult collectLoan(UUID id, long positionId) {
         LoanCollectionResult[] result = {LoanCollectionResult.notCollected()};
         boolean success = mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
-            if (!account.hasLoan()
-                    || current.economicDay < account.loanMaturityDay
-                    || !account.loanResolved) {
+            EconomyState.ensurePositionCollections(account);
+            EconomyState.LoanPosition position = account.loanPositions.get(positionId);
+            if (position == null
+                    || current.economicDay < position.maturityDay
+                    || !position.resolved) {
                 return false;
             }
-            if (!canAdd(account.cashMicro, account.loanValueMicro)) {
+            if (!canAdd(account.cashMicro, position.valueMicro)) {
                 return false;
             }
-            account.cashMicro += account.loanValueMicro;
+            account.cashMicro += position.valueMicro;
             result[0] = new LoanCollectionResult(
                     true,
-                    account.loanValueMicro,
-                    account.loanPrincipalMicro,
-                    account.loanRecoveryRate,
-                    account.loanOutcome);
-            clearLoan(account);
+                    position.valueMicro,
+                    position.principalMicro,
+                    position.recoveryRate,
+                    position.outcome);
+            long realized = PortfolioAnalytics.subtract(
+                    position.valueMicro, position.principalMicro);
+            account.realizedGainMicro = PortfolioAnalytics.add(
+                    account.realizedGainMicro, realized);
+            account.loanPositions.remove(positionId);
+            EconomyState.syncLegacyProductViews(account);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.LENDING_CLOSE,
+                    "LENDING",
+                    positionId,
+                    0.0,
+                    position.valueMicro,
+                    position.principalMicro,
+                    realized);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             return true;
         });
         return success ? result[0] : LoanCollectionResult.notCollected();
@@ -1596,6 +2011,7 @@ public final class EconomyService {
         String normalized = ticker.toUpperCase(Locale.ROOT);
         return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
+            PortfolioAnalytics.migrateLegacyBasis(account, current);
             Double marketPrice = current.prices.get(normalized);
             if (marketPrice == null || account.cashMicro < micro) {
                 return false;
@@ -1607,6 +2023,19 @@ public final class EconomyService {
             }
             account.cashMicro -= micro;
             account.shares.merge(normalized, purchasedShares, Double::sum);
+            account.shareCostBasisMicro.merge(
+                    normalized, micro, PortfolioAnalytics::add);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.BUY,
+                    normalized,
+                    0L,
+                    purchasedShares,
+                    micro,
+                    micro,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             return true;
         });
     }
@@ -1618,6 +2047,7 @@ public final class EconomyService {
         String normalized = ticker.toUpperCase(Locale.ROOT);
         return mutatePlayer(id, false, current -> {
             EconomyState.Account account = current.account(id);
+            PortfolioAnalytics.migrateLegacyBasis(account, current);
             double held = account.shares.getOrDefault(normalized, 0.0);
             Double marketPrice = current.prices.get(normalized);
             if (marketPrice == null || shares > held) {
@@ -1628,13 +2058,34 @@ public final class EconomyService {
             if (proceeds < 0L || !canAdd(account.cashMicro, proceeds)) {
                 return false;
             }
+            long oldBasis = Math.max(
+                    0L, account.shareCostBasisMicro.getOrDefault(normalized, 0L));
+            long removedBasis = shares >= held - Math.ulp(held)
+                    ? oldBasis
+                    : Math.min(oldBasis, Math.round(oldBasis * (shares / held)));
             double remaining = held - shares;
             if (remaining <= Math.ulp(held)) {
                 account.shares.remove(normalized);
+                account.shareCostBasisMicro.remove(normalized);
             } else {
                 account.shares.put(normalized, remaining);
+                account.shareCostBasisMicro.put(normalized, oldBasis - removedBasis);
             }
             account.cashMicro += proceeds;
+            long realized = PortfolioAnalytics.subtract(proceeds, removedBasis);
+            account.realizedGainMicro = PortfolioAnalytics.add(
+                    account.realizedGainMicro, realized);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.SELL,
+                    normalized,
+                    0L,
+                    shares,
+                    proceeds,
+                    removedBasis,
+                    realized);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             return true;
         });
     }
@@ -1708,6 +2159,19 @@ public final class EconomyService {
                 return false;
             }
             account.cashMicro += transaction.bankDeltaMicro;
+            account.totalContributionsMicro = PortfolioAnalytics.add(
+                    account.totalContributionsMicro, transaction.bankDeltaMicro);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.CASH_IN,
+                    transaction.kind.name(),
+                    0L,
+                    0.0,
+                    transaction.bankDeltaMicro,
+                    0L,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             transaction.stage = EconomyState.InventoryTransactionStage.BANK_COMMITTED;
             return true;
         });
@@ -1734,6 +2198,19 @@ public final class EconomyService {
                 return false;
             }
             account.cashMicro -= debitMicro;
+            account.totalWithdrawalsMicro = PortfolioAnalytics.add(
+                    account.totalWithdrawalsMicro, debitMicro);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.CASH_OUT,
+                    "WITHDRAWAL",
+                    0L,
+                    0.0,
+                    debitMicro,
+                    0L,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             EconomyState.PendingInventoryTransaction transaction =
                     new EconomyState.PendingInventoryTransaction();
             transaction.transactionId = transactionId;
@@ -1775,6 +2252,19 @@ public final class EconomyService {
                 return false;
             }
             account.cashMicro += refundMicro;
+            account.totalWithdrawalsMicro = Math.max(
+                    0L, account.totalWithdrawalsMicro - refundMicro);
+            PortfolioAnalytics.recordTransaction(
+                    account,
+                    current.economicDay,
+                    EconomyState.PortfolioTransactionKind.CASH_IN,
+                    "WITHDRAWAL_REFUND",
+                    0L,
+                    0.0,
+                    refundMicro,
+                    0L,
+                    0L);
+            PortfolioAnalytics.recordNetWorth(account, current, current.economicDay);
             transaction.itemCount -= undeliveredCount;
             if (transaction.itemCount == 0) {
                 current.pendingInventoryTransactions.remove(playerId);
@@ -1874,7 +2364,11 @@ public final class EconomyService {
                     villageProsperitySimulationEnabled,
                     villageVisualProgressionEnabled,
                     villageMarketIntegrationEnabled,
-                    villageAutomaticRecoveryEnabled);
+                    villageAutomaticRecoveryEnabled,
+                    prosperityFundPolicy.enabled(),
+                    prosperityFundPolicy.endowmentAnnualPayoutRate(),
+                    prosperityFundPolicy.emergencyReserveFraction(),
+                    prosperityFundPolicy.dailySpendingCapMicro());
         }
     }
 
@@ -2046,6 +2540,17 @@ public final class EconomyService {
         return amount >= 0L && current <= Long.MAX_VALUE - amount;
     }
 
+    private static <K> void subtractOrRemove(Map<K, Long> values, K key, long amount) {
+        long remaining = values.getOrDefault(key, 0L) - amount;
+        if (remaining <= 0L) values.remove(key);
+        else values.put(key, remaining);
+    }
+
+    private static <T> void trimFront(List<T> values, int maximumSize) {
+        int excess = values.size() - maximumSize;
+        if (excess > 0) values.subList(0, excess).clear();
+    }
+
     private static String message(Exception exception) {
         String value = exception.getMessage();
         return value == null || value.isBlank()
@@ -2094,6 +2599,89 @@ public final class EconomyService {
             boolean funded, boolean restorationActivated, long contributionMicro) {
         static VillageFundingResult notFunded() {
             return new VillageFundingResult(false, false, 0L);
+        }
+    }
+
+    public record ProsperityFundPolicy(
+            boolean enabled,
+            double endowmentAnnualPayoutRate,
+            double emergencyReserveFraction,
+            long dailySpendingCapMicro) {
+        public ProsperityFundPolicy {
+            if (!Double.isFinite(endowmentAnnualPayoutRate)
+                    || endowmentAnnualPayoutRate < 0.0
+                    || endowmentAnnualPayoutRate > 1.0
+                    || !Double.isFinite(emergencyReserveFraction)
+                    || emergencyReserveFraction < 0.0
+                    || emergencyReserveFraction > 0.90
+                    || dailySpendingCapMicro <= 0L) {
+                throw new IllegalArgumentException("Invalid prosperity-fund policy");
+            }
+        }
+
+        public static ProsperityFundPolicy defaults() {
+            return new ProsperityFundPolicy(true, 0.04, 0.10, 64L * EconomyState.MICRO);
+        }
+    }
+
+    public record VillageFundContributionResult(
+            boolean contributed,
+            long amountMicro,
+            EconomyState.ProsperityFundType type,
+            EconomyState.DonationPurpose purpose,
+            long projectId,
+            long donorLifetimeMicro,
+            EconomyState.DonorTitle donorTitle) {
+        static VillageFundContributionResult notContributed() {
+            return new VillageFundContributionResult(
+                    false,
+                    0L,
+                    EconomyState.ProsperityFundType.DIRECT_GRANT,
+                    EconomyState.DonationPurpose.GENERAL,
+                    0L,
+                    0L,
+                    EconomyState.DonorTitle.NONE);
+        }
+    }
+
+    public record VillageFundSpendingResult(
+            boolean spent,
+            long amountMicro,
+            EconomyState.DonationPurpose purpose,
+            long projectId) {
+        static VillageFundSpendingResult notSpent() {
+            return new VillageFundSpendingResult(
+                    false, 0L, EconomyState.DonationPurpose.GENERAL, 0L);
+        }
+    }
+
+    public record VillageFundSnapshot(
+            long spendableTotalMicro,
+            long endowmentPrincipalMicro,
+            long emergencyReserveMicro,
+            long lifetimeReceivedMicro,
+            long lifetimeSpentMicro,
+            Map<EconomyState.DonationPurpose, Long> spendableByPurposeMicro,
+            Map<EconomyState.DonationPurpose, Long> endowmentByPurposeMicro,
+            Map<Long, Long> projectSponsorshipMicro,
+            Map<UUID, Long> donorTotalsMicro,
+            List<EconomyState.FundContribution> contributions) {
+        static VillageFundSnapshot empty() {
+            return new VillageFundSnapshot(
+                    0L, 0L, 0L, 0L, 0L,
+                    Map.of(), Map.of(), Map.of(), Map.of(), List.of());
+        }
+    }
+
+    public record DonorSnapshot(
+            long lifetimeContributionMicro,
+            int contributionCount,
+            EconomyState.DonorTitle title,
+            Map<EconomyState.ProsperityFundType, Long> byTypeMicro,
+            Map<EconomyState.DonationPurpose, Long> byPurposeMicro) {
+        static DonorSnapshot empty() {
+            return new DonorSnapshot(
+                    0L, 0, EconomyState.DonorTitle.NONE, Map.of(), Map.of());
         }
     }
 

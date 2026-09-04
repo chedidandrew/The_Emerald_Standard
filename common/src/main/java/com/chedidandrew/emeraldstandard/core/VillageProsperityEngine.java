@@ -117,17 +117,22 @@ public final class VillageProsperityEngine {
         advanceOneDay(village, worldSeed, day, automaticRecovery, false);
     }
 
-    /** Advances one day and optionally requires physical settlers before production resumes. */
+    /**
+     * Advances one day and optionally requires loaded-world materialization. In a visual world,
+     * settlers and completed projects become economically authoritative only after their entity or
+     * structure has actually appeared. Simulation-only worlds retain the fully abstract behavior.
+     */
     public static void advanceOneDay(
             EconomyState.VillageRecord village,
             long worldSeed,
             long day,
             boolean automaticRecovery,
-            boolean requirePhysicalSettlers) {
+            boolean requirePhysicalWorld) {
         if (village == null || village.villageId == null) {
             return;
         }
         village.lastSimulatedDay = day;
+        normalizeProjectAuthority(village, requirePhysicalWorld);
 
         if (village.population <= 0) {
             village.population = 0;
@@ -138,7 +143,7 @@ public final class VillageProsperityEngine {
             village.alchemyOutput = 0.0;
             village.transportOutput = 0.0;
             village.securityOutput = 0.0;
-            advanceRecovery(village, day, automaticRecovery, requirePhysicalSettlers);
+            advanceRecovery(village, day, automaticRecovery, requirePhysicalWorld);
             updateDevelopmentTier(village);
             return;
         }
@@ -246,9 +251,10 @@ public final class VillageProsperityEngine {
                 0.0,
                 1_000_000.0);
 
-        double housingRatio = village.housingCapacity <= 0
+        int effectiveHousing = effectiveHousingCapacity(village);
+        double housingRatio = effectiveHousing <= 0
                 ? 0.0
-                : Math.min(1.25, village.housingCapacity / (double) Math.max(1, village.population));
+                : Math.min(1.25, effectiveHousing / (double) Math.max(1, village.population));
         double foodDays = village.foodSupply / Math.max(1.0, population * 0.46);
         double targetProsperity = 18.0
                 + 28.0 * clamp(housingRatio, 0.0, 1.0)
@@ -263,8 +269,8 @@ public final class VillageProsperityEngine {
         }
 
         updateLifecycle(village, day);
-        advanceProjects(village, worldSeed, day, productivity);
-        maybeGrowPopulation(village, worldSeed, day, requirePhysicalSettlers);
+        advanceProjects(village, worldSeed, day, productivity, requirePhysicalWorld);
+        maybeGrowPopulation(village, worldSeed, day, requirePhysicalWorld);
         maybeApproveProject(village, worldSeed, day);
         updateDevelopmentTier(village);
     }
@@ -273,7 +279,7 @@ public final class VillageProsperityEngine {
             EconomyState.VillageRecord village,
             long day,
             boolean automaticRecovery,
-            boolean requirePhysicalSettlers) {
+            boolean requirePhysicalWorld) {
         if (!automaticRecovery) {
             return;
         }
@@ -287,7 +293,7 @@ public final class VillageProsperityEngine {
             return;
         }
 
-        if (requirePhysicalSettlers) {
+        if (requirePhysicalWorld) {
             // Queue physical settlers first. Productive abstract population remains zero until
             // a loaded-world census observes the spawned residents.
             village.population = 0;
@@ -343,24 +349,25 @@ public final class VillageProsperityEngine {
             EconomyState.VillageRecord village,
             long worldSeed,
             long day,
-            boolean requirePhysicalSettlers) {
+            boolean requirePhysicalWorld) {
         if (village.lifecycle != Lifecycle.ACTIVE && village.lifecycle != Lifecycle.RECOVERING) {
             return;
         }
         int committedPopulation = village.population
-                + (requirePhysicalSettlers ? village.pendingSettlers : 0);
+                + (requirePhysicalWorld ? village.pendingSettlers : 0);
+        int effectiveHousing = effectiveHousingCapacity(village);
         if (committedPopulation >= MAX_ABSTRACT_POPULATION
-                || committedPopulation >= village.housingCapacity
+                || committedPopulation >= effectiveHousing
                 || village.foodSupply < Math.max(1, village.population) * 10.0
                 || village.safety < 45.0) {
             return;
         }
         double baseChance = 0.0014
                 + 0.0012 * clamp(village.prosperity / 100.0, 0.0, 1.0)
-                + 0.0006 * clamp((village.housingCapacity - committedPopulation) / 8.0, 0.0, 1.0);
+                + 0.0006 * clamp((effectiveHousing - committedPopulation) / 8.0, 0.0, 1.0);
         double draw = unit(worldSeed, village.villageId, day, GROWTH_SALT);
         if (draw < baseChance) {
-            if (requirePhysicalSettlers) {
+            if (requirePhysicalWorld) {
                 // In visual worlds, a population increase becomes real only after a settler entity
                 // is safely materialized and observed by a loaded-world census.
                 village.pendingSettlers = Math.min(
@@ -377,7 +384,8 @@ public final class VillageProsperityEngine {
             EconomyState.VillageRecord village,
             long worldSeed,
             long day,
-            double productivity) {
+            double productivity,
+            boolean requirePhysicalWorld) {
         EconomyState.VillageProject active = village.projects.stream()
                 .filter(project -> !project.economicComplete)
                 .findFirst()
@@ -412,7 +420,10 @@ public final class VillageProsperityEngine {
             active.economicComplete = true;
             active.completedDay = day;
             village.housingCapacity += active.type.housingGain();
-            compressVisualBacklog(village);
+            // An abstract simulation has no block world to wait for. Marking the project as
+            // abstract-only makes its effects available while ensuring it can never later enter
+            // the physical construction queue. Visual worlds wait for materializedComplete.
+            active.abstractOnly = !requirePhysicalWorld;
         }
     }
 
@@ -435,6 +446,7 @@ public final class VillageProsperityEngine {
         boolean hasGuardPost = countProjects(village, ProjectType.GUARD_POST) > 0;
         boolean hasExchange = countProjects(village, ProjectType.EXCHANGE_HALL) > 0;
         int committedPopulation = village.population + village.pendingSettlers;
+        int effectiveHousing = effectiveHousingCapacity(village);
         double foodDays = village.foodSupply / Math.max(1.0, village.population * 0.46);
 
         // Local need wins over prestige. A village under pressure builds what solves its
@@ -444,7 +456,7 @@ public final class VillageProsperityEngine {
             desired = ProjectType.GUARD_POST;
         } else if (foodDays < 18.0 && !hasGranary && village.population >= 5) {
             desired = ProjectType.GRANARY;
-        } else if (committedPopulation >= village.housingCapacity - 1 && housingProjects < 6) {
+        } else if (committedPopulation >= effectiveHousing - 1 && housingProjects < 6) {
             desired = village.developmentTier >= 3
                     ? ProjectType.INN
                     : village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
@@ -462,7 +474,7 @@ public final class VillageProsperityEngine {
                 && village.prosperity >= 68.0) {
             desired = ProjectType.EXCHANGE_HALL;
         } else if (housingProjects < 6
-                && committedPopulation >= village.housingCapacity - 2
+                && committedPopulation >= effectiveHousing - 2
                 && unit(worldSeed, village.villageId, day, PROJECT_SALT) < 0.012) {
             desired = village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
         }
@@ -496,29 +508,9 @@ public final class VillageProsperityEngine {
         village.projects.add(project);
     }
 
-    private static void compressVisualBacklog(EconomyState.VillageRecord village) {
-        long backlog = village.projects.stream()
-                .filter(project -> project.economicComplete
-                        && !project.materializedComplete
-                        && !project.abstractOnly)
-                .count();
-        if (backlog <= 6) {
-            return;
-        }
-        village.projects.stream()
-                .filter(project -> project.economicComplete
-                        && !project.materializedComplete
-                        && !project.abstractOnly
-                        && (project.type == ProjectType.COTTAGE
-                                || project.type == ProjectType.HOUSE
-                                || project.type == ProjectType.INN))
-                .findFirst()
-                .ifPresent(project -> project.abstractOnly = true);
-    }
-
     private static void updateDevelopmentTier(EconomyState.VillageRecord village) {
         int completed = (int) village.projects.stream()
-                .filter(project -> project.economicComplete)
+                .filter(VillageProsperityEngine::isProjectOperational)
                 .count();
         boolean warehouse = completedProjects(village, ProjectType.WAREHOUSE) > 0;
         boolean mine = completedProjects(village, ProjectType.MINE_ENTRANCE) > 0;
@@ -569,7 +561,7 @@ public final class VillageProsperityEngine {
                 0.0,
                 1_000_000.0);
         double productivity = clamp(0.45 + village.safety / 180.0, 0.45, 1.0);
-        advanceProjects(village, worldSeed, day, productivity);
+        advanceProjects(village, worldSeed, day, productivity, true);
         maybeApproveProject(village, worldSeed, day);
         updateDevelopmentTier(village);
     }
@@ -897,7 +889,7 @@ public final class VillageProsperityEngine {
                     trade += 0.7;
                     transport += 1.0;
                 }
-                case "fletcher", "leatherworker" -> trade += 1.0;
+                case "fletcher", "leatherworker", "banker" -> trade += 1.0;
                 case "librarian" -> {
                     trade += 0.4;
                     redstone += 1.0;
@@ -941,8 +933,49 @@ public final class VillageProsperityEngine {
 
     private static int completedProjects(EconomyState.VillageRecord village, ProjectType type) {
         return (int) village.projects.stream()
-                .filter(project -> project.type == type && project.economicComplete)
+                .filter(project -> project.type == type && isProjectOperational(project))
                 .count();
+    }
+
+    /**
+     * Returns the capacity that may actually support residents. The persisted capacity continues
+     * to include promised housing from older saves, while unfinished physical projects are
+     * subtracted until their authored structures have been verified in the loaded world.
+     */
+    public static int effectiveHousingCapacity(EconomyState.VillageRecord village) {
+        if (village == null) {
+            return 0;
+        }
+        long unavailable = village.projects.stream()
+                .filter(project -> project != null
+                        && project.economicComplete
+                        && !project.abstractOnly
+                        && !project.materializedComplete)
+                .mapToLong(project -> Math.max(0, project.type.housingGain()))
+                .sum();
+        long effective = Math.max(0L, (long) village.housingCapacity - unavailable);
+        return (int) Math.min(Integer.MAX_VALUE, effective);
+    }
+
+    /** A project affects housing, production, upkeep, tiers, and markets only when operational. */
+    public static boolean isProjectOperational(EconomyState.VillageProject project) {
+        return project != null
+                && project.economicComplete
+                && (project.abstractOnly || project.materializedComplete);
+    }
+
+    /**
+     * Migrates completed backlog records when the world switches modes. Visual mode removes old
+     * abstract-backlog shortcuts so every benefit again waits for a verified structure; disabling
+     * visuals converts that queue to simulation-only authority without stranding the settlement.
+     */
+    private static void normalizeProjectAuthority(
+            EconomyState.VillageRecord village, boolean requirePhysicalWorld) {
+        for (EconomyState.VillageProject project : village.projects) {
+            if (project != null && project.economicComplete && !project.materializedComplete) {
+                project.abstractOnly = !requirePhysicalWorld;
+            }
+        }
     }
 
     private static double outputScore(double actual, double baseline) {

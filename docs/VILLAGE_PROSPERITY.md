@@ -11,9 +11,17 @@ village_prosperity.simulation_enabled=true
 village_prosperity.visual_progression_enabled=true
 village_prosperity.market_integration_enabled=true
 village_prosperity.automatic_recovery_enabled=true
+village_prosperity.donations_enabled=true
+village_prosperity.endowments_enabled=true
+village_prosperity.project_sponsorship_enabled=true
+village_prosperity.targeted_donations_enabled=true
+village_prosperity.donor_recognition_enabled=true
+village_prosperity.endowment_annual_payout_bps=400
+village_prosperity.minimum_emergency_reserve_percent=20
+village_prosperity.max_monthly_treasury_spending=24
 ```
 
-The four settings are independent.
+The simulation settings are independent.
 
 - `simulation_enabled`: advances population, supplies, output, prosperity, safety, projects, and lifecycle data.
 - `visual_progression_enabled`: allows loaded villages to materialize approved structures and reconcile physical settlers.
@@ -21,6 +29,8 @@ The four settings are independent.
 - `automatic_recovery_enabled`: allows recoverable extinct villages to enter the recovery process after their cooldown.
 
 Turning visual progression off never removes structures that already exist. Turning market integration off leaves the local village simulation intact but makes the global market ignore settlement fundamentals.
+
+The Fund settings independently enable gifts, protected-principal endowments, current-project sponsorship, targeted purposes, and visible donor titles. The remaining settings select the endowment's annual payout rate in basis points, the fraction of ordinary grants held for emergencies, and the monthly ceiling for moving village-owned Fund value into local economic inputs.
 
 ## Stable village identity
 
@@ -112,7 +122,7 @@ The 0.4 beta includes ten physical project types:
 - Guard Post
 - Exchange Hall
 
-Projects require population, resources, treasury, prosperity, safety, and development points. Offline simulation may complete their economic phase, but physical construction stays in a bounded visual backlog.
+Projects require population, resources, treasury, prosperity, safety, and development points. Offline simulation may complete their economic phase, but physical construction stays in a bounded visual backlog. When visual progression is enabled, an economically complete project grants no housing or production effect until its authored template is verified physically complete. In simulation-only mode, an abstract-only project can become operational without a structure.
 
 ### Construction safety
 
@@ -129,6 +139,8 @@ The materializer follows conservative rules:
 - Village Banks and projects preflight `VillageDevelopmentProtection.register(PlacementGuard)` callbacks; vetoes and guard exceptions fail closed
 - A site verified blocked before the first physical placement is released so a later pass can choose another safe lot after a persistent exponential delay
 - A partially materialized deterministic template keeps its exact persisted bounds and resumes in place after the retry delay
+- A low-frequency audit verifies one completed authored structure at a time. A mismatch demotes the project to the verified template prefix, immediately suspends its benefits, and returns it to the guarded repair queue
+- Repair fills only safe air or replaceable positions; solid player blocks, block entities, protection vetoes, and unloaded chunks make it wait rather than overwrite or force-load
 - Development lots use exact bounding-box overlap checks and cannot overlap the Village Bank anchor
 - Unsafe terrain, water, steep sites, and occupied air volumes are rejected
 
@@ -138,7 +150,7 @@ Cottages, Houses, and Inns include real beds. Physical settler reconciliation re
 
 Default construction speed is intentionally slower than beta.1: two blocks every ten server ticks. Servers may tune the values in configuration.
 
-While blocks are successfully advancing, at most two nearby residents periodically look toward the site, swing an arm, and emit a small project-appropriate particle. Profession matching affects which villagers are preferred. These are bounded visual cues only; they do not install custom villager AI, force pathfinding, or become an authority for project completion.
+While blocks are successfully advancing, at most two nearby residents periodically receive one low-speed navigation request toward a safe exterior waypoint, look toward the site, swing an arm, and emit a small project-appropriate particle. Profession matching affects which villagers are preferred. These are bounded visual cues only; they do not install a persistent villager goal, force chunks, or become an authority for project completion.
 
 ## Population reconciliation
 
@@ -185,11 +197,19 @@ Environmental traps that Minecraft does not attribute to an attacker remain envi
 
 A Banker is only an interface to world-level accounts. Losing a Banker or an entire village never deletes player cash, savings, holdings, CDs, or villager-lending positions. Banker replacement is suppressed while the associated village is Extinct or Abandoned.
 
-## Village restoration
+## Village Prosperity Fund and restoration
 
-Players may contribute emeralds to local village support. A contribution is a development grant, not a loan, debt, or guaranteed investment return.
+Players may voluntarily and irreversibly transfer bank cash to the associated settlement through a separate Fund page. A contribution is a gift to a village-owned balance, not a player loan, debt, guaranteed investment return, or withdrawable account. The server owns the additive amount draft and requires a second matching contribution action inside its confirmation window.
 
-Abandoned villages require the restoration threshold and a valid future recovery window before automatic recovery can resume. Player balances can never become negative.
+Three contribution types are available when enabled:
+
+- **Direct Grant:** enters bounded spendable value for the chosen purpose; non-restoration gifts place the configured share into an emergency reserve.
+- **Endowment:** protects principal permanently and releases only a configurable annual payout, 4 percent by default.
+- **Project Sponsorship:** follows the settlement's current unfinished project and supplies material and development inputs under the same spending cap.
+
+Purposes are General, Housing, Food, Infrastructure, Security, Trade, and Restoration. An abandoned or extinct village redirects a Direct Grant to Restoration. Ordinary Fund spending changes local inputs only and never writes market returns directly. The emergency reserve is available only for restoration, an acute food shortage, or low safety. A configured monthly treasury ceiling is converted into the per-day spending limit.
+
+Lifetime donor totals and titles are world-persistent recognition only. They grant no yield, economic advantage, permission, or ownership right. Abandoned villages still require the restoration threshold and a valid future recovery window before automatic recovery can resume. Player balances can never become negative.
 
 ## Global market connection
 
@@ -222,15 +242,19 @@ Village Prosperity is designed around bounded work:
 - Persistent exponential retry gates for obstructed sites
 - Catch-up batch size adjusted for stored account and settlement counts
 - Cached village fundamentals for snapshot lists
+- A rebuildable in-memory spatial index with 64-block X/Z cells and per-dimension buckets for nearby and nearest-village lookups
+- Exact three-dimensional distance filtering, deterministic tie behavior, and bounded fallback for oversized search radii
 - Physical-development snapshots filtered to the current dimension and nearby player positions
 - No real resource mining for simulated output
 
-For very large public servers, future storage partitioning may still be warranted, but single-player and ordinary multiplayer remain the primary beta target.
+Measured regressions exercise query correctness plus save and load at 100, 500, and 1,000 villages and accounts. The spatial index is rebuilt from authoritative records on load and updated after successful village observation; it is not stored separately.
+
+For very large public servers, future storage partitioning may still be warranted, but single-player and ordinary multiplayer remain the primary beta target. Normal mutations still synchronously serialize the complete world economy, so persistence cost remains linear even though nearby lookup is indexed.
 
 
 ## 0.4 visible development catalog
 
-The physical layer now uses ten intentionally small, deterministic project templates. The abstract economy remains authoritative, while loaded villages materialize a bounded number of blocks only when a player is nearby.
+The physical layer now uses ten intentionally small, deterministic project templates. The abstract layer authorizes and funds projects, while visual-mode housing and production benefits wait for verified physical completion. Loaded villages materialize a bounded number of blocks only when a player is nearby.
 
 | Need | Project | Primary visible/economic role |
 | --- | --- | --- |

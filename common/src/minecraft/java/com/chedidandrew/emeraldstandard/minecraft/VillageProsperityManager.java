@@ -348,6 +348,7 @@ public final class VillageProsperityManager {
                     snapshots.get((firstVillage + step) % snapshots.size());
             EconomyState.VillageRecord village = snapshot.village();
             spawnPendingSettler(level, economy, village, config, gameTime);
+            reconcileOneMaterializedProject(level, economy, village, config, gameTime);
             if (remainingBudget <= 0) {
                 continue;
             }
@@ -433,12 +434,12 @@ public final class VillageProsperityManager {
                     blocked = true;
                     break;
                 }
-                if (!current.equals(placement.state)) {
+                if (!current.is(placement.state.getBlock())) {
                     boolean safe = level.getBlockEntity(target) == null
                             && (current.isAir() || current.canBeReplaced());
                     if (!safe
                             || !level.setBlock(target, placement.state, 3)
-                            || !level.getBlockState(target).equals(placement.state)) {
+                            || !level.getBlockState(target).is(placement.state.getBlock())) {
                         blocked = true;
                         break;
                     }
@@ -473,11 +474,11 @@ public final class VillageProsperityManager {
                         index,
                         placements.size(),
                         unloaded ? "Required chunk was unloaded" : "Placement was occupied, protected, or rejected");
-                // The core persists both the completed template prefix and retry deadline. A
-                // verified obstruction can relocate an untouched site; an unloaded site keeps its
-                // reservation in case chunk data already contains a not-yet-journaled prefix.
+                // The site was fully validated before reservation. Keep it even at prefix zero:
+                // it may be a completed structure undergoing integrity repair, and relocating it
+                // could leave an orphaned duplicate. Retry gates prevent a blocked-site hot loop.
                 economy.deferVillageProjectMaterialization(
-                        village.villageId, project.projectId, gameTime, unloaded);
+                        village.villageId, project.projectId, gameTime, true);
             }
             if (placedThisTick > 0) {
                 showWorkerActivity(level, village, project.type, origin, gameTime);
@@ -508,13 +509,15 @@ public final class VillageProsperityManager {
             long gameTime) {
         long previous = LAST_WORKER_VISUAL_TICK.getOrDefault(
                 village.villageId, Long.MIN_VALUE / 2L);
-        if (gameTime - previous < 40L) {
+        if (gameTime - previous < 80L) {
             return;
         }
         List<Villager> workers = level.getEntitiesOfClass(
                         Villager.class,
                         new AABB(projectOrigin).inflate(48.0, 12.0, 48.0),
                         villager -> villager.isAlive()
+                                && !BankerAccess.isBanker(villager)
+                                && !villager.isSleeping()
                                 && village.villageId.equals(villageId(villager)))
                 .stream()
                 .sorted(Comparator
@@ -525,7 +528,23 @@ public final class VillageProsperityManager {
                                 projectOrigin.getZ() + 0.5)))
                 .limit(2)
                 .toList();
+        BlockPos waypoint = workerWaypoint(level, projectOrigin, projectType);
         for (Villager worker : workers) {
+            if (waypoint != null) {
+                double distance = worker.distanceToSqr(
+                        waypoint.getX() + 0.5,
+                        waypoint.getY(),
+                        waypoint.getZ() + 0.5);
+                if (distance > 16.0 && distance <= 48.0 * 48.0) {
+                    // This is a one-shot, low-speed path request. It adds theatre around active
+                    // construction without installing a persistent AI goal or affecting output.
+                    worker.getNavigation().moveTo(
+                            waypoint.getX() + 0.5,
+                            waypoint.getY(),
+                            waypoint.getZ() + 0.5,
+                            0.55);
+                }
+            }
             worker.getLookControl().setLookAt(
                     projectOrigin.getX() + 0.5,
                     projectOrigin.getY() + 1.0,
@@ -543,6 +562,41 @@ public final class VillageProsperityManager {
         }
     }
 
+    private static BlockPos workerWaypoint(
+            ServerLevel level,
+            BlockPos origin,
+            VillageProsperityEngine.ProjectType projectType) {
+        StructureSize dimensions = size(projectType);
+        int[][] offsets = {
+                {dimensions.width / 2, -2},
+                {-2, dimensions.depth / 2},
+                {dimensions.width / 2, dimensions.depth + 1},
+                {dimensions.width + 1, dimensions.depth / 2},
+                {-2, -2},
+                {dimensions.width + 1, -2},
+                {-2, dimensions.depth + 1},
+                {dimensions.width + 1, dimensions.depth + 1}
+        };
+        for (int[] offset : offsets) {
+            int x = origin.getX() + offset[0];
+            int z = origin.getZ() + offset[1];
+            if (!level.hasChunk(Math.floorDiv(x, 16), Math.floorDiv(z, 16))) {
+                continue;
+            }
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos feet = new BlockPos(x, y, z);
+            BlockPos ground = feet.below();
+            if (level.getFluidState(feet).isEmpty()
+                    && level.getFluidState(feet.above()).isEmpty()
+                    && level.getBlockState(feet).isAir()
+                    && level.getBlockState(feet.above()).isAir()
+                    && level.getBlockState(ground).isFaceSturdy(level, ground, Direction.UP)) {
+                return feet;
+            }
+        }
+        return null;
+    }
+
     private static int workerPreference(
             Villager villager, VillageProsperityEngine.ProjectType projectType) {
         String profession = professionId(villager.getVillagerData().profession());
@@ -553,6 +607,7 @@ public final class VillageProsperityManager {
                     || profession.contains("armorer");
             case WAREHOUSE, MARKET_SQUARE, EXCHANGE_HALL -> profession.contains("cartographer")
                     || profession.contains("librarian")
+                    || profession.contains("banker")
                     || profession.contains("cleric");
             case GRANARY -> profession.contains("farmer")
                     || profession.contains("fisherman")
@@ -600,7 +655,7 @@ public final class VillageProsperityManager {
             return;
         }
         int usableBeds = countBeds(level, center, 24, 6);
-        if (village.housingCapacity <= living
+        if (VillageProsperityEngine.effectiveHousingCapacity(village) <= living
                 || usableBeds <= living
                 || village.foodSupply < Math.max(12.0, (living + 1) * 6.0)) {
             return;
@@ -666,6 +721,87 @@ public final class VillageProsperityManager {
             return feet;
         }
         return null;
+    }
+
+    /**
+     * Audits one completed authored structure at a low frequency. A missing or replaced authored
+     * block immediately removes that project's economic authority, then the normal construction
+     * queue may repair only air/replaceable positions under the existing protection hooks. Solid
+     * player blocks, block entities, and unloaded chunks are never overwritten or force-loaded.
+     */
+    private static void reconcileOneMaterializedProject(
+            ServerLevel level,
+            EconomyService economy,
+            EconomyState.VillageRecord village,
+            EmeraldConfig config,
+            long gameTime) {
+        if (village == null || village.projects.isEmpty()) {
+            return;
+        }
+        long interval = Math.max(1L, config.villageConstructionIntervalTicks());
+        long auditPulses = Math.max(1L, 2_400L / interval);
+        long pulse = gameTime / interval;
+        if (Math.floorMod(pulse + village.villageId.hashCode(), auditPulses) != 0L) {
+            return;
+        }
+
+        List<EconomyState.VillageProject> candidates = village.projects.stream()
+                .filter(project -> project.economicComplete
+                        && project.materializedComplete
+                        && !project.abstractOnly
+                        && project.originPos != 0L)
+                .toList();
+        if (candidates.isEmpty()) {
+            return;
+        }
+        EconomyState.VillageProject project = candidates.get(Math.floorMod(
+                (int) (pulse + village.villageId.hashCode()), candidates.size()));
+        BlockPos origin = BlockPos.of(project.originPos);
+        List<Placement> expected = template(level, origin, project.type);
+        int verifiedPrefix = expected.size();
+        BlockPos mismatch = null;
+        for (int index = 0; index < expected.size(); index++) {
+            Placement placement = expected.get(index);
+            BlockPos target = origin.offset(placement.dx, placement.dy, placement.dz);
+            if (!level.hasChunk(
+                    Math.floorDiv(target.getX(), 16), Math.floorDiv(target.getZ(), 16))) {
+                return;
+            }
+            if (!level.getBlockState(target).is(placement.state.getBlock())) {
+                verifiedPrefix = index;
+                mismatch = target;
+                break;
+            }
+        }
+        if (mismatch == null) {
+            return;
+        }
+        if (!economy.reconcileVillageProjectMaterialization(
+                village.villageId,
+                project.projectId,
+                verifiedPrefix,
+                expected.size(),
+                false)) {
+            return;
+        }
+        // This object is a snapshot. Mirror the persisted demotion so the repair queue can act in
+        // the same pulse instead of waiting for another proximity snapshot.
+        project.materializedBlocks = verifiedPrefix;
+        project.totalBlocks = expected.size();
+        project.materializedComplete = false;
+        project.blocked = false;
+        project.retryAfterGameTick = 0L;
+        project.materializationFailures = 0;
+        DebugFlightRecorder.recordConstruction(
+                level,
+                village.villageId,
+                project.projectId,
+                project.type.name(),
+                "integrity_demoted",
+                mismatch,
+                verifiedPrefix,
+                expected.size(),
+                "A missing authored block suspended project benefits until safe repair completes");
     }
 
     private static BlockPos findProjectOrigin(

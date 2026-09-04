@@ -3,6 +3,8 @@ package com.chedidandrew.emeraldstandard.minecraft;
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.PortfolioAnalytics;
+import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,12 +25,19 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int TAB_BANKING = 2;
     public static final int TAB_EXCHANGE = 3;
     public static final int TAB_VILLAGE = 4;
+    public static final int TAB_FUND = 5;
 
+    public static final int BUTTON_CD_POSITION = 8;
+    public static final int BUTTON_LENDING_POSITION = 9;
     public static final int BUTTON_ASSET_BASE = 10;
     public static final int BUTTON_RESOURCE_BASE = 30;
     public static final int BUTTON_AMOUNT_BASE = 60;
     public static final int BUTTON_CD_TERM_BASE = 70;
     public static final int BUTTON_LENDING_TERM_BASE = 80;
+    public static final int BUTTON_DONATION_AMOUNT_BASE = 90;
+    public static final int BUTTON_FUND_TYPE = 97;
+    public static final int BUTTON_FUND_PURPOSE = 98;
+    public static final int BUTTON_HISTORY_RANGE = 99;
 
     public static final int ACTION_DEPOSIT = 100;
     public static final int ACTION_WITHDRAW = 101;
@@ -46,6 +55,11 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int ACTION_SUPPORT_VILLAGE = 113;
 
     public static final int[] AMOUNT_PRESETS = {1, 5, 10, 32, 64, -1};
+    /** Positive values add to the draft, -1 means All, and 0 clears it. */
+    public static final int[] DONATION_AMOUNTS = {1, 5, 10, 25, 100, -1, 0};
+    public static final int FUND_TYPE_COUNT = 3;
+    public static final int FUND_PURPOSE_COUNT = 7;
+    public static final int[] HISTORY_RANGES = {30, 90, 365, Integer.MAX_VALUE};
     public static final int[] TERMS = {30, 90, 180, 365};
     public static final List<String> RESOURCE_NAMES = BankInventory.exchangeResourceNames();
     public static final int HISTORY_POINTS = 60;
@@ -114,7 +128,79 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_VILLAGE_VISUAL_ENABLED = DATA_VILLAGE_PRESENT + 16;
     private static final int DATA_VILLAGE_INCIDENT_CAUSE = DATA_VILLAGE_PRESENT + 17;
     private static final int DATA_VILLAGE_INCIDENT_AGE = DATA_VILLAGE_PRESENT + 18;
-    public static final int DATA_COUNT = DATA_VILLAGE_PRESENT + 19;
+    private static final int DATA_CONFIRMATION_ACTION = DATA_VILLAGE_PRESENT + 19;
+    private static final int DATA_VILLAGE_AGRICULTURE_CENTI = DATA_VILLAGE_PRESENT + 20;
+    private static final int DATA_VILLAGE_MINING_CENTI = DATA_VILLAGE_PRESENT + 21;
+    private static final int DATA_VILLAGE_TRADE_CENTI = DATA_VILLAGE_PRESENT + 22;
+    private static final int DATA_DONATION_DRAFT = DATA_VILLAGE_PRESENT + 23;
+    private static final int DATA_FUND_TYPE = DATA_VILLAGE_PRESENT + 24;
+    private static final int DATA_FUND_PURPOSE = DATA_VILLAGE_PRESENT + 25;
+    private static final int DATA_HISTORY_RANGE = DATA_VILLAGE_PRESENT + 26;
+    private static final int DATA_NET_WORTH_HISTORY_COUNT = DATA_VILLAGE_PRESENT + 27;
+    private static final int DATA_NET_WORTH_HISTORY_BASE = DATA_VILLAGE_PRESENT + 28;
+    private static final int DATA_COMMODITY_HISTORY_COUNT =
+            DATA_NET_WORTH_HISTORY_BASE + HISTORY_POINTS;
+    private static final int DATA_COMMODITY_HISTORY_BASE = DATA_COMMODITY_HISTORY_COUNT + 1;
+    private static final int DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW =
+            DATA_COMMODITY_HISTORY_BASE + HISTORY_POINTS;
+    private static final int DATA_TOTAL_CONTRIBUTIONS_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 1;
+    private static final int DATA_TOTAL_COST_BASIS_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 2;
+    private static final int DATA_TOTAL_COST_BASIS_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 3;
+    private static final int DATA_UNREALIZED_GAIN_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 4;
+    private static final int DATA_UNREALIZED_GAIN_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 5;
+    private static final int DATA_REALIZED_GAIN_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 6;
+    private static final int DATA_REALIZED_GAIN_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 7;
+    private static final int DATA_SELECTED_AVERAGE_PRICE_CENTI =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 8;
+    private static final int DATA_SELECTED_ALLOCATION_BPS =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 9;
+    private static final int DATA_CD_COUNT = DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 10;
+    private static final int DATA_LENDING_COUNT = DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 11;
+    private static final int DATA_READY_LENDING_COUNT =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 12;
+    private static final int DATA_FUND_SPENDABLE_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 13;
+    private static final int DATA_FUND_SPENDABLE_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 14;
+    private static final int DATA_FUND_ENDOWMENT_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 15;
+    private static final int DATA_FUND_ENDOWMENT_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 16;
+    private static final int DATA_FUND_RESERVE_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 17;
+    private static final int DATA_FUND_RESERVE_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 18;
+    private static final int DATA_FUND_LIFETIME_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 19;
+    private static final int DATA_FUND_LIFETIME_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 20;
+    private static final int DATA_DONOR_LIFETIME_CENTI_LOW =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 21;
+    private static final int DATA_DONOR_LIFETIME_CENTI_HIGH =
+            DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 22;
+    private static final int DATA_DONOR_TITLE = DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW + 23;
+    private static final int DATA_CD_POSITION_INDEX = DATA_DONOR_TITLE + 1;
+    private static final int DATA_LENDING_POSITION_INDEX = DATA_DONOR_TITLE + 2;
+    private static final int DATA_CD_POSITION_ID_LOW = DATA_DONOR_TITLE + 3;
+    private static final int DATA_CD_POSITION_ID_HIGH = DATA_DONOR_TITLE + 4;
+    private static final int DATA_LENDING_POSITION_ID_LOW = DATA_DONOR_TITLE + 5;
+    private static final int DATA_LENDING_POSITION_ID_HIGH = DATA_DONOR_TITLE + 6;
+    private static final int DATA_CD_POSITION_VALUE_CENTI_LOW = DATA_DONOR_TITLE + 7;
+    private static final int DATA_CD_POSITION_VALUE_CENTI_HIGH = DATA_DONOR_TITLE + 8;
+    private static final int DATA_LENDING_POSITION_VALUE_CENTI_LOW = DATA_DONOR_TITLE + 9;
+    private static final int DATA_LENDING_POSITION_VALUE_CENTI_HIGH = DATA_DONOR_TITLE + 10;
+    private static final int DATA_FUNDABLE_PROJECT_TYPE = DATA_DONOR_TITLE + 11;
+    private static final int DATA_HISTORY_SPAN_DAYS = DATA_DONOR_TITLE + 12;
+    private static final int DATA_NET_WORTH_HISTORY_SPAN_DAYS = DATA_DONOR_TITLE + 13;
+    private static final int DATA_COMMODITY_HISTORY_SPAN_DAYS = DATA_DONOR_TITLE + 14;
+    public static final int DATA_COUNT = DATA_DONOR_TITLE + 15;
 
     private final Inventory inventory;
     private final EconomyService economy;
@@ -128,8 +214,21 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int amountPresetIndex = 3;
     private int cdTermIndex = 1;
     private int lendingTermIndex = 2;
+    private int donationDraft;
+    private int fundTypeIndex;
+    private int fundPurposeIndex;
+    private int historyRangeIndex = 2;
+    private int selectedCdPositionIndex;
+    private int selectedLendingPositionIndex;
+    private long selectedCdPositionId;
+    private long selectedLendingPositionId;
+    private long selectedCdPositionValueCenti;
+    private long selectedLendingPositionValueCenti;
     private int statusCode = BankingOperations.READY;
     private int statusRevision;
+    private int confirmationAction = -1;
+    private long confirmationExpiresAtTick;
+    private long lastServerSnapshotTick = Long.MIN_VALUE;
 
     private long day;
     private int regimeOrdinal;
@@ -162,6 +261,22 @@ public final class BankerMenu extends AbstractContainerMenu {
     private final int[] assetHoldingsCenti = new int[9];
     private final int[] historyCenti = new int[HISTORY_POINTS];
     private int historyCount;
+    private int historySpanDays;
+    private final int[] netWorthHistoryCenti = new int[HISTORY_POINTS];
+    private int netWorthHistoryCount;
+    private int netWorthHistorySpanDays;
+    private final int[] commodityHistoryCenti = new int[HISTORY_POINTS];
+    private int commodityHistoryCount;
+    private int commodityHistorySpanDays;
+    private long totalContributionsCenti;
+    private long totalCostBasisCenti;
+    private long unrealizedGainCenti;
+    private long realizedGainCenti;
+    private int selectedAveragePriceCenti;
+    private int selectedAllocationBps;
+    private int cdCount;
+    private int lendingCount;
+    private int readyLendingCount;
 
     private UUID villageId;
     private int villagePresent;
@@ -175,6 +290,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int villageMaterialCenti;
     private long villageTreasuryCenti;
     private int villageProjectType = -1;
+    private int fundableProjectType = -1;
     private int villageProjectProgressBps;
     private int villageProjectBacklog;
     private int villageRestorationCenti;
@@ -182,6 +298,15 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int villageVisualEnabled;
     private int villageIncidentCause;
     private int villageIncidentAge;
+    private int villageAgricultureCenti;
+    private int villageMiningCenti;
+    private int villageTradeCenti;
+    private long fundSpendableCenti;
+    private long fundEndowmentCenti;
+    private long fundReserveCenti;
+    private long fundLifetimeCenti;
+    private long donorLifetimeCenti;
+    private int donorTitle;
 
     /** Client-side constructor used by the menu registry. */
     public BankerMenu(int containerId, Inventory inventory) {
@@ -228,8 +353,25 @@ public final class BankerMenu extends AbstractContainerMenu {
 
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
+        if (buttonId == BUTTON_CD_POSITION || buttonId == BUTTON_LENDING_POSITION) {
+            cancelConfirmation();
+            if (buttonId == BUTTON_CD_POSITION) {
+                int positions = cdCount();
+                selectedCdPositionIndex = positions <= 0
+                        ? 0 : (data.get(DATA_CD_POSITION_INDEX) + 1) % positions;
+                setClientSelection(DATA_CD_POSITION_INDEX, selectedCdPositionIndex);
+            } else {
+                int positions = lendingCount();
+                selectedLendingPositionIndex = positions <= 0
+                        ? 0 : (data.get(DATA_LENDING_POSITION_INDEX) + 1) % positions;
+                setClientSelection(DATA_LENDING_POSITION_INDEX, selectedLendingPositionIndex);
+            }
+            refreshServerSnapshot();
+            return true;
+        }
         if (buttonId >= BUTTON_ASSET_BASE
                 && buttonId < BUTTON_ASSET_BASE + EconomyEngine.ASSETS.size()) {
+            cancelConfirmation();
             selectedAssetIndex = buttonId - BUTTON_ASSET_BASE;
             setClientSelection(DATA_SELECTED_ASSET, selectedAssetIndex);
             refreshServerSnapshot();
@@ -237,6 +379,7 @@ public final class BankerMenu extends AbstractContainerMenu {
         }
         if (buttonId >= BUTTON_RESOURCE_BASE
                 && buttonId < BUTTON_RESOURCE_BASE + RESOURCE_NAMES.size()) {
+            cancelConfirmation();
             selectedResourceIndex = buttonId - BUTTON_RESOURCE_BASE;
             setClientSelection(DATA_SELECTED_RESOURCE, selectedResourceIndex);
             refreshServerSnapshot();
@@ -244,20 +387,94 @@ public final class BankerMenu extends AbstractContainerMenu {
         }
         if (buttonId >= BUTTON_AMOUNT_BASE
                 && buttonId < BUTTON_AMOUNT_BASE + AMOUNT_PRESETS.length) {
+            cancelConfirmation();
             amountPresetIndex = buttonId - BUTTON_AMOUNT_BASE;
             setClientSelection(DATA_AMOUNT_PRESET, amountPresetIndex);
             return true;
         }
         if (buttonId >= BUTTON_CD_TERM_BASE
                 && buttonId < BUTTON_CD_TERM_BASE + TERMS.length) {
+            cancelConfirmation();
             cdTermIndex = buttonId - BUTTON_CD_TERM_BASE;
             setClientSelection(DATA_CD_TERM, cdTermIndex);
             return true;
         }
         if (buttonId >= BUTTON_LENDING_TERM_BASE
                 && buttonId < BUTTON_LENDING_TERM_BASE + TERMS.length) {
+            cancelConfirmation();
             lendingTermIndex = buttonId - BUTTON_LENDING_TERM_BASE;
             setClientSelection(DATA_LENDING_TERM, lendingTermIndex);
+            return true;
+        }
+        if (buttonId >= BUTTON_DONATION_AMOUNT_BASE
+                && buttonId < BUTTON_DONATION_AMOUNT_BASE + DONATION_AMOUNTS.length) {
+            if (player.level().isClientSide()) {
+                return true;
+            }
+            if (serverPlayer == null || economy == null || player != serverPlayer) {
+                return false;
+            }
+            cancelConfirmation();
+            int value = DONATION_AMOUNTS[buttonId - BUTTON_DONATION_AMOUNT_BASE];
+            int previousDraft = donationDraft;
+            long available = Math.max(0L, cashMicro / EconomyState.MICRO);
+            if (value == 0) {
+                donationDraft = 0;
+            } else if (value < 0) {
+                donationDraft = saturatingInt(Math.min(
+                        available, EconomyService.MAX_WHOLE_EMERALD_TRANSACTION));
+            } else {
+                donationDraft = saturatingInt(Math.min(
+                        Math.min(available, EconomyService.MAX_WHOLE_EMERALD_TRANSACTION),
+                        (long) donationDraft + value));
+            }
+            statusCode = BankingOperations.READY;
+            statusRevision++;
+            DebugFlightRecorder.recordFundDraft(
+                    serverPlayer,
+                    value == 0 ? "draft_cleared" : value < 0 ? "draft_all" : "draft_added",
+                    previousDraft,
+                    donationDraft,
+                    selectedFundType(),
+                    selectedFundPurpose());
+            broadcastChanges();
+            return true;
+        }
+        if (buttonId == BUTTON_FUND_TYPE || buttonId == BUTTON_FUND_PURPOSE) {
+            if (player.level().isClientSide()) {
+                return true;
+            }
+            if (serverPlayer == null || economy == null || player != serverPlayer) {
+                return false;
+            }
+            cancelConfirmation();
+            if (buttonId == BUTTON_FUND_TYPE) {
+                fundTypeIndex = (fundTypeIndex + 1) % FUND_TYPE_COUNT;
+            } else if (selectedFundType()
+                    == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP) {
+                // Project sponsorship is earmarked by the active project's actual category.
+                // Ignore forged/stale purpose-cycle packets rather than recording a false label.
+                return true;
+            } else {
+                fundPurposeIndex = (fundPurposeIndex + 1) % FUND_PURPOSE_COUNT;
+            }
+            statusCode = BankingOperations.READY;
+            statusRevision++;
+            DebugFlightRecorder.recordFundDraft(
+                    serverPlayer,
+                    buttonId == BUTTON_FUND_TYPE ? "type_changed" : "purpose_changed",
+                    donationDraft,
+                    donationDraft,
+                    selectedFundType(),
+                    selectedFundPurpose());
+            broadcastChanges();
+            return true;
+        }
+        if (buttonId == BUTTON_HISTORY_RANGE) {
+            cancelConfirmation();
+            historyRangeIndex = (historyRangeIndex() + 1) % HISTORY_RANGES.length;
+            setClientSelection(DATA_HISTORY_RANGE, historyRangeIndex);
+            refreshServerSnapshot();
             return true;
         }
 
@@ -268,7 +485,57 @@ public final class BankerMenu extends AbstractContainerMenu {
             return false;
         }
 
-        int requested = selectedAmount();
+        long now = serverPlayer.level().getGameTime();
+        if (confirmationAction >= 0 && now > confirmationExpiresAtTick) {
+            cancelConfirmation();
+        }
+        if (buttonId == ACTION_SUPPORT_VILLAGE
+                && (donationDraft <= 0
+                        || (selectedFundType()
+                                        == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                                && fundableProjectType < 0))) {
+            cancelConfirmation();
+            statusCode = donationDraft <= 0
+                    ? BankingOperations.INSUFFICIENT : BankingOperations.NOT_READY;
+            statusRevision++;
+            DebugFlightRecorder.recordFundAction(
+                    serverPlayer,
+                    buttonId,
+                    donationDraft,
+                    statusCode,
+                    selectedFundType(),
+                    selectedFundPurpose());
+            refreshServerSnapshot();
+            broadcastChanges();
+            return true;
+        }
+        if (requiresServerConfirmation(buttonId)) {
+            if (confirmationAction != buttonId) {
+                confirmationAction = buttonId;
+                confirmationExpiresAtTick = now + 100L;
+                statusCode = BankingOperations.CONFIRM_REQUIRED;
+                statusRevision++;
+                if (buttonId == ACTION_SUPPORT_VILLAGE) {
+                    DebugFlightRecorder.recordFundDraft(
+                            serverPlayer,
+                            "confirmation_opened",
+                            donationDraft,
+                            donationDraft,
+                            selectedFundType(),
+                            selectedFundPurpose());
+                }
+                refreshServerSnapshot();
+                broadcastChanges();
+                return true;
+            }
+            cancelConfirmation();
+        } else {
+            cancelConfirmation();
+        }
+
+        int requested = buttonId == ACTION_SUPPORT_VILLAGE
+                ? donationDraft
+                : selectedAmount();
         statusCode = switch (buttonId) {
             case ACTION_DEPOSIT -> BankingOperations.deposit(serverPlayer, economy, requested);
             case ACTION_WITHDRAW -> BankingOperations.withdraw(serverPlayer, economy, requested);
@@ -284,11 +551,12 @@ public final class BankerMenu extends AbstractContainerMenu {
                     serverPlayer, economy, selectedAsset().ticker(), 1.0);
             case ACTION_OPEN_CD -> BankingOperations.openCd(
                     serverPlayer, economy, requested, selectedCdTerm());
-            case ACTION_CLOSE_CD -> BankingOperations.closeCd(serverPlayer, economy);
+            case ACTION_CLOSE_CD -> BankingOperations.closeCd(
+                    serverPlayer, economy, selectedCdPositionId);
             case ACTION_FUND_LENDING -> BankingOperations.fundLending(
                     serverPlayer, economy, requested, selectedLendingTerm());
             case ACTION_COLLECT_LENDING -> BankingOperations.collectLending(
-                    serverPlayer, economy);
+                    serverPlayer, economy, selectedLendingPositionId);
             case ACTION_EXCHANGE -> BankingOperations.exchange(
                     serverPlayer,
                     economy,
@@ -296,14 +564,32 @@ public final class BankerMenu extends AbstractContainerMenu {
                     requested);
             case ACTION_RECOVER -> BankingOperations.recover(serverPlayer, economy);
             case ACTION_SUPPORT_VILLAGE -> BankingOperations.supportVillage(
-                    serverPlayer, economy, villageId, requested);
+                    serverPlayer,
+                    economy,
+                    villageId,
+                    requested,
+                    selectedFundType(),
+                    selectedFundPurpose());
             default -> Integer.MIN_VALUE;
         };
         if (statusCode == Integer.MIN_VALUE) {
             return false;
         }
-        DebugFlightRecorder.recordBankAction(
-                serverPlayer, buttonId, requested, statusCode);
+        if (buttonId == ACTION_SUPPORT_VILLAGE && statusCode > 0) {
+            donationDraft = 0;
+        }
+        if (buttonId == ACTION_SUPPORT_VILLAGE) {
+            DebugFlightRecorder.recordFundAction(
+                    serverPlayer,
+                    buttonId,
+                    requested,
+                    statusCode,
+                    selectedFundType(),
+                    selectedFundPurpose());
+        } else {
+            DebugFlightRecorder.recordBankAction(
+                    serverPlayer, buttonId, requested, statusCode);
+        }
         statusRevision++;
         refreshServerSnapshot();
         broadcastChanges();
@@ -312,7 +598,20 @@ public final class BankerMenu extends AbstractContainerMenu {
 
     @Override
     public void broadcastChanges() {
-        refreshServerSnapshot();
+        if (serverPlayer != null
+                && confirmationAction >= 0
+                && serverPlayer.level().getGameTime() > confirmationExpiresAtTick) {
+            cancelConfirmation();
+            statusCode = BankingOperations.READY;
+            statusRevision++;
+        }
+        long now = serverPlayer == null ? 0L : serverPlayer.level().getGameTime();
+        if (serverPlayer != null
+                && (lastServerSnapshotTick == Long.MIN_VALUE
+                        || now < lastServerSnapshotTick
+                        || now - lastServerSnapshotTick >= 20L)) {
+            refreshServerSnapshot();
+        }
         super.broadcastChanges();
     }
 
@@ -382,6 +681,10 @@ public final class BankerMenu extends AbstractContainerMenu {
 
     public int statusRevision() {
         return data.get(DATA_STATUS_REVISION);
+    }
+
+    public int confirmationAction() {
+        return data.get(DATA_CONFIRMATION_ACTION);
     }
 
     public int catchUpDays() {
@@ -553,6 +856,10 @@ public final class BankerMenu extends AbstractContainerMenu {
         return data.get(DATA_VILLAGE_PROJECT_TYPE);
     }
 
+    public int fundableProjectTypeOrdinal() {
+        return data.get(DATA_FUNDABLE_PROJECT_TYPE);
+    }
+
     public double villageProjectProgress() {
         return Math.max(0, data.get(DATA_VILLAGE_PROJECT_PROGRESS_BPS)) / 100.0;
     }
@@ -587,6 +894,156 @@ public final class BankerMenu extends AbstractContainerMenu {
         return Math.max(0, data.get(DATA_VILLAGE_INCIDENT_AGE));
     }
 
+    public double villageAgricultureOutput() {
+        return Math.max(0, data.get(DATA_VILLAGE_AGRICULTURE_CENTI)) / 100.0;
+    }
+
+    public double villageMiningOutput() {
+        return Math.max(0, data.get(DATA_VILLAGE_MINING_CENTI)) / 100.0;
+    }
+
+    public double villageTradeOutput() {
+        return Math.max(0, data.get(DATA_VILLAGE_TRADE_CENTI)) / 100.0;
+    }
+
+    public int donationDraft() {
+        return Math.max(0, data.get(DATA_DONATION_DRAFT));
+    }
+
+    public int fundTypeIndex() {
+        return clampIndex(data.get(DATA_FUND_TYPE), FUND_TYPE_COUNT);
+    }
+
+    public int fundPurposeIndex() {
+        return clampIndex(data.get(DATA_FUND_PURPOSE), FUND_PURPOSE_COUNT);
+    }
+
+    public int historyRangeIndex() {
+        return clampIndex(data.get(DATA_HISTORY_RANGE), HISTORY_RANGES.length);
+    }
+
+    public int historySpanDays() {
+        return Math.max(0, data.get(DATA_HISTORY_SPAN_DAYS));
+    }
+
+    public int netWorthHistorySpanDays() {
+        return Math.max(0, data.get(DATA_NET_WORTH_HISTORY_SPAN_DAYS));
+    }
+
+    public int commodityHistorySpanDays() {
+        return Math.max(0, data.get(DATA_COMMODITY_HISTORY_SPAN_DAYS));
+    }
+
+    public int[] netWorthHistoryPointsCenti() {
+        return historyPoints(DATA_NET_WORTH_HISTORY_COUNT, DATA_NET_WORTH_HISTORY_BASE);
+    }
+
+    public int[] commodityHistoryPointsCenti() {
+        return historyPoints(DATA_COMMODITY_HISTORY_COUNT, DATA_COMMODITY_HISTORY_BASE);
+    }
+
+    public double totalContributions() {
+        return readLong(
+                DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW,
+                DATA_TOTAL_CONTRIBUTIONS_CENTI_HIGH) / 100.0;
+    }
+
+    public double totalCostBasis() {
+        return readLong(DATA_TOTAL_COST_BASIS_CENTI_LOW, DATA_TOTAL_COST_BASIS_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public double unrealizedGain() {
+        return readLong(DATA_UNREALIZED_GAIN_CENTI_LOW, DATA_UNREALIZED_GAIN_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public double realizedGain() {
+        return readLong(DATA_REALIZED_GAIN_CENTI_LOW, DATA_REALIZED_GAIN_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public double selectedAveragePrice() {
+        return data.get(DATA_SELECTED_AVERAGE_PRICE_CENTI) / 100.0;
+    }
+
+    public double selectedAllocationPercent() {
+        return data.get(DATA_SELECTED_ALLOCATION_BPS) / 100.0;
+    }
+
+    public int cdCount() {
+        return Math.max(0, data.get(DATA_CD_COUNT));
+    }
+
+    public int lendingCount() {
+        return Math.max(0, data.get(DATA_LENDING_COUNT));
+    }
+
+    public int readyLendingCount() {
+        return Math.max(0, data.get(DATA_READY_LENDING_COUNT));
+    }
+
+    public int selectedCdPositionNumber() {
+        return cdCount() == 0
+                ? 0 : clampIndex(data.get(DATA_CD_POSITION_INDEX), cdCount()) + 1;
+    }
+
+    public int selectedLendingPositionNumber() {
+        return lendingCount() == 0
+                ? 0 : clampIndex(data.get(DATA_LENDING_POSITION_INDEX), lendingCount()) + 1;
+    }
+
+    public long selectedCdPositionId() {
+        return Math.max(0L, readLong(DATA_CD_POSITION_ID_LOW, DATA_CD_POSITION_ID_HIGH));
+    }
+
+    public long selectedLendingPositionId() {
+        return Math.max(0L, readLong(
+                DATA_LENDING_POSITION_ID_LOW, DATA_LENDING_POSITION_ID_HIGH));
+    }
+
+    public double selectedCdPositionValue() {
+        return readLong(
+                DATA_CD_POSITION_VALUE_CENTI_LOW,
+                DATA_CD_POSITION_VALUE_CENTI_HIGH) / 100.0;
+    }
+
+    public double selectedLendingPositionValue() {
+        return readLong(
+                DATA_LENDING_POSITION_VALUE_CENTI_LOW,
+                DATA_LENDING_POSITION_VALUE_CENTI_HIGH) / 100.0;
+    }
+
+    public double fundSpendable() {
+        return readLong(DATA_FUND_SPENDABLE_CENTI_LOW, DATA_FUND_SPENDABLE_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public double fundEndowment() {
+        return readLong(DATA_FUND_ENDOWMENT_CENTI_LOW, DATA_FUND_ENDOWMENT_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public double fundReserve() {
+        return readLong(DATA_FUND_RESERVE_CENTI_LOW, DATA_FUND_RESERVE_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public double fundLifetimeReceived() {
+        return readLong(DATA_FUND_LIFETIME_CENTI_LOW, DATA_FUND_LIFETIME_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public double donorLifetimeContribution() {
+        return readLong(DATA_DONOR_LIFETIME_CENTI_LOW, DATA_DONOR_LIFETIME_CENTI_HIGH)
+                / 100.0;
+    }
+
+    public EconomyState.DonorTitle donorTitle() {
+        int ordinal = clampIndex(data.get(DATA_DONOR_TITLE), EconomyState.DonorTitle.values().length);
+        return EconomyState.DonorTitle.values()[ordinal];
+    }
+
     private int selectedAmount() {
         int preset = AMOUNT_PRESETS[clampIndex(amountPresetIndex, AMOUNT_PRESETS.length)];
         if (preset > 0) {
@@ -608,8 +1065,57 @@ public final class BankerMenu extends AbstractContainerMenu {
         return BankInventory.exchangeResource(name);
     }
 
+    private EconomyState.ProsperityFundType selectedFundType() {
+        return EconomyState.ProsperityFundType.values()[
+                clampIndex(fundTypeIndex, EconomyState.ProsperityFundType.values().length)];
+    }
+
+    private EconomyState.DonationPurpose selectedFundPurpose() {
+        if (selectedFundType() == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP) {
+            return projectPurpose(fundableProjectType);
+        }
+        return EconomyState.DonationPurpose.values()[
+                clampIndex(fundPurposeIndex, EconomyState.DonationPurpose.values().length)];
+    }
+
+    private static EconomyState.DonationPurpose projectPurpose(int projectTypeOrdinal) {
+        if (projectTypeOrdinal < 0
+                || projectTypeOrdinal >= VillageProsperityEngine.ProjectType.values().length) {
+            return EconomyState.DonationPurpose.INFRASTRUCTURE;
+        }
+        return switch (VillageProsperityEngine.ProjectType.values()[projectTypeOrdinal]) {
+            case COTTAGE, HOUSE, INN -> EconomyState.DonationPurpose.HOUSING;
+            case GRANARY -> EconomyState.DonationPurpose.FOOD;
+            case GUARD_POST -> EconomyState.DonationPurpose.SECURITY;
+            case MARKET_SQUARE, EXCHANGE_HALL -> EconomyState.DonationPurpose.TRADE;
+            case WAREHOUSE, MINE_ENTRANCE, SMITHY ->
+                    EconomyState.DonationPurpose.INFRASTRUCTURE;
+        };
+    }
+
+    private int[] historyPoints(int countIndex, int baseIndex) {
+        int count = Math.min(HISTORY_POINTS, Math.max(0, data.get(countIndex)));
+        int[] points = new int[count];
+        for (int index = 0; index < count; index++) {
+            points[index] = Math.max(0, data.get(baseIndex + index));
+        }
+        return points;
+    }
+
     private static boolean isAction(int buttonId) {
         return buttonId >= ACTION_DEPOSIT && buttonId <= ACTION_SUPPORT_VILLAGE;
+    }
+
+    private static boolean requiresServerConfirmation(int buttonId) {
+        return buttonId == ACTION_SELL_ALL
+                || buttonId == ACTION_CLOSE_CD
+                || buttonId == ACTION_FUND_LENDING
+                || buttonId == ACTION_SUPPORT_VILLAGE;
+    }
+
+    private void cancelConfirmation() {
+        confirmationAction = -1;
+        confirmationExpiresAtTick = 0L;
     }
 
     private void setClientSelection(int index, int value) {
@@ -625,15 +1131,19 @@ public final class BankerMenu extends AbstractContainerMenu {
         EconomyService.MarketSnapshot market = economy.marketSnapshot();
         EconomyService.PortfolioSnapshot portfolio =
                 economy.portfolioSnapshot(serverPlayer.getUUID());
+        PortfolioAnalytics.PortfolioSnapshot analytics =
+                economy.portfolioAnalyticsSnapshot(serverPlayer.getUUID());
         if (market == null || portfolio == null) {
             return;
         }
+        lastServerSnapshotTick = serverPlayer.level().getGameTime();
 
         selectedAssetIndex = clampIndex(selectedAssetIndex, EconomyEngine.ASSETS.size());
         selectedResourceIndex = clampIndex(selectedResourceIndex, RESOURCE_NAMES.size());
         amountPresetIndex = clampIndex(amountPresetIndex, AMOUNT_PRESETS.length);
         cdTermIndex = clampIndex(cdTermIndex, TERMS.length);
         lendingTermIndex = clampIndex(lendingTermIndex, TERMS.length);
+        historyRangeIndex = clampIndex(historyRangeIndex, HISTORY_RANGES.length);
 
         EconomyState.Account account = portfolio.account();
         day = market.economicDay();
@@ -641,21 +1151,47 @@ public final class BankerMenu extends AbstractContainerMenu {
         catchUpDays = saturatingInt(market.catchUpDaysRemaining());
         physicalEmeralds = BankInventory.countItems(serverPlayer, Items.EMERALD);
         cashMicro = account.cashMicro;
+        donationDraft = saturatingInt(Math.min(
+                donationDraft,
+                Math.min(account.cashMicro / EconomyState.MICRO,
+                        EconomyService.MAX_WHOLE_EMERALD_TRANSACTION)));
         savingsMicro = account.savingsMicro;
-        cdValueMicro = account.cdValueMicro;
-        lendingValueMicro = account.loanValueMicro;
+        cdValueMicro = account.totalCdValueMicro();
+        lendingValueMicro = account.totalLoanValueMicro();
         netWorthCenti = centi(portfolio.netWorth());
-        cdDaysRemaining = account.hasCd()
-                ? saturatingInt(Math.max(0L, account.cdMaturityDay - day))
-                : 0;
-        lendingDaysRemaining = account.hasLoan()
-                ? saturatingInt(Math.max(0L, account.loanMaturityDay - day))
-                : 0;
-        cdRateBps = basisPoints(account.cdAnnualRate);
-        lendingRateBps = basisPoints(account.loanAnnualRate);
+        totalContributionsCenti = microCenti(analytics.totalContributionsMicro());
+        totalCostBasisCenti = microCenti(analytics.totalCostBasisMicro());
+        unrealizedGainCenti = microCenti(analytics.unrealizedGainMicro());
+        realizedGainCenti = microCenti(analytics.realizedGainMicro());
+        cdCount = analytics.cds().size();
+        lendingCount = analytics.loans().size();
+        readyLendingCount = (int) analytics.loans().stream()
+                .filter(position -> position.resolved && day >= position.maturityDay)
+                .count();
+        selectedCdPositionIndex = cdCount == 0
+                ? 0 : clampIndex(selectedCdPositionIndex, cdCount);
+        EconomyState.CdPosition selectedCd = cdCount == 0
+                ? null : analytics.cds().get(selectedCdPositionIndex);
+        selectedCdPositionId = selectedCd == null ? 0L : selectedCd.positionId;
+        selectedCdPositionValueCenti = selectedCd == null
+                ? 0L : microCenti(selectedCd.valueMicro);
+        cdDaysRemaining = selectedCd == null
+                ? 0 : saturatingInt(Math.max(0L, selectedCd.maturityDay - day));
+        cdRateBps = selectedCd == null ? 0 : basisPoints(selectedCd.annualRate);
+        selectedLendingPositionIndex = lendingCount == 0
+                ? 0 : clampIndex(selectedLendingPositionIndex, lendingCount);
+        EconomyState.LoanPosition selectedLoan = lendingCount == 0
+                ? null : analytics.loans().get(selectedLendingPositionIndex);
+        selectedLendingPositionId = selectedLoan == null ? 0L : selectedLoan.positionId;
+        selectedLendingPositionValueCenti = selectedLoan == null
+                ? 0L : microCenti(selectedLoan.valueMicro);
+        lendingDaysRemaining = selectedLoan == null
+                ? 0 : saturatingInt(Math.max(0L, selectedLoan.maturityDay - day));
+        lendingRateBps = selectedLoan == null ? 0 : basisPoints(selectedLoan.annualRate);
         savingsRateBps = basisPoints(EconomyEngine.savingsAnnualRate(market.regime()));
-        lendingOutcome = account.loanOutcome.ordinal();
-        lendingResolved = account.loanResolved ? 1 : 0;
+        lendingOutcome = selectedLoan == null
+                ? 0 : selectedLoan.outcome.ordinal();
+        lendingResolved = selectedLoan != null && selectedLoan.resolved ? 1 : 0;
         pendingTransaction = portfolio.pendingTransaction() == null ? 0 : 1;
         cdActive = account.hasCd() ? 1 : 0;
         lendingActive = account.hasLoan() ? 1 : 0;
@@ -677,19 +1213,18 @@ public final class BankerMenu extends AbstractContainerMenu {
         selectedPriceCenti = centiInt(selectedPrice);
         selectedHoldingCenti = centi(shares * selectedPrice);
         selectedSharesMicro = safeScaledLong(shares, 1_000_000.0);
+        PortfolioAnalytics.PositionSnapshot selectedPosition =
+                analytics.positions().get(selected.ticker());
+        selectedAveragePriceCenti = selectedPosition == null
+                ? 0 : centiInt(selectedPosition.averagePurchasePrice());
+        selectedAllocationBps = selectedPosition == null
+                ? 0 : basisPoints(selectedPosition.portfolioWeight());
 
         List<Double> history = market.priceHistory().getOrDefault(selected.ticker(), List.of());
-        historyCount = Math.min(HISTORY_POINTS, history.size());
-        java.util.Arrays.fill(historyCenti, 0);
+        int historyRangeDays = selectedHistoryRangeDays();
+        historyCount = sampleDoubleHistory(history, historyCenti, historyRangeDays);
+        historySpanDays = sampledDailyHistorySpan(history, historyRangeDays);
         if (historyCount > 0) {
-            int start = Math.max(0, history.size() - EconomyState.HISTORY_DAYS);
-            int available = history.size() - start;
-            for (int index = 0; index < historyCount; index++) {
-                int source = historyCount == 1
-                        ? history.size() - 1
-                        : start + (int) Math.round(index * (available - 1.0) / (historyCount - 1.0));
-                historyCenti[index] = centiInt(history.get(source));
-            }
             double first = historyCenti[0] / 100.0;
             double last = historyCenti[historyCount - 1] / 100.0;
             selectedChangeBps = first > 0.0
@@ -698,6 +1233,13 @@ public final class BankerMenu extends AbstractContainerMenu {
         } else {
             selectedChangeBps = 0;
         }
+        int[] netWorthSample = sampleNetWorthHistory(
+                analytics.netWorthHistory(),
+                netWorthHistoryCenti,
+                historyRangeDays,
+                day);
+        netWorthHistoryCount = netWorthSample[0];
+        netWorthHistorySpanDays = netWorthSample[1];
 
         BankInventory.ExchangeResource resource = selectedExchangeResource();
         selectedResourceCount = resource == null
@@ -709,6 +1251,17 @@ public final class BankerMenu extends AbstractContainerMenu {
         selectedResourceUnitQuoteCenti = unitQuoteMicro <= 0L
                 ? 0
                 : saturatingInt(Math.round(unitQuoteMicro / 10_000.0));
+        List<Double> commodityHistory = economy.commodityHistorySnapshot().getOrDefault(
+                resource == null ? "" : resource.quoteId(), List.of());
+        commodityHistoryCount = sampleDoubleHistory(
+                commodityHistory, commodityHistoryCenti, historyRangeDays);
+        commodityHistorySpanDays = sampledDailyHistorySpan(
+                commodityHistory, historyRangeDays);
+
+        EconomyService.DonorSnapshot donor = economy.donorSnapshot(serverPlayer.getUUID());
+        donorLifetimeCenti = microCenti(donor.lifetimeContributionMicro());
+        donorTitle = EmeraldConfig.current().prosperityFundDonorRecognitionEnabled()
+                ? donor.title().ordinal() : EconomyState.DonorTitle.NONE.ordinal();
 
         BlockPos villageSearchPoint = accessPoint == null
                 ? serverPlayer.blockPosition()
@@ -732,10 +1285,16 @@ public final class BankerMenu extends AbstractContainerMenu {
         } else {
             EconomyState.VillageRecord village = villageSnapshot.village();
             villageId = village.villageId;
+            EconomyService.VillageFundSnapshot fund = economy.villageFundSnapshot(villageId);
+            fundSpendableCenti = microCenti(fund.spendableTotalMicro());
+            fundEndowmentCenti = microCenti(fund.endowmentPrincipalMicro());
+            fundReserveCenti = microCenti(fund.emergencyReserveMicro());
+            fundLifetimeCenti = microCenti(fund.lifetimeReceivedMicro());
             villagePresent = 1;
             villageLifecycle = village.lifecycle.ordinal();
             villagePopulation = village.population;
-            villageHousing = village.housingCapacity;
+            villageHousing = com.chedidandrew.emeraldstandard.core.VillageProsperityEngine
+                    .effectiveHousingCapacity(village);
             villageTier = village.developmentTier;
             villageProsperityBps = basisPoints(village.prosperity / 100.0);
             villageSafetyBps = basisPoints(village.safety / 100.0);
@@ -752,10 +1311,17 @@ public final class BankerMenu extends AbstractContainerMenu {
                                     .IncidentCause.NONE
                     ? 0
                     : saturatingInt(Math.max(0L, day - village.lastIncidentDay));
-            EconomyState.VillageProject project = village.projects.stream()
+            villageAgricultureCenti = centiInt(village.agricultureOutput);
+            villageMiningCenti = centiInt(village.miningOutput);
+            villageTradeCenti = centiInt(village.tradeOutput);
+            EconomyState.VillageProject fundableProject = village.projects.stream()
                     .filter(value -> !value.economicComplete)
                     .findFirst()
-                    .orElseGet(village::nextVisualProject);
+                    .orElse(null);
+            fundableProjectType = fundableProject == null
+                    ? -1 : fundableProject.type.ordinal();
+            EconomyState.VillageProject project = fundableProject == null
+                    ? village.nextVisualProject() : fundableProject;
             if (project == null) {
                 villageProjectType = -1;
                 villageProjectProgressBps = 0;
@@ -784,6 +1350,7 @@ public final class BankerMenu extends AbstractContainerMenu {
         villageMaterialCenti = 0;
         villageTreasuryCenti = 0L;
         villageProjectType = -1;
+        fundableProjectType = -1;
         villageProjectProgressBps = 0;
         villageProjectBacklog = 0;
         villageRestorationCenti = 0;
@@ -791,6 +1358,13 @@ public final class BankerMenu extends AbstractContainerMenu {
         villageVisualEnabled = economy != null && economy.villageVisualProgressionEnabled() ? 1 : 0;
         villageIncidentCause = 0;
         villageIncidentAge = 0;
+        villageAgricultureCenti = 0;
+        villageMiningCenti = 0;
+        villageTradeCenti = 0;
+        fundSpendableCenti = 0L;
+        fundEndowmentCenti = 0L;
+        fundReserveCenti = 0L;
+        fundLifetimeCenti = 0L;
     }
 
     private int dataValue(int index) {
@@ -864,7 +1438,130 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (index == DATA_VILLAGE_VISUAL_ENABLED) return villageVisualEnabled;
         if (index == DATA_VILLAGE_INCIDENT_CAUSE) return villageIncidentCause;
         if (index == DATA_VILLAGE_INCIDENT_AGE) return villageIncidentAge;
+        if (index == DATA_CONFIRMATION_ACTION) return confirmationAction;
+        if (index == DATA_VILLAGE_AGRICULTURE_CENTI) return villageAgricultureCenti;
+        if (index == DATA_VILLAGE_MINING_CENTI) return villageMiningCenti;
+        if (index == DATA_VILLAGE_TRADE_CENTI) return villageTradeCenti;
+        if (index == DATA_DONATION_DRAFT) return donationDraft;
+        if (index == DATA_FUND_TYPE) return fundTypeIndex;
+        if (index == DATA_FUND_PURPOSE) return fundPurposeIndex;
+        if (index == DATA_HISTORY_RANGE) return historyRangeIndex;
+        if (index == DATA_NET_WORTH_HISTORY_COUNT) return netWorthHistoryCount;
+        if (index >= DATA_NET_WORTH_HISTORY_BASE
+                && index < DATA_NET_WORTH_HISTORY_BASE + HISTORY_POINTS) {
+            return netWorthHistoryCenti[index - DATA_NET_WORTH_HISTORY_BASE];
+        }
+        if (index == DATA_COMMODITY_HISTORY_COUNT) return commodityHistoryCount;
+        if (index >= DATA_COMMODITY_HISTORY_BASE
+                && index < DATA_COMMODITY_HISTORY_BASE + HISTORY_POINTS) {
+            return commodityHistoryCenti[index - DATA_COMMODITY_HISTORY_BASE];
+        }
+        if (index == DATA_TOTAL_CONTRIBUTIONS_CENTI_LOW) return low(totalContributionsCenti);
+        if (index == DATA_TOTAL_CONTRIBUTIONS_CENTI_HIGH) return high(totalContributionsCenti);
+        if (index == DATA_TOTAL_COST_BASIS_CENTI_LOW) return low(totalCostBasisCenti);
+        if (index == DATA_TOTAL_COST_BASIS_CENTI_HIGH) return high(totalCostBasisCenti);
+        if (index == DATA_UNREALIZED_GAIN_CENTI_LOW) return low(unrealizedGainCenti);
+        if (index == DATA_UNREALIZED_GAIN_CENTI_HIGH) return high(unrealizedGainCenti);
+        if (index == DATA_REALIZED_GAIN_CENTI_LOW) return low(realizedGainCenti);
+        if (index == DATA_REALIZED_GAIN_CENTI_HIGH) return high(realizedGainCenti);
+        if (index == DATA_SELECTED_AVERAGE_PRICE_CENTI) return selectedAveragePriceCenti;
+        if (index == DATA_SELECTED_ALLOCATION_BPS) return selectedAllocationBps;
+        if (index == DATA_CD_COUNT) return cdCount;
+        if (index == DATA_LENDING_COUNT) return lendingCount;
+        if (index == DATA_READY_LENDING_COUNT) return readyLendingCount;
+        if (index == DATA_FUND_SPENDABLE_CENTI_LOW) return low(fundSpendableCenti);
+        if (index == DATA_FUND_SPENDABLE_CENTI_HIGH) return high(fundSpendableCenti);
+        if (index == DATA_FUND_ENDOWMENT_CENTI_LOW) return low(fundEndowmentCenti);
+        if (index == DATA_FUND_ENDOWMENT_CENTI_HIGH) return high(fundEndowmentCenti);
+        if (index == DATA_FUND_RESERVE_CENTI_LOW) return low(fundReserveCenti);
+        if (index == DATA_FUND_RESERVE_CENTI_HIGH) return high(fundReserveCenti);
+        if (index == DATA_FUND_LIFETIME_CENTI_LOW) return low(fundLifetimeCenti);
+        if (index == DATA_FUND_LIFETIME_CENTI_HIGH) return high(fundLifetimeCenti);
+        if (index == DATA_DONOR_LIFETIME_CENTI_LOW) return low(donorLifetimeCenti);
+        if (index == DATA_DONOR_LIFETIME_CENTI_HIGH) return high(donorLifetimeCenti);
+        if (index == DATA_DONOR_TITLE) return donorTitle;
+        if (index == DATA_CD_POSITION_INDEX) return selectedCdPositionIndex;
+        if (index == DATA_LENDING_POSITION_INDEX) return selectedLendingPositionIndex;
+        if (index == DATA_CD_POSITION_ID_LOW) return low(selectedCdPositionId);
+        if (index == DATA_CD_POSITION_ID_HIGH) return high(selectedCdPositionId);
+        if (index == DATA_LENDING_POSITION_ID_LOW) return low(selectedLendingPositionId);
+        if (index == DATA_LENDING_POSITION_ID_HIGH) return high(selectedLendingPositionId);
+        if (index == DATA_CD_POSITION_VALUE_CENTI_LOW) return low(selectedCdPositionValueCenti);
+        if (index == DATA_CD_POSITION_VALUE_CENTI_HIGH) return high(selectedCdPositionValueCenti);
+        if (index == DATA_LENDING_POSITION_VALUE_CENTI_LOW) {
+            return low(selectedLendingPositionValueCenti);
+        }
+        if (index == DATA_LENDING_POSITION_VALUE_CENTI_HIGH) {
+            return high(selectedLendingPositionValueCenti);
+        }
+        if (index == DATA_FUNDABLE_PROJECT_TYPE) return fundableProjectType;
+        if (index == DATA_HISTORY_SPAN_DAYS) return historySpanDays;
+        if (index == DATA_NET_WORTH_HISTORY_SPAN_DAYS) return netWorthHistorySpanDays;
+        if (index == DATA_COMMODITY_HISTORY_SPAN_DAYS) return commodityHistorySpanDays;
         return 0;
+    }
+
+    private int selectedHistoryRangeDays() {
+        return HISTORY_RANGES[clampIndex(historyRangeIndex, HISTORY_RANGES.length)];
+    }
+
+    private static int sampleDoubleHistory(
+            List<Double> history, int[] destination, int maximumDays) {
+        java.util.Arrays.fill(destination, 0);
+        if (history == null || history.isEmpty()) {
+            return 0;
+        }
+        int available = Math.min(history.size(), maximumDays);
+        int count = Math.min(destination.length, available);
+        int start = history.size() - available;
+        for (int index = 0; index < count; index++) {
+            int source = count == 1
+                    ? history.size() - 1
+                    : start + (int) Math.round(index * (available - 1.0) / (count - 1.0));
+            destination[index] = centiInt(history.get(source));
+        }
+        return count;
+    }
+
+    private static int sampledDailyHistorySpan(List<?> history, int maximumDays) {
+        return history == null || history.isEmpty()
+                ? 0 : Math.max(0, Math.min(history.size(), maximumDays) - 1);
+    }
+
+    /** Returns {sample count, actual day span}. */
+    private static int[] sampleNetWorthHistory(
+            List<EconomyState.PortfolioValuePoint> history,
+            int[] destination,
+            int maximumDays,
+            long currentDay) {
+        java.util.Arrays.fill(destination, 0);
+        if (history == null || history.isEmpty()) {
+            return new int[] {0, 0};
+        }
+        long earliestDay = maximumDays == Integer.MAX_VALUE
+                ? Long.MIN_VALUE
+                : Math.max(0L, currentDay - maximumDays + 1L);
+        int start = 0;
+        while (start < history.size() && history.get(start).day < earliestDay) {
+            start++;
+        }
+        if (start >= history.size()) {
+            return new int[] {0, 0};
+        }
+        int available = history.size() - start;
+        int count = Math.min(destination.length, available);
+        for (int index = 0; index < count; index++) {
+            int source = count == 1
+                    ? history.size() - 1
+                    : start + (int) Math.round(index * (available - 1.0) / (count - 1.0));
+            destination[index] = saturatingInt(microCenti(history.get(source).valueMicro));
+        }
+        long span = history.get(history.size() - 1).day - history.get(start).day;
+        return new int[] {count, saturatingInt(Math.max(0L, span))};
+    }
+
+    private static long microCenti(long micro) {
+        return micro / (EconomyState.MICRO / 100L);
     }
 
     private long readLong(int lowIndex, int highIndex) {

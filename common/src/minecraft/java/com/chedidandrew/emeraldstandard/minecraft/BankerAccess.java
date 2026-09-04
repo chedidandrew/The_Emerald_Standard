@@ -26,16 +26,20 @@ public final class BankerAccess {
     }
 
     public static boolean isBanker(Entity entity) {
-        return entity instanceof Villager && entity.entityTags().contains(BANKER_TAG);
+        return entity instanceof Villager villager
+                && (hasManagedBankerTag(villager)
+                        || BankerProfessionSupport.isRegisteredBanker(
+                                villager.getVillagerData().profession()));
     }
 
     public static boolean isBankerForRegion(Entity entity, long regionKey) {
-        return isBanker(entity) && entity.entityTags().contains(regionTag(regionKey));
+        return hasManagedBankerTag(entity)
+                && entity.entityTags().contains(regionTag(regionKey));
     }
 
     /** Returns the persistent bank key carried by a scoped Banker, or null for legacy access. */
     public static Long bankRegionKey(Entity entity) {
-        if (!isBanker(entity)) {
+        if (!hasManagedBankerTag(entity)) {
             return null;
         }
         for (String tag : entity.entityTags()) {
@@ -53,7 +57,7 @@ public final class BankerAccess {
     }
 
     public static boolean isLegacyUnscopedBanker(Entity entity) {
-        if (!isBanker(entity)) {
+        if (!hasManagedBankerTag(entity)) {
             return false;
         }
         return entity.entityTags().stream().noneMatch(tag -> tag.startsWith(BANK_REGION_TAG_PREFIX));
@@ -73,12 +77,27 @@ public final class BankerAccess {
     }
 
     /**
+     * Accepts either an untouched unemployed adult or an untouched villager that naturally claimed
+     * an Exchange Desk. Established villagers and custom professions from other mods are excluded.
+     */
+    public static boolean isEligibleBankerCandidate(Villager villager) {
+        return villager.isAlive()
+                && !villager.isBaby()
+                && !villager.hasCustomName()
+                && villager.getVillagerXp() == 0
+                && villager.getOffers().isEmpty()
+                && (villager.getVillagerData().profession().is(VillagerProfession.NONE)
+                        || BankerProfessionSupport.isRegisteredBanker(
+                                villager.getVillagerData().profession()));
+    }
+
+    /**
      * Marks a newly spawned or untouched unemployed villager as the Banker for one village region.
      * Existing Banker tags are migrated to the supplied region id without resetting their data.
      */
     public static boolean markBanker(Villager villager, long regionKey) {
-        boolean existingBanker = isBanker(villager);
-        if (!existingBanker && !isEligibleUnemployedVillager(villager)) {
+        boolean existingBanker = hasManagedBankerTag(villager);
+        if (!existingBanker && !isEligibleBankerCandidate(villager)) {
             return false;
         }
 
@@ -93,16 +112,31 @@ public final class BankerAccess {
         villager.setCustomNameVisible(true);
         villager.setPersistenceRequired();
 
-        if (!existingBanker) {
-            BuiltInRegistries.VILLAGER_PROFESSION.get(VillagerProfession.LIBRARIAN)
+        boolean legacyProfession = villager.getVillagerData().profession()
+                .is(VillagerProfession.NONE)
+                || villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN);
+        if (!BankerProfessionSupport.isRegisteredBanker(
+                        villager.getVillagerData().profession())
+                && (!existingBanker || legacyProfession)) {
+            BankerProfessionSupport.registeredBanker()
+                    .or(() -> BuiltInRegistries.VILLAGER_PROFESSION.get(
+                            VillagerProfession.LIBRARIAN))
                     .ifPresent(profession -> villager.setVillagerData(
-                            villager.getVillagerData().withProfession(profession).withLevel(1)));
+                            existingBanker
+                                    ? villager.getVillagerData().withProfession(profession)
+                                    : villager.getVillagerData()
+                                            .withProfession(profession)
+                                            .withLevel(1)));
             villager.setVillagerDataFinalized(true);
             if (villager.level() instanceof ServerLevel level) {
                 villager.refreshBrain(level);
             }
         }
         return true;
+    }
+
+    private static boolean hasManagedBankerTag(Entity entity) {
+        return entity instanceof Villager && entity.entityTags().contains(BANKER_TAG);
     }
 
     /** Compatibility overload used only when no persistent village-region identity exists. */

@@ -5,6 +5,7 @@ import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.List;
 import net.minecraft.commands.CommandSourceStack;
@@ -63,7 +64,8 @@ public final class EmeraldCommands {
                         .then(Commands.literal("show")
                                 .executes(EmeraldCommandHandlers::showConfig))
                         .then(Commands.literal("reload")
-                                .executes(EmeraldCommandHandlers::reloadConfig)))
+                                .executes(context -> EmeraldCommandHandlers.reloadConfig(
+                                        context, economy))))
                 .then(Commands.literal("deposit")
                         .then(Commands.argument(
                                         "amount",
@@ -116,7 +118,14 @@ public final class EmeraldCommands {
                                                 .executes(context -> EmeraldCommandHandlers.openCd(
                                                         context, economy)))))
                         .then(Commands.literal("close")
-                                .executes(context -> EmeraldCommandHandlers.closeCd(context, economy))))
+                                .executes(context -> EmeraldCommandHandlers.closeCd(context, economy))
+                                .then(Commands.argument(
+                                                "position",
+                                                LongArgumentType.longArg(1L))
+                                        .executes(context -> EmeraldCommandHandlers.closeCd(
+                                                context,
+                                                economy,
+                                                LongArgumentType.getLong(context, "position"))))))
                 .then(Commands.literal("loan")
                         .then(Commands.literal("fund")
                                 .then(Commands.argument(
@@ -131,7 +140,14 @@ public final class EmeraldCommands {
                                                         context, economy)))))
                         .then(Commands.literal("collect")
                                 .executes(context -> EmeraldCommandHandlers.collectLoan(
-                                        context, economy))))
+                                        context, economy))
+                                .then(Commands.argument(
+                                                "position",
+                                                LongArgumentType.longArg(1L))
+                                        .executes(context -> EmeraldCommandHandlers.collectLoan(
+                                                context,
+                                                economy,
+                                                LongArgumentType.getLong(context, "position"))))))
                 .then(Commands.literal("exchange")
                         .then(Commands.argument("resource", StringArgumentType.word())
                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(

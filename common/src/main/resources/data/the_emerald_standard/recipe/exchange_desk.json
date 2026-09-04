@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " E ",
+    "LBL",
+    "PPP"
+  ],
+  "key": {
+    "E": "minecraft:emerald",
+    "L": "minecraft:leather",
+    "B": "minecraft:book",
+    "P": "#minecraft:planks"
+  },
+  "result": {
+    "id": "the_emerald_standard:exchange_desk",
+    "count": 1
+  }
+}

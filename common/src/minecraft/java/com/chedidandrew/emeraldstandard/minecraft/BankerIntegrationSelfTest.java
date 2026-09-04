@@ -4,8 +4,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.PoiTypeTags;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.level.block.Blocks;
@@ -17,6 +19,32 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        require(BankerProfessionSupport.exchangeDeskOrLectern() != Blocks.LECTERN,
+                "The Exchange Desk block was not registered before server startup");
+        require(BankerProfessionSupport.registeredBanker().isPresent(),
+                "The Banker profession was not registered before server startup");
+        require(BankerProfessionSupport.isBankWorkstation(
+                        BankerProfessionSupport.exchangeDeskOrLectern().defaultBlockState())
+                        && BankerProfessionSupport.isBankWorkstation(
+                                Blocks.LECTERN.defaultBlockState()),
+                "Custom or legacy bank workstation recognition failed");
+        require(PoiTypes.hasPoi(
+                        BankerProfessionSupport.exchangeDeskOrLectern().defaultBlockState()),
+                "The Exchange Desk block states were not mapped to the Banker POI");
+        require(BuiltInRegistries.POINT_OF_INTEREST_TYPE
+                        .get(BankerProfessionSupport.BANKER_POI_KEY)
+                        .orElseThrow()
+                        .is(PoiTypeTags.ACQUIRABLE_JOB_SITE),
+                "The Banker POI was not an acquirable villager job site");
+
+        Villager naturalBanker = create(level);
+        naturalBanker.setVillagerData(naturalBanker.getVillagerData().withProfession(
+                BankerProfessionSupport.registeredBanker().orElseThrow()));
+        require(BankerAccess.isBanker(naturalBanker),
+                "A villager that naturally claimed the Banker profession was not interactive");
+        require(BankerAccess.bankRegionKey(naturalBanker) == null,
+                "An unscoped natural Banker invented a generated-bank identity");
+
         Villager unemployed = create(level);
         require(BankerAccess.isEligibleUnemployedVillager(unemployed),
                 "A fresh unemployed adult was not eligible");
@@ -28,6 +56,25 @@ public final class BankerIntegrationSelfTest {
                 "Banker region identity could not be decoded for menu routing");
         require(!BankerAccess.isBankerForRegion(unemployed, 124L),
                 "Banker was associated with the wrong region");
+        require(BankerProfessionSupport.isRegisteredBanker(
+                        unemployed.getVillagerData().profession()),
+                "A newly assigned Banker did not receive the registered profession");
+
+        Villager legacy = create(level);
+        var librarian = BuiltInRegistries.VILLAGER_PROFESSION
+                .get(VillagerProfession.LIBRARIAN)
+                .orElseThrow();
+        legacy.setVillagerData(
+                legacy.getVillagerData().withProfession(librarian).withLevel(4));
+        legacy.setVillagerXp(150);
+        legacy.addTag(BankerAccess.BANKER_TAG);
+        require(BankerAccess.markBanker(legacy, 125L),
+                "A tagged legacy Banker could not be migrated");
+        require(BankerProfessionSupport.isRegisteredBanker(
+                        legacy.getVillagerData().profession())
+                        && legacy.getVillagerData().level() == 4
+                        && legacy.getVillagerXp() == 150,
+                "Legacy Banker migration reset profession progress");
 
         Villager established = create(level);
         var farmer = BuiltInRegistries.VILLAGER_PROFESSION
@@ -77,6 +124,8 @@ public final class BankerIntegrationSelfTest {
                 "A custom-named villager was considered eligible");
 
         unemployed.discard();
+        naturalBanker.discard();
+        legacy.discard();
         established.discard();
         named.discard();
     }

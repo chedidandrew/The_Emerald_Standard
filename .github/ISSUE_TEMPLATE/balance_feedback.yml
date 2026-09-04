@@ -1,5 +1,5 @@
 name: Economy balance feedback
-description: Share long-play feedback about market risk, savings, CDs, lending, or resource prices.
+description: Share long-play feedback about markets, portfolio accounting, term products, commodities, or the Prosperity Fund.
 title: "[Balance]: "
 labels: [balance]
 body:
@@ -7,7 +7,7 @@ body:
     id: version
     attributes:
       label: The Emerald Standard version
-      placeholder: 0.3.0-beta.3
+      placeholder: 0.4.0-beta.2
     validations:
       required: true
   - type: input
@@ -28,6 +28,8 @@ body:
         - Individual investments
         - Commodity exchange
         - Village Prosperity
+        - Prosperity Fund
+        - Portfolio history and accounting
         - Overall progression
     validations:
       required: true

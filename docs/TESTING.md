@@ -16,7 +16,12 @@ The suite verifies:
 - Unified wall-clock/game-tick progression and bounded catch-up
 - Save migration, checksums, backup recovery, rollback, retry backoff, and no-debt invariants
 - Genuine format-5 account/bank-anchor migration, beta.1/beta.2 format-6 upgrade, safe defaults for older project records, and rejection of future formats without stale-backup fallback
-- Format-7 to format-8 migration for the expanded Village Prosperity project catalog, including persistence of a new House project identifier
+- Format-7 to format-8 project-catalog migration and format-8 to format-9 migration for multiple term positions, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records
+- Legacy CD and lending promotion plus explicitly inferred basis for old holdings without execution history
+- Share cost basis, average purchase price, realized and unrealized gain, allocation, contributions, withdrawals, bounded transaction ledger, and five-year net-worth history
+- Five-year asset, commodity, and personal history retention plus bounded chart-sampling inputs
+- Up to eight independently identified CDs and eight villager-lending positions, including position-specific close and collect behavior
+- Direct Grants, protected-principal Endowments, Project Sponsorships, all seven purposes, emergency reserves, bounded spending, and donor recognition
 - Inventory transaction-journal lifecycle
 - Village Prosperity simulation and project approval
 - Independent simulation, visual, market-integration, and automatic-recovery behavior
@@ -32,8 +37,11 @@ The suite verifies:
 - Bounded profession specialization and isolation between unrelated sectors
 - Infected-resident death without a second productive-population decrement
 - Persistent project bounds, exponential retry deadlines, and restart eligibility
+- Physical project benefits remaining inactive until verified materialization, demotion after integrity loss, and safe repair eligibility
 - Dimension-filtered nearby village snapshots and account/settlement-aware catch-up batches
+- Spatial-index equivalence, cross-dimension isolation, deterministic ties, and measured query/save/load work at 100, 500, and 1,000 villages and accounts
 - No-op bank association persistence, net-worth overflow safety, and exact oversell rejection
+- Debug capture ownership, watched-village filtering, privacy redaction, timeline limits, and separated timing categories
 
 ## Automated loader verification
 
@@ -59,11 +67,15 @@ Automated startup proves API compatibility and initialization. It cannot prove e
 On both Fabric and NeoForge:
 
 - Open a new world and an upgraded existing world.
-- Open the dashboard through both a Banker and bank lectern.
+- Open the dashboard through a Banker, a new Exchange Desk, and an upgraded legacy bank lectern.
 - Confirm the Village page shows the latest local incident cause and age.
-- Verify all five pages and all GUI scales.
-- Exercise deposit, withdrawal, savings, buy/sell, CD, lending, exchange, Village support, and recovery.
-- Verify risky actions require confirmation.
+- Verify all six pages and all GUI scales.
+- Exercise deposit, withdrawal, savings, buy/sell, eight simultaneous CDs, eight simultaneous lending positions, exchange, all Prosperity Fund types and purposes, and recovery.
+- Verify a specific CD and lending position can be selected, closed, or collected without changing another position.
+- Compare basis, average purchase price, realized/unrealized gain, allocation, contributions, ledger entries, and personal net worth against a hand-calculated transaction sequence.
+- Verify market, commodity, and personal charts switch among 30 days, 90 days, one year, and all retained history.
+- Verify risky and irreversible actions require two matching packets inside the server-owned confirmation window; changing selection or waiting for expiry must cancel confirmation.
+- Verify `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear` mutate only the server-owned Fund draft and never overdraw bank cash.
 - Test full-inventory and interrupted transaction recovery.
 
 ### Village identity and lifecycle
@@ -89,7 +101,7 @@ On both Fabric and NeoForge:
 
 ### Construction safety
 
-Inspect Village Banks, Cottage, Warehouse, and Mine Entrance in all vanilla village biomes and difficult terrain.
+Inspect Village Banks and all ten prosperity project types in all vanilla village biomes and difficult terrain.
 
 - Confirm construction never replaces village paths, farmland, containers, player floors, or existing buildings.
 - Confirm only naturally surfaced flat lots are accepted.
@@ -99,20 +111,25 @@ Inspect Village Banks, Cottage, Warehouse, and Mine Entrance in all vanilla vill
 - Block a project before its first placement and confirm it retries later on another lot without tight-loop scanning.
 - Let a reserved project's boundary chunk unload and confirm the reservation survives the delayed retry instead of being released on incomplete world information.
 - Block a partially built project and confirm its exact footprint survives restart and resumes without clearing intervening player blocks.
-- Remove an already-counted project block or restore an older chunk and confirm the known beta behavior is understood: persisted progress is trusted and the missing block is not auto-repaired.
+- Confirm an economically completed visual project grants no housing or production benefit before verified materialization.
+- Remove an authored block from a completed project and confirm its benefits suspend when the integrity audit finds it. Leave the space safe and confirm guarded repair completes before benefits return.
+- Replace the missing project block with a solid player block, unload its chunk, and register a protection veto in separate runs; confirm repair waits without overwriting or force-loading.
 - Register a test guard with `VillageDevelopmentProtection.register(PlacementGuard)` and verify vetoes and thrown guard errors are not counted as progress for both banks and prosperity projects.
 - Exercise the documented bank marker/chunk-save crash window in a disposable world; confirm the mod falls back to Banker access instead of rebuilding unknown blocks.
 - With a low view distance, leave all Bank candidates partly unloaded and confirm fallback access is available without permanently marking generation; load the area and confirm a later scan can retry.
 - Confirm Cottage beds are usable and Warehouse storage does not create fisherman workstations.
+- Confirm new Bankers use the registered Banker profession, claim the Exchange Desk POI, and retain scoped bank identity without gaining an unintended trade set.
+- Observe active construction and confirm no more than two suitable residents receive occasional low-speed movement/particle cues; confirm those cues stop when construction is idle and do not determine progress.
 
 ### Multiplayer and performance
 
 - Connect at least two players and verify shared market state with UUID-isolated accounts.
 - Interact with different banks simultaneously.
-- With two nearby scoped banks, confirm replacement eligibility, Village-page data, and support/restoration all target the bank's associated settlement rather than the nearest unrelated record.
+- With two nearby scoped banks, confirm replacement eligibility, Village-page data, and Prosperity Fund/restoration contributions all target the bank's associated settlement rather than the nearest unrelated record.
 - Visit tracked settlements in multiple dimensions and confirm records, dashboard lookup, and construction stay dimension-local. Confirm Village Bank structures remain Overworld-only.
 - Verify permission level 2 is still required for `/emerald` commands.
-- Test dozens to hundreds of known settlement records and profile census, catch-up, materialization, and save time.
+- Test dozens to hundreds of known settlement and account records and profile indexed lookup, census, catch-up, materialization, full-state save, and load time.
+- While one operator owns `/emerald debug`, confirm another operator cannot mark, toggle, or stop the capture. Verify the ZIP contains only the initiating account and one watched village, omits resident UUIDs, and labels overlapping timing categories separately.
 
 ## Publication gate
 

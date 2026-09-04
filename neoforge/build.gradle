@@ -69,6 +69,11 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'The Emerald Standard',
+                'Implementation-Version': project.version)
+    }
     from('../LICENSE') {
         rename { "${it}_${project.mod_id}" }
     }

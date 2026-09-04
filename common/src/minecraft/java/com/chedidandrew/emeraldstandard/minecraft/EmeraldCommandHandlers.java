@@ -3,6 +3,7 @@ package com.chedidandrew.emeraldstandard.minecraft;
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.PortfolioAnalytics;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -31,8 +32,8 @@ final class EmeraldCommandHandlers {
         success(context, "/emerald deposit <emeralds> | withdraw <emeralds>");
         success(context, "/emerald savings deposit|withdraw <emeralds>");
         success(context, "/emerald buy <ticker> <emeralds> | sell <ticker> <shares>");
-        success(context, "/emerald cd open <emeralds> <30|90|180|365> | cd close");
-        success(context, "/emerald loan fund <emeralds> <30|90|180|365> | loan collect");
+        success(context, "/emerald cd open <emeralds> <30|90|180|365> | cd close <position>");
+        success(context, "/emerald loan fund <emeralds> <30|90|180|365> | loan collect <position>");
         success(context, "/emerald exchange <resource> <count>");
         success(context, "Players fund villager businesses. Players can never borrow or enter debt.");
         return 1;
@@ -73,9 +74,12 @@ final class EmeraldCommandHandlers {
         return success(context, "Configuration: " + EmeraldConfig.current().summary());
     }
 
-    static int reloadConfig(CommandContext<CommandSourceStack> context) {
+    static int reloadConfig(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy) {
         try {
             EmeraldConfig config = EmeraldConfig.reload();
+            config.applyTo(economy);
             return success(context, "Reloaded configuration: " + config.summary());
         } catch (IOException exception) {
             return failure(context, "Configuration reload failed: " + exception.getMessage());
@@ -154,12 +158,21 @@ final class EmeraldCommandHandlers {
             return failure(context, "The economy is not ready yet.");
         }
         EconomyState.Account account = portfolio.account();
+        PortfolioAnalytics.PortfolioSnapshot analytics =
+                economy.portfolioAnalyticsSnapshot(player.getUUID());
         success(context, String.format(
                 Locale.ROOT,
-                "Cash %.3f | Savings %.3f | Net worth %.3f emeralds",
+                "Cash %.3f | Savings %.3f | Net worth %.3f | Contributions %.3f emeralds",
                 emeralds(account.cashMicro),
                 emeralds(account.savingsMicro),
-                portfolio.netWorth()));
+                portfolio.netWorth(),
+                emeralds(analytics.totalContributionsMicro())));
+        success(context, String.format(
+                Locale.ROOT,
+                "Stock basis %.3f | Unrealized %+.3f | Realized %+.3f emeralds",
+                emeralds(analytics.totalCostBasisMicro()),
+                emeralds(analytics.unrealizedGainMicro()),
+                emeralds(analytics.realizedGainMicro())));
 
         if (portfolio.catchUpDaysRemaining() > 0L) {
             success(context,
@@ -172,43 +185,68 @@ final class EmeraldCommandHandlers {
                             + portfolio.pendingTransaction().transactionId + ". Use /emerald recover.");
         }
 
-        if (account.hasCd()) {
-            success(context, String.format(
-                    Locale.ROOT,
-                    "CD %.3f | Locked rate %.2f%% | %d days remaining",
-                    emeralds(account.cdValueMicro),
-                    account.cdAnnualRate * 100.0,
-                    Math.max(0L, account.cdMaturityDay - portfolio.economicDay())));
+        if (!analytics.cds().isEmpty()) {
+            success(context, "CD positions " + analytics.cds().size()
+                    + "/" + EconomyState.MAX_TERM_POSITIONS);
+            for (EconomyState.CdPosition position : analytics.cds()) {
+                success(context, String.format(
+                        Locale.ROOT,
+                        "CD #%d | %.3f | %.2f%% | %d days remaining",
+                        position.positionId,
+                        emeralds(position.valueMicro),
+                        position.annualRate * 100.0,
+                        Math.max(0L, position.maturityDay - portfolio.economicDay())));
+            }
         }
-        if (account.hasLoan()) {
-            String status = account.loanResolved
-                    ? account.loanOutcome + String.format(
+        if (!analytics.loans().isEmpty()) {
+            success(context, "Villager lending positions " + analytics.loans().size()
+                    + "/" + EconomyState.MAX_TERM_POSITIONS);
+            for (EconomyState.LoanPosition position : analytics.loans()) {
+                String status = position.resolved
+                    ? position.outcome + String.format(
                             Locale.ROOT,
                             " at %.1f%% recovery",
-                            account.loanRecoveryRate * 100.0)
-                    : Math.max(0L, account.loanMaturityDay - portfolio.economicDay())
+                            position.recoveryRate * 100.0)
+                    : Math.max(0L, position.maturityDay - portfolio.economicDay())
                             + " days remaining";
-            success(context, String.format(
-                    Locale.ROOT,
-                    "Villager loan %.3f | Locked yield %.2f%% | %s",
-                    emeralds(account.loanValueMicro),
-                    account.loanAnnualRate * 100.0,
-                    status));
+                success(context, String.format(
+                        Locale.ROOT,
+                        "Loan #%d | %.3f | %.2f%% | %s",
+                        position.positionId,
+                        emeralds(position.valueMicro),
+                        position.annualRate * 100.0,
+                        status));
+            }
         }
 
         if (account.shares.isEmpty()) {
             success(context, "Holdings none");
         } else {
             success(context, "Holdings");
-            account.shares.entrySet().stream()
+            analytics.positions().entrySet().stream()
+                    .filter(entry -> entry.getValue().shares() > 0.0)
                     .sorted(Map.Entry.comparingByKey())
                     .forEach(entry -> success(context, String.format(
                             Locale.ROOT,
-                            "%s | %.6f shares | %.3f emeralds",
+                            "%s | %.6f shares | %.3f value | %.3f average | %+.3f unrealized | %.1f%% allocation",
                             entry.getKey(),
-                            entry.getValue(),
-                            entry.getValue()
-                                    * portfolio.prices().getOrDefault(entry.getKey(), 0.0))));
+                            entry.getValue().shares(),
+                            emeralds(entry.getValue().marketValueMicro()),
+                            entry.getValue().averagePurchasePrice(),
+                            emeralds(entry.getValue().unrealizedGainMicro()),
+                            entry.getValue().portfolioWeight() * 100.0)));
+        }
+        if (!analytics.transactions().isEmpty()) {
+            success(context, "Recent activity");
+            int start = Math.max(0, analytics.transactions().size() - 5);
+            analytics.transactions().subList(start, analytics.transactions().size())
+                    .forEach(entry -> success(context, String.format(
+                            Locale.ROOT,
+                            "Day %d | %s | %s | %.3f E",
+                            entry.day,
+                            entry.kind,
+                            entry.symbol,
+                            emeralds(entry.amountMicro))));
         }
         return 1;
     }
@@ -396,17 +434,20 @@ final class EmeraldCommandHandlers {
         if (!supportedTerm(term)) {
             return failure(context, "CD term must be 30, 90, 180, or 365 days.");
         }
-        if (!economy.openCd(player.getUUID(), amount, term)) {
+        long positionId = economy.openCdPosition(player.getUUID(), amount, term);
+        if (positionId <= 0L) {
             return failure(context,
-                    "CD open failed. Only one CD can be active in this alpha. "
+                    "CD open failed. Check the bank cash balance and eight-position limit. "
                             + errorSuffix(economy));
         }
         EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
+        EconomyState.CdPosition position = account.cdPositions.get(positionId);
         return success(context, String.format(
                 Locale.ROOT,
-                "CD opened at a locked %.2f%% annual rate through economic day %d.",
-                account.cdAnnualRate * 100.0,
-                account.cdMaturityDay));
+                "CD #%d opened at a locked %.2f%% annual rate through economic day %d.",
+                positionId,
+                position == null ? 0.0 : position.annualRate * 100.0,
+                position == null ? 0L : position.maturityDay));
     }
 
     static int closeCd(
@@ -416,18 +457,50 @@ final class EmeraldCommandHandlers {
         if (!preparePlayerForBanking(context, economy, player)) {
             return 0;
         }
-        EconomyService.CdCloseResult result = economy.closeCd(player.getUUID());
+        EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
+        if (account.cdPositions.size() != 1) {
+            String available = account.cdPositions.keySet().stream()
+                    .map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(", "));
+            return failure(context, account.cdPositions.isEmpty()
+                    ? "No CD could be closed."
+                    : "More than one CD is active. Choose an exact position: " + available);
+        }
+        return closeCdPrepared(
+                context, economy, player, account.cdPositions.keySet().iterator().next());
+    }
+
+    static int closeCd(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy,
+            long positionId) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
+        return closeCdPrepared(context, economy, player, positionId);
+    }
+
+    private static int closeCdPrepared(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy,
+            ServerPlayer player,
+            long positionId) {
+        EconomyService.CdCloseResult result = economy.closeCd(player.getUUID(), positionId);
         if (!result.closed()) {
-            return failure(context, "No CD could be closed. " + errorSuffix(economy));
+            return failure(context,
+                    "CD #" + positionId + " could not be closed. " + errorSuffix(economy));
         }
         return result.matured()
                 ? success(context, String.format(
                         Locale.ROOT,
-                        "Mature CD collected %.3f emeralds.",
+                        "Mature CD #%d collected %.3f emeralds.",
+                        positionId,
                         emeralds(result.payoutMicro())))
                 : success(context, String.format(
                         Locale.ROOT,
-                        "CD closed early. Returned %.3f after a %.3f emerald penalty.",
+                        "CD #%d closed early. Returned %.3f after a %.3f emerald penalty.",
+                        positionId,
                         emeralds(result.payoutMicro()),
                         emeralds(result.penaltyMicro())));
     }
@@ -444,16 +517,19 @@ final class EmeraldCommandHandlers {
         if (!supportedTerm(term)) {
             return failure(context, "Loan term must be 30, 90, 180, or 365 days.");
         }
-        if (!economy.fundLoan(player.getUUID(), amount, term)) {
+        long positionId = economy.openLoanPosition(player.getUUID(), amount, term);
+        if (positionId <= 0L) {
             return failure(context,
-                    "Loan funding failed. Only one can be active in this alpha. "
+                    "Loan funding failed. Check the bank cash balance and eight-position limit. "
                             + errorSuffix(economy));
         }
         EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
+        EconomyState.LoanPosition position = account.loanPositions.get(positionId);
         return success(context, String.format(
                 Locale.ROOT,
-                "Villagers received the investment at a locked %.2f%% yield. Principal is at risk, but you can never owe more.",
-                account.loanAnnualRate * 100.0));
+                "Loan #%d funded at a locked %.2f%% yield. Principal is at risk, but you can never owe more.",
+                positionId,
+                position == null ? 0.0 : position.annualRate * 100.0));
     }
 
     static int collectLoan(
@@ -463,23 +539,61 @@ final class EmeraldCommandHandlers {
         if (!preparePlayerForBanking(context, economy, player)) {
             return 0;
         }
-        EconomyService.LoanCollectionResult result = economy.collectLoan(player.getUUID());
+        EconomyService.PortfolioSnapshot snapshot = economy.portfolioSnapshot(player.getUUID());
+        java.util.List<Long> ready = snapshot.account().loanPositions.values().stream()
+                .filter(position -> position.resolved
+                        && snapshot.economicDay() >= position.maturityDay)
+                .map(position -> position.positionId)
+                .toList();
+        if (ready.size() != 1) {
+            String available = ready.stream()
+                    .map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(", "));
+            return failure(context, ready.isEmpty()
+                    ? "No villager loan is ready to collect."
+                    : "More than one loan is ready. Choose an exact position: " + available);
+        }
+        return collectLoanPrepared(context, economy, player, ready.getFirst());
+    }
+
+    static int collectLoan(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy,
+            long positionId) throws CommandSyntaxException {
+        ServerPlayer player = player(context);
+        if (!preparePlayerForBanking(context, economy, player)) {
+            return 0;
+        }
+        return collectLoanPrepared(context, economy, player, positionId);
+    }
+
+    private static int collectLoanPrepared(
+            CommandContext<CommandSourceStack> context,
+            EconomyService economy,
+            ServerPlayer player,
+            long positionId) {
+        EconomyService.LoanCollectionResult result = economy.collectLoan(
+                player.getUUID(), positionId);
         if (!result.collected()) {
             return failure(context,
-                    "The villager loan is absent or has not matured. " + errorSuffix(economy));
+                    "Villager loan #" + positionId
+                            + " is absent or has not matured. " + errorSuffix(economy));
         }
         return switch (result.outcome()) {
             case REPAID -> success(context, String.format(
                     Locale.ROOT,
-                    "Villager loan repaid in full %.3f emeralds.",
+                    "Villager loan #%d repaid in full %.3f emeralds.",
+                    positionId,
                     emeralds(result.payoutMicro())));
             case PARTIAL_DEFAULT -> success(context, String.format(
                     Locale.ROOT,
-                    "Villager business partially defaulted. Recovered %.3f emeralds at %.1f%% recovery.",
+                    "Villager loan #%d partially defaulted. Recovered %.3f emeralds at %.1f%% recovery.",
+                    positionId,
                     emeralds(result.payoutMicro()),
                     result.recoveryRate() * 100.0));
             case FULL_DEFAULT -> success(context,
-                    "Villager business fully defaulted. It returned 0 emeralds, and you owe nothing.");
+                    "Villager loan #" + positionId
+                            + " fully defaulted. It returned 0 emeralds, and you owe nothing.");
         };
     }
 
