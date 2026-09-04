@@ -27,6 +27,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | --- | --- | --- | --- |
 | Fresh-world bank discovery without commands | Not run | Not run | Screenshot, world seed, debug ZIP |
 | Deposit and withdrawal preserve exact value | Not run | Not run | Before/after inventory and account values |
+| Banker packet sync preserves exact small, large, and signed values | Not run | Not run | Display/server comparison at 1, 10, 100, and 32,768 emerald boundaries plus a realized or unrealized loss |
 | Full inventory withdrawal recovery | Not run | Not run | Debug ZIP and reconnect result |
 | Disconnect during deposit preparation | Not run | Not run | Debug ZIP and exact recovered value |
 | Disconnect after bank commit | Not run | Not run | Debug ZIP and exact recovered value |

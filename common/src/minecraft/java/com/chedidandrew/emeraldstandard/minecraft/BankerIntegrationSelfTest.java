@@ -19,6 +19,7 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        BankerMenuPacketCodecSelfTest.verify();
         require(BankerProfessionSupport.exchangeDeskOrLectern() != Blocks.LECTERN,
                 "The Exchange Desk block was not registered before server startup");
         require(BankerProfessionSupport.registeredBanker().isPresent(),

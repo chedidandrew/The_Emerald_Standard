@@ -40,6 +40,7 @@ All notable changes to The Emerald Standard are documented here.
 - Rejected zero-proceeds stock dust sales without mutating holdings, basis, cash, or activity history.
 - Hardened malformed quote handling, persisted chronology and identifier validation, and economic-day, project-ID, casualty, and collapse counter exhaustion.
 - Invalid release artifact sets now fail before creating an output directory or copying any release files.
+- Banker dashboard synchronization now losslessly packs every logical 32-bit value into signed 16-bit menu slots, preventing client-side truncation of balances, holdings, histories, position IDs, activity, and large Fund drafts.
 
 ### Configuration and compatibility
 
@@ -52,7 +53,7 @@ All notable changes to The Emerald Standard are documented here.
 
 ### Verification status
 
-- Automated common tests, dual-loader builds, packaged-JAR checks, both dedicated-server startups, and both client bootstraps passed for candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd` in workflow `33894198970`.
+- Automated common tests, dual-loader builds, packaged-JAR checks, both dedicated-server startups, and both client bootstraps passed for earlier candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd` in workflow `33894198970`; the current unpublished changes require a new exact-commit workflow.
 - Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run` until tested by a person on the exact Fabric and NeoForge candidate.
 
 ## 0.4.0-beta.1 - 2026-09-04

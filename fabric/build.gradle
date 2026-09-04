@@ -47,6 +47,18 @@ java {
     targetCompatibility = JavaVersion.VERSION_25
 }
 
+tasks.register('verifyBankerMenuPacket', JavaExec) {
+    group = 'verification'
+    description = 'Round-trips Banker values through the real Minecraft menu packet codec.'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BankerMenuPacketCodecSelfTest'
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('verifyBankerMenuPacket')
+}
+
 jar {
     manifest {
         attributes(

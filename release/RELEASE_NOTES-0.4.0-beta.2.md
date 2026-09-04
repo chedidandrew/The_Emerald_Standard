@@ -39,6 +39,7 @@ This beta completes the investment-accounting, multi-position banking, village-f
 - Sell-all, CD closure, villager-lending funding, and Prosperity Fund contributions use time-limited server-owned confirmation state.
 - A Fund confirmation is valid only while its amount, type, effective purpose, village lifecycle, village identity, and sponsored project remain unchanged. Catch-up and unresolved inventory recovery block direct Fund contributions as well as ordinary transactions.
 - Zero-proceeds stock dust sales are rejected without changing holdings, basis, cash, or the activity ledger; exhausted Fund counters likewise reject before a donor is debited.
+- Banker dashboard data is packed into signed 16-bit wire limbs and reassembled losslessly, so full-width balances, holdings, histories, position IDs, activity amounts, and Fund drafts match the authoritative server state.
 
 ## Onboarding and configuration
 
@@ -57,6 +58,8 @@ This beta completes the investment-accounting, multi-position banking, village-f
 
 Beta.2 advances persistence to format 9. Existing format-7 and format-8 worlds migrate forward. Legacy scalar term products become identified positions, and holdings that predate execution history receive an explicitly inferred migration-day basis. Older builds intentionally reject format 9 instead of silently discarding new account or village data. Keep a pre-upgrade backup if downgrade may be needed.
 
+The Banker synchronization layout changed during unreleased beta.2 development. Persistence compatibility is unchanged, but servers and clients must use the same exact beta.2 build; replace both sides together rather than mixing an earlier candidate with the repaired build.
+
 ## Verification boundary
 
-GitHub Actions workflow [`33894198970`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33894198970) passed the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks for earlier candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`. The subsequent GUI, onboarding, configuration, and release-integrity changes require a new successful exact-commit `main` workflow before publication. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run`; no tag or public prerelease has been created.
+GitHub Actions workflow [`33894198970`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33894198970) passed the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks for earlier candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`. All subsequent changes, including GUI, onboarding, configuration, packet synchronization, and release-integrity work, require a new successful exact-commit `main` workflow before publication. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run`; no tag or public prerelease has been created.

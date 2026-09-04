@@ -206,6 +206,7 @@ Install Minecraft 26.2, Fabric Loader 0.19.3 or newer, Fabric API 0.158.0+26.2 o
 Install Minecraft 26.2, NeoForge 26.2.0.72 or newer, Java 25, and the NeoForge JAR from a verified workflow artifact or prerelease.
 
 The mod must be installed on the server and on every connecting client because it adds a custom graphical menu.
+Use the same exact build on the server and every client; the Banker menu's synchronized slot layout is part of the network protocol.
 
 ## Building
 

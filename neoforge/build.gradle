@@ -71,6 +71,18 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
+tasks.register('verifyBankerMenuPacket', JavaExec) {
+    group = 'verification'
+    description = 'Round-trips Banker values through the real Minecraft menu packet codec.'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BankerMenuPacketCodecSelfTest'
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('verifyBankerMenuPacket')
+}
+
 jar {
     manifest {
         attributes(

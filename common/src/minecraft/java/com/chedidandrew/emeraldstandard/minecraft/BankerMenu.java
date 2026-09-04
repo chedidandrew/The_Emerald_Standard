@@ -375,7 +375,7 @@ public final class BankerMenu extends AbstractContainerMenu {
         this.data = economy == null
                 ? new SimpleContainerData(DATA_COUNT)
                 : new BankerContainerData(this);
-        addDataSlots(this.data);
+        addDataSlots(new ShortPackedContainerData(this.data));
         refreshServerSnapshot();
     }
 

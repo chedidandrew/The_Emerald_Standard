@@ -12,6 +12,8 @@ Managed Banker villagers are persistent vanilla villagers carrying The Emerald S
 
 The seven dashboard pages are Overview, Market, Banking, Exchange, Village, Fund, and a compact player Activity Log. The menu synchronizes bounded account, portfolio-analytics, recent-ledger, market, commodity-history, donor, and local-village snapshots rather than exposing the complete world-account map or private economy seed. Irreversible or risky actions use a time-limited server-owned two-step confirmation, and the additive Fund draft is also maintained and bounded by the server.
 
+Minecraft's container-data packet carries signed 16-bit values. The Banker therefore maps every logical 32-bit menu value to two signed-short wire limbs and masks both limbs when reassembling them. Existing 64-bit monetary values retain their low/high logical integers and consequently use four wire limbs. Both loaders share this packing boundary, and their dedicated-server self-tests exercise the real Minecraft packet codec at signed, unsigned, balance, Fund-draft, identifier, and 64-bit boundaries.
+
 ## Village banks and stable settlement identity
 
 `VillageBankManager` remains responsible for the compact Village Bank and Exchange. `VillageProsperityManager` separately observes and materializes the local settlement economy.

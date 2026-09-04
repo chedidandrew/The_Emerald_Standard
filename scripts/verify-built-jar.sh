@@ -45,6 +45,9 @@ required=(
     'com/chedidandrew/emeraldstandard/core/EconomyService.class'
     'com/chedidandrew/emeraldstandard/client/BankerScreenLayout.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerMenu.class'
+    'com/chedidandrew/emeraldstandard/minecraft/BankerMenuPacketCodecSelfTest.class'
+    'com/chedidandrew/emeraldstandard/minecraft/ContainerDataPacking.class'
+    'com/chedidandrew/emeraldstandard/minecraft/ShortPackedContainerData.class'
     'com/chedidandrew/emeraldstandard/minecraft/FundConfirmationFingerprint.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerProfessionSupport.class'
     'com/chedidandrew/emeraldstandard/minecraft/PlayerOnboarding.class'
@@ -96,6 +99,21 @@ fi
 if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/FundConfirmationFingerprint.java' \
         <<<"$source_listing"; then
     echo "$sources_file is missing Fund confirmation sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/ContainerDataPacking.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing ContainerData packing sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/BankerMenuPacketCodecSelfTest.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing Banker menu packet-codec self-test sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/ShortPackedContainerData.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing packed ContainerData adapter sources" >&2
     exit 1
 fi
 if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/PlayerOnboarding.java' \

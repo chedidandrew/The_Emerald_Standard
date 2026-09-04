@@ -42,6 +42,7 @@ The suite verifies:
 - Spatial-index equivalence, cross-dimension isolation, deterministic ties, and measured query/save/load work at 100, 500, and 1,000 villages and accounts
 - No-op bank association persistence, net-worth overflow safety, and exact oversell rejection
 - Debug capture ownership, watched-village filtering, privacy redaction, timeline limits, and separated timing categories
+- Signed-short packing and reassembly round trips for full-width balances, gains, histories, position IDs, and Fund drafts
 
 ## Automated loader verification
 
@@ -53,6 +54,7 @@ GitHub Actions must pass for the exact candidate commit:
 - Fabric dedicated-server launch
 - NeoForge dedicated-server launch
 - Live Banker invariant checks
+- Real Minecraft container-data packet round trips for Banker full-width values
 - Fabric client bootstrap under a virtual display
 - NeoForge client bootstrap under a virtual display
 - Screen-registration and fatal-log checks
@@ -74,6 +76,7 @@ On both Fabric and NeoForge:
 - Exercise deposit, withdrawal, savings, buy/sell, eight simultaneous CDs, eight simultaneous lending positions, exchange, all Prosperity Fund types and purposes, and recovery.
 - Verify a specific CD and lending position can be selected, closed, or collected without changing another position.
 - Compare basis, average purchase price, realized/unrealized gain, allocation, contributions, ledger entries, and personal net worth against a hand-calculated transaction sequence.
+- Compare the displayed and authoritative values after depositing 1, 10, and 100 emeralds and after assembling a Fund draft above 32,767 emeralds. Close and reopen the menu, then reconnect and reopen it; confirm no signed-short truncation after either resynchronization.
 - Verify market, commodity, and personal charts switch among 30 days, 90 days, one year, and all retained history.
 - Verify risky and irreversible actions require two matching packets inside the server-owned confirmation window; changing selection or waiting for expiry must cancel confirmation.
 - Verify `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear` mutate only the server-owned Fund draft and never overdraw bank cash.
