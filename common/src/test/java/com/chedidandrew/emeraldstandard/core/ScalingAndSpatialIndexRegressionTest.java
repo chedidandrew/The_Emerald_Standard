@@ -14,6 +14,9 @@ import java.util.UUID;
 public final class ScalingAndSpatialIndexRegressionTest {
     private static final int[] SCALES = {100, 500, 1_000};
     private static final int QUERY_COUNT = 2_000;
+    private static final int MATURE_ACCOUNT_COUNT = 100;
+    private static final int MATURE_HISTORY_DAYS = 365;
+    private static final int MATURE_LEDGER_ENTRIES = 128;
     private static final long MAX_SUITE_MILLIS = 30_000L;
 
     private ScalingAndSpatialIndexRegressionTest() {
@@ -26,6 +29,7 @@ public final class ScalingAndSpatialIndexRegressionTest {
         for (int scale : SCALES) {
             runScale(scale);
         }
+        runMatureStatePersistenceScale();
         long suiteMillis = elapsedMillis(suiteStart);
         require(suiteMillis <= MAX_SUITE_MILLIS,
                 "Scaling suite exceeded generous CI ceiling: " + suiteMillis + " ms");
@@ -160,6 +164,181 @@ public final class ScalingAndSpatialIndexRegressionTest {
             account.shares.put("VILX", index / 10.0);
         }
         return state;
+    }
+
+    /** Exercises persistence at scale with realistic mature records, not empty account shells. */
+    private static void runMatureStatePersistenceScale() throws Exception {
+        EconomyState state = EconomyState.fresh(0x4D41545552454CL, 10_000L, 20_000L);
+        state.economicDay = MATURE_HISTORY_DAYS;
+
+        EconomyState.VillageRecord village = new EconomyState.VillageRecord();
+        village.villageId = villageId(10_000);
+        village.dimensionKey = "minecraft:overworld";
+        village.centerPos = pack(160, 64, -160);
+        village.lastSimulatedDay = state.economicDay;
+        village.lastCensusDay = state.economicDay;
+        village.population = 12;
+        village.observedPopulation = 12;
+        village.housingCapacity = 18;
+        village.foodSupply = 800.0;
+        village.materialSupply = 600.0;
+        village.treasury = 300.0;
+        village.developmentPoints = 120.0;
+        EconomyState.VillageProject project = new EconomyState.VillageProject();
+        project.projectId = 1L;
+        project.type = VillageProsperityEngine.ProjectType.WAREHOUSE;
+        project.approvedDay = 300L;
+        project.economicProgress = 0.75;
+        project.totalBlocks = project.type.nominalBlocks();
+        village.projects.add(project);
+        village.projectSerial = project.projectId;
+        state.villages.put(village.villageId, village);
+
+        for (int accountIndex = 0; accountIndex < MATURE_ACCOUNT_COUNT; accountIndex++) {
+            UUID id = accountId(10_000 + accountIndex);
+            EconomyState.Account account = state.account(id);
+            account.cashMicro = (1_000L + accountIndex) * EconomyState.MICRO;
+            account.savingsMicro = (500L + accountIndex) * EconomyState.MICRO;
+            account.totalContributionsMicro = 2_000L * EconomyState.MICRO;
+            account.totalWithdrawalsMicro = 500L * EconomyState.MICRO;
+            account.realizedGainMicro = (accountIndex - 50L) * EconomyState.MICRO;
+            for (int assetIndex = 0; assetIndex < EconomyEngine.ASSETS.size(); assetIndex++) {
+                String ticker = EconomyEngine.ASSETS.get(assetIndex).ticker();
+                double shares = 1.0 + accountIndex * 0.01 + assetIndex * 0.10;
+                account.shares.put(ticker, shares);
+                account.shareCostBasisMicro.put(
+                        ticker, (100L + assetIndex * 10L) * EconomyState.MICRO);
+            }
+            for (int positionIndex = 0;
+                    positionIndex < EconomyState.MAX_TERM_POSITIONS;
+                    positionIndex++) {
+                EconomyState.CdPosition cd = new EconomyState.CdPosition();
+                cd.positionId = positionIndex + 1L;
+                cd.principalMicro = (20L + positionIndex) * EconomyState.MICRO;
+                cd.valueMicro = cd.principalMicro + 250_000L;
+                cd.openDay = 0L;
+                cd.maturityDay = state.economicDay;
+                cd.annualRate = 0.04;
+                account.cdPositions.put(cd.positionId, cd);
+
+                EconomyState.LoanPosition loan = new EconomyState.LoanPosition();
+                loan.positionId = EconomyState.MAX_TERM_POSITIONS + positionIndex + 1L;
+                loan.principalMicro = (30L + positionIndex) * EconomyState.MICRO;
+                loan.valueMicro = loan.principalMicro + 500_000L;
+                loan.openDay = 0L;
+                loan.maturityDay = state.economicDay;
+                loan.serial = positionIndex + 1L;
+                loan.annualRate = 0.05;
+                loan.recoveryRate = 1.0;
+                loan.resolved = true;
+                loan.outcome = EconomyEngine.LoanOutcome.REPAID;
+                account.loanPositions.put(loan.positionId, loan);
+            }
+            account.nextTermPositionId = EconomyState.MAX_TERM_POSITIONS * 2L + 1L;
+            account.loanSerial = EconomyState.MAX_TERM_POSITIONS;
+
+            for (int ledgerIndex = 0;
+                    ledgerIndex < MATURE_LEDGER_ENTRIES;
+                    ledgerIndex++) {
+                EconomyState.PortfolioTransaction transaction =
+                        new EconomyState.PortfolioTransaction();
+                transaction.day = state.economicDay - MATURE_LEDGER_ENTRIES + ledgerIndex + 1L;
+                transaction.kind = ledgerIndex % 2 == 0
+                        ? EconomyState.PortfolioTransactionKind.BUY
+                        : EconomyState.PortfolioTransactionKind.SELL;
+                transaction.symbol = EconomyEngine.ASSETS
+                        .get(ledgerIndex % EconomyEngine.ASSETS.size()).ticker();
+                transaction.quantity = 0.25 + ledgerIndex * 0.01;
+                transaction.amountMicro = (ledgerIndex + 1L) * 10_000L;
+                transaction.costBasisMicro = transaction.amountMicro;
+                account.transactionLedger.add(transaction);
+            }
+            for (int day = 1; day <= MATURE_HISTORY_DAYS; day++) {
+                EconomyState.PortfolioValuePoint point = new EconomyState.PortfolioValuePoint();
+                point.day = day;
+                point.valueMicro = (2_000L * EconomyState.MICRO) + day + accountIndex;
+                account.netWorthHistory.add(point);
+            }
+        }
+
+        EconomyState.ProsperityFund fund = village.prosperityFund;
+        fund.spendableMicro.put(
+                EconomyState.DonationPurpose.GENERAL, 100L * EconomyState.MICRO);
+        fund.endowmentPrincipalMicro.put(
+                EconomyState.DonationPurpose.FOOD, 100L * EconomyState.MICRO);
+        fund.projectSponsorshipMicro.put(project.projectId, 56L * EconomyState.MICRO);
+        fund.lifetimeReceivedMicro = EconomyState.MAX_FUND_LEDGER_ENTRIES
+                * EconomyState.MICRO;
+        for (int index = 0; index < EconomyState.MAX_FUND_LEDGER_ENTRIES; index++) {
+            UUID donorId = accountId(10_000 + index % MATURE_ACCOUNT_COUNT);
+            EconomyState.FundContribution contribution = new EconomyState.FundContribution();
+            contribution.day = 110L + index;
+            contribution.donorId = donorId;
+            contribution.amountMicro = EconomyState.MICRO;
+            if (index < 100) {
+                contribution.type = EconomyState.ProsperityFundType.DIRECT_GRANT;
+                contribution.purpose = EconomyState.DonationPurpose.GENERAL;
+            } else if (index < 200) {
+                contribution.type = EconomyState.ProsperityFundType.ENDOWMENT;
+                contribution.purpose = EconomyState.DonationPurpose.FOOD;
+            } else {
+                contribution.type = EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP;
+                contribution.purpose = EconomyState.DonationPurpose.INFRASTRUCTURE;
+                contribution.projectId = project.projectId;
+            }
+            fund.contributions.add(contribution);
+            fund.donorTotalsMicro.merge(donorId, EconomyState.MICRO, Long::sum);
+            EconomyState.DonorRecord donor = state.donors.computeIfAbsent(
+                    donorId, ignored -> new EconomyState.DonorRecord());
+            donor.lifetimeContributionMicro += EconomyState.MICRO;
+            donor.contributionCount++;
+            donor.byTypeMicro.merge(contribution.type, EconomyState.MICRO, Long::sum);
+            donor.byPurposeMicro.merge(contribution.purpose, EconomyState.MICRO, Long::sum);
+        }
+
+        Path directory = Files.createTempDirectory("emerald-standard-mature-scale-");
+        Path save = directory.resolve("the_emerald_standard.properties");
+        long saveMillis;
+        long loadMillis;
+        long bytes;
+        try {
+            long saveStart = System.nanoTime();
+            state.save(save);
+            saveMillis = elapsedMillis(saveStart);
+            bytes = Files.size(save);
+
+            long loadStart = System.nanoTime();
+            EconomyState loaded = EconomyState.load(save, -1L, 10_000L, 20_000L);
+            loadMillis = elapsedMillis(loadStart);
+            EconomyState.Account sample = loaded.accounts.get(accountId(10_099));
+            require(loaded.accounts.size() == MATURE_ACCOUNT_COUNT
+                            && sample != null
+                            && sample.shares.size() == EconomyEngine.ASSETS.size()
+                            && sample.cdPositions.size() == EconomyState.MAX_TERM_POSITIONS
+                            && sample.loanPositions.size() == EconomyState.MAX_TERM_POSITIONS
+                            && sample.transactionLedger.size() == MATURE_LEDGER_ENTRIES
+                            && sample.netWorthHistory.size() == MATURE_HISTORY_DAYS,
+                    "Mature account data was lost or truncated during persistence");
+            require(loaded.existingVillage(village.villageId).prosperityFund
+                            .contributions.size() == EconomyState.MAX_FUND_LEDGER_ENTRIES
+                            && loaded.donors.size() == MATURE_ACCOUNT_COUNT,
+                    "Mature Prosperity Fund history or donor state was lost");
+        } finally {
+            deleteIfExists(save.resolveSibling(save.getFileName() + ".tmp"));
+            deleteIfExists(save.resolveSibling(save.getFileName() + ".bak"));
+            deleteIfExists(save);
+            deleteIfExists(directory);
+        }
+        System.out.printf(
+                "MATURE accounts=%d history=%d ledger=%d positions=%d fund_entries=%d save_ms=%d load_ms=%d bytes=%d%n",
+                MATURE_ACCOUNT_COUNT,
+                MATURE_HISTORY_DAYS,
+                MATURE_LEDGER_ENTRIES,
+                EconomyState.MAX_TERM_POSITIONS * 2,
+                EconomyState.MAX_FUND_LEDGER_ENTRIES,
+                saveMillis,
+                loadMillis,
+                bytes);
     }
 
     private static void verifyBoundaryTieUpdateAndRemoval() {

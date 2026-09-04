@@ -192,9 +192,9 @@ public final class BankerAccess {
             return false;
         }
 
-        boolean firstVisit = !player.entityTags().contains(FIRST_BANKER_VISIT_TAG);
+        boolean firstVisit = !player.entityTags().contains(FIRST_BANKER_VISIT_TAG)
+                && player.addTag(FIRST_BANKER_VISIT_TAG);
         if (firstVisit) {
-            player.addTag(FIRST_BANKER_VISIT_TAG);
             player.sendSystemMessage(
                     Component.translatable("message.the_emerald_standard.first_banker_visit"));
         }

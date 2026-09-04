@@ -300,6 +300,16 @@ public final class EconomyRegressionTest {
         require(EconomyEngine.resourceExchangeValueMicro(
                         "unsupported", 1, state.commodityPrices) == -1L,
                 "Unsupported resource received a quote");
+        require(EconomyEngine.resourceExchangeValueMicro(
+                        null, 1, state.commodityPrices) == -1L
+                        && EconomyEngine.resourceExchangeValueMicro(
+                                "diamond", 1, null) == -1L,
+                "Malformed resource quote input was not rejected safely");
+        Map<String, Double> malformedPrices = new java.util.HashMap<>(state.commodityPrices);
+        malformedPrices.put("diamond", null);
+        require(EconomyEngine.resourceExchangeValueMicro(
+                        "diamond", 1, malformedPrices) == 0L,
+                "Missing commodity data produced an unsafe quote");
     }
 
     private static void require(boolean condition, String message) {

@@ -20,6 +20,7 @@ public final class FinanceRoadmapRegressionTest {
         testFundInputCapacityAndSpendableAccounting();
         testProjectSponsorshipTargetingAndRollover();
         testDonationRoutingAndRecognition();
+        testVillageFundRejectsAccountingOverflow();
         testPassiveInterestLedgerCoalescing();
         System.out.println("PASS finance and Prosperity Fund roadmap regression suite");
     }
@@ -44,6 +45,17 @@ public final class FinanceRoadmapRegressionTest {
             require(bought.totalContributionsMicro() == 1_000L * EconomyState.MICRO,
                     "gross contributions were not tracked");
 
+            int transactionsBeforeDustSale = bought.transactions().size();
+            require(!service.sell(player, ticker, 1.0e-12),
+                    "Sub-micro sale was accepted without any proceeds");
+            PortfolioAnalytics.PortfolioSnapshot afterDustSale =
+                    service.portfolioAnalyticsSnapshot(player);
+            require(afterDustSale.positions().get(ticker).shares() == position.shares()
+                            && afterDustSale.positions().get(ticker).costBasisMicro()
+                                    == position.costBasisMicro()
+                            && afterDustSale.transactions().size() == transactionsBeforeDustSale,
+                    "Rejected sub-micro sale changed the holding or its accounting history");
+
             require(service.sell(player, ticker, position.shares() / 2.0), "partial sale failed");
             PortfolioAnalytics.PortfolioSnapshot sold =
                     service.portfolioAnalyticsSnapshot(player);
@@ -66,6 +78,38 @@ public final class FinanceRoadmapRegressionTest {
                             && afterReload.positions().get(ticker).costBasisMicro()
                                     == remainingBasis,
                     "portfolio accounting did not survive a restart");
+        } finally {
+            RegressionTestSupport.deleteTree(root);
+        }
+    }
+
+    private static void testVillageFundRejectsAccountingOverflow() throws Exception {
+        Path root = Files.createTempDirectory("emerald-fund-overflow-");
+        try {
+            UUID donor = UUID.fromString("00000000-0000-0000-0000-000000000919");
+            UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000000920");
+            EconomyState state = EconomyState.fresh(919L, 0L, 0L);
+            state.account(donor).cashMicro = 2L * EconomyState.MICRO;
+            EconomyState.VillageRecord village = state.village(villageId);
+            village.prosperityFund.lifetimeReceivedMicro = Long.MAX_VALUE;
+            state.save(root.resolve("the_emerald_standard.properties"));
+
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 999L, 0L, 0L);
+            EconomyService.VillageFundContributionResult contribution =
+                    service.contributeToVillageFund(
+                            donor,
+                            villageId,
+                            1L,
+                            EconomyState.ProsperityFundType.DIRECT_GRANT,
+                            EconomyState.DonationPurpose.GENERAL);
+            require(!contribution.contributed(),
+                    "Contribution was debited after a Fund counter reached capacity");
+            require(service.snapshot().account(donor).cashMicro
+                            == 2L * EconomyState.MICRO
+                            && service.villageFundSnapshot(villageId)
+                                    .spendableTotalMicro() == 0L,
+                    "Rejected overflowing contribution changed a financial balance");
         } finally {
             RegressionTestSupport.deleteTree(root);
         }

@@ -1,5 +1,7 @@
 # Build status for 0.4.0-beta.2
 
+> This is an exact-commit record for the last fully verified executable candidate. It does not certify later commits. Any post-`49e1e7cfb4df5d68970162b2da66170d1f6b7efd` code, resource, build, or wrapper change requires a new complete workflow before publication.
+
 ## Candidate status
 
 - Source branch: `main`
@@ -53,4 +55,4 @@ Format-7 and format-8 worlds migrate directly to format 9 for portfolio accounti
 
 Nearby village lookup is indexed, but ordinary mutations still synchronously serialize the complete world economy; very large persistent worlds retain linear save/load cost. Economy-file bank markers and Minecraft chunk saves are not cross-file atomic, so a narrow crash window can still require fallback Banker access instead of automatic bank reconstruction.
 
-This remains an unreleased beta candidate. Automated verification cannot replace hands-on review of all six pages and GUI scales, term-position selection, Fund controls, unusual terrain, project repair, claim integrations, multiplayer concurrency, long sessions, or subjective structure presentation.
+This remains an unreleased beta candidate. Automated verification cannot replace hands-on review of all seven pages and GUI scales, term-position selection, Fund controls, unusual terrain, project repair, claim integrations, multiplayer concurrency, long sessions, or subjective structure presentation.

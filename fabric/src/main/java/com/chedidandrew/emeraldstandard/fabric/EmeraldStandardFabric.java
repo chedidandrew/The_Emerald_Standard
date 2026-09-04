@@ -10,6 +10,7 @@ import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
 import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
+import com.chedidandrew.emeraldstandard.minecraft.PlayerOnboarding;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import net.fabricmc.api.ModInitializer;
@@ -99,8 +100,10 @@ public final class EmeraldStandardFabric implements ModInitializer {
             }
         });
 
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                recover(handler.player));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            recover(handler.player);
+            PlayerOnboarding.onJoin(handler.player);
+        });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             DebugFlightRecorder.onPlayerDisconnect(handler.player, ECONOMY);
             recover(handler.player);

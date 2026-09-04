@@ -44,7 +44,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: the-emerald-standard-${{ matrix.loader }}-${{ github.sha }}
-          path: ${{ matrix.loader }}/build/libs/*.jar
+          path: |
+            ${{ matrix.loader }}/build/libs/*.jar
+            ${{ matrix.loader }}/build/libs/SHA256SUMS
           if-no-files-found: error
 
   dedicated-server-smoke:

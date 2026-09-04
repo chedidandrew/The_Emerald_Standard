@@ -637,9 +637,10 @@ public final class EconomyService {
             village.safety = Math.max(0.0, village.safety - safetyLoss);
             village.prosperity = Math.max(0.0, village.prosperity - safetyLoss * 0.55);
             switch (cause) {
-                case RAID, PILLAGER, HOSTILE -> village.hostileCasualties++;
+                case RAID, PILLAGER, HOSTILE -> village.hostileCasualties =
+                        saturatingIncrement(village.hostileCasualties);
                 case PLAYER -> {
-                    village.playerCasualties++;
+                    village.playerCasualties = saturatingIncrement(village.playerCasualties);
                     long suppressionDay = state.economicDay
                             > Long.MAX_VALUE - PLAYER_MARKET_SHADOW_DAYS
                                     ? Long.MAX_VALUE
@@ -647,7 +648,8 @@ public final class EconomyService {
                     village.marketSuppressedUntilDay = Math.max(
                             village.marketSuppressedUntilDay, suppressionDay);
                 }
-                case ENVIRONMENT, UNKNOWN -> village.environmentalCasualties++;
+                case ENVIRONMENT, UNKNOWN -> village.environmentalCasualties =
+                        saturatingIncrement(village.environmentalCasualties);
                 case NONE -> {
                 }
             }
@@ -664,7 +666,7 @@ public final class EconomyService {
 
             if (village.population == 0) {
                 village.collapseCount = state.economicDay - village.lastCollapseDay <= 30L
-                        ? village.collapseCount + 1
+                        ? saturatingIncrement(village.collapseCount)
                         : 1;
                 village.lastCollapseDay = state.economicDay;
                 int delay = VillageProsperityEngine.recoveryDelayDays(village, cause);
@@ -773,9 +775,12 @@ public final class EconomyService {
         village.safety = Math.max(0.0, village.safety - safetyLoss);
         village.prosperity = Math.max(0.0, village.prosperity - safetyLoss * 0.55);
         switch (cause) {
-            case RAID, PILLAGER, HOSTILE -> village.hostileCasualties++;
-            case ENVIRONMENT, UNKNOWN -> village.environmentalCasualties++;
-            case PLAYER -> village.playerCasualties++;
+            case RAID, PILLAGER, HOSTILE -> village.hostileCasualties =
+                    saturatingIncrement(village.hostileCasualties);
+            case ENVIRONMENT, UNKNOWN -> village.environmentalCasualties =
+                    saturatingIncrement(village.environmentalCasualties);
+            case PLAYER -> village.playerCasualties =
+                    saturatingIncrement(village.playerCasualties);
             case NONE -> {
             }
         }
@@ -791,7 +796,7 @@ public final class EconomyService {
         }
         if (village.population == 0) {
             village.collapseCount = day - village.lastCollapseDay <= 30L
-                    ? village.collapseCount + 1
+                    ? saturatingIncrement(village.collapseCount)
                     : 1;
             village.lastCollapseDay = day;
             int delay = VillageProsperityEngine.recoveryDelayDays(village, cause);
@@ -953,6 +958,14 @@ public final class EconomyService {
                 || purpose == null) {
             return VillageFundContributionResult.notContributed();
         }
+        if (catchUpDaysRemainingInternal() > 0L) {
+            lastError = "Economy catch-up is still in progress";
+            return VillageFundContributionResult.notContributed();
+        }
+        if (state.pendingInventoryTransactions.containsKey(playerId)) {
+            lastError = "A pending inventory transaction must be recovered first";
+            return VillageFundContributionResult.notContributed();
+        }
         EconomyState.Account account = state.existingAccount(playerId);
         EconomyState.VillageRecord village = state.existingVillage(villageId);
         if (account == null || village == null || account.cashMicro < amountMicro) {
@@ -978,16 +991,43 @@ public final class EconomyService {
                         ? EconomyState.DonationPurpose.RESTORATION
                         : purpose;
 
+        EconomyState.ProsperityFund fund = village.prosperityFund;
+        EconomyState.DonorRecord existingDonor = state.donors.get(playerId);
+        long reserve = type == EconomyState.ProsperityFundType.DIRECT_GRANT
+                        && actualPurpose != EconomyState.DonationPurpose.RESTORATION
+                ? Math.max(0L, Math.round(
+                        amountMicro * prosperityFundPolicy.emergencyReserveFraction()))
+                : 0L;
+        boolean fundCreditFits = canAdd(fund.lifetimeReceivedMicro, amountMicro)
+                && canAdd(fund.donorTotalsMicro.getOrDefault(playerId, 0L), amountMicro)
+                && switch (type) {
+                    case DIRECT_GRANT -> canAdd(fund.emergencyReserveMicro, reserve)
+                            && canAdd(
+                                    fund.spendableMicro.getOrDefault(actualPurpose, 0L),
+                                    amountMicro - reserve);
+                    case ENDOWMENT -> canAdd(
+                            fund.endowmentPrincipalMicro.getOrDefault(actualPurpose, 0L),
+                            amountMicro);
+                    case PROJECT_SPONSORSHIP -> canAdd(
+                            fund.projectSponsorshipMicro.getOrDefault(projectId, 0L),
+                            amountMicro);
+                };
+        boolean donorCreditFits = existingDonor == null
+                || (canAdd(existingDonor.lifetimeContributionMicro, amountMicro)
+                        && canAdd(existingDonor.byTypeMicro.getOrDefault(type, 0L), amountMicro)
+                        && canAdd(
+                                existingDonor.byPurposeMicro.getOrDefault(actualPurpose, 0L),
+                                amountMicro));
+        if (!fundCreditFits || !donorCreditFits) {
+            lastError = "Prosperity Fund accounting capacity is exhausted";
+            return VillageFundContributionResult.notContributed();
+        }
+
         EconomyState before = state.copy();
         try {
             account.cashMicro -= amountMicro;
-            EconomyState.ProsperityFund fund = village.prosperityFund;
             switch (type) {
                 case DIRECT_GRANT -> {
-                    long reserve = actualPurpose == EconomyState.DonationPurpose.RESTORATION
-                            ? 0L
-                            : Math.max(0L, Math.round(
-                                    amountMicro * prosperityFundPolicy.emergencyReserveFraction()));
                     fund.emergencyReserveMicro = PortfolioAnalytics.add(
                             fund.emergencyReserveMicro, reserve);
                     fund.spendableMicro.merge(
@@ -2055,7 +2095,7 @@ public final class EconomyService {
             }
             long proceeds = emeraldsToMicro(
                     shares * marketPrice * (1.0 - EconomyEngine.TRADE_SPREAD));
-            if (proceeds < 0L || !canAdd(account.cashMicro, proceeds)) {
+            if (proceeds <= 0L || !canAdd(account.cashMicro, proceeds)) {
                 return false;
             }
             long oldBasis = Math.max(
@@ -2495,6 +2535,10 @@ public final class EconomyService {
         return right > 0L && left > Long.MAX_VALUE - right
                 ? Long.MAX_VALUE
                 : left + right;
+    }
+
+    private static int saturatingIncrement(int value) {
+        return value == Integer.MAX_VALUE ? Integer.MAX_VALUE : value + 1;
     }
 
     private static void clearCd(EconomyState.Account account) {

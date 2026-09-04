@@ -20,6 +20,7 @@ final class JournalAndMigrationRegression {
 
     static void run(Path root) throws Exception {
         testJournalLifecycle(root.resolve("journal"));
+        testVillageFundRespectsPendingJournal(root.resolve("fund-journal"));
         testJournalValidation();
         testLegacyMigration(root.resolve("legacy"));
         testFormatTwoMigration(root.resolve("format-two"));
@@ -98,6 +99,49 @@ final class JournalAndMigrationRegression {
         transaction.bankDeltaMicro = -EconomyState.MICRO;
         state.pendingInventoryTransactions.put(PLAYER, transaction);
         requireValidationFailure(state, "Invalid prepared withdrawal passed validation");
+    }
+
+    private static void testVillageFundRespectsPendingJournal(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 541L, 0L, 0L);
+        EconomyService.VillageSnapshot observed = service.observeVillage(
+                new EconomyService.VillageObservation(
+                        "minecraft:overworld",
+                        packBlockPos(8, 64, 8),
+                        0L,
+                        0L,
+                        4,
+                        6,
+                        0,
+                        false,
+                        java.util.List.of()));
+        require(observed != null, "Village fixture for journal guard failed");
+        require(service.deposit(PLAYER, 10L), "Journal-guard donor funding failed");
+        EconomyState.PendingInventoryTransaction pending = service.prepareInventoryCredit(
+                PLAYER,
+                EconomyState.InventoryTransactionKind.EXCHANGE,
+                "diamond",
+                1,
+                1,
+                12L * EconomyState.MICRO);
+        require(pending != null, "Journal-guard transaction preparation failed");
+
+        long cashBefore = service.snapshot().account(PLAYER).cashMicro;
+        EconomyService.VillageFundContributionResult contribution =
+                service.contributeToVillageFund(
+                        PLAYER,
+                        observed.village().villageId,
+                        1L,
+                        EconomyState.ProsperityFundType.DIRECT_GRANT,
+                        EconomyState.DonationPurpose.GENERAL);
+        require(!contribution.contributed(),
+                "Prosperity Fund bypassed an unresolved inventory journal");
+        require(service.snapshot().account(PLAYER).cashMicro == cashBefore
+                        && service.villageFundSnapshot(observed.village().villageId)
+                                .lifetimeReceivedMicro() == 0L,
+                "Rejected journal-blocked contribution changed player or village funds");
+        require(service.cancelPreparedInventoryTransaction(PLAYER, pending.transactionId),
+                "Journal-guard fixture could not be cleared");
     }
 
     private static void testLegacyMigration(Path directory) throws Exception {

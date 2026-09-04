@@ -9,6 +9,7 @@ This beta completes the investment-accounting, multi-position banking, village-f
 - Stock holdings now retain cost basis and show average purchase price, allocation, and realized and unrealized performance.
 - Total external contributions and withdrawals, a bounded transaction ledger, and personal net-worth history persist with each account.
 - Asset, commodity, and personal histories retain up to 1,825 economic days. The dashboard offers 30-day, 90-day, one-year, and all-history views.
+- A compact Log page shows lifetime deposits and withdrawals plus the five newest entries from the persistent transaction ledger; stock trades include their ticker.
 - Players can hold and select up to eight independent CDs and eight independent villager-lending positions. Each position keeps its own term, rate, maturity, value, and outcome state.
 - Players still cannot borrow, carry a negative balance, or enter debt. A lending default can lose only the amount voluntarily funded.
 
@@ -36,6 +37,21 @@ This beta completes the investment-accounting, multi-position banking, village-f
 - A capture follows one watched settlement and excludes unrelated accounts and settlement events, resident UUIDs, the private economy seed, world seed, chat, and server address.
 - Performance output labels sampling, active recorder ticks, JSONL writes, snapshots, and full-state copies separately; overlapping figures are not presented as subsystem timings.
 - Sell-all, CD closure, villager-lending funding, and Prosperity Fund contributions use time-limited server-owned confirmation state.
+- A Fund confirmation is valid only while its amount, type, effective purpose, village lifecycle, village identity, and sponsored project remain unchanged. Catch-up and unresolved inventory recovery block direct Fund contributions as well as ordinary transactions.
+- Zero-proceeds stock dust sales are rejected without changing holdings, basis, cash, or the activity ledger; exhausted Fund counters likewise reject before a donor is debited.
+
+## Onboarding and configuration
+
+- Each player receives one persistent, configurable discovery hint on their first join, followed by a concise deposit and risk explanation on their first successful Banker visit.
+- `onboarding.join_hint_enabled=false` suppresses the join hint without changing gameplay or erasing player data.
+- Configuration reload reports the exact world-local file and validates the complete edit before applying it. A malformed boolean, non-integer, out-of-range value, or unknown key rejects the whole reload while the previous settings remain active.
+- `docs/CONFIGURATION.md` records every default, accepted range, interaction, and large-server tuning control.
+
+## Build and release integrity
+
+- Both Gradle 9.5.1 wrappers pin the official binary-distribution SHA-256 digest, and the common gate verifies each wrapper JAR against Gradle's published checksum.
+- Packaged-JAR checks require exact binary and sources filenames, embedded loader identity and version, manifest version, required shared/client sources, resources, and valid language JSON.
+- Each loader artifact receives a machine-generated `SHA256SUMS`. The exact-commit staging script verifies both downloaded CI artifacts and creates the combined public checksum and release manifest without rebuilding them.
 
 ## Save compatibility
 
@@ -43,4 +59,4 @@ Beta.2 advances persistence to format 9. Existing format-7 and format-8 worlds m
 
 ## Verification boundary
 
-GitHub Actions workflow [`33894198970`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33894198970) passed the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks for the exact candidate implementation commit. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run`; no tag or public prerelease has been created.
+GitHub Actions workflow [`33894198970`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33894198970) passed the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks for earlier candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`. The subsequent GUI, onboarding, configuration, and release-integrity changes require a new successful exact-commit `main` workflow before publication. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run`; no tag or public prerelease has been created.

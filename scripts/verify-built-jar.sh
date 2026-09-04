@@ -9,20 +9,45 @@ fi
 LOADER="$1"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB_DIR="$ROOT/$LOADER/build/libs"
-PYTHON_BIN="${PYTHON:-python3}"
+VERSION="$(grep '^mod_version=' "$ROOT/$LOADER/gradle.properties" | cut -d= -f2-)"
 
-mapfile -t jars < <(find "$LIB_DIR" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | sort)
-if [[ ${#jars[@]} -ne 1 ]]; then
-    echo "Expected exactly one playable $LOADER JAR, found ${#jars[@]}" >&2
+if [[ -n "${PYTHON:-}" ]]; then
+    PYTHON_COMMAND=("$PYTHON")
+elif command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&1; then
+    PYTHON_COMMAND=(python3)
+elif command -v py >/dev/null 2>&1 && py -3 -c 'import json' >/dev/null 2>&1; then
+    PYTHON_COMMAND=(py -3)
+elif command -v python >/dev/null 2>&1 && python -c 'import json' >/dev/null 2>&1; then
+    PYTHON_COMMAND=(python)
+else
+    echo "Python 3 is required to verify packaged metadata JSON" >&2
+    exit 1
+fi
+
+if [[ -z "$VERSION" ]]; then
+    echo "Could not determine $LOADER mod_version" >&2
+    exit 1
+fi
+
+binary_name="the-emerald-standard-$LOADER-$VERSION.jar"
+sources_name="the-emerald-standard-$LOADER-$VERSION-sources.jar"
+jar_file="$LIB_DIR/$binary_name"
+sources_file="$LIB_DIR/$sources_name"
+
+mapfile -t jars < <(find "$LIB_DIR" -maxdepth 1 -type f -name '*.jar' | sort)
+if [[ ${#jars[@]} -ne 2 || ! -f "$jar_file" || ! -f "$sources_file" ]]; then
+    echo "Expected exactly $binary_name and $sources_name; found ${#jars[@]} JAR(s)" >&2
     printf '%s\n' "${jars[@]}" >&2
     exit 1
 fi
 
-jar_file="${jars[0]}"
 required=(
     'com/chedidandrew/emeraldstandard/core/EconomyService.class'
+    'com/chedidandrew/emeraldstandard/client/BankerScreenLayout.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerMenu.class'
+    'com/chedidandrew/emeraldstandard/minecraft/FundConfirmationFingerprint.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerProfessionSupport.class'
+    'com/chedidandrew/emeraldstandard/minecraft/PlayerOnboarding.class'
     'com/chedidandrew/emeraldstandard/client/BankerScreen.class'
     'assets/the_emerald_standard/lang/en_us.json'
     'assets/the_emerald_standard/blockstates/exchange_desk.json'
@@ -52,6 +77,33 @@ else
     )
 fi
 
+source_listing="$(jar tf "$sources_file")"
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/core/EconomyService.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing shared Java sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/client/BankerScreen.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing client Java sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/client/BankerScreenLayout.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing Banker screen layout sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/FundConfirmationFingerprint.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing Fund confirmation sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/PlayerOnboarding.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing onboarding Java sources" >&2
+    exit 1
+fi
+
 listing="$(jar tf "$jar_file")"
 for entry in "${required[@]}"; do
     if ! grep -Fxq "$entry" <<<"$listing"; then
@@ -61,9 +113,34 @@ for entry in "${required[@]}"; do
 done
 
 if ! unzip -p "$jar_file" assets/the_emerald_standard/lang/en_us.json \
-        | "$PYTHON_BIN" -m json.tool >/dev/null; then
+        | "${PYTHON_COMMAND[@]}" -m json.tool >/dev/null; then
     echo "$jar_file contains invalid English language JSON" >&2
     exit 1
 fi
 
-echo "PASS packaged $LOADER JAR verification: $(basename "$jar_file")"
+if ! unzip -p "$jar_file" META-INF/MANIFEST.MF \
+        | tr -d '\r' \
+        | grep -Fxq "Implementation-Version: $VERSION"; then
+    echo "$jar_file manifest does not declare Implementation-Version $VERSION" >&2
+    exit 1
+fi
+
+if [[ "$LOADER" == "fabric" ]]; then
+    if ! unzip -p "$jar_file" fabric.mod.json \
+            | "${PYTHON_COMMAND[@]}" -c 'import json,sys; d=json.load(sys.stdin); expected=sys.argv[1]; assert d["id"] == "the_emerald_standard" and d["version"] == expected' "$VERSION"; then
+        echo "$jar_file contains incorrect Fabric mod identity or version" >&2
+        exit 1
+    fi
+else
+    metadata="$(unzip -p "$jar_file" META-INF/neoforge.mods.toml | tr -d '\r')"
+    if ! grep -Fxq 'modId="the_emerald_standard"' <<<"$metadata" \
+            || ! grep -Fxq "version=\"$VERSION\"" <<<"$metadata"; then
+        echo "$jar_file contains incorrect NeoForge mod identity or version" >&2
+        exit 1
+    fi
+fi
+
+(cd "$LIB_DIR" && sha256sum -b "$binary_name" "$sources_name" > SHA256SUMS)
+
+echo "PASS packaged $LOADER JAR verification: $binary_name"
+cat "$LIB_DIR/SHA256SUMS"

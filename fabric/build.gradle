@@ -3,11 +3,14 @@ plugins {
     id 'maven-publish'
 }
 
-version = project.mod_version
-group = project.maven_group
+def artifactVersion = mod_version.toString()
+def artifactBaseName = archives_base_name.toString()
+
+version = artifactVersion
+group = maven_group
 
 base {
-    archivesName = project.archives_base_name
+    archivesName = artifactBaseName
 }
 
 repositories {
@@ -26,9 +29,9 @@ sourceSets.main.java.srcDir('../common/src/client/java')
 sourceSets.main.resources.srcDir('../common/src/main/resources')
 
 processResources {
-    inputs.property 'version', project.version
+    inputs.property 'version', artifactVersion
     filesMatching('fabric.mod.json') {
-        expand 'version': project.version
+        expand 'version': artifactVersion
     }
 }
 
@@ -48,9 +51,9 @@ jar {
     manifest {
         attributes(
                 'Implementation-Title': 'The Emerald Standard',
-                'Implementation-Version': project.version)
+                'Implementation-Version': artifactVersion)
     }
     from('../LICENSE') {
-        rename { "${it}_${project.archives_base_name}" }
+        rename { "${it}_${artifactBaseName}" }
     }
 }

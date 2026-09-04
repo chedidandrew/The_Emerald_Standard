@@ -458,6 +458,9 @@ public final class EconomyEngine {
         if (count <= 0) {
             return 0L;
         }
+        if (resourceId == null || prices == null) {
+            return -1L;
+        }
         double unitValue = switch (resourceId.toLowerCase(Locale.ROOT)) {
             case "diamond", "diamond_ore", "deepslate_diamond_ore" -> price(prices, "diamond");
             case "diamond_block" -> 9.0 * price(prices, "diamond");
@@ -524,7 +527,8 @@ public final class EconomyEngine {
     }
 
     private static double price(Map<String, Double> prices, String key) {
-        return prices.getOrDefault(key, 0.0);
+        Double value = prices.get(key);
+        return value != null && Double.isFinite(value) && value > 0.0 ? value : 0.0;
     }
 
     private static Regime pick(double draw, Regime[] regimes, double[] probabilities) {

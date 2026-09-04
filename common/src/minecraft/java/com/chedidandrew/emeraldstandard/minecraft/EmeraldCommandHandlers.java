@@ -71,7 +71,8 @@ final class EmeraldCommandHandlers {
     }
 
     static int showConfig(CommandContext<CommandSourceStack> context) {
-        return success(context, "Configuration: " + EmeraldConfig.current().summary());
+        return success(context, "Configuration (" + EmeraldConfig.location() + "): "
+                + EmeraldConfig.current().summary());
     }
 
     static int reloadConfig(
@@ -82,7 +83,8 @@ final class EmeraldCommandHandlers {
             config.applyTo(economy);
             return success(context, "Reloaded configuration: " + config.summary());
         } catch (IOException exception) {
-            return failure(context, "Configuration reload failed: " + exception.getMessage());
+            return failure(context, "Configuration reload failed; the previous settings remain active. "
+                    + EmeraldConfig.location() + ": " + exception.getMessage());
         }
     }
 

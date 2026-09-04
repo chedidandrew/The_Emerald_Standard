@@ -814,6 +814,9 @@ public final class EconomyState {
             double endowmentAnnualPayoutRate,
             double emergencyReserveFraction,
             long dailyFundSpendingCapMicro) {
+        if (economicDay == Long.MAX_VALUE) {
+            throw new IllegalStateException("Economic day range is exhausted");
+        }
         economicDay++;
         if (villageProsperitySimulationEnabled) {
             for (VillageRecord village : villages.values()) {
@@ -989,8 +992,16 @@ public final class EconomyState {
             validatePrice("commodity " + commodity.id(), commodityPrices.get(commodity.id()));
         }
         validateHistory();
-        for (Long region : generatedBankAnchors.keySet()) {
-            if (region == null || !generatedBankRegions.contains(region)) {
+        for (Long region : generatedBankRegions) {
+            if (region == null) {
+                throw new IOException("Generated bank region identifier is null");
+            }
+        }
+        for (Map.Entry<Long, Long> entry : generatedBankAnchors.entrySet()) {
+            Long region = entry.getKey();
+            if (region == null
+                    || entry.getValue() == null
+                    || !generatedBankRegions.contains(region)) {
                 throw new IOException("Bank anchor exists without a generated region marker");
             }
         }
@@ -1486,7 +1497,8 @@ public final class EconomyState {
 
     private static void validateVillage(UUID id, VillageRecord village, long economicDay)
             throws IOException {
-        if (village == null
+        if (id == null
+                || village == null
                 || village.villageId == null
                 || !id.equals(village.villageId)
                 || village.dimensionKey == null
@@ -1498,17 +1510,29 @@ public final class EconomyState {
                 || village.observedPopulation < 0
                 || village.housingCapacity < 0
                 || village.pendingSettlers < 0
+                || village.pendingSettlers
+                        > VillageProsperityEngine.MAX_ABSTRACT_POPULATION - village.population
                 || village.developmentTier < 0
                 || village.developmentTier > 5
                 || village.discoveredDay < 0L
+                || village.discoveredDay > economicDay
                 || village.lastSimulatedDay < 0L
                 || village.lastSimulatedDay > economicDay
                 || village.lastCensusDay < 0L
+                || village.lastCensusDay > economicDay
                 || village.lastIncidentDay < 0L
+                || village.lastIncidentDay > economicDay
                 || village.recoveryEligibleDay < 0L
+                || village.abandonedSinceDay < 0L
+                || village.abandonedSinceDay > economicDay
                 || village.lastCollapseDay < 0L
                 || village.lastCollapseDay > economicDay
-                || village.marketSuppressedUntilDay < 0L) {
+                || village.marketSuppressedUntilDay < 0L
+                || village.projectSerial < 0L
+                || village.collapseCount < 0
+                || village.hostileCasualties < 0
+                || village.playerCasualties < 0
+                || village.environmentalCasualties < 0) {
             throw new IOException("Invalid village record " + id);
         }
         validateFiniteRange("village prosperity", village.prosperity, 0.0, 100.0);
@@ -1573,6 +1597,9 @@ public final class EconomyState {
                 throw new IOException("Invalid village project in " + id);
             }
             previousProject = project.projectId;
+        }
+        if (village.projectSerial < previousProject) {
+            throw new IOException("Village project serial trails its project history " + id);
         }
         for (VillageIncident incident : village.incidents) {
             if (incident == null
@@ -1651,7 +1678,7 @@ public final class EconomyState {
 
     private static void validateAccount(UUID id, Account account, long economicDay)
             throws IOException {
-        if (account == null) {
+        if (id == null || account == null) {
             throw new IOException("Null account for " + id);
         }
         ensurePositionCollections(account);
@@ -1671,12 +1698,14 @@ public final class EconomyState {
         }
         for (Map.Entry<Long, CdPosition> entry : account.cdPositions.entrySet()) {
             CdPosition position = entry.getValue();
-            if (position == null
+            if (entry.getKey() == null
+                    || position == null
                     || entry.getKey() != position.positionId
                     || position.positionId <= 0L
                     || position.principalMicro <= 0L
                     || position.valueMicro < position.principalMicro
                     || position.openDay < 0L
+                    || position.openDay > economicDay
                     || position.maturityDay <= position.openDay) {
                 throw new IOException("Inconsistent CD position for " + id);
             }
@@ -1685,12 +1714,17 @@ public final class EconomyState {
                 throw new IOException("Inactive CD rate for " + id);
             }
         }
+        Set<Long> positionIds = new HashSet<>(account.cdPositions.keySet());
         for (Map.Entry<Long, LoanPosition> entry : account.loanPositions.entrySet()) {
+            if (entry.getKey() == null || !positionIds.add(entry.getKey())) {
+                throw new IOException("Duplicate or null term position for " + id);
+            }
             validateLoanPosition(id, entry.getKey(), entry.getValue(), economicDay);
         }
 
         for (Map.Entry<String, Double> holding : account.shares.entrySet()) {
             if (!knownTicker(holding.getKey())
+                    || holding.getValue() == null
                     || !Double.isFinite(holding.getValue())
                     || holding.getValue() < 0.0) {
                 throw new IOException("Invalid holding for " + id);
@@ -1709,7 +1743,11 @@ public final class EconomyState {
         }
         long previousHistoryDay = -1L;
         for (PortfolioValuePoint point : account.netWorthHistory) {
-            if (point == null || point.day < previousHistoryDay || point.valueMicro < 0L) {
+            if (point == null
+                    || point.day < 0L
+                    || point.day > economicDay
+                    || point.day < previousHistoryDay
+                    || point.valueMicro < 0L) {
                 throw new IOException("Invalid net-worth history for " + id);
             }
             previousHistoryDay = point.day;
@@ -1737,6 +1775,7 @@ public final class EconomyState {
                 || position.principalMicro <= 0L
                 || position.valueMicro < 0L
                 || position.openDay < 0L
+                || position.openDay > economicDay
                 || position.maturityDay <= position.openDay
                 || position.serial <= 0L
                 || !Double.isFinite(position.stress)
@@ -1750,6 +1789,8 @@ public final class EconomyState {
         validateRate(id, "lending position", position.annualRate);
         if (position.annualRate <= 0.0
                 || (position.resolved && economicDay < position.maturityDay)
+                || (!position.resolved && economicDay >= position.maturityDay)
+                || (!position.resolved && position.valueMicro < position.principalMicro)
                 || (!position.resolved
                         && (position.recoveryRate != 1.0
                                 || position.outcome != EconomyEngine.LoanOutcome.REPAID))) {

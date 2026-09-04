@@ -57,12 +57,22 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | GUI scale Large | Not run | Not run | Screenshot of every page |
 | Keyboard navigation and Escape behavior | Not run | Not run | Notes and any blocked control |
 | Color-independent gain/loss understanding | Not run | Not run | Tester description without relying on color |
+| First join gives one discovery hint, never repeats it, and respects the config opt-out | Not run | Not run | Reconnect notes for enabled and disabled settings |
 | First Banker visit explains safe and risky products without blocking the GUI | Not run | Not run | Screenshot and tester summary |
 | First-time player completes an investment in under one minute | Not run | Not run | Timed observation |
 | Savings, CD, lending, VILX, and businesses are distinguishable | Not run | Not run | Tester explanation in their own words |
-| Six pages, chart range selectors, and Fund controls remain readable | Not run | Not run | Screenshot of each range and Fund state |
+| Seven pages, chart range selectors, Fund controls, and five newest Log entries remain readable | Not run | Not run | Screenshot of each range, Fund state, and populated Log |
 | Server-owned confirmation expires and cancels on selection changes | Not run | Not run | Debug timeline and visible status |
 | Empty states and unavailable actions are clear | Not run | Not run | Screenshots and notes |
+
+## Configuration checks
+
+| Test | Fabric | NeoForge | Required evidence |
+| --- | --- | --- | --- |
+| Config show reports the active file and complete active settings | Not run | Not run | Command output |
+| A valid reload applies all settings together | Not run | Not run | Before/after command output |
+| Invalid boolean, integer, range, and unknown key each reject the whole reload | Not run | Not run | Four errors plus unchanged active summary |
+| Disabling a Fund subtype blocks new contributions without deleting existing Fund state | Not run | Not run | Before/after Fund balances and history |
 
 ## Village and physical-world checks
 

@@ -10,6 +10,7 @@ import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
 import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
+import com.chedidandrew.emeraldstandard.minecraft.PlayerOnboarding;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import com.mojang.logging.LogUtils;
@@ -121,6 +122,7 @@ public final class EmeraldStandardNeoForge {
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             recover(player);
+            PlayerOnboarding.onJoin(player);
         }
     }
 

@@ -113,6 +113,19 @@ final class ClockAndMaturityRegression {
     private static void testBoundedCatchUp(Path directory) throws Exception {
         EconomyService original = new EconomyService();
         original.startWithSeed(directory, 53L, 0L, 0L);
+        EconomyService.VillageSnapshot observed = original.observeVillage(
+                new EconomyService.VillageObservation(
+                        "minecraft:overworld",
+                        1L,
+                        0L,
+                        0L,
+                        4,
+                        6,
+                        0,
+                        false,
+                        java.util.List.of()));
+        require(observed != null, "Catch-up village fixture failed");
+        require(original.deposit(PLAYER, 10L), "Catch-up donor fixture failed");
         require(original.saveNowAt(0L, 0L), "Baseline catch-up save failed");
 
         long farFuture = (EconomyService.MAX_TRUSTED_CATCH_UP_DAYS + 5_000L)
@@ -123,6 +136,20 @@ final class ClockAndMaturityRegression {
                 "Startup catch-up was not bounded");
         require(!reloaded.deposit(PLAYER, 1L),
                 "Banking was allowed during incomplete catch-up");
+        long cashBefore = reloaded.snapshot().account(PLAYER).cashMicro;
+        EconomyService.VillageFundContributionResult contribution =
+                reloaded.contributeToVillageFund(
+                        PLAYER,
+                        observed.village().villageId,
+                        1L,
+                        EconomyState.ProsperityFundType.DIRECT_GRANT,
+                        EconomyState.DonationPurpose.GENERAL);
+        require(!contribution.contributed(),
+                "Prosperity Fund contribution bypassed incomplete catch-up");
+        require(reloaded.snapshot().account(PLAYER).cashMicro == cashBefore
+                        && reloaded.villageFundSnapshot(observed.village().villageId)
+                                .lifetimeReceivedMicro() == 0L,
+                "Rejected catch-up contribution changed persisted balances");
         int passes = 0;
         while (reloaded.catchUpDaysRemaining() > 0L && passes++ < 200) {
             require(reloaded.tickAt(0L, farFuture), "Background catch-up failed");

@@ -1,6 +1,7 @@
 package com.chedidandrew.emeraldstandard.client;
 
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
+import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import java.util.Locale;
@@ -13,8 +14,9 @@ import net.minecraft.world.entity.player.Inventory;
 
 /** A compact, casual-player-first bank and exchange dashboard. */
 public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
-    private static final int WIDTH = 320;
-    private static final int HEIGHT = 230;
+    private static final int WIDTH = BankerScreenLayout.WIDTH;
+    private static final int HEIGHT = BankerScreenLayout.HEIGHT;
+    private static final int TAB_ACTIVITY = 6;
 
     private static final int PANEL = 0xFF16251F;
     private static final int PANEL_LIGHT = 0xFF20362D;
@@ -28,6 +30,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private int tab = BankerMenu.TAB_OVERVIEW;
     private int seenStatusRevision;
+    private int seenInteractiveState;
+    private int statusDisplayTicks;
 
     public BankerScreen(BankerMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title, WIDTH, HEIGHT);
@@ -40,15 +44,26 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     protected void init() {
         super.init();
         seenStatusRevision = menu.statusRevision();
-        int x = leftPos + 10;
-        int y = topPos + 27;
+        seenInteractiveState = interactiveState();
+        int x = leftPos + BankerScreenLayout.TAB_X;
+        int y = topPos + BankerScreenLayout.TAB_Y;
         Component[] tabs = {
+                tr("tab.home"),
+                tr("tab.market"),
+                tr("tab.bank"),
+                tr("tab.trade"),
+                tr("tab.village"),
+                tr("tab.fund"),
+                tr("tab.activity")
+        };
+        Component[] tabTooltips = {
                 tr("tab.overview"),
                 tr("tab.market"),
                 tr("tab.banking"),
                 tr("tab.exchange"),
                 tr("tab.village"),
-                tr("tab.fund")
+                tr("tab.fund"),
+                tr("activity.title")
         };
         for (int index = 0; index < tabs.length; index++) {
             int selectedTab = index;
@@ -58,13 +73,18 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 tab = selectedTab;
                                 rebuildWidgets();
                             })
-                    .bounds(x + index * 50, y, 49, 18)
+                    .bounds(
+                            x + index * BankerScreenLayout.TAB_STEP,
+                            y,
+                            BankerScreenLayout.TAB_WIDTH,
+                            BankerScreenLayout.TAB_HEIGHT)
+                    .tooltip(Tooltip.create(tabTooltips[index]))
                     .build());
         }
 
         if (tab == BankerMenu.TAB_FUND) {
             addDonationDraftButtons();
-        } else {
+        } else if (tab != TAB_ACTIVITY) {
             addAmountButtons();
         }
         switch (tab) {
@@ -74,6 +94,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case BankerMenu.TAB_EXCHANGE -> addExchangeButtons();
             case BankerMenu.TAB_VILLAGE -> addVillageButtons();
             case BankerMenu.TAB_FUND -> addFundButtons();
+            case TAB_ACTIVITY -> {
+            }
             default -> {
             }
         }
@@ -81,7 +103,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private void addAmountButtons() {
         int x = leftPos + 12;
-        int y = topPos + 207;
+        int y = topPos + BankerScreenLayout.AMOUNT_BUTTON_Y;
         for (int index = 0; index < BankerMenu.AMOUNT_PRESETS.length; index++) {
             int selected = index;
             int value = BankerMenu.AMOUNT_PRESETS[index];
@@ -99,11 +121,20 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private void addOverviewButtons() {
         int y = topPos + 165;
-        addActionButton(tr("action.deposit"), leftPos + 12, y, 68, BankerMenu.ACTION_DEPOSIT);
-        addActionButton(tr("action.withdraw"), leftPos + 84, y, 68, BankerMenu.ACTION_WITHDRAW);
-        addActionButton(tr("action.save"), leftPos + 156, y, 68, BankerMenu.ACTION_SAVINGS_DEPOSIT);
-        addActionButton(tr("action.recover"), leftPos + 228, y, 80, BankerMenu.ACTION_RECOVER);
-        addHistoryRangeButton(leftPos + 258, topPos + 57);
+        boolean ready = transactionsAvailable();
+        Button deposit = addActionButton(
+                tr("action.deposit"), leftPos + 12, y, 68, BankerMenu.ACTION_DEPOSIT);
+        deposit.active = ready && menu.physicalEmeralds() > 0;
+        Button withdraw = addActionButton(
+                tr("action.withdraw"), leftPos + 84, y, 68, BankerMenu.ACTION_WITHDRAW);
+        withdraw.active = ready && menu.cash() > 0.0;
+        Button save = addActionButton(
+                tr("action.save"), leftPos + 156, y, 68, BankerMenu.ACTION_SAVINGS_DEPOSIT);
+        save.active = ready && menu.cash() > 0.0;
+        Button recover = addActionButton(
+                tr("action.recover"), leftPos + 228, y, 80, BankerMenu.ACTION_RECOVER);
+        recover.active = menu.catchUpDays() == 0 && menu.hasPendingTransaction();
+        addHistoryRangeButton();
     }
 
     private void addMarketButtons() {
@@ -121,10 +152,16 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     .bounds(startX + (index % 3) * 31, startY + (index / 3) * 22, 29, 18)
                     .build());
         }
-        int y = topPos + 165;
-        addActionButton(tr("action.buy"), leftPos + 112, y, 58, BankerMenu.ACTION_BUY);
-        addActionButton(tr("action.sell_quarter"), leftPos + 174, y, 62, BankerMenu.ACTION_SELL_QUARTER);
-        addConfirmingActionButton(
+        int y = topPos + BankerScreenLayout.MARKET_ACTION_Y;
+        boolean ready = transactionsAvailable();
+        Button buy = addActionButton(
+                tr("action.buy"), leftPos + 112, y, 58, BankerMenu.ACTION_BUY);
+        buy.active = ready && menu.cash() > 0.0 && menu.selectedAssetPrice() > 0.0;
+        Button sellQuarter = addActionButton(
+                tr("action.sell_quarter"), leftPos + 174, y, 62,
+                BankerMenu.ACTION_SELL_QUARTER);
+        sellQuarter.active = ready && menu.selectedShares() > 0.0;
+        Button sellAll = addConfirmingActionButton(
                 menu.confirmationAction() == BankerMenu.ACTION_SELL_ALL
                         ? tr("action.confirm")
                         : tr("action.sell_all"),
@@ -133,98 +170,56 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 68,
                 BankerMenu.ACTION_SELL_ALL,
                 tr("tooltip.sell_all"));
-        addHistoryRangeButton(leftPos + 258, topPos + 57);
+        sellAll.active = ready && menu.selectedShares() > 0.0;
+        addHistoryRangeButton();
     }
 
     private void addBankingButtons() {
-        int y = topPos + 103;
-        addActionButton(tr("action.to_savings"), leftPos + 12, y, 68,
+        int y = topPos + BankerScreenLayout.BANKING_PRIMARY_ACTION_Y;
+        boolean ready = transactionsAvailable();
+        Button toSavings = addActionButton(tr("action.to_savings"), leftPos + 12, y, 68,
                 BankerMenu.ACTION_SAVINGS_DEPOSIT);
-        addActionButton(tr("action.from_savings"), leftPos + 84, y, 78,
+        toSavings.active = ready && menu.cash() > 0.0;
+        Button fromSavings = addActionButton(tr("action.from_savings"), leftPos + 84, y, 78,
                 BankerMenu.ACTION_SAVINGS_WITHDRAW);
-        if (menu.cdCount() < com.chedidandrew.emeraldstandard.core.EconomyState.MAX_TERM_POSITIONS) {
-            addActionButton(tr("action.open_cd"), leftPos + 166, y, 62,
-                    BankerMenu.ACTION_OPEN_CD);
-        }
-        if (menu.hasCd()) {
-            addConfirmingActionButton(
-                    menu.confirmationAction() == BankerMenu.ACTION_CLOSE_CD
-                            ? tr("action.confirm") : tr("action.close_cd"),
-                    leftPos + 232,
-                    y,
-                    76,
-                    BankerMenu.ACTION_CLOSE_CD,
-                    tr("tooltip.close_cd_early"));
-        }
+        fromSavings.active = ready && menu.savings() > 0.0;
 
-        int productY = topPos + 125;
-        if (menu.lendingCount()
-                < com.chedidandrew.emeraldstandard.core.EconomyState.MAX_TERM_POSITIONS) {
-            addConfirmingActionButton(
-                    menu.confirmationAction() == BankerMenu.ACTION_FUND_LENDING
-                            ? tr("action.confirm") : tr("action.fund"),
-                    leftPos + 166,
-                    productY,
-                    68,
-                    BankerMenu.ACTION_FUND_LENDING,
-                    tr("tooltip.lending_risk"));
-        }
-        if (menu.lendingResolved() && menu.lendingDaysRemaining() == 0) {
-            addActionButton(tr("action.collect"), leftPos + 238, productY, 70,
-                    BankerMenu.ACTION_COLLECT_LENDING);
-        }
+        Button openCd = addActionButton(
+                tr("action.open_cd"), leftPos + 166, y, 68, BankerMenu.ACTION_OPEN_CD);
+        openCd.active = ready && menu.cash() > 0.0
+                && menu.cdCount()
+                        < com.chedidandrew.emeraldstandard.core.EconomyState.MAX_TERM_POSITIONS;
+        Button closeCd = addConfirmingActionButton(
+                menu.confirmationAction() == BankerMenu.ACTION_CLOSE_CD
+                        ? tr("action.confirm") : tr("action.close_cd"),
+                leftPos + 238,
+                y,
+                70,
+                BankerMenu.ACTION_CLOSE_CD,
+                tr("tooltip.close_cd_early"));
+        closeCd.active = ready && menu.hasCd();
 
-        int termY = topPos + 143;
-        for (int index = 0; index < BankerMenu.TERMS.length; index++) {
-            int selected = index;
-            String cdLabel = menu.selectedCdTerm() == BankerMenu.TERMS[index]
-                    ? "[" + BankerMenu.TERMS[index] + "]"
-                    : Integer.toString(BankerMenu.TERMS[index]);
-            addRenderableWidget(Button.builder(
-                            Component.literal(cdLabel),
-                            button -> selectAndRefresh(BankerMenu.BUTTON_CD_TERM_BASE + selected))
-                    .bounds(leftPos + 78 + index * 39, termY, 35, 18)
-                    .tooltip(Tooltip.create(tr(
-                            "tooltip.cd_term",
-                            BankerMenu.TERMS[index],
-                            String.format(Locale.ROOT, "%.2f", EconomyEngine.cdAnnualRate(
-                                    menu.regime(), BankerMenu.TERMS[index]) * 100.0))))
-                    .build());
+        int productY = topPos + BankerScreenLayout.BANKING_LENDING_ACTION_Y;
+        Button fund = addConfirmingActionButton(
+                menu.confirmationAction() == BankerMenu.ACTION_FUND_LENDING
+                        ? tr("action.confirm") : tr("action.fund"),
+                leftPos + 166,
+                productY,
+                68,
+                BankerMenu.ACTION_FUND_LENDING,
+                tr("tooltip.lending_risk"));
+        fund.active = ready && menu.cash() > 0.0
+                && menu.lendingCount()
+                        < com.chedidandrew.emeraldstandard.core.EconomyState.MAX_TERM_POSITIONS;
+        Button collect = addActionButton(
+                tr("action.collect"), leftPos + 238, productY, 70,
+                BankerMenu.ACTION_COLLECT_LENDING);
+        collect.active = ready && menu.lendingResolved() && menu.lendingDaysRemaining() == 0;
 
-            String lendingLabel = menu.selectedLendingTerm() == BankerMenu.TERMS[index]
-                    ? "[" + BankerMenu.TERMS[index] + "]"
-                    : Integer.toString(BankerMenu.TERMS[index]);
-            addRenderableWidget(Button.builder(
-                            Component.literal(lendingLabel),
-                            button -> selectAndRefresh(
-                                    BankerMenu.BUTTON_LENDING_TERM_BASE + selected))
-                    .bounds(leftPos + 78 + index * 39, termY + 23, 35, 18)
-                    .tooltip(Tooltip.create(tr(
-                            "tooltip.lending_term",
-                            BankerMenu.TERMS[index],
-                            String.format(Locale.ROOT, "%.2f", EconomyEngine.villagerLoanAnnualYield(
-                                    menu.regime(), BankerMenu.TERMS[index]) * 100.0),
-                            String.format(Locale.ROOT, "%.1f", EconomyEngine.estimatedLoanDefaultProbability(
-                                    menu.regime(), BankerMenu.TERMS[index]) * 100.0))))
-                    .build());
-        }
-        if (menu.cdCount() > 1) {
-            addRenderableWidget(Button.builder(
-                            tr("banking.select_cd", menu.selectedCdPositionNumber(), menu.cdCount()),
-                            button -> selectAndRefresh(BankerMenu.BUTTON_CD_POSITION))
-                    .bounds(leftPos + 236, termY, 72, 18)
-                    .tooltip(Tooltip.create(tr("tooltip.select_position")))
-                    .build());
-        }
-        if (menu.lendingCount() > 1) {
-            addRenderableWidget(Button.builder(
-                            tr("banking.select_lending",
-                                    menu.selectedLendingPositionNumber(), menu.lendingCount()),
-                            button -> selectAndRefresh(BankerMenu.BUTTON_LENDING_POSITION))
-                    .bounds(leftPos + 236, termY + 23, 72, 18)
-                    .tooltip(Tooltip.create(tr("tooltip.select_position")))
-                    .build());
-        }
+        addTermCycleButton(true, BankerScreenLayout.BANKING_CD_CONTROL_Y);
+        addTermCycleButton(false, BankerScreenLayout.BANKING_LENDING_CONTROL_Y);
+        addPositionButton(true, BankerScreenLayout.BANKING_CD_CONTROL_Y);
+        addPositionButton(false, BankerScreenLayout.BANKING_LENDING_CONTROL_Y);
     }
 
     private void addExchangeButtons() {
@@ -242,9 +237,13 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         button -> selectAndRefresh(BankerMenu.BUTTON_RESOURCE_BASE + next))
                 .bounds(leftPos + 274, topPos + 76, 24, 20)
                 .build());
-        addActionButton(tr("action.exchange"), leftPos + 112, topPos + 165, 96,
+        Button exchange = addActionButton(
+                tr("action.exchange"), leftPos + 112, topPos + 165, 96,
                 BankerMenu.ACTION_EXCHANGE);
-        addHistoryRangeButton(leftPos + 216, topPos + 119);
+        exchange.active = transactionsAvailable()
+                && menu.selectedResourceCount() > 0
+                && menu.selectedResourceUnitQuote() > 0.0;
+        addHistoryRangeButton();
     }
 
     private void addVillageButtons() {
@@ -279,21 +278,27 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                             ? tr("tooltip.restore_village")
                             : tr("tooltip.support_village");
                 });
-        if (menu.fundTypeIndex() == 2 && menu.fundableProjectTypeOrdinal() < 0) {
-            contributionButton.active = false;
-        }
+        contributionButton.active = transactionsAvailable()
+                && menu.fundAvailable()
+                && menu.donationDraft() > 0
+                && !(menu.fundTypeIndex() == 2 && menu.fundableProjectTypeOrdinal() < 0);
 
-        addRenderableWidget(Button.builder(
+        Button typeButton = Button.builder(
                         tr("fund.type_button", fundTypeLabel()),
                         button -> selectAndRefresh(BankerMenu.BUTTON_FUND_TYPE))
-                .bounds(leftPos + 12, topPos + 101, 140, 18)
-                .build());
+                .bounds(leftPos + 12, topPos + BankerScreenLayout.FUND_CONTROL_Y, 140, 18)
+                .build();
+        typeButton.active = menu.fundAvailable() && menu.availableFundTypeCount() > 1;
+        addRenderableWidget(typeButton);
         Button purposeButton = Button.builder(
                         tr("fund.purpose_button", fundPurposeLabel()),
                         button -> selectAndRefresh(BankerMenu.BUTTON_FUND_PURPOSE))
-                .bounds(leftPos + 168, topPos + 101, 140, 18)
+                .bounds(leftPos + 168, topPos + BankerScreenLayout.FUND_CONTROL_Y, 140, 18)
                 .build();
-        purposeButton.active = menu.fundTypeIndex() != 2;
+        purposeButton.active = menu.fundAvailable()
+                && menu.fundTargetedDonationsEnabled()
+                && !isRestorationGrant()
+                && menu.fundTypeIndex() != 2;
         addRenderableWidget(purposeButton);
     }
 
@@ -308,31 +313,107 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             Component label = value < 0
                     ? tr("amount.all")
                     : value == 0 ? tr("amount.clear") : Component.literal("+" + value);
-            addRenderableWidget(Button.builder(
+            Button draftButton = Button.builder(
                             label,
                             button -> sendMenuButton(
                                     BankerMenu.BUTTON_DONATION_AMOUNT_BASE + selected))
                     .bounds(x + offset, y, widths[index], 18)
-                    .build());
+                    .build();
+            long availableWhole = Math.max(0L, (long) Math.floor(menu.cash()));
+            draftButton.active = menu.fundAvailable()
+                    && menu.hasVillage()
+                    && (value == 0
+                            ? menu.donationDraft() > 0
+                            : availableWhole > menu.donationDraft());
+            addRenderableWidget(draftButton);
             offset += widths[index] + 2;
         }
     }
 
-    private void addHistoryRangeButton(int x, int y) {
+    private void addHistoryRangeButton() {
         addRenderableWidget(Button.builder(
                         Component.literal(historyRangeLabel()),
                         button -> selectAndRefresh(BankerMenu.BUTTON_HISTORY_RANGE))
-                .bounds(x, y, 48, 18)
+                .bounds(
+                        leftPos + BankerScreenLayout.HISTORY_BUTTON_X,
+                        topPos + BankerScreenLayout.HISTORY_BUTTON_Y,
+                        BankerScreenLayout.HISTORY_BUTTON_WIDTH,
+                        BankerScreenLayout.HISTORY_BUTTON_HEIGHT)
                 .tooltip(Tooltip.create(tr("tooltip.history_range")))
                 .build());
     }
 
-    private void addActionButton(Component label, int x, int y, int width, int id) {
+    private void addTermCycleButton(boolean cd, int relativeY) {
+        int selectedTerm = cd ? menu.selectedCdTerm() : menu.selectedLendingTerm();
+        int selectedIndex = termIndex(selectedTerm);
+        int nextIndex = (selectedIndex + 1) % BankerMenu.TERMS.length;
+        double annualRate = cd
+                ? EconomyEngine.cdAnnualRate(menu.regime(), selectedTerm)
+                : EconomyEngine.villagerLoanAnnualYield(menu.regime(), selectedTerm);
+        Component tooltip = cd
+                ? tr("tooltip.cd_term", selectedTerm,
+                        String.format(Locale.ROOT, "%.2f", annualRate * 100.0))
+                : tr("tooltip.lending_term", selectedTerm,
+                        String.format(Locale.ROOT, "%.2f", annualRate * 100.0),
+                        String.format(Locale.ROOT, "%.1f",
+                                EconomyEngine.estimatedLoanDefaultProbability(
+                                        menu.regime(), selectedTerm) * 100.0));
         addRenderableWidget(Button.builder(
+                        tr("banking.term_button", selectedTerm,
+                                String.format(Locale.ROOT, "%.2f", annualRate * 100.0)),
+                        button -> selectAndRefresh(
+                                (cd ? BankerMenu.BUTTON_CD_TERM_BASE
+                                        : BankerMenu.BUTTON_LENDING_TERM_BASE) + nextIndex))
+                .bounds(leftPos + 67, topPos + relativeY, 65, 18)
+                .tooltip(Tooltip.create(tooltip))
+                .build());
+    }
+
+    private void addPositionButton(boolean cd, int relativeY) {
+        int count = cd ? menu.cdCount() : menu.lendingCount();
+        Component label;
+        Component tooltip;
+        if (count == 0) {
+            label = tr(cd ? "banking.no_cd" : "banking.no_lending");
+            tooltip = tr(cd ? "tooltip.no_cd" : "tooltip.no_lending");
+        } else if (cd) {
+            label = tr("banking.cd_position_button",
+                    menu.selectedCdPositionNumber(), count,
+                    money(menu.selectedCdPositionValue()), menu.cdDaysRemaining());
+            tooltip = tr("tooltip.cd_position",
+                    String.format(Locale.ROOT, "%.2f", menu.cdRate()),
+                    menu.cdDaysRemaining());
+        } else {
+            Component state = menu.lendingResolved()
+                    ? lendingOutcomeLabel(menu.lendingOutcome())
+                    : tr("banking.loan_pending", menu.lendingDaysRemaining());
+            label = tr("banking.loan_position_button",
+                    menu.selectedLendingPositionNumber(), count,
+                    money(menu.selectedLendingPositionValue()), state);
+            tooltip = tr("tooltip.lending_position",
+                    String.format(Locale.ROOT, "%.2f", menu.lendingRate()),
+                    menu.lendingDaysRemaining(), state);
+        }
+        Button position = Button.builder(
+                        fit(label, 164),
+                        button -> selectAndRefresh(cd
+                                ? BankerMenu.BUTTON_CD_POSITION
+                                : BankerMenu.BUTTON_LENDING_POSITION))
+                .bounds(leftPos + 136, topPos + relativeY, 172, 18)
+                .tooltip(Tooltip.create(tooltip))
+                .build();
+        position.active = count > 1;
+        addRenderableWidget(position);
+    }
+
+    private Button addActionButton(Component label, int x, int y, int width, int id) {
+        Button widget = Button.builder(
                         label,
                         button -> sendMenuButton(id))
                 .bounds(x, y, width, 18)
-                .build());
+                .build();
+        addRenderableWidget(widget);
+        return widget;
     }
 
     private Button addConfirmingActionButton(
@@ -360,10 +441,59 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     protected void containerTick() {
         super.containerTick();
         int revision = menu.statusRevision();
-        if (revision != seenStatusRevision) {
+        int state = interactiveState();
+        if (statusDisplayTicks > 0) {
+            statusDisplayTicks--;
+        }
+        if (revision != seenStatusRevision || state != seenInteractiveState) {
+            if (revision != seenStatusRevision) {
+                statusDisplayTicks = 60;
+            }
             seenStatusRevision = revision;
+            seenInteractiveState = state;
             rebuildWidgets();
         }
+    }
+
+    private int interactiveState() {
+        int result = 1;
+        result = 31 * result + menu.statusRevision();
+        result = 31 * result + menu.confirmationAction();
+        result = 31 * result + menu.catchUpDays();
+        result = 31 * result + menu.physicalEmeralds();
+        result = 31 * result + menu.cdCount();
+        result = 31 * result + menu.lendingCount();
+        result = 31 * result + menu.cdDaysRemaining();
+        result = 31 * result + menu.lendingDaysRemaining();
+        result = 31 * result + (menu.lendingResolved() ? 1 : 0);
+        result = 31 * result + menu.lendingOutcome().ordinal();
+        result = 31 * result + (menu.hasPendingTransaction() ? 1 : 0);
+        result = 31 * result + (menu.hasVillage() ? 1 : 0);
+        result = 31 * result + menu.villageLifecycle().ordinal();
+        result = 31 * result + (menu.cash() > 0.0 ? 1 : 0);
+        result = 31 * result + (menu.savings() > 0.0 ? 1 : 0);
+        result = 31 * result + (menu.selectedShares() > 0.0 ? 1 : 0);
+        result = 31 * result + (menu.selectedResourceCount() > 0 ? 1 : 0);
+        result = 31 * result + menu.donationDraft();
+        result = 31 * result + menu.fundTypeIndex();
+        result = 31 * result + menu.fundableProjectTypeOrdinal();
+        result = 31 * result + menu.selectedCdPositionNumber();
+        result = 31 * result + menu.selectedLendingPositionNumber();
+        result = 31 * result + Double.hashCode(menu.selectedCdPositionValue());
+        result = 31 * result + Double.hashCode(menu.selectedLendingPositionValue());
+        result = 31 * result + Double.hashCode(menu.cdRate());
+        result = 31 * result + Double.hashCode(menu.lendingRate());
+        result = 31 * result + Double.hashCode(menu.cash());
+        result = 31 * result + (menu.fundEnabled() ? 1 : 0);
+        result = 31 * result + (menu.fundAvailable() ? 1 : 0);
+        result = 31 * result + (menu.fundEndowmentsEnabled() ? 1 : 0);
+        result = 31 * result + (menu.fundProjectSponsorshipEnabled() ? 1 : 0);
+        result = 31 * result + (menu.fundTargetedDonationsEnabled() ? 1 : 0);
+        return result;
+    }
+
+    private boolean transactionsAvailable() {
+        return menu.catchUpDays() == 0 && !menu.hasPendingTransaction();
     }
 
     private void sendMenuButton(int id) {
@@ -388,11 +518,19 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         if (tab == BankerMenu.TAB_OVERVIEW) {
             drawChart(graphics, menu.netWorthHistoryPointsCenti(),
                     menu.netWorthHistorySpanDays(),
-                    x + 111, y + 57, 196, 88, mouseX, mouseY);
+                    x + BankerScreenLayout.OVERVIEW_CHART_X,
+                    y + BankerScreenLayout.OVERVIEW_CHART_Y,
+                    BankerScreenLayout.OVERVIEW_CHART_WIDTH,
+                    BankerScreenLayout.OVERVIEW_CHART_HEIGHT,
+                    mouseX, mouseY);
         } else if (tab == BankerMenu.TAB_MARKET) {
             drawChart(graphics, menu.historyPointsCenti(),
                     menu.historySpanDays(),
-                    x + 111, y + 57, 196, 88, mouseX, mouseY);
+                    x + BankerScreenLayout.MARKET_CHART_X,
+                    y + BankerScreenLayout.MARKET_CHART_Y,
+                    BankerScreenLayout.MARKET_CHART_WIDTH,
+                    BankerScreenLayout.MARKET_CHART_HEIGHT,
+                    mouseX, mouseY);
         } else if (tab == BankerMenu.TAB_BANKING) {
             graphics.outline(x + 10, y + 54, 145, 42, 0xFF456B5A);
             graphics.outline(x + 165, y + 54, 143, 42, 0xFF456B5A);
@@ -406,17 +544,27 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             graphics.outline(x + 165, y + 54, 143, 97, 0xFF456B5A);
         } else if (tab == BankerMenu.TAB_FUND) {
             graphics.outline(x + 10, y + 54, 298, 97, 0xFF456B5A);
+        } else if (tab == TAB_ACTIVITY) {
+            graphics.outline(x + 10, y + 54, 298, 121, 0xFF456B5A);
         }
     }
 
     @Override
     protected void extractLabels(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-        graphics.text(font, title, 12, 10, GOLD, false);
-        graphics.text(font,
+        drawTextWithin(graphics, title, 12, 10, 114, GOLD, false);
+        drawTextWithin(graphics,
                 tr("header.day_regime", menu.economicDay(), friendly(menu.regime().name())),
                 182,
                 11,
+                126,
                 MUTED,
+                false);
+        drawTextWithin(graphics,
+                tr("header.inventory", compactWhole(menu.physicalEmeralds())),
+                130,
+                11,
+                48,
+                EMERALD,
                 false);
 
         switch (tab) {
@@ -426,54 +574,54 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case BankerMenu.TAB_EXCHANGE -> drawExchangeLabels(graphics);
             case BankerMenu.TAB_VILLAGE -> drawVillageLabels(graphics);
             case BankerMenu.TAB_FUND -> drawFundLabels(graphics);
+            case TAB_ACTIVITY -> drawActivityLabels(graphics);
             default -> {
             }
         }
 
-        graphics.text(font,
-                tab == BankerMenu.TAB_FUND
-                        ? tr("fund.draft", menu.donationDraft())
-                        : tr("label.amount"),
-                12,
-                198,
-                MUTED,
-                false);
-        Component status = statusText(menu.statusCode());
-        int statusColor = menu.statusCode() < 0
-                ? NEGATIVE
-                : menu.statusCode() == 16 ? GOLD : POSITIVE;
-        if (status != null) {
-            graphics.text(font, status, 12, 188, statusColor, false);
+        if (tab != TAB_ACTIVITY) {
+            graphics.text(font,
+                    tab == BankerMenu.TAB_FUND
+                            ? tr("fund.draft", menu.donationDraft())
+                            : tr("label.amount"),
+                    12,
+                    BankerScreenLayout.AMOUNT_LABEL_Y,
+                    MUTED,
+                    false);
         }
+        Component status = statusText(menu.statusCode());
+        Component footer = null;
+        int footerColor = MUTED;
         if (menu.catchUpDays() > 0) {
-            graphics.text(font,
-                    tr("notice.catch_up", menu.catchUpDays()),
-                    12,
-                    177,
-                    GOLD,
-                    false);
+            footer = tr("notice.catch_up", menu.catchUpDays());
+            footerColor = GOLD;
         } else if (menu.hasPendingTransaction()) {
-            graphics.text(font,
-                    tr("notice.recovery_pending"),
-                    12,
-                    177,
-                    GOLD,
-                    false);
+            footer = tr("notice.recovery_pending");
+            footerColor = GOLD;
+        } else if (status != null && statusDisplayTicks > 0) {
+            footer = status;
+            footerColor = menu.statusCode() < 0
+                    ? NEGATIVE
+                    : menu.statusCode() == 16 ? GOLD : POSITIVE;
+        } else if (tab == BankerMenu.TAB_MARKET) {
+            footer = marketBulletin();
+            footerColor = GOLD;
+        }
+        if (footer != null) {
+            drawTextWithin(graphics, footer, 12, BankerScreenLayout.FOOTER_Y,
+                    296, footerColor, false);
         }
     }
 
     private void drawOverviewLabels(GuiGraphicsExtractor graphics) {
         graphics.text(font, tr("overview.title"), 14, 56, TEXT, false);
-        labelValue(graphics, tr("label.net_worth"), money(menu.netWorth()), 14, 72, GOLD);
-        labelValue(graphics, tr("label.bank_cash"), money(menu.cash()), 14, 88, TEXT);
-        labelValue(graphics, tr("label.savings"), money(menu.savings()), 14, 104, TEXT);
-        labelValue(graphics, tr("label.invested"), money(investedValue()), 14, 120, TEXT);
-        graphics.text(font,
-                tr("overview.contributed", money(menu.totalContributions())),
-                14,
-                136,
-                MUTED,
-                false);
+        labelValue(graphics, tr("label.net_worth"), panelMoney(menu.netWorth()), 14, 72, GOLD);
+        labelValue(graphics, tr("label.bank_cash"), panelMoney(menu.cash()), 14, 88, TEXT);
+        labelValue(graphics, tr("label.savings"), panelMoney(menu.savings()), 14, 104, TEXT);
+        labelValue(graphics, tr("label.invested"), panelMoney(investedValue()), 14, 120, TEXT);
+        drawTextWithin(graphics,
+                tr("overview.contributed_short", panelMoney(menu.totalContributions())),
+                14, 136, 93, MUTED, false);
         graphics.text(font,
                 tr("overview.performance", signedMoney(menu.unrealizedGain()),
                         signedMoney(menu.realizedGain())),
@@ -482,7 +630,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 menu.unrealizedGain() + menu.realizedGain() >= 0.0 ? POSITIVE : NEGATIVE,
                 false);
 
-        graphics.text(font, tr("overview.net_worth_history"), 118, 56, TEXT, false);
+        graphics.text(font, tr("overview.net_worth_history"), 118, 50, TEXT, false);
         graphics.text(font,
                 tr("overview.history_change", signed(historyChange(
                         menu.netWorthHistoryPointsCenti()))),
@@ -499,33 +647,41 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         graphics.text(font, selected.sector(), 14, 138, TEXT, false);
         graphics.text(font, riskLabel(selected), 14, 150, MUTED, false);
 
-        graphics.text(font, selected.name(), 118, 56, TEXT, false);
-        graphics.text(font,
-                money(menu.selectedAssetPrice()) + "  |  " + signed(menu.selectedChangePercent()),
+        drawTextWithin(graphics, Component.literal(selected.name()),
+                BankerScreenLayout.MARKET_TITLE_X,
+                BankerScreenLayout.MARKET_TITLE_Y,
+                BankerScreenLayout.MARKET_TITLE_WIDTH,
+                TEXT,
+                false);
+        drawTextWithin(graphics,
+                tr("market.price_change", money(menu.selectedAssetPrice()),
+                        signed(menu.selectedChangePercent())),
                 118,
-                147,
+                BankerScreenLayout.MARKET_PRICE_Y,
+                189,
                 menu.selectedChangePercent() >= 0.0 ? POSITIVE : NEGATIVE,
                 false);
-        graphics.text(font,
-                String.format(Locale.ROOT,
-                        "Holding %.4f shares (%s) | %.1f%%",
-                        menu.selectedShares(),
+        drawTextWithin(graphics,
+                tr("market.holding", compactShares(menu.selectedShares()),
                         money(menu.selectedHoldingValue()),
-                        menu.selectedAllocationPercent()),
+                        String.format(Locale.ROOT, "%.1f", menu.selectedAllocationPercent())),
                 118,
-                125,
+                BankerScreenLayout.MARKET_HOLDING_Y,
+                189,
                 MUTED,
                 false);
-        graphics.text(font,
+        drawTextWithin(graphics,
                 tr("market.average_price", money(menu.selectedAveragePrice())),
                 118,
-                136,
+                BankerScreenLayout.MARKET_AVERAGE_Y,
+                189,
                 MUTED,
                 false);
-        graphics.text(font,
+        drawTextWithin(graphics,
                 tr("market.total_basis", money(menu.totalCostBasis())),
                 118,
-                147,
+                BankerScreenLayout.MARKET_BASIS_Y,
+                189,
                 MUTED,
                 false);
     }
@@ -540,51 +696,26 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 MUTED,
                 false);
 
-        graphics.text(font, tr("banking.products"), 171, 59, GOLD, false);
+        drawTextWithin(graphics, tr("banking.products"), 171, 59, 131, GOLD, false);
         Component cd = menu.hasCd()
                 ? tr("banking.positions", menu.cdCount(),
                         com.chedidandrew.emeraldstandard.core.EconomyState.MAX_TERM_POSITIONS,
                         money(menu.cdValue()))
                 : tr("banking.no_cd");
-        graphics.text(font, cd, 171, 73, TEXT, false);
+        drawTextWithin(graphics, cd, 171, 73, 131, TEXT, false);
         Component lending = menu.hasLending()
                 ? tr("banking.lending_positions", menu.lendingCount(),
                         com.chedidandrew.emeraldstandard.core.EconomyState.MAX_TERM_POSITIONS,
                         money(menu.lendingValue()), menu.readyLendingCount())
                 : tr("banking.no_lending");
-        graphics.text(font, lending, 171, 85, TEXT, false);
+        drawTextWithin(graphics, lending, 171, 85, 131, TEXT, false);
 
-        graphics.text(font, tr("banking.cd_term"), 14, 148, MUTED, false);
-        graphics.text(font, tr("banking.lending_term"), 14, 171, MUTED, false);
-        if (menu.hasCd()) {
-            graphics.text(font,
-                    tr("banking.next_cd", menu.selectedCdPositionNumber(),
-                            menu.cdCount(),
-                            menu.selectedCdPositionId(),
-                            money(menu.selectedCdPositionValue()),
-                            menu.cdDaysRemaining(),
-                            String.format(Locale.ROOT, "%.2f", menu.cdRate())),
-                    14,
-                    116,
-                    MUTED,
-                    false);
-        }
-        if (menu.hasLending()) {
-            graphics.text(font,
-                    tr("banking.next_lending", menu.selectedLendingPositionNumber(),
-                            menu.lendingCount(),
-                            menu.selectedLendingPositionId(),
-                            money(menu.selectedLendingPositionValue()),
-                            menu.lendingDaysRemaining(),
-                            String.format(Locale.ROOT, "%.2f", menu.lendingRate())),
-                    14, 128, MUTED, false);
-        }
-        graphics.text(font,
-                tr("banking.no_debt"),
-                14,
-                140,
-                MUTED,
-                false);
+        drawTextWithin(graphics, tr("banking.no_debt_short"), 14,
+                BankerScreenLayout.BANKING_LENDING_ACTION_Y + 4, 145, MUTED, false);
+        graphics.text(font, tr("banking.cd_term"), 14,
+                BankerScreenLayout.BANKING_CD_CONTROL_Y + 5, MUTED, false);
+        graphics.text(font, tr("banking.loan_term"), 14,
+                BankerScreenLayout.BANKING_LENDING_CONTROL_Y + 5, MUTED, false);
     }
 
     private void drawExchangeLabels(GuiGraphicsExtractor graphics) {
@@ -748,13 +879,48 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 false);
     }
 
+    private void drawActivityLabels(GuiGraphicsExtractor graphics) {
+        graphics.text(font, tr("activity.title"), 16, 59, GOLD, false);
+        drawTextWithin(graphics,
+                tr("activity.cash_flow", money(menu.totalContributions()),
+                        money(menu.totalWithdrawals())),
+                16, 70, 286, MUTED, false);
+        if (menu.recentActivityCount() == 0) {
+            graphics.centeredText(font, tr("activity.empty"), 160, 108, MUTED);
+            graphics.centeredText(font, tr("activity.empty_hint"), 160, 124, MUTED);
+            return;
+        }
+        for (int index = 0; index < menu.recentActivityCount(); index++) {
+            Component kind = activityKindLabel(menu.recentActivityKind(index));
+            String ticker = menu.recentActivityAssetTicker(index);
+            Component subject = ticker.isEmpty()
+                    ? kind
+                    : kind.copy().append(Component.literal(" " + ticker));
+            drawTextWithin(graphics,
+                    tr("activity.entry", menu.recentActivityDay(index), subject,
+                            money(menu.recentActivityAmount(index))),
+                    16,
+                    BankerScreenLayout.ACTIVITY_FIRST_ROW_Y
+                            + index * BankerScreenLayout.ACTIVITY_ROW_STEP,
+                    286,
+                    index == 0 ? TEXT : MUTED,
+                    false);
+        }
+        graphics.text(font, tr("activity.newest_first"), 16, 162, MUTED, false);
+    }
+
     private void drawFundLabels(GuiGraphicsExtractor graphics) {
         if (!menu.hasVillage()) {
             graphics.centeredText(font, tr("village.none"), 160, 92, MUTED);
             graphics.centeredText(font, tr("village.find_bank"), 160, 110, MUTED);
             return;
         }
-        graphics.text(font, tr("fund.title"), 16, 59, GOLD, false);
+        drawTextWithin(graphics, tr("fund.title"),
+                BankerScreenLayout.FUND_TITLE_X,
+                BankerScreenLayout.FUND_DONOR_Y,
+                BankerScreenLayout.FUND_TITLE_WIDTH,
+                GOLD,
+                false);
         graphics.text(font, tr("fund.spendable", money(menu.fundSpendable())),
                 16, 73, TEXT, false);
         graphics.text(font, tr("fund.endowment", money(menu.fundEndowment())),
@@ -763,10 +929,23 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 16, 85, MUTED, false);
         graphics.text(font, tr("fund.received", money(menu.fundLifetimeReceived())),
                 168, 85, MUTED, false);
-        graphics.text(font,
+        drawTextWithin(graphics,
                 tr("fund.your_support", money(menu.donorLifetimeContribution()),
                         donorTitleLabel()),
-                16, 93, MUTED, false);
+                BankerScreenLayout.FUND_DONOR_X,
+                BankerScreenLayout.FUND_DONOR_Y,
+                BankerScreenLayout.FUND_DONOR_WIDTH,
+                MUTED,
+                false);
+        if (!menu.fundAvailable()) {
+            drawTextWithin(graphics,
+                    tr(menu.fundEnabled()
+                            ? "fund.unavailable_simulation" : "fund.unavailable_disabled"),
+                    16, 126, 286, NEGATIVE, false);
+            drawTextWithin(graphics, tr("fund.unavailable_hint"),
+                    16, 141, 286, MUTED, false);
+            return;
+        }
         Component explanation = switch (menu.fundTypeIndex()) {
             case 1 -> tr("fund.explain.endowment");
             case 2 -> tr("fund.explain.sponsorship");
@@ -777,9 +956,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     tr("fund.project_target", projectLabel(menu.fundableProjectTypeOrdinal())),
                     16, 121, MUTED, false);
         }
-        graphics.text(font, explanation, 16, 132, TEXT, false);
-        graphics.text(font, tr("fund.irreversible"), 16, 144, MUTED, false);
-        graphics.text(font, tr("fund.no_debt"), 16, 156, MUTED, false);
+        drawTextWithin(graphics, explanation, 16, 132, 286, TEXT, false);
+        drawTextWithin(graphics, tr("fund.irreversible"), 16, 144, 286, MUTED, false);
+        drawTextWithin(graphics, tr("fund.no_debt"), 16, 156, 286, MUTED, false);
     }
 
     private Component fundTypeLabel() {
@@ -791,6 +970,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private Component fundPurposeLabel() {
+        if (isRestorationGrant()) {
+            return tr("fund.purpose.restoration");
+        }
         if (menu.fundTypeIndex() == 2) {
             return switch (projectPurpose(menu.fundableProjectTypeOrdinal())) {
                 case HOUSING -> tr("fund.purpose.housing");
@@ -809,6 +991,12 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case 6 -> tr("fund.purpose.restoration");
             default -> tr("fund.purpose.general");
         };
+    }
+
+    private boolean isRestorationGrant() {
+        return menu.fundTypeIndex() == EconomyState.ProsperityFundType.DIRECT_GRANT.ordinal()
+                && (menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.ABANDONED
+                        || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT);
     }
 
     private static com.chedidandrew.emeraldstandard.core.EconomyState.DonationPurpose
@@ -967,7 +1155,38 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             int y,
             int valueColor) {
         graphics.text(font, label, x, y, MUTED, false);
-        graphics.text(font, value, x + 63, y, valueColor, false);
+        drawTextWithin(
+                graphics,
+                Component.literal(value),
+                BankerScreenLayout.OVERVIEW_VALUE_X,
+                y,
+                BankerScreenLayout.OVERVIEW_VALUE_WIDTH,
+                valueColor,
+                false);
+    }
+
+    private void drawTextWithin(
+            GuiGraphicsExtractor graphics,
+            Component text,
+            int x,
+            int y,
+            int maximumWidth,
+            int color,
+            boolean shadow) {
+        graphics.text(font, fit(text, maximumWidth), x, y, color, shadow);
+    }
+
+    private Component fit(Component text, int maximumWidth) {
+        if (maximumWidth <= 0 || font.width(text) <= maximumWidth) {
+            return maximumWidth <= 0 ? Component.empty() : text;
+        }
+        String value = text.getString();
+        String suffix = "...";
+        int end = value.length();
+        while (end > 0 && font.width(value.substring(0, end) + suffix) > maximumWidth) {
+            end--;
+        }
+        return Component.literal(end == 0 ? suffix : value.substring(0, end).stripTrailing() + suffix);
     }
 
     private double investedValue() {
@@ -979,7 +1198,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private static String money(double value) {
-        return String.format(Locale.ROOT, "%.2f E", value);
+        return compactNumber(value, false, 1_000.0) + " E";
     }
 
     private static String signed(double value) {
@@ -987,7 +1206,74 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private static String signedMoney(double value) {
-        return String.format(Locale.ROOT, "%+.2f E", value);
+        return compactNumber(value, true, 1_000.0) + " E";
+    }
+
+    private static String panelMoney(double value) {
+        if (!Double.isFinite(value)) {
+            return "0.0 E";
+        }
+        double absolute = Math.abs(value);
+        if (absolute < 100.0) {
+            return String.format(Locale.ROOT, "%.1f E", value);
+        }
+        if (absolute < 1_000.0) {
+            return String.format(Locale.ROOT, "%.0f E", value);
+        }
+        return compactNumber(value, false, 1_000.0) + " E";
+    }
+
+    private static String compactShares(double value) {
+        if (Double.isFinite(value) && Math.abs(value) < 1_000.0) {
+            return String.format(Locale.ROOT, "%.4f", Math.abs(value) < 0.00005 ? 0.0 : value);
+        }
+        return compactNumber(value, false, 1_000.0);
+    }
+
+    private static String compactWhole(long value) {
+        long safe = Math.max(0L, value);
+        if (safe < 1_000L) {
+            return Long.toString(safe);
+        }
+        String[] suffixes = {"K", "M", "B", "T"};
+        double scaled = safe;
+        int suffix = -1;
+        while (scaled >= 1_000.0 && suffix + 1 < suffixes.length) {
+            scaled /= 1_000.0;
+            suffix++;
+        }
+        return String.format(Locale.ROOT, "%.1f%s", scaled, suffixes[Math.max(0, suffix)]);
+    }
+
+    private static String compactNumber(double value, boolean alwaysSign) {
+        return compactNumber(value, alwaysSign, 1_000_000.0);
+    }
+
+    private static String compactNumber(double value, boolean alwaysSign, double compactAt) {
+        if (!Double.isFinite(value)) {
+            return alwaysSign ? "+0.00" : "0.00";
+        }
+        double normalized = Math.abs(value) < 0.0005 ? 0.0 : value;
+        double absolute = Math.abs(normalized);
+        String format = alwaysSign ? "%+.2f" : "%.2f";
+        if (absolute < compactAt) {
+            return String.format(Locale.ROOT, format, normalized);
+        }
+        String[] suffixes = {"K", "M", "B", "T", "Q"};
+        double scaled = normalized;
+        int suffix = -1;
+        while (Math.abs(scaled) >= 1_000.0 && suffix + 1 < suffixes.length) {
+            scaled /= 1_000.0;
+            suffix++;
+        }
+        if (Math.abs(scaled) >= 1_000.0) {
+            return String.format(Locale.ROOT, alwaysSign ? "%+.2e" : "%.2e", normalized);
+        }
+        return String.format(
+                Locale.ROOT,
+                alwaysSign ? "%+.1f%s" : "%.1f%s",
+                scaled,
+                suffixes[Math.max(0, suffix)]);
     }
 
     private static double historyChange(int[] points) {
@@ -1026,6 +1312,25 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         if (risk < 1.45) return tr("risk.moderate");
         if (risk < 1.75) return tr("risk.high");
         return tr("risk.very_high");
+    }
+
+    private static int termIndex(int term) {
+        for (int index = 0; index < BankerMenu.TERMS.length; index++) {
+            if (BankerMenu.TERMS[index] == term) {
+                return index;
+            }
+        }
+        return 0;
+    }
+
+    private static Component lendingOutcomeLabel(EconomyEngine.LoanOutcome outcome) {
+        return tr("banking.outcome."
+                + outcome.name().toLowerCase(Locale.ROOT));
+    }
+
+    private static Component activityKindLabel(
+            com.chedidandrew.emeraldstandard.core.EconomyState.PortfolioTransactionKind kind) {
+        return tr("activity.kind." + kind.name().toLowerCase(Locale.ROOT));
     }
 
     private static Component regimeBulletin(EconomyEngine.Regime regime) {

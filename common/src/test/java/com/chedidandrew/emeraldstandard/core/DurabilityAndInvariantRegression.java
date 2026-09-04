@@ -4,6 +4,7 @@ import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.PLAYER
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.deleteTree;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.readProperties;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.require;
+import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.requireValidationFailure;
 import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.writeProperties;
 
 import java.nio.file.Files;
@@ -22,6 +23,8 @@ final class DurabilityAndInvariantRegression {
         testMutationRollback(root.resolve("rollback"));
         testAutomaticSaveBackoff(root.resolve("backoff"));
         testNoDebtAndCaps(root.resolve("no-debt"));
+        testSaturatedVillageCounters(root.resolve("village-counters"));
+        testStructuralInvariantValidation();
     }
 
     private static void testTradingSpread(Path directory) throws Exception {
@@ -139,5 +142,111 @@ final class DurabilityAndInvariantRegression {
                         && account.cdValueMicro >= 0L
                         && account.loanValueMicro >= 0L,
                 "Account entered debt");
+    }
+
+    private static void testStructuralInvariantValidation() throws Exception {
+        EconomyState futureHistory = EconomyState.fresh(790L, 0L, 0L);
+        futureHistory.economicDay = 5L;
+        EconomyState.PortfolioValuePoint point = new EconomyState.PortfolioValuePoint();
+        point.day = 6L;
+        point.valueMicro = EconomyState.MICRO;
+        futureHistory.account(PLAYER).netWorthHistory.add(point);
+        requireValidationFailure(futureHistory,
+                "Future-dated net-worth history passed validation");
+
+        EconomyState nullHolding = EconomyState.fresh(791L, 0L, 0L);
+        nullHolding.account(PLAYER).shares.put("VILX", null);
+        requireValidationFailure(nullHolding,
+                "Null share holding did not fail validation cleanly");
+
+        EconomyState overcommittedVillage = EconomyState.fresh(792L, 0L, 0L);
+        EconomyState.VillageRecord village = overcommittedVillage.village(
+                java.util.UUID.fromString("00000000-0000-0000-0000-000000000792"));
+        village.population = VillageProsperityEngine.MAX_ABSTRACT_POPULATION;
+        village.pendingSettlers = 1;
+        requireValidationFailure(overcommittedVillage,
+                "Village population plus pending settlers exceeded the simulation cap");
+
+        EconomyState staleProjectSerial = EconomyState.fresh(793L, 0L, 0L);
+        EconomyState.VillageRecord projectVillage = staleProjectSerial.village(
+                java.util.UUID.fromString("00000000-0000-0000-0000-000000000793"));
+        EconomyState.VillageProject project = new EconomyState.VillageProject();
+        project.projectId = 1L;
+        project.totalBlocks = project.type.nominalBlocks();
+        projectVillage.projects.add(project);
+        requireValidationFailure(staleProjectSerial,
+                "Village project serial was allowed to trail persisted project ids");
+
+        EconomyState duplicateTermId = EconomyState.fresh(794L, 0L, 0L);
+        duplicateTermId.economicDay = 5L;
+        EconomyState.Account account = duplicateTermId.account(PLAYER);
+        EconomyState.CdPosition cd = new EconomyState.CdPosition();
+        cd.positionId = 1L;
+        cd.principalMicro = EconomyState.MICRO;
+        cd.valueMicro = EconomyState.MICRO;
+        cd.maturityDay = 30L;
+        cd.annualRate = 0.04;
+        account.cdPositions.put(cd.positionId, cd);
+        EconomyState.LoanPosition loan = new EconomyState.LoanPosition();
+        loan.positionId = 1L;
+        loan.principalMicro = EconomyState.MICRO;
+        loan.valueMicro = EconomyState.MICRO;
+        loan.maturityDay = 30L;
+        loan.serial = 1L;
+        loan.annualRate = 0.05;
+        account.loanPositions.put(loan.positionId, loan);
+        requireValidationFailure(duplicateTermId,
+                "CD and lending positions shared a supposedly stable identifier");
+
+        EconomyState nullBankRegion = EconomyState.fresh(795L, 0L, 0L);
+        nullBankRegion.generatedBankRegions.add(null);
+        requireValidationFailure(nullBankRegion,
+                "Null generated-bank region passed validation");
+
+        EconomyState nullBankAnchor = EconomyState.fresh(798L, 0L, 0L);
+        nullBankAnchor.generatedBankRegions.add(1L);
+        nullBankAnchor.generatedBankAnchors.put(1L, null);
+        requireValidationFailure(nullBankAnchor,
+                "Null generated-bank anchor passed validation");
+
+        EconomyState exhaustedClock = EconomyState.fresh(796L, 0L, 0L);
+        exhaustedClock.economicDay = Long.MAX_VALUE;
+        boolean refusedAdvance = false;
+        try {
+            exhaustedClock.advanceOneDay();
+        } catch (IllegalStateException expected) {
+            refusedAdvance = true;
+        }
+        require(refusedAdvance && exhaustedClock.economicDay == Long.MAX_VALUE,
+                "Economic-day overflow wrapped or partially advanced state");
+    }
+
+    private static void testSaturatedVillageCounters(Path directory) throws Exception {
+        java.util.UUID villageId = java.util.UUID.fromString(
+                "00000000-0000-0000-0000-000000000797");
+        EconomyState state = EconomyState.fresh(797L, 0L, 0L);
+        EconomyState.VillageRecord village = state.village(villageId);
+        village.population = 1;
+        village.observedPopulation = 1;
+        village.housingCapacity = 4;
+        village.hostileCasualties = Integer.MAX_VALUE;
+        village.collapseCount = Integer.MAX_VALUE;
+        state.save(directory.resolve("the_emerald_standard.properties"));
+
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 999L, 0L, 0L);
+        require(service.recordVillagerDeath(
+                        villageId,
+                        null,
+                        "minecraft:farmer",
+                        1L,
+                        VillageProsperityEngine.IncidentCause.HOSTILE,
+                        null),
+                "A saturated diagnostic counter blocked a real village casualty");
+        EconomyState.VillageRecord recorded = service.villageSnapshot(villageId).village();
+        require(recorded.population == 0
+                        && recorded.hostileCasualties == Integer.MAX_VALUE
+                        && recorded.collapseCount == Integer.MAX_VALUE,
+                "Saturated village counters wrapped while recording a casualty");
     }
 }

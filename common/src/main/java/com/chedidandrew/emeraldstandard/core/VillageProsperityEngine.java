@@ -494,7 +494,8 @@ public final class VillageProsperityEngine {
         if (desired == null
                 || village.materialSupply < desired.materialCost()
                 || village.treasury < desired.treasuryCost()
-                || village.developmentPoints < requiredDevelopment) {
+                || village.developmentPoints < requiredDevelopment
+                || village.projectSerial == Long.MAX_VALUE) {
             return;
         }
         village.materialSupply -= desired.materialCost();

@@ -14,10 +14,12 @@ All notable changes to The Emerald Standard are documented here.
 - Added low-frequency authored-project integrity reconciliation and guarded repair.
 - Added a rebuildable per-dimension village spatial index and measured query/save/load regression coverage at 100, 500, and 1,000 villages and accounts.
 - Added focused debug ownership, watched-village filtering, privacy, report-limit, and timing-boundary regression coverage.
+- Added a one-time, configurable first-join discovery hint and a clearer first-Banker deposit and risk explanation.
+- Added a complete world-configuration reference and an exact-commit release staging procedure.
 
 ### Changed
 
-- Expanded the dashboard from five pages to six with a dedicated Fund page, commodity and personal charts, richer portfolio fields, and position selectors.
+- Expanded the dashboard from five pages to seven with dedicated Fund and compact Activity Log pages, commodity and personal charts, richer portfolio fields, and collision-safe term and position selectors.
 - Fund amounts now use an additive server-owned `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear` draft.
 - Project Sponsorship now binds to the displayed active economically unfinished project, derives its purpose from the project type, preserves unused value at saturated inputs, and rolls any post-completion remainder into that purpose.
 - Passive savings-interest ledger events now coalesce so routine accrual cannot evict active transactions from the bounded history.
@@ -26,10 +28,24 @@ All notable changes to The Emerald Standard are documented here.
 - Visual-mode housing and production benefits now wait for verified physical materialization. If an authored block later disappears, the project loses those benefits until safe repair completes.
 - Construction theatre may issue an occasional one-shot, low-speed navigation request to at most two suitable residents without installing persistent AI or influencing economic progress.
 - Fabric and NeoForge candidate versions advance together to `0.4.0-beta.2`.
+- Configuration reload now rejects unknown keys as well as malformed or out-of-range values, reports the exact file, and confirms that the previous settings remain active after a failure.
+- Packaged-JAR verification now checks exact binary and sources filenames, embedded loader identity and version, manifest version, required sources, and emits SHA-256 checksums for both files.
+- Removed project-owned Gradle 10 deprecations from both loader builds while preserving the existing artifact names and metadata.
+
+### Fixed
+
+- Removed deterministic Market, Banking, Overview, and Fund layout collisions; long and extreme values now stay inside their assigned dashboard regions.
+- Fund confirmations now bind the exact draft, type, effective purpose, village lifecycle, village identity, and sponsored project, so changed or stale terms require a fresh confirmation.
+- Fund contributions can no longer bypass offline catch-up or an unresolved inventory journal, and exhausted accounting counters reject the contribution before debiting the donor.
+- Rejected zero-proceeds stock dust sales without mutating holdings, basis, cash, or activity history.
+- Hardened malformed quote handling, persisted chronology and identifier validation, and economic-day, project-ID, casualty, and collapse counter exhaustion.
+- Invalid release artifact sets now fail before creating an output directory or copying any release files.
 
 ### Configuration and compatibility
 
 - Added independent Prosperity Fund toggles plus configurable endowment payout, emergency-reserve share, and monthly spending cap. Defaults preserve endowment principal and release 4 percent annually.
+- Added `onboarding.join_hint_enabled`; existing config files safely receive its default without being rewritten.
+- Pinned both Gradle 9.5.1 distribution downloads to the official SHA-256 digest and verify both wrapper JARs against Gradle's published checksum in the common gate.
 - Advanced persistence to format 9. Format-8 and earlier holdings without execution history receive an explicitly inferred migration-day basis, and legacy scalar CD and lending products are promoted to identified positions.
 - Format-9 saves preserve five-year asset, commodity, and personal history, portfolio analytics, multiple term positions, village Fund balances, and donor records. Older builds reject the future format instead of silently stripping it.
 - Player borrowing, negative balances, and debt remain impossible. Fund contributions are voluntary, irreversible gifts and never become player assets or claims.

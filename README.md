@@ -10,6 +10,15 @@ A lightweight villager banking, investing, commodity-exchange, and settlement-ec
 
 Players provide emerald capital to the villager economy. **Players can never borrow emeralds, hold a negative balance, or enter debt.** Villager business lending can lose some or all of the amount voluntarily invested, but it can never create an additional obligation.
 
+## Quick start
+
+1. Install the matching Fabric or NeoForge JAR on the server and every connecting client.
+2. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
+3. Right-click the Banker or an Exchange Desk to open the seven-page dashboard.
+4. On **Overview**, choose an amount and deposit physical emeralds into bank cash. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk.
+
+Each player receives a one-time discovery hint on first join and a short risk explanation on their first successful Banker visit. Both normal play and discovery are command-free.
+
 ## Banking and investing
 
 When a player discovers a loaded Overworld village, The Emerald Standard can establish a compact **Village Bank and Exchange** nearby. The bank uses a biome-aware palette, includes a dedicated Exchange Desk workstation, and contains a persistent villager with the registered Banker profession. New banks require flat natural ground and completely empty loaded space, place their floor above the existing surface, preflight every block through the cooperative protection API, and verify every resulting block state before recording generation. If no site is safe, the mod uses an untouched unemployed adult villager or spawns a new Banker. Established villagers with professions, XP, trades, custom names, or other player investment are never repurposed.
@@ -18,7 +27,7 @@ New settlements receive stable per-village bank identities even when two village
 
 Right-click a Banker or any Exchange Desk to open the dashboard. Exchange Desks are craftable and placeable; an unscoped desk or naturally employed Banker uses the nearest managed settlement in the same dimension within 160 blocks for its Village and Fund pages, while the player's financial account remains globally available. Lectern counters from older worlds remain valid only at their persisted Overworld bank locations.
 
-The dashboard has six pages:
+The dashboard has seven pages:
 
 - **Overview:** net worth, cash, savings, total contributions, realized and unrealized performance, current market regime, news, and personal net-worth history.
 - **Market:** VILX plus eight Minecraft-themed businesses, holdings, allocation, average purchase price, cost basis, charts, buy, and sell actions.
@@ -26,6 +35,7 @@ The dashboard has six pages:
 - **Exchange:** diamonds, gold, netherite materials, valuable ores, and blocks converted into bank cash at dynamic commodity prices, with commodity history.
 - **Village:** local population, housing, prosperity, safety, supplies, production, development tier, current project, backlog, lifecycle, incidents, and restoration status.
 - **Fund:** voluntary Direct Grants, protected-principal Endowments, and Project Sponsorships for the associated settlement.
+- **Log:** lifetime deposits and withdrawals plus the five newest entries from the persistent transaction ledger.
 
 Common transaction amounts are one click away: `1`, `5`, `10`, `32`, `64`, or `All`. The Fund keeps a server-owned additive draft with `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear`. Risky, destructive, and irreversible actions use a time-limited two-step confirmation owned by the server rather than trusted client state.
 
@@ -91,6 +101,8 @@ The beta hardening rules include:
 ## World configuration
 
 The first server start creates `the_emerald_standard-config.properties` in the world's `data` directory.
+
+The full [configuration reference](docs/CONFIGURATION.md) lists every setting, default, accepted range, interaction, and safe reload behavior. Unknown keys and invalid values are rejected as a whole, so a failed `/emerald config reload` leaves the previous configuration active. The optional one-time discovery message is controlled by `onboarding.join_hint_enabled`.
 
 Village Prosperity can be configured independently:
 
@@ -214,13 +226,14 @@ Hands-on visual, transaction, terrain, raid, recovery, and multiplayer checks re
 ## Documentation
 
 - [Debug flight recorder](docs/DEBUGGING.md)
-
+- [World configuration](docs/CONFIGURATION.md)
 - [Village Prosperity System](docs/VILLAGE_PROSPERITY.md)
 - [Banker GUI and village banks](docs/GUI_AND_VILLAGE_BANKS.md)
 - [Economy model](docs/ECONOMY.md)
 - [Architecture and persistence](docs/ARCHITECTURE.md)
 - [Inventory transaction recovery](docs/TRANSACTION_RECOVERY.md)
 - [Testing and publication gate](docs/TESTING.md)
+- [Release procedure and checksum gate](docs/RELEASING.md)
 - [Build status](release/BUILD_STATUS.md)
 - [Change history](CHANGELOG.md)
 

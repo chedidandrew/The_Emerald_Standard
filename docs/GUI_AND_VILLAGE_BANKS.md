@@ -4,10 +4,11 @@
 
 The Emerald Standard is designed as a natural village service rather than a command console.
 
-1. Discover or visit a village.
+1. Follow the one-time first-join hint and discover or visit an Overworld village.
 2. Locate the Village Bank and Exchange or a villager named Banker.
 3. Right-click a Banker or any Exchange Desk. A lectern in an upgraded legacy bank remains a valid access point only at its persisted bank location.
-4. Use the six-page graphical dashboard.
+4. On Overview, choose an amount and deposit physical emeralds into bank cash.
+5. Use the seven-page graphical dashboard. The first successful Banker visit explains the distinction between safe deposits, locked CDs, and investments that can lose value.
 
 No command is required for ordinary banking, investing, lending, exchange, or Prosperity Fund gameplay.
 
@@ -48,6 +49,10 @@ Shows the associated settlement's spendable balance, protected endowment princip
 
 The contribution amount is assembled in a server-owned draft with `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear`. The contribution button requires a second matching click within the server confirmation window. Contributions are irreversible gifts to the settlement; they are not player loans or investments and never create debt.
 
+### Log
+
+Shows lifetime deposits and withdrawals plus the five newest entries from the player's persistent transaction ledger, newest first. Buy and sell entries include their asset ticker. The complete bounded ledger remains persisted even though the compact dashboard intentionally shows only the most recent entries.
+
 ## Amount presets
 
 Ordinary banking, investing, and exchange actions use `1`, `5`, `10`, `32`, `64`, and `All`. Fund contributions use the additive server draft described above. Overview, Market, and Exchange charts cycle through 30-day, 90-day, one-year, and all-history ranges; retained market, commodity, and personal histories are bounded at five economic years.
@@ -86,7 +91,7 @@ The server remains authoritative for all actions. Sell-all, CD closure, lending 
 
 ## Configuration
 
-The world `data/the_emerald_standard-config.properties` file controls bank generation and Village Prosperity. The four key prosperity switches are:
+The world `data/the_emerald_standard-config.properties` file controls onboarding, bank generation, transaction throttling, and Village Prosperity. See the [complete configuration reference](CONFIGURATION.md) for every setting, bound, and dependency. The four key prosperity switches are:
 
 ```properties
 village_prosperity.simulation_enabled=true

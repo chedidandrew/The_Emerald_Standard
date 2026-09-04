@@ -10,10 +10,36 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeSet;
 
 /** Small world-local configuration with conservative bounds and atomic replacement. */
 public final class EmeraldConfig {
     private static final String FILE_NAME = "the_emerald_standard-config.properties";
+    private static final Set<String> KNOWN_KEYS = Set.of(
+            "village_banks.enabled",
+            "village_banks.scan_interval_ticks",
+            "village_banks.region_size",
+            "banker.restriction_radius",
+            "transactions.cooldown_ticks",
+            "onboarding.join_hint_enabled",
+            "village_prosperity.simulation_enabled",
+            "village_prosperity.visual_progression_enabled",
+            "village_prosperity.market_integration_enabled",
+            "village_prosperity.automatic_recovery_enabled",
+            "village_prosperity.scan_interval_ticks",
+            "village_prosperity.development_radius",
+            "village_prosperity.construction_interval_ticks",
+            "village_prosperity.construction_blocks_per_tick",
+            "village_prosperity.settler_spawn_interval_ticks",
+            "village_prosperity.donations_enabled",
+            "village_prosperity.endowments_enabled",
+            "village_prosperity.project_sponsorship_enabled",
+            "village_prosperity.targeted_donations_enabled",
+            "village_prosperity.donor_recognition_enabled",
+            "village_prosperity.endowment_annual_payout_bps",
+            "village_prosperity.minimum_emergency_reserve_percent",
+            "village_prosperity.max_monthly_treasury_spending");
     private static volatile EmeraldConfig current = defaults();
     private static volatile Path currentPath;
 
@@ -22,6 +48,7 @@ public final class EmeraldConfig {
     private final int villageRegionSize;
     private final int bankerRestrictionRadius;
     private final int transactionCooldownTicks;
+    private final boolean onboardingJoinHintEnabled;
 
     private final boolean villageProsperitySimulationEnabled;
     private final boolean villageVisualProgressionEnabled;
@@ -48,6 +75,7 @@ public final class EmeraldConfig {
             int villageRegionSize,
             int bankerRestrictionRadius,
             int transactionCooldownTicks,
+            boolean onboardingJoinHintEnabled,
             boolean villageProsperitySimulationEnabled,
             boolean villageVisualProgressionEnabled,
             boolean villageMarketIntegrationEnabled,
@@ -70,6 +98,7 @@ public final class EmeraldConfig {
         this.villageRegionSize = villageRegionSize;
         this.bankerRestrictionRadius = bankerRestrictionRadius;
         this.transactionCooldownTicks = transactionCooldownTicks;
+        this.onboardingJoinHintEnabled = onboardingJoinHintEnabled;
         this.villageProsperitySimulationEnabled = villageProsperitySimulationEnabled;
         this.villageVisualProgressionEnabled = villageVisualProgressionEnabled;
         this.villageMarketIntegrationEnabled = villageMarketIntegrationEnabled;
@@ -91,20 +120,27 @@ public final class EmeraldConfig {
     }
 
     public static synchronized EmeraldConfig load(Path worldDataDirectory) throws IOException {
-        currentPath = worldDataDirectory.resolve(FILE_NAME);
-        if (!Files.exists(currentPath)) {
-            writeDefaults(currentPath);
+        Path candidatePath = worldDataDirectory.resolve(FILE_NAME);
+        if (!Files.exists(candidatePath)) {
+            writeDefaults(candidatePath);
         }
         Properties properties = new Properties();
-        try (InputStream input = Files.newInputStream(currentPath)) {
+        try (InputStream input = Files.newInputStream(candidatePath)) {
             properties.load(input);
         }
-        current = new EmeraldConfig(
+        Set<String> unknownKeys = new TreeSet<>(properties.stringPropertyNames());
+        unknownKeys.removeAll(KNOWN_KEYS);
+        if (!unknownKeys.isEmpty()) {
+            throw new IOException("Unknown configuration key(s): "
+                    + String.join(", ", unknownKeys));
+        }
+        EmeraldConfig candidate = new EmeraldConfig(
                 bool(properties, "village_banks.enabled", true),
                 bounded(properties, "village_banks.scan_interval_ticks", 200, 20, 12_000),
                 bounded(properties, "village_banks.region_size", 256, 128, 2_048),
                 bounded(properties, "banker.restriction_radius", 5, 2, 32),
                 bounded(properties, "transactions.cooldown_ticks", 5, 0, 200),
+                bool(properties, "onboarding.join_hint_enabled", true),
                 bool(properties, "village_prosperity.simulation_enabled", true),
                 bool(properties, "village_prosperity.visual_progression_enabled", true),
                 bool(properties, "village_prosperity.market_integration_enabled", true),
@@ -122,7 +158,9 @@ public final class EmeraldConfig {
                 bounded(properties, "village_prosperity.endowment_annual_payout_bps", 400, 0, 10_000),
                 bounded(properties, "village_prosperity.minimum_emergency_reserve_percent", 20, 0, 90),
                 bounded(properties, "village_prosperity.max_monthly_treasury_spending", 24, 1, 1_000_000));
-        return current;
+        currentPath = candidatePath;
+        current = candidate;
+        return candidate;
     }
 
     public static synchronized EmeraldConfig reload() throws IOException {
@@ -134,6 +172,11 @@ public final class EmeraldConfig {
 
     public static EmeraldConfig current() {
         return current;
+    }
+
+    public static String location() {
+        Path path = currentPath;
+        return path == null ? "not initialized" : path.toAbsolutePath().normalize().toString();
     }
 
     public boolean villageBanksEnabled() {
@@ -154,6 +197,10 @@ public final class EmeraldConfig {
 
     public int transactionCooldownTicks() {
         return transactionCooldownTicks;
+    }
+
+    public boolean onboardingJoinHintEnabled() {
+        return onboardingJoinHintEnabled;
     }
 
     public boolean villageProsperitySimulationEnabled() {
@@ -246,7 +293,7 @@ public final class EmeraldConfig {
         return String.format(
                 Locale.ROOT,
                 "village banks=%s, bank scan=%d ticks, bank region=%d blocks, banker radius=%d, "
-                        + "transaction cooldown=%d ticks, prosperity simulation=%s, visual progression=%s, "
+                        + "transaction cooldown=%d ticks, first-join hint=%s, prosperity simulation=%s, visual progression=%s, "
                         + "market integration=%s, automatic recovery=%s, prosperity scan=%d ticks, "
                         + "development radius=%d, construction=%d block(s)/%d tick(s), "
                         + "settler interval=%d ticks, prosperity fund=%s, endowments=%s, "
@@ -257,6 +304,7 @@ public final class EmeraldConfig {
                 villageRegionSize,
                 bankerRestrictionRadius,
                 transactionCooldownTicks,
+                onboardingJoinHintEnabled,
                 villageProsperitySimulationEnabled,
                 villageVisualProgressionEnabled,
                 villageMarketIntegrationEnabled,
@@ -287,6 +335,7 @@ public final class EmeraldConfig {
                 true,
                 true,
                 true,
+                true,
                 400,
                 96,
                 10,
@@ -310,6 +359,7 @@ public final class EmeraldConfig {
         properties.setProperty("village_banks.region_size", "256");
         properties.setProperty("banker.restriction_radius", "5");
         properties.setProperty("transactions.cooldown_ticks", "5");
+        properties.setProperty("onboarding.join_hint_enabled", "true");
         properties.setProperty("village_prosperity.simulation_enabled", "true");
         properties.setProperty("village_prosperity.visual_progression_enabled", "true");
         properties.setProperty("village_prosperity.market_integration_enabled", "true");
@@ -329,7 +379,9 @@ public final class EmeraldConfig {
         properties.setProperty("village_prosperity.max_monthly_treasury_spending", "24");
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try (OutputStream output = Files.newOutputStream(temporary)) {
-            properties.store(output, "The Emerald Standard world configuration");
+            properties.store(
+                    output,
+                    "The Emerald Standard world configuration. See docs/CONFIGURATION.md for bounds.");
         }
         try {
             Files.move(

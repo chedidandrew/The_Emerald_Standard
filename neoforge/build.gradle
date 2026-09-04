@@ -5,7 +5,10 @@ plugins {
     id 'idea'
 }
 
-version = mod_version
+def artifactVersion = mod_version.toString()
+def configuredModId = mod_id.toString()
+
+version = artifactVersion
 group = mod_group_id
 
 base {
@@ -24,7 +27,7 @@ sourceSets.main.resources.srcDir('../common/src/main/resources')
 sourceSets.main.resources.srcDir('src/generated/resources')
 
 neoForge {
-    version = project.neo_version
+    version = neo_version
 
     runs {
         client {
@@ -37,7 +40,7 @@ neoForge {
     }
 
     mods {
-        "${mod_id}" {
+        "${configuredModId}" {
             sourceSet(sourceSets.main)
         }
     }
@@ -72,10 +75,10 @@ jar {
     manifest {
         attributes(
                 'Implementation-Title': 'The Emerald Standard',
-                'Implementation-Version': project.version)
+                'Implementation-Version': artifactVersion)
     }
     from('../LICENSE') {
-        rename { "${it}_${project.mod_id}" }
+        rename { "${it}_${configuredModId}" }
     }
 }
 

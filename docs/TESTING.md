@@ -69,7 +69,8 @@ On both Fabric and NeoForge:
 - Open a new world and an upgraded existing world.
 - Open the dashboard through a Banker, a new Exchange Desk, and an upgraded legacy bank lectern.
 - Confirm the Village page shows the latest local incident cause and age.
-- Verify all six pages and all GUI scales.
+- Verify all seven pages and all GUI scales, including an empty and populated Log.
+- Confirm the first-join discovery hint appears once, does not repeat after reconnecting, and is suppressed when `onboarding.join_hint_enabled=false` before that player's first join.
 - Exercise deposit, withdrawal, savings, buy/sell, eight simultaneous CDs, eight simultaneous lending positions, exchange, all Prosperity Fund types and purposes, and recovery.
 - Verify a specific CD and lending position can be selected, closed, or collected without changing another position.
 - Compare basis, average purchase price, realized/unrealized gain, allocation, contributions, ledger entries, and personal net worth against a hand-calculated transaction sequence.
@@ -77,6 +78,13 @@ On both Fabric and NeoForge:
 - Verify risky and irreversible actions require two matching packets inside the server-owned confirmation window; changing selection or waiting for expiry must cancel confirmation.
 - Verify `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear` mutate only the server-owned Fund draft and never overdraw bank cash.
 - Test full-inventory and interrupted transaction recovery.
+
+### Configuration
+
+- Confirm `/emerald config show` reports the normalized world-local configuration path and every active setting.
+- Reload valid settings and confirm they apply together without restarting.
+- In separate attempts, use an invalid boolean, a non-integer, an out-of-range value, and a misspelled key. Each reload must identify the problem and leave the complete prior configuration active.
+- Disable each Prosperity Fund subtype after recording existing balances and history. Confirm new contributions of that type are blocked without deleting prior village-owned state.
 
 ### Village identity and lifecycle
 
@@ -134,6 +142,8 @@ Inspect Village Banks and all ten prosperity project types in all vanilla villag
 ## Publication gate
 
 Any 0.4 beta prerelease publisher must require a successful `main`-push `build.yml` run for the exact source commit, download rather than rebuild that run's exact Fabric and NeoForge binary/source artifacts, verify the complete public filename set and bytes, and record artifact IDs, workflow digests, and release-asset SHA-256 checksums.
+
+Each loader artifact now includes a CI-generated `SHA256SUMS`. Use `scripts/prepare-release-assets.sh` from the exact clean source commit to verify both downloaded artifacts and produce one combined checksum file and release manifest. The complete step-by-step gate is in [RELEASING.md](RELEASING.md).
 
 The manual checklist above remains required evidence before promoting the mod to a stable release. Automated startup cannot certify subjective structure appearance, third-party claim integrations, every GUI scale, long multiplayer behavior, project-block reconciliation after chunk rollback, or cross-file bank-marker/chunk atomicity; the 0.4 line remains a beta while that wider validation continues.
 
