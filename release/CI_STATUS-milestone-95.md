@@ -1,8 +1,8 @@
 # Milestone 0.4 CI Status
 
-- Tested commit: `2c35cacb561a3108d4209161231a37a970adb571`
-- Workflow run: `33822791213`
-- Generated: `2026-09-04T00:44:05Z`
+- Tested commit: `015a134c271fc5bf532394ea4331594adac4ae61`
+- Workflow run: `33823299446`
+- Generated: `2026-09-04T00:51:07Z`
 - Automated failures: **8**
 
 | Check | Result | Exit code |
@@ -101,7 +101,7 @@ Failed check tails:
 	... 30 more
 
 
-BUILD FAILED in 14s
+BUILD FAILED in 12s
 1 actionable task: 1 executed
 ```
 
@@ -124,7 +124,7 @@ Fabric Loom: 1.17.20
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788482628529.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483050727.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/fabric/build/reports/problems/problems-report.html
 
@@ -144,7 +144,7 @@ Execution failed for task ':compileJava' (registered by plugin class 'org.gradle
 > Check your code and dependencies to fix the compilation error(s)
 > Run with --scan to get full insights from a Build Scan (powered by Develocity).
 
-BUILD FAILED in 10s
+BUILD FAILED in 9s
 1 actionable task: 1 executed
 ```
 
@@ -167,7 +167,7 @@ Fabric Loom: 1.17.20
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788482603891.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483027305.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/fabric/build/reports/problems/problems-report.html
 
@@ -187,7 +187,7 @@ Execution failed for task ':compileJava' (registered by plugin class 'org.gradle
 > Check your code and dependencies to fix the compilation error(s)
 > Run with --scan to get full insights from a Build Scan (powered by Develocity).
 
-BUILD FAILED in 10s
+BUILD FAILED in 9s
 1 actionable task: 1 executed
 ```
 
@@ -271,7 +271,7 @@ BUILD FAILED in 10s
 	... 30 more
 
 
-BUILD FAILED in 28s
+BUILD FAILED in 23s
 2 actionable tasks: 2 executed
 ```
 
@@ -296,7 +296,7 @@ Creating Minecraft artifacts without recompilation.
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788482639133.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483061072.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/neoforge/build/reports/problems/problems-report.html
 
@@ -341,7 +341,7 @@ Creating Minecraft artifacts without recompilation.
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788482616079.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483039333.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/neoforge/build/reports/problems/problems-report.html
 
@@ -361,6 +361,6 @@ Execution failed for task ':compileJava' (registered by plugin class 'org.gradle
 > Check your code and dependencies to fix the compilation error(s)
 > Run with --scan to get full insights from a Build Scan (powered by Develocity).
 
-BUILD FAILED in 10s
+BUILD FAILED in 9s
 2 actionable tasks: 1 executed, 1 up-to-date
 ```
