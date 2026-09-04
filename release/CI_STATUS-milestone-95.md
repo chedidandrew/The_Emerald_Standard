@@ -1,8 +1,8 @@
 # Milestone 0.4 CI Status
 
-- Tested commit: `89a78cfe4e5eed8c431b9c11957c7f42c8c0bcce`
-- Workflow run: `33823789181`
-- Generated: `2026-09-04T00:58:38Z`
+- Tested commit: `fa0b7fdcc52f99d5e54851f4307f5ff9927cd18a`
+- Workflow run: `33824510644`
+- Generated: `2026-09-04T01:09:24Z`
 - Automated failures: **8**
 
 | Check | Result | Exit code |
@@ -101,7 +101,7 @@ Failed check tails:
 	... 30 more
 
 
-BUILD FAILED in 15s
+BUILD FAILED in 12s
 1 actionable task: 1 executed
 ```
 
@@ -124,7 +124,7 @@ Fabric Loom: 1.17.20
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483502999.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788484149092.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/fabric/build/reports/problems/problems-report.html
 
@@ -167,7 +167,7 @@ Fabric Loom: 1.17.20
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483480396.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788484126397.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/fabric/build/reports/problems/problems-report.html
 
@@ -296,7 +296,7 @@ Creating Minecraft artifacts without recompilation.
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483512888.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788484158691.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/neoforge/build/reports/problems/problems-report.html
 
@@ -341,7 +341,7 @@ Creating Minecraft artifacts without recompilation.
 1 error
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788483491520.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/matrix-1788484137434.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/The_Emerald_Standard/The_Emerald_Standard/neoforge/build/reports/problems/problems-report.html
 
@@ -361,6 +361,6 @@ Execution failed for task ':compileJava' (registered by plugin class 'org.gradle
 > Check your code and dependencies to fix the compilation error(s)
 > Run with --scan to get full insights from a Build Scan (powered by Develocity).
 
-BUILD FAILED in 8s
+BUILD FAILED in 9s
 2 actionable tasks: 1 executed, 1 up-to-date
 ```
