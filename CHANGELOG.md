@@ -36,7 +36,7 @@ All notable changes to The Emerald Standard are documented here.
 
 ### Verification status
 
-- Automated common tests, dual-loader builds, packaged-JAR checks, dedicated-server startup, and client bootstrap are required for the exact beta.2 candidate commit but are not claimed here before that run completes.
+- Automated common tests, dual-loader builds, packaged-JAR checks, both dedicated-server startups, and both client bootstraps passed for candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd` in workflow `33894198970`.
 - Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run` until tested by a person on the exact Fabric and NeoForge candidate.
 
 ## 0.4.0-beta.1 - 2026-09-04

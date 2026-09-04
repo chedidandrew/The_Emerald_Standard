@@ -1,6 +1,6 @@
 # The Emerald Standard 0.4.0-beta.2
 
-> Candidate release notes. `0.4.0-beta.2` has not been tagged or published, and these notes do not claim that the final commit has passed CI or hands-on testing.
+> Candidate release notes. `0.4.0-beta.2` has not been tagged or published. The automated gate passed candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`; hands-on testing is not claimed.
 
 This beta completes the investment-accounting, multi-position banking, village-funding, physical-integrity, and presentation work planned after beta.1.
 
@@ -43,4 +43,4 @@ Beta.2 advances persistence to format 9. Existing format-7 and format-8 worlds m
 
 ## Verification boundary
 
-Publication requires the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks to pass for the exact final commit. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run` until tested on that exact Fabric and NeoForge candidate.
+GitHub Actions workflow [`33894198970`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33894198970) passed the common regression suites, both loader builds, packaged-JAR inspection, both dedicated-server startup checks, and both client bootstrap checks for the exact candidate implementation commit. Every hands-on row in `docs/MANUAL_TEST_MATRIX-0.4.md` remains `Not run`; no tag or public prerelease has been created.

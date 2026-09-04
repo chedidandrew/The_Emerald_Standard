@@ -3,15 +3,16 @@
 ## Candidate status
 
 - Source branch: `main`
-- Candidate source commit: pending final beta.2 commit
+- Candidate implementation commit: `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`
+- Verification workflow: `33894198970`, successful
 - Fabric version: `0.4.0-beta.2`
 - NeoForge version: `0.4.0-beta.2`
 - Persistent format: 9
 - Manual test matrix: `docs/MANUAL_TEST_MATRIX-0.4.md`; every row remains `Not run`
 - Public `0.4.0-beta.2` prerelease: not published
-- Release tag, artifacts, and checksums: not created
+- Release tag, release attachments, and published checksums: not created
 
-The last verified main-branch baseline predates the beta.2 changes. No successful workflow, server smoke, client bootstrap, artifact, or hands-on result is attributed to this candidate until it is produced from the exact final commit.
+All seven standard GitHub Actions jobs passed for the exact candidate implementation commit on 2026-09-04. This verification-record update changes documentation only and does not alter the executable candidate inputs. No hands-on result is attributed to the candidate.
 
 ## Candidate scope
 
@@ -20,14 +21,14 @@ The last verified main-branch baseline predates the beta.2 changes. No successfu
 - Up to eight independently identified and selectable CDs and eight villager business-lending positions per player
 - A dedicated Prosperity Fund page with Direct Grants, protected-principal Endowments, Project Sponsorships, seven purposes, additive server-owned drafts, two-step server confirmation, emergency reserves, bounded spending, and donor recognition
 - Physical housing and production benefits gated on verified project materialization, with low-frequency integrity demotion and guarded repair
-- A true cross-loader Banker profession, dedicated Exchange Desk block and POI, and legacy lectern compatibility
+- A true cross-loader Banker profession, craftable Exchange Desk block, acquirable POI, direct Banker/desk access, and scoped legacy lectern compatibility
 - Bounded one-shot worker navigation and construction cues that do not become persistent AI or economic authority
 - Owner-only debug capture controls, one watched-village boundary, unrelated-player and settlement filtering, resident-identity redaction, and separately labeled timing costs
 - A rebuildable 64-block-cell, per-dimension village spatial index plus measured query/save/load regressions at 100, 500, and 1,000 villages and accounts
 
-## Required automated gate
+## Verified automated gate
 
-The exact final candidate commit must still pass all standard GitHub Actions jobs:
+Workflow [`33894198970`](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/33894198970) passed all standard jobs for candidate implementation commit `49e1e7cfb4df5d68970162b2da66170d1f6b7efd`:
 
 - Loader-neutral economy, persistence, migration, finance, Village Prosperity, debug, and scaling regressions
 - Fabric 26.2 build and packaged-JAR verification
@@ -37,7 +38,14 @@ The exact final candidate commit must still pass all standard GitHub Actions job
 - Fabric client bootstrap and screen registration
 - NeoForge client bootstrap and screen registration
 
-Workflow run IDs, commit identity, artifact IDs, and checksums must be recorded only after those jobs complete successfully. Publication must reuse the exact verified artifacts rather than rebuilding another source state.
+The retained workflow artifacts are:
+
+- Fabric candidate JAR: `9945105054`
+- NeoForge candidate JAR: `9945108119`
+- Fabric server/client smoke logs: `9945146958`, `9945149086`
+- NeoForge server/client smoke logs: `9945147279`, `9945157326`
+
+Publication should reuse the verified candidate JAR artifacts rather than rebuilding another source state. Release checksums remain a publication-time requirement and have not been created.
 
 ## Compatibility and remaining boundaries
 
