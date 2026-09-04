@@ -269,6 +269,8 @@
   "gui.the_emerald_standard.fund.donor_title.founder_of_prosperity": "Founder of Prosperity",
   "message.the_emerald_standard.join_hint": "The Emerald Standard is active. Find a village, then right-click its Banker or Exchange Desk to open the bank. You can never borrow or owe emeralds.",
   "message.the_emerald_standard.first_banker_visit": "Welcome to the Village Bank. Choose an amount and deposit emeralds first. Savings cannot lose value; CDs lock funds for a term; lending and market investments can lose value. You can never owe emeralds.",
+  "advancement.the_emerald_standard.first_banker.title": "The Emerald Standard",
+  "advancement.the_emerald_standard.first_banker.description": "Open a Village Bank for the first time",
   "block.the_emerald_standard.exchange_desk": "Exchange Desk",
   "item.the_emerald_standard.exchange_desk": "Exchange Desk"
 }

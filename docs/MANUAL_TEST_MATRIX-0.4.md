@@ -6,7 +6,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 
 - Test both Fabric and NeoForge on Minecraft 26.2.
 - Record the exact mod commit, loader version, world origin, test date, and tester.
-- Attach `/emerald debug` ZIP reports whenever a row fails or behaves ambiguously.
+- Start `/emerald debug` before safely reproducing a failure or ambiguous result, then attach its ZIP.
 - Never mark a row passed from source review alone.
 - Retest all financial safety rows after any persistence, menu, transaction, or migration change.
 - A stable release requires every Critical row to pass on both loaders.
@@ -31,6 +31,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Full inventory withdrawal recovery | Not run | Not run | Debug ZIP and reconnect result |
 | Disconnect during deposit preparation | Not run | Not run | Debug ZIP and exact recovered value |
 | Disconnect after bank commit | Not run | Not run | Debug ZIP and exact recovered value |
+| Simulated player-data write failure retains the journal until a verified reconnect recovery | Not run | Not run | Test-world-only write failure, server log, restored write access, and exact recovered value |
 | Buy, partial sell, and sell-all accounting | Not run | Not run | Transaction sequence and final balance |
 | Cost basis, average price, allocation, realized/unrealized gain, contributions, and ledger | Not run | Not run | Hand calculation and before/after screenshots |
 | Savings deposit and withdrawal | Not run | Not run | Before/after values |
@@ -60,6 +61,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Color-independent gain/loss understanding | Not run | Not run | Tester description without relying on color |
 | First join gives one discovery hint, never repeats it, and respects the config opt-out | Not run | Not run | Reconnect notes for enabled and disabled settings |
 | First Banker visit explains safe and risky products without blocking the GUI | Not run | Not run | Screenshot and tester summary |
+| First Banker visit awards the advancement exactly once | Not run | Not run | First-open toast plus reconnect and reopen notes |
 | First-time player completes an investment in under one minute | Not run | Not run | Timed observation |
 | Savings, CD, lending, VILX, and businesses are distinguishable | Not run | Not run | Tester explanation in their own words |
 | Seven pages, chart range selectors, Fund controls, and five newest Log entries remain readable | Not run | Not run | Screenshot of each range, Fund state, and populated Log |
@@ -74,6 +76,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | A valid reload applies all settings together | Not run | Not run | Before/after command output |
 | Invalid boolean, integer, range, and unknown key each reject the whole reload | Not run | Not run | Four errors plus unchanged active summary |
 | Disabling a Fund subtype blocks new contributions without deleting existing Fund state | Not run | Not run | Before/after Fund balances and history |
+| Market-event and offline-clock controls preserve their documented boundaries | Not run | Not run | No new event shocks while disabled; offline-off ignores wall time but not game time; low maximum clips a forward-clock gap |
 
 ## Village and physical-world checks
 

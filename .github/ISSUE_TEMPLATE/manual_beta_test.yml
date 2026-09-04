@@ -1,0 +1,114 @@
+name: Manual beta test evidence
+description: Record hands-on Fabric or NeoForge evidence for the 0.4 beta release gate
+title: "[Manual Test]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form only for tests performed in a real Minecraft client or multiplayer session. Source review and automated CI are not manual evidence. An operator must start `/emerald debug` before safely reproducing a failure or ambiguous behavior; attach the generated ZIP afterward.
+
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Loader
+      options:
+        - Fabric
+        - NeoForge
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Exact mod commit
+      description: Use the 40-character commit printed in the release or CI status report.
+      placeholder: 0123456789abcdef0123456789abcdef01234567
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Mod and loader versions
+      placeholder: The Emerald Standard 0.4.0-beta.2, Fabric Loader 0.x
+    validations:
+      required: true
+
+  - type: input
+    id: world
+    attributes:
+      label: World identity
+      description: Include the dimension, approximate coordinates, and whether the world was fresh or upgraded. Do not share a private world seed unless it is needed and safe to publish.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Test area
+      options:
+        - Banking and transaction recovery
+        - Market investing and portfolio information
+        - Savings, CD, or villager lending
+        - Resource exchange
+        - Village donation or restoration
+        - Banker discovery and onboarding
+        - GUI scale or accessibility
+        - Village construction and terrain
+        - Infection, curing, raid, or casualty behavior
+        - Multiplayer concurrency
+        - Large-world or long-session performance
+        - Claim or protection integration
+        - Upgrade or migration
+    validations:
+      required: true
+
+  - type: textarea
+    id: procedure
+    attributes:
+      label: Exact procedure
+      description: Number the actions performed, including inventory and account values before the test.
+      placeholder: |
+        1. Opened the Banker with 64 emeralds in inventory.
+        2. Deposited 32 emeralds.
+        3. Disconnected immediately after confirmation.
+        4. Rejoined and compared inventory and account values.
+    validations:
+      required: true
+
+  - type: textarea
+    id: result
+    attributes:
+      label: Observed result
+      description: Include exact balances, project state, timings, or visual outcome. Do not write only "works."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options:
+        - Pass
+        - Fail
+        - Ambiguous or needs design review
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Drag screenshots, video, logs, and the `/emerald debug` ZIP here. A failed or ambiguous result requires the debug ZIP.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Financial safety verification
+      options:
+        - label: I recorded whether value was duplicated, lost, or made negative; the observed result says N/A when this test did not touch financial or inventory values.
+          required: true
+        - label: This evidence came from actual gameplay, not source review alone.
+          required: true

@@ -20,6 +20,7 @@ final class JournalAndMigrationRegression {
 
     static void run(Path root) throws Exception {
         testJournalLifecycle(root.resolve("journal"));
+        testVerifiedPlayerSaveDurablyClearsJournal(root.resolve("verified-journal-cleanup"));
         testVillageFundRespectsPendingJournal(root.resolve("fund-journal"));
         testJournalValidation();
         testLegacyMigration(root.resolve("legacy"));
@@ -83,6 +84,34 @@ final class JournalAndMigrationRegression {
                 "Adjusted withdrawal journal is inconsistent");
         require(reload.completeInventoryTransaction(PLAYER, adjusted.transactionId),
                 "Withdrawal journal did not clear");
+    }
+
+    private static void testVerifiedPlayerSaveDurablyClearsJournal(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 55L, 0L, 0L);
+        EconomyState.PendingInventoryTransaction prepared = service.prepareInventoryCredit(
+                PLAYER,
+                EconomyState.InventoryTransactionKind.DEPOSIT,
+                "emerald",
+                4,
+                9,
+                4L * EconomyState.MICRO);
+        require(prepared != null
+                        && service.commitPreparedInventoryCredit(
+                                PLAYER, prepared.transactionId),
+                "Verified-cleanup journal could not reach BANK_COMMITTED");
+        require(service.completeInventoryTransactionAfterVerifiedPlayerSave(
+                        PLAYER, prepared.transactionId),
+                "Verified player save could not durably clear the journal");
+        require(service.pendingInventoryTransaction(PLAYER) == null,
+                "Durable cleanup kept blocking the live account");
+
+        EconomyService reloaded = new EconomyService();
+        reloaded.startWithSeed(directory, 999L, 0L, 0L);
+        require(reloaded.pendingInventoryTransaction(PLAYER) == null
+                        && reloaded.snapshot().account(PLAYER).cashMicro
+                                == 4L * EconomyState.MICRO,
+                "Verified journal cleanup did not survive an immediate restart");
     }
 
     private static void testJournalValidation() throws Exception {

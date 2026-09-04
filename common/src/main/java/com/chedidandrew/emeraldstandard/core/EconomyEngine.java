@@ -12,6 +12,8 @@ public final class EconomyEngine {
 
     private static final double SQRT_DAYS_PER_YEAR = StrictMath.sqrt(DAYS_PER_YEAR);
     private static final double RISK_FREE_ANNUAL_RATE = 0.025;
+    private static final double VILX_UPSIDE_DAMPING_START = 0.50;
+    private static final double VILX_TRAILING_YEAR_UPSIDE_SOFT_LIMIT = 0.80;
     private static final long REGIME_SALT = 0x524547494D45L;
     private static final long MARKET_SALT = 0x4D41524B4554L;
     private static final long MARKET_JUMP_SALT = 0x53484F434BL;
@@ -282,6 +284,44 @@ public final class EconomyEngine {
             case DEEPVEIN_DISCOVERY -> commodityId.equals("diamond") ? -0.070 : 0.0;
             default -> 0.0;
         };
+    }
+
+    /**
+     * Gently reduces further positive VILX movement after an exceptional trailing-year gain.
+     * Moves ending at or below the threshold and every down day remain untouched. The soft limit
+     * never converts a positive raw return into a loss: if a falling reference leaves the index
+     * above the guardrail, further upside pauses until the rolling window catches up.
+     */
+    static double dampenVilxUpside(
+            double trailingYearPrice, double currentPrice, double proposedPrice) {
+        if (!Double.isFinite(trailingYearPrice)
+                || !Double.isFinite(currentPrice)
+                || !Double.isFinite(proposedPrice)
+                || trailingYearPrice <= 0.0
+                || currentPrice <= 0.0
+                || proposedPrice <= currentPrice) {
+            return proposedPrice;
+        }
+
+        double proposedGain = proposedPrice / trailingYearPrice - 1.0;
+        if (proposedGain <= VILX_UPSIDE_DAMPING_START) {
+            return proposedPrice;
+        }
+
+        double currentGain = currentPrice / trailingYearPrice - 1.0;
+        if (currentGain >= VILX_TRAILING_YEAR_UPSIDE_SOFT_LIMIT) {
+            return currentPrice;
+        }
+
+        double dampingRange = VILX_TRAILING_YEAR_UPSIDE_SOFT_LIMIT
+                - VILX_UPSIDE_DAMPING_START;
+        double dampingStart = Math.max(currentGain, VILX_UPSIDE_DAMPING_START);
+        double rawGainAboveStart = proposedGain - dampingStart;
+        double remainingHeadroom = VILX_TRAILING_YEAR_UPSIDE_SOFT_LIMIT - dampingStart;
+        double dampedGain = VILX_TRAILING_YEAR_UPSIDE_SOFT_LIMIT
+                - remainingHeadroom * StrictMath.exp(-rawGainAboveStart / dampingRange);
+        double dampedPrice = trailingYearPrice * (1.0 + dampedGain);
+        return Math.max(currentPrice, dampedPrice);
     }
 
     /** Constituent weights for the player-facing VILX fund. */

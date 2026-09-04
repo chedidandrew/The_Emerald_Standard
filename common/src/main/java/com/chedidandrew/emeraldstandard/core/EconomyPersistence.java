@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -69,7 +70,9 @@ final class EconomyPersistence {
         ByteArrayOutputStream output = new ByteArrayOutputStream(65_536);
         properties.store(
                 output, "The Emerald Standard data format " + EconomyState.FORMAT_VERSION);
-        ByteBuffer buffer = ByteBuffer.wrap(output.toByteArray());
+        byte[] serialized = output.toByteArray();
+        byte[] persistedFingerprint = rawFingerprint(serialized);
+        ByteBuffer buffer = ByteBuffer.wrap(serialized);
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
 
         try (FileChannel channel = FileChannel.open(
@@ -96,6 +99,7 @@ final class EconomyPersistence {
             Files.deleteIfExists(temporary);
         }
         forceDirectory(path.getParent());
+        state.rememberPersistedFile(path, persistedFingerprint);
     }
 
     private static void preserveValidPrimary(EconomyState state, Path path) {
@@ -103,7 +107,11 @@ final class EconomyPersistence {
             return;
         }
         try {
-            read(path, state.seed, state.lastWallClockMs, state.lastGameTicks);
+            boolean knownValid = state.isKnownPersistedFile(path)
+                    && state.matchesKnownPersistedFile(path, rawFingerprint(path));
+            if (!knownValid) {
+                read(path, state.seed, state.lastWallClockMs, state.lastGameTicks);
+            }
             Files.copy(path, backupPath(path), StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ignored) {
             // Never replace a known-good backup with a corrupt or future-format primary file.
@@ -420,9 +428,12 @@ final class EconomyPersistence {
     private static EconomyState read(Path path, long fallbackSeed, long now, long ticks)
             throws IOException {
         Properties properties = new Properties();
-        try (InputStream input = Files.newInputStream(path)) {
+        MessageDigest persistedDigest = newSha256Digest();
+        try (InputStream input = new DigestInputStream(
+                Files.newInputStream(path), persistedDigest)) {
             properties.load(input);
         }
+        byte[] persistedFingerprint = persistedDigest.digest();
 
         try {
             int format = determineFormat(properties);
@@ -540,6 +551,7 @@ final class EconomyPersistence {
                 PortfolioAnalytics.migrateLegacyBasis(account, state);
             }
             state.validate();
+            state.rememberPersistedFile(path, persistedFingerprint);
             return state;
         } catch (IOException exception) {
             throw exception;
@@ -1289,21 +1301,37 @@ final class EconomyPersistence {
     }
 
     private static String checksum(Properties properties) throws IOException {
+        MessageDigest digest = newSha256Digest();
+        TreeMap<String, String> sorted = new TreeMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            if (!CHECKSUM_KEY.equals(key)) {
+                sorted.put(key, properties.getProperty(key));
+            }
+        }
+        for (Map.Entry<String, String> entry : sorted.entrySet()) {
+            digest.update(entry.getKey().getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '=');
+            digest.update(entry.getValue().getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '\n');
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    private static byte[] rawFingerprint(byte[] bytes) throws IOException {
+        return newSha256Digest().digest(bytes);
+    }
+
+    private static byte[] rawFingerprint(Path path) throws IOException {
+        MessageDigest digest = newSha256Digest();
+        try (InputStream input = new DigestInputStream(Files.newInputStream(path), digest)) {
+            input.transferTo(java.io.OutputStream.nullOutputStream());
+        }
+        return digest.digest();
+    }
+
+    private static MessageDigest newSha256Digest() throws IOException {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            TreeMap<String, String> sorted = new TreeMap<>();
-            for (String key : properties.stringPropertyNames()) {
-                if (!CHECKSUM_KEY.equals(key)) {
-                    sorted.put(key, properties.getProperty(key));
-                }
-            }
-            for (Map.Entry<String, String> entry : sorted.entrySet()) {
-                digest.update(entry.getKey().getBytes(StandardCharsets.UTF_8));
-                digest.update((byte) '=');
-                digest.update(entry.getValue().getBytes(StandardCharsets.UTF_8));
-                digest.update((byte) '\n');
-            }
-            return HexFormat.of().formatHex(digest.digest());
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException impossible) {
             throw new IOException("SHA-256 is unavailable", impossible);
         }

@@ -12,12 +12,13 @@ Players provide emerald capital to the villager economy. **Players can never bor
 
 ## Quick start
 
-1. Install the matching Fabric or NeoForge JAR on the server and every connecting client.
-2. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
-3. Right-click the Banker or an Exchange Desk to open the seven-page dashboard.
-4. On **Overview**, choose an amount and deposit physical emeralds into bank cash. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk.
+1. Back up the world before installing or upgrading this beta.
+2. Install one matching Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, and do not mix builds from different commits.
+3. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
+4. Right-click the Banker or an Exchange Desk to open the seven-page dashboard.
+5. On **Overview**, choose an amount and deposit physical emeralds into bank cash. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk.
 
-Each player receives a one-time discovery hint on first join and a short risk explanation on their first successful Banker visit. Both normal play and discovery are command-free.
+Each player receives a one-time discovery hint on first join. Their first successful Banker visit awards the advancement **The Emerald Standard** and gives a short deposit and risk explanation. Both normal play and discovery are command-free.
 
 ## Banking and investing
 
@@ -53,7 +54,7 @@ Portfolio accounting persists share cost basis, average purchase prices, total c
 - `IRNG` Iron Golem Security
 - `MCRT` Minecart Transit
 
-The global simulation includes expansion, bull, boom, stagnation, recession, crash, and recovery regimes. Rare events create company- and commodity-specific shocks. Prices, rates, lending outcomes, commodities, and settlement fundamentals continue to evolve while the world is closed.
+The global simulation includes expansion, bull, boom, stagnation, recession, crash, and recovery regimes. Rare events create company- and commodity-specific shocks when enabled. By default, prices, rates, lending outcomes, commodities, and settlement fundamentals continue to evolve while the world is closed; a world can disable trusted wall-clock progression without pausing ordinary game-time progression.
 
 ## Village Prosperity System
 
@@ -102,11 +103,14 @@ The beta hardening rules include:
 
 The first server start creates `the_emerald_standard-config.properties` in the world's `data` directory.
 
-The full [configuration reference](docs/CONFIGURATION.md) lists every setting, default, accepted range, interaction, and safe reload behavior. Unknown keys and invalid values are rejected as a whole, so a failed `/emerald config reload` leaves the previous configuration active. The optional one-time discovery message is controlled by `onboarding.join_hint_enabled`.
+The full [configuration reference](docs/CONFIGURATION.md) lists every setting, default, accepted range, interaction, and safe reload behavior. Unknown keys and invalid values are rejected as a whole, so a failed `/emerald config reload` leaves the previous configuration active. The optional one-time discovery message is controlled by `onboarding.join_hint_enabled`; market events and trusted offline progression have independent world controls.
 
 Village Prosperity can be configured independently:
 
 ```properties
+market.events_enabled=true
+economic_clock.offline_progression_enabled=true
+economic_clock.max_offline_days=25000
 village_prosperity.simulation_enabled=true
 village_prosperity.visual_progression_enabled=true
 village_prosperity.market_integration_enabled=true
@@ -149,6 +153,8 @@ Administrators can inspect or reload configuration without restarting:
 - Unsupported future formats stop loading instead of silently falling back to stale backups.
 - Corrupt current-format saves can recover from a validated backup.
 - Inventory-linked deposits, withdrawals, and exchanges use a durable recovery journal.
+- A completed item transfer checkpoints only the affected player's synchronized NBT file and verifies the complete persisted inventory before releasing its journal.
+- Whole-economy replacement saves cache the SHA-256 identity of the last validated generation, avoiding a redundant full parse only when the old file's exact bytes are unchanged.
 - Overflow recovery remains journal-protected instead of dropping recoverable value into the world.
 - Player accounts are world-level and are never owned by one Banker or one village.
 - Share cost basis, realized performance, contributions, a 256-entry transaction ledger, up to eight CDs, and up to eight villager-lending positions are world-persistent.
@@ -222,7 +228,7 @@ bash neoforge/gradlew --no-daemon -p neoforge build
 
 GitHub Actions runs the common economy, persistence, and Village Prosperity regression suites, builds and inspects both packaged JARs, launches both dedicated-server environments, and launches both clients under a virtual display to verify initialization and screen registration.
 
-Hands-on visual, transaction, terrain, raid, recovery, and multiplayer checks remain part of the beta test plan.
+Hands-on visual, transaction, terrain, raid, recovery, and multiplayer checks remain part of the beta test plan. Record exact-commit results with the repository's [manual beta test form](https://github.com/chedidandrew/The_Emerald_Standard/issues/new?template=manual_beta_test.yml); a failure or ambiguous result should include the ZIP from `/emerald debug`.
 
 ## Documentation
 

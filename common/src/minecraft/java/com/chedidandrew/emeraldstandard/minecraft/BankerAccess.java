@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -198,6 +199,7 @@ public final class BankerAccess {
             player.sendSystemMessage(
                     Component.translatable("message.the_emerald_standard.first_banker_visit"));
         }
+        awardFirstBankerAdvancement(player);
         if (player.level() instanceof ServerLevel level) {
             level.playSound(
                     null,
@@ -220,6 +222,18 @@ public final class BankerAccess {
             }
         }
         return true;
+    }
+
+    private static void awardFirstBankerAdvancement(ServerPlayer player) {
+        if (player.level().getServer() == null) {
+            return;
+        }
+        var advancement = player.level().getServer().getAdvancements().get(
+                Identifier.fromNamespaceAndPath(
+                        "the_emerald_standard", "first_banker"));
+        if (advancement != null) {
+            player.getAdvancements().award(advancement, "opened_banker");
+        }
     }
 
     private static String regionTag(long regionKey) {

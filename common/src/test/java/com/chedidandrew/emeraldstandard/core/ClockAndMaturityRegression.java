@@ -14,6 +14,8 @@ final class ClockAndMaturityRegression {
         testPartialGameDay(root.resolve("partial-game"));
         testPartialWallDay(root.resolve("partial-wall"));
         testMixedClockDoesNotDoubleCount(root.resolve("mixed-clock"));
+        testOfflineProgressionPolicy(root.resolve("offline-policy"));
+        testConfiguredOfflineLimit(root.resolve("configured-catch-up"));
         testBoundedCatchUp(root.resolve("catch-up"));
         testBackwardClock(root.resolve("clock"));
     }
@@ -110,6 +112,86 @@ final class ClockAndMaturityRegression {
                 "Two real days did not become exactly two economic days");
     }
 
+    private static void testOfflineProgressionPolicy(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.configureEconomicClock(false, 30L);
+        service.startWithSeed(directory, 522L, 0L, 0L);
+        require(service.tickAt(
+                        0L, 10L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Disabled offline clock tick failed");
+        require(service.snapshot().economicDay == 0L
+                        && service.snapshot().pendingEconomicMillis == 0L,
+                "Disabled offline progression advanced from wall time");
+
+        require(service.tickAt(
+                        EconomyService.TICKS_PER_MINECRAFT_DAY,
+                        11L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Game-time clock tick failed while offline progression was disabled");
+        require(service.snapshot().economicDay == 1L,
+                "Disabling offline progression also disabled game-time progression");
+
+        EconomyService reenabled = new EconomyService();
+        reenabled.configureEconomicClock(false, 30L);
+        reenabled.startWithSeed(directory.resolve("reenabled"), 524L, 0L, 0L);
+        require(reenabled.tickAt(
+                        0L, 100L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Disabled offline clock observation failed");
+        reenabled.configureEconomicClock(true, 30L);
+        require(reenabled.tickAt(
+                        0L, 100L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Re-enabled offline clock baseline tick failed");
+        require(reenabled.snapshot().economicDay == 0L,
+                "Re-enabling offline progression retroactively credited ignored wall time");
+        require(reenabled.tickAt(
+                        0L, 101L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Re-enabled offline clock forward tick failed");
+        require(reenabled.snapshot().economicDay == 1L,
+                "Re-enabled offline progression did not credit new wall time");
+    }
+
+    private static void testConfiguredOfflineLimit(Path directory) throws Exception {
+        EconomyService original = new EconomyService();
+        original.startWithSeed(directory, 523L, 0L, 0L);
+        require(original.saveNowAt(0L, 0L), "Configured catch-up baseline save failed");
+
+        EconomyService reloaded = new EconomyService();
+        reloaded.configureEconomicClock(true, 3L);
+        reloaded.startWithSeed(
+                directory,
+                999L,
+                100L * EconomyService.MILLIS_PER_MINECRAFT_DAY,
+                0L);
+        require(reloaded.snapshot().economicDay == 3L
+                        && reloaded.catchUpDaysRemaining() == 0L,
+                "Configured offline limit was not enforced");
+
+        EconomyService partial = new EconomyService();
+        partial.configureEconomicClock(true, 3L);
+        partial.startWithSeed(directory.resolve("partial"), 525L, 0L, 0L);
+        require(partial.tickAt(
+                        0L, EconomyService.MILLIS_PER_MINECRAFT_DAY / 2L),
+                "Partial clock setup failed");
+        require(partial.tickAt(
+                        0L, 100L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Partial clock capped gap failed");
+        require(partial.snapshot().economicDay == 3L
+                        && partial.snapshot().pendingEconomicMillis
+                                == EconomyService.MILLIS_PER_MINECRAFT_DAY / 2L,
+                "Configured offline limit discarded or bypassed a partial remainder");
+
+        boolean priorOfflineEnabled = reloaded.offlineProgressionEnabled();
+        long priorMaximumDays = reloaded.maximumOfflineDays();
+        requireThrows(() -> reloaded.configureEconomicClock(true, 0L),
+                "Zero maximum offline days were accepted");
+        requireThrows(
+                () -> reloaded.configureEconomicClock(
+                        true, EconomyService.MAX_TRUSTED_CATCH_UP_DAYS + 1L),
+                "Offline limit above the absolute safety cap was accepted");
+        require(reloaded.offlineProgressionEnabled() == priorOfflineEnabled
+                        && reloaded.maximumOfflineDays() == priorMaximumDays,
+                "Rejected economic-clock configuration partially changed the policy");
+    }
+
     private static void testBoundedCatchUp(Path directory) throws Exception {
         EconomyService original = new EconomyService();
         original.startWithSeed(directory, 53L, 0L, 0L);
@@ -169,5 +251,14 @@ final class ClockAndMaturityRegression {
                 "Backward clock advanced the economy");
         require(second.snapshot().lastWallClockMs >= original,
                 "Backward clock lowered trusted time");
+    }
+
+    private static void requireThrows(Runnable action, String message) {
+        try {
+            action.run();
+        } catch (IllegalArgumentException expected) {
+            return;
+        }
+        throw new AssertionError(message);
     }
 }

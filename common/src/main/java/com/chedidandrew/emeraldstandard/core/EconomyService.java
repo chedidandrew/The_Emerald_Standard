@@ -49,6 +49,9 @@ public final class EconomyService {
     private boolean villageVisualProgressionEnabled = true;
     private boolean villageMarketIntegrationEnabled = true;
     private boolean villageAutomaticRecoveryEnabled = true;
+    private boolean marketEventsEnabled = true;
+    private boolean offlineProgressionEnabled = true;
+    private long maximumOfflineDays = MAX_TRUSTED_CATCH_UP_DAYS;
     private ProsperityFundPolicy prosperityFundPolicy = ProsperityFundPolicy.defaults();
 
     public synchronized void configureVillageProsperity(
@@ -73,6 +76,37 @@ public final class EconomyService {
 
     public synchronized boolean villageVisualProgressionEnabled() {
         return villageVisualProgressionEnabled;
+    }
+
+    public synchronized void configureMarketEvents(boolean enabled) {
+        marketEventsEnabled = enabled;
+    }
+
+    public synchronized boolean marketEventsEnabled() {
+        return marketEventsEnabled;
+    }
+
+    /**
+     * Configures wall-clock progression without weakening the absolute catch-up safety limit.
+     * Game-time progression remains active when offline progression is disabled.
+     */
+    public synchronized void configureEconomicClock(
+            boolean offlineEnabled, long maximumOfflineDays) {
+        if (maximumOfflineDays < 1L || maximumOfflineDays > MAX_TRUSTED_CATCH_UP_DAYS) {
+            throw new IllegalArgumentException(
+                    "Maximum offline days must be between 1 and "
+                            + MAX_TRUSTED_CATCH_UP_DAYS);
+        }
+        offlineProgressionEnabled = offlineEnabled;
+        this.maximumOfflineDays = maximumOfflineDays;
+    }
+
+    public synchronized boolean offlineProgressionEnabled() {
+        return offlineProgressionEnabled;
+    }
+
+    public synchronized long maximumOfflineDays() {
+        return maximumOfflineDays;
     }
 
     public synchronized void configureProsperityFund(ProsperityFundPolicy policy) {
@@ -2330,6 +2364,17 @@ public final class EconomyService {
         });
     }
 
+    /**
+     * Durably clears a committed journal after the caller has verified the matching Minecraft
+     * inventory. The cleanup must reach disk before gameplay resumes: otherwise a later legitimate
+     * inventory change could be mistaken for transaction drift if a stale journal were recovered.
+     */
+    public synchronized boolean completeInventoryTransactionAfterVerifiedPlayerSave(
+            UUID playerId,
+            UUID transactionId) {
+        return completeInventoryTransaction(playerId, transactionId);
+    }
+
     public synchronized boolean cancelPreparedInventoryTransaction(
             UUID playerId,
             UUID transactionId) {
@@ -2370,7 +2415,11 @@ public final class EconomyService {
 
         state.lastWallClockMs = trustedNow;
         state.lastGameTicks = safeGameTicks;
-        long elapsedEconomicMs = Math.max(wallDeltaMs, gameDeltaMs);
+        long maximumOfflineMs = maximumOfflineDays * MILLIS_PER_MINECRAFT_DAY;
+        long trustedWallDeltaMs = offlineProgressionEnabled
+                ? Math.min(wallDeltaMs, maximumOfflineMs)
+                : 0L;
+        long elapsedEconomicMs = Math.max(trustedWallDeltaMs, gameDeltaMs);
         state.pendingEconomicMillis = cappedAdd(
                 state.pendingEconomicMillis,
                 elapsedEconomicMs,
@@ -2408,7 +2457,8 @@ public final class EconomyService {
                     prosperityFundPolicy.enabled(),
                     prosperityFundPolicy.endowmentAnnualPayoutRate(),
                     prosperityFundPolicy.emergencyReserveFraction(),
-                    prosperityFundPolicy.dailySpendingCapMicro());
+                    prosperityFundPolicy.dailySpendingCapMicro(),
+                    marketEventsEnabled);
         }
     }
 

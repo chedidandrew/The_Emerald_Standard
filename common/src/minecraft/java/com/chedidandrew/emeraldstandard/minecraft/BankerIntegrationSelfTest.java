@@ -1,8 +1,15 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.PoiTypeTags;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -20,6 +27,7 @@ public final class BankerIntegrationSelfTest {
 
     public static void run(ServerLevel level) {
         BankerMenuPacketCodecSelfTest.verify();
+        verifyInventoryPersistenceGuard();
         require(BankerProfessionSupport.exchangeDeskOrLectern() != Blocks.LECTERN,
                 "The Exchange Desk block was not registered before server startup");
         require(BankerProfessionSupport.registeredBanker().isPresent(),
@@ -37,6 +45,10 @@ public final class BankerIntegrationSelfTest {
                         .orElseThrow()
                         .is(PoiTypeTags.ACQUIRABLE_JOB_SITE),
                 "The Banker POI was not an acquirable villager job site");
+        require(level.getServer().getAdvancements().get(Identifier.fromNamespaceAndPath(
+                                "the_emerald_standard", "first_banker"))
+                        != null,
+                "The First Banker advancement was not loaded");
 
         Villager naturalBanker = create(level);
         naturalBanker.setVillagerData(naturalBanker.getVillagerData().withProfession(
@@ -129,6 +141,66 @@ public final class BankerIntegrationSelfTest {
         legacy.discard();
         established.discard();
         named.discard();
+    }
+
+    private static void verifyInventoryPersistenceGuard() {
+        CompoundTag expected = playerDataWithInventoryCount(4);
+        require(BankTransactionCoordinator.inventoryMatches(expected, expected.copy()),
+                "Equivalent saved inventory payloads did not match");
+        require(!BankTransactionCoordinator.inventoryMatches(
+                        expected, playerDataWithInventoryCount(3)),
+                "A changed saved inventory payload passed persistence verification");
+        require(!BankTransactionCoordinator.inventoryMatches(expected, new CompoundTag()),
+                "A missing saved inventory payload passed persistence verification");
+
+        Path directory = null;
+        try {
+            directory = Files.createTempDirectory("emerald-standard-player-checkpoint-");
+            Path playerData = directory.resolve("integration.dat");
+            Path oldPlayerData = directory.resolve("integration.dat_old");
+            CompoundTag original = playerDataWithInventoryCount(7);
+            NbtIo.writeCompressed(original, playerData);
+            require(BankTransactionCoordinator.writeAndVerifyPlayerData(
+                            directory, "integration", expected),
+                    "Target-player checkpoint did not complete");
+            CompoundTag persisted = NbtIo.readCompressed(
+                    playerData, NbtAccounter.unlimitedHeap());
+            CompoundTag backup = NbtIo.readCompressed(
+                    oldPlayerData, NbtAccounter.unlimitedHeap());
+            require(BankTransactionCoordinator.inventoryMatches(expected, persisted),
+                    "Target-player checkpoint readback lost the expected inventory");
+            require(BankTransactionCoordinator.inventoryMatches(original, backup),
+                    "Target-player checkpoint did not preserve the prior .dat_old inventory");
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "Could not verify the target-player persistence checkpoint", exception);
+        } finally {
+            deleteCheckpointFixture(directory);
+        }
+    }
+
+    private static void deleteCheckpointFixture(Path directory) {
+        if (directory == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(directory.resolve("integration.dat"));
+            Files.deleteIfExists(directory.resolve("integration.dat_old"));
+            Files.deleteIfExists(directory);
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "Could not clean the target-player persistence fixture", exception);
+        }
+    }
+
+    private static CompoundTag playerDataWithInventoryCount(int count) {
+        CompoundTag stack = new CompoundTag();
+        stack.putInt("count", count);
+        ListTag inventory = new ListTag();
+        inventory.add(stack);
+        CompoundTag playerData = new CompoundTag();
+        playerData.put("Inventory", inventory);
+        return playerData;
     }
 
     private static Villager create(ServerLevel level) {

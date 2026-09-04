@@ -23,6 +23,9 @@ public final class EmeraldConfig {
             "banker.restriction_radius",
             "transactions.cooldown_ticks",
             "onboarding.join_hint_enabled",
+            "market.events_enabled",
+            "economic_clock.offline_progression_enabled",
+            "economic_clock.max_offline_days",
             "village_prosperity.simulation_enabled",
             "village_prosperity.visual_progression_enabled",
             "village_prosperity.market_integration_enabled",
@@ -49,6 +52,9 @@ public final class EmeraldConfig {
     private final int bankerRestrictionRadius;
     private final int transactionCooldownTicks;
     private final boolean onboardingJoinHintEnabled;
+    private final boolean marketEventsEnabled;
+    private final boolean offlineProgressionEnabled;
+    private final int maximumOfflineDays;
 
     private final boolean villageProsperitySimulationEnabled;
     private final boolean villageVisualProgressionEnabled;
@@ -76,6 +82,9 @@ public final class EmeraldConfig {
             int bankerRestrictionRadius,
             int transactionCooldownTicks,
             boolean onboardingJoinHintEnabled,
+            boolean marketEventsEnabled,
+            boolean offlineProgressionEnabled,
+            int maximumOfflineDays,
             boolean villageProsperitySimulationEnabled,
             boolean villageVisualProgressionEnabled,
             boolean villageMarketIntegrationEnabled,
@@ -99,6 +108,9 @@ public final class EmeraldConfig {
         this.bankerRestrictionRadius = bankerRestrictionRadius;
         this.transactionCooldownTicks = transactionCooldownTicks;
         this.onboardingJoinHintEnabled = onboardingJoinHintEnabled;
+        this.marketEventsEnabled = marketEventsEnabled;
+        this.offlineProgressionEnabled = offlineProgressionEnabled;
+        this.maximumOfflineDays = maximumOfflineDays;
         this.villageProsperitySimulationEnabled = villageProsperitySimulationEnabled;
         this.villageVisualProgressionEnabled = villageVisualProgressionEnabled;
         this.villageMarketIntegrationEnabled = villageMarketIntegrationEnabled;
@@ -141,6 +153,14 @@ public final class EmeraldConfig {
                 bounded(properties, "banker.restriction_radius", 5, 2, 32),
                 bounded(properties, "transactions.cooldown_ticks", 5, 0, 200),
                 bool(properties, "onboarding.join_hint_enabled", true),
+                bool(properties, "market.events_enabled", true),
+                bool(properties, "economic_clock.offline_progression_enabled", true),
+                bounded(
+                        properties,
+                        "economic_clock.max_offline_days",
+                        (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS,
+                        1,
+                        (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS),
                 bool(properties, "village_prosperity.simulation_enabled", true),
                 bool(properties, "village_prosperity.visual_progression_enabled", true),
                 bool(properties, "village_prosperity.market_integration_enabled", true),
@@ -201,6 +221,18 @@ public final class EmeraldConfig {
 
     public boolean onboardingJoinHintEnabled() {
         return onboardingJoinHintEnabled;
+    }
+
+    public boolean marketEventsEnabled() {
+        return marketEventsEnabled;
+    }
+
+    public boolean offlineProgressionEnabled() {
+        return offlineProgressionEnabled;
+    }
+
+    public int maximumOfflineDays() {
+        return maximumOfflineDays;
     }
 
     public boolean villageProsperitySimulationEnabled() {
@@ -273,6 +305,8 @@ public final class EmeraldConfig {
 
     /** Applies every simulation option atomically to the shared economy service. */
     public void applyTo(EconomyService economy) {
+        economy.configureMarketEvents(marketEventsEnabled);
+        economy.configureEconomicClock(offlineProgressionEnabled, maximumOfflineDays);
         economy.configureVillageProsperity(
                 villageProsperitySimulationEnabled,
                 villageVisualProgressionEnabled,
@@ -293,7 +327,8 @@ public final class EmeraldConfig {
         return String.format(
                 Locale.ROOT,
                 "village banks=%s, bank scan=%d ticks, bank region=%d blocks, banker radius=%d, "
-                        + "transaction cooldown=%d ticks, first-join hint=%s, prosperity simulation=%s, visual progression=%s, "
+                        + "transaction cooldown=%d ticks, first-join hint=%s, market events=%s, "
+                        + "offline progression=%s, max offline=%d days, prosperity simulation=%s, visual progression=%s, "
                         + "market integration=%s, automatic recovery=%s, prosperity scan=%d ticks, "
                         + "development radius=%d, construction=%d block(s)/%d tick(s), "
                         + "settler interval=%d ticks, prosperity fund=%s, endowments=%s, "
@@ -305,6 +340,9 @@ public final class EmeraldConfig {
                 bankerRestrictionRadius,
                 transactionCooldownTicks,
                 onboardingJoinHintEnabled,
+                marketEventsEnabled,
+                offlineProgressionEnabled,
+                maximumOfflineDays,
                 villageProsperitySimulationEnabled,
                 villageVisualProgressionEnabled,
                 villageMarketIntegrationEnabled,
@@ -334,6 +372,9 @@ public final class EmeraldConfig {
                 true,
                 true,
                 true,
+                (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS,
+                true,
+                true,
                 true,
                 true,
                 400,
@@ -360,6 +401,11 @@ public final class EmeraldConfig {
         properties.setProperty("banker.restriction_radius", "5");
         properties.setProperty("transactions.cooldown_ticks", "5");
         properties.setProperty("onboarding.join_hint_enabled", "true");
+        properties.setProperty("market.events_enabled", "true");
+        properties.setProperty("economic_clock.offline_progression_enabled", "true");
+        properties.setProperty(
+                "economic_clock.max_offline_days",
+                Long.toString(EconomyService.MAX_TRUSTED_CATCH_UP_DAYS));
         properties.setProperty("village_prosperity.simulation_enabled", "true");
         properties.setProperty("village_prosperity.visual_progression_enabled", "true");
         properties.setProperty("village_prosperity.market_integration_enabled", "true");

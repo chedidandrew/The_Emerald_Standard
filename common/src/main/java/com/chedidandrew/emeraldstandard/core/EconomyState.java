@@ -52,6 +52,13 @@ public final class EconomyState {
     public final Map<UUID, PendingInventoryTransaction> pendingInventoryTransactions =
             new HashMap<>();
 
+    /**
+     * Exact bytes of the primary generation that was last validated or durably written for this
+     * state. This is process-local persistence metadata, not part of the save format.
+     */
+    transient Path persistedFile;
+    transient byte[] persistedFileFingerprint;
+
     public enum InventoryTransactionKind {
         DEPOSIT,
         EXCHANGE,
@@ -763,7 +770,30 @@ public final class EconomyState {
                 : pendingInventoryTransactions.entrySet()) {
             copy.pendingInventoryTransactions.put(entry.getKey(), entry.getValue().copy());
         }
+        copy.persistedFile = persistedFile;
+        copy.persistedFileFingerprint = persistedFileFingerprint == null
+                ? null : persistedFileFingerprint.clone();
         return copy;
+    }
+
+    void rememberPersistedFile(Path path, byte[] fingerprint) {
+        persistedFile = normalizedPath(path);
+        persistedFileFingerprint = fingerprint.clone();
+    }
+
+    boolean isKnownPersistedFile(Path path) {
+        return persistedFile != null
+                && persistedFileFingerprint != null
+                && persistedFile.equals(normalizedPath(path));
+    }
+
+    boolean matchesKnownPersistedFile(Path path, byte[] fingerprint) {
+        return isKnownPersistedFile(path)
+                && java.util.Arrays.equals(persistedFileFingerprint, fingerprint);
+    }
+
+    private static Path normalizedPath(Path path) {
+        return path.toAbsolutePath().normalize();
     }
 
     public void advanceOneDay() {
@@ -814,6 +844,28 @@ public final class EconomyState {
             double endowmentAnnualPayoutRate,
             double emergencyReserveFraction,
             long dailyFundSpendingCapMicro) {
+        advanceOneDay(
+                villageProsperitySimulationEnabled,
+                villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled,
+                villageAutomaticRecoveryEnabled,
+                prosperityFundEnabled,
+                endowmentAnnualPayoutRate,
+                emergencyReserveFraction,
+                dailyFundSpendingCapMicro,
+                true);
+    }
+
+    public void advanceOneDay(
+            boolean villageProsperitySimulationEnabled,
+            boolean villageVisualProgressionEnabled,
+            boolean villageMarketIntegrationEnabled,
+            boolean villageAutomaticRecoveryEnabled,
+            boolean prosperityFundEnabled,
+            double endowmentAnnualPayoutRate,
+            double emergencyReserveFraction,
+            long dailyFundSpendingCapMicro,
+            boolean marketEventsEnabled) {
         if (economicDay == Long.MAX_VALUE) {
             throw new IllegalStateException("Economic day range is exhausted");
         }
@@ -843,7 +895,9 @@ public final class EconomyState {
                         : VillageProsperityEngine.VillageFundamentals.neutral();
         regime = EconomyEngine.nextRegime(regime, seed, economicDay);
         double marketReturn = EconomyEngine.marketReturn(regime, seed, economicDay);
-        EconomyEngine.MarketEvent event = EconomyEngine.marketEvent(seed, economicDay, regime);
+        EconomyEngine.MarketEvent event = marketEventsEnabled
+                ? EconomyEngine.marketEvent(seed, economicDay, regime)
+                : EconomyEngine.MarketEvent.NONE;
         if (event != EconomyEngine.MarketEvent.NONE) {
             lastMarketEvent = event;
             lastMarketEventDay = economicDay;
@@ -882,7 +936,15 @@ public final class EconomyState {
                         / EconomyEngine.DAYS_PER_YEAR);
         double vilxReturn = (1.0 + vilxBaseReturn) * (1.0 + vilxVillageDaily) - 1.0;
         double currentVilx = prices.getOrDefault("VILX", 100.0);
-        prices.put("VILX", boundedPrice(currentVilx * (1.0 + vilxReturn)));
+        double nextVilx = currentVilx * (1.0 + vilxReturn);
+        List<Double> vilxHistory = priceHistory.get("VILX");
+        if (vilxHistory != null && vilxHistory.size() >= EconomyEngine.DAYS_PER_YEAR) {
+            double trailingYearPrice = vilxHistory.get(
+                    vilxHistory.size() - EconomyEngine.DAYS_PER_YEAR);
+            nextVilx = EconomyEngine.dampenVilxUpside(
+                    trailingYearPrice, currentVilx, nextVilx);
+        }
+        prices.put("VILX", boundedPrice(nextVilx));
         normalizeHighPrices();
         recordCurrentPrices();
 

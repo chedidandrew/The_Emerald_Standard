@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.core;
 
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ public final class EconomyRegressionTest {
     public static void main(String[] args) {
         testGaussian();
         testDeterminism();
+        testVilxUpsideDamping();
         testMarketAndAssets();
         testMarketEvents();
         testRegimeDuration();
@@ -46,6 +48,32 @@ public final class EconomyRegressionTest {
                 .mapToDouble(asset -> EconomyEngine.vilxWeight(asset.ticker()))
                 .sum();
         require(Math.abs(weight - 1.0) < 1.0e-9, "VILX constituent weights do not sum to one");
+
+        EconomyState eventsDisabled = EconomyState.fresh(seed, 0L, 0L);
+        for (int day = 0; day < 10_000; day++) {
+            eventsDisabled.advanceOneDay(
+                    false, false, false, true, false, 0.04, 0.10,
+                    64L * EconomyState.MICRO, false);
+        }
+        require(eventsDisabled.lastMarketEvent == EconomyEngine.MarketEvent.NONE,
+                "Disabled market events still changed the market-news state");
+    }
+
+    private static void testVilxUpsideDamping() {
+        require(EconomyEngine.dampenVilxUpside(100.0, 140.0, 145.0) == 145.0,
+                "Ordinary VILX upside was damped");
+        require(EconomyEngine.dampenVilxUpside(100.0, 160.0, 170.0) < 170.0,
+                "Exceptional VILX upside was not damped");
+        double crossing = EconomyEngine.dampenVilxUpside(100.0, 149.0, 179.0);
+        require(crossing > 149.0 && crossing < 179.0,
+                "A large threshold-crossing VILX move was not progressively damped");
+        require(EconomyEngine.dampenVilxUpside(100.0, 160.0, 150.0) == 150.0,
+                "A VILX down day was damped");
+        double bounded = EconomyEngine.dampenVilxUpside(100.0, 175.0, 250.0);
+        require(bounded >= 175.0 && bounded <= 180.0,
+                "VILX trailing-year upside boundary was not respected");
+        require(EconomyEngine.dampenVilxUpside(90.0, 180.0, 181.0) == 180.0,
+                "VILX upside damping manufactured a down day above its soft limit");
     }
 
     private static void testGaussian() {
@@ -93,6 +121,7 @@ public final class EconomyRegressionTest {
         int totalYears = 0;
         double worstYear = Double.POSITIVE_INFINITY;
         double bestYear = Double.NEGATIVE_INFINITY;
+        double bestRollingYear = Double.NEGATIVE_INFINITY;
 
         for (int seed = 0; seed < seeds; seed++) {
             EconomyState state = EconomyState.fresh(seed, 0L, 0L);
@@ -110,6 +139,14 @@ public final class EconomyRegressionTest {
                         double price = state.prices.get(asset.ticker());
                         require(Double.isFinite(price) && price > 0.0,
                                 "Invalid asset price");
+                    }
+                    List<Double> vilxHistory = state.priceHistory.get("VILX");
+                    if (vilxHistory.size() > EconomyEngine.DAYS_PER_YEAR) {
+                        double trailingPrice = vilxHistory.get(
+                                vilxHistory.size() - 1 - EconomyEngine.DAYS_PER_YEAR);
+                        double rollingYear = vilxHistory.get(vilxHistory.size() - 1)
+                                / trailingPrice - 1.0;
+                        bestRollingYear = Math.max(bestRollingYear, rollingYear);
                     }
                 }
                 double annual = state.prices.get("VILX")
@@ -139,6 +176,10 @@ public final class EconomyRegressionTest {
                 "Negative-year frequency is outside target: " + negativeRate);
         require(worstYear < -0.40, "No severe bear-market year appeared");
         require(bestYear > 0.35, "No strong bull-market year appeared");
+        require(bestYear < 0.81,
+                "VILX broad-index upside tail is implausibly high: " + bestYear);
+        require(bestRollingYear < 1.00,
+                "VILX rolling-year upside tail is implausibly high: " + bestRollingYear);
 
         System.out.printf(
                 "VILX mean CAGR %.2f%%, p05 %.2f%%, median %.2f%%, p95 %.2f%%, negative years %.1f%%, annual range %.1f%% to %.1f%%%n",

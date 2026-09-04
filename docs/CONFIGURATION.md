@@ -14,6 +14,9 @@ Edit the file while the server is stopped, or edit it and run `/emerald config r
 | `banker.restriction_radius` | `5` | `2`–`32` | Home radius assigned to managed Banker villagers. |
 | `transactions.cooldown_ticks` | `5` | `0`–`200` | Server-side delay between accepted dashboard actions from one player. |
 | `onboarding.join_hint_enabled` | `true` | `true`, `false` | Sends each player one persistent discovery hint on their first join after the mod is installed. |
+| `market.events_enabled` | `true` | `true`, `false` | Enables future rare market events and their asset or commodity shocks. Disabling it does not erase historical news. |
+| `economic_clock.offline_progression_enabled` | `true` | `true`, `false` | Allows trusted wall-clock time to advance the economy while the world is closed. Game-time progression remains active when disabled. |
+| `economic_clock.max_offline_days` | `25000` | `1`–`25000` | Maximum wall-clock economic days credited from one observed gap. Lower values provide stronger clock-jump protection. |
 | `village_prosperity.simulation_enabled` | `true` | `true`, `false` | Advances abstract settlement economies. |
 | `village_prosperity.visual_progression_enabled` | `true` | `true`, `false` | Allows queued structures and settlers to materialize in loaded chunks. |
 | `village_prosperity.market_integration_enabled` | `true` | `true`, `false` | Allows eligible settlement fundamentals to influence market sectors. |
@@ -45,10 +48,12 @@ Integers must be written without decimal points. Boolean values are case-insensi
 
 `market_integration_enabled` and `automatic_recovery_enabled` are independent switches, but neither advances abstract settlements while simulation is disabled. Disabling the Fund or a contribution subtype prevents new contributions of that type; it does not erase existing village-owned balances, Endowment principal, history, or donor records.
 
+Disabling offline progression ignores wall-clock time observed after the setting takes effect; it does not pause ordinary game-time advancement or remove catch-up already queued. `max_offline_days` limits each newly observed wall-clock gap and cannot be raised above the built-in 25,000-day absolute backlog safety limit. Disabling market events prevents new exceptional event shocks while leaving the calibrated regime cycle, ordinary volatility, and negative years intact.
+
 ## Operational guidance
 
 - Back up the world before changing several simulation settings or moving between mod versions.
 - Increase scan intervals or reduce the construction budget first if a large server needs less background work.
 - Use `/emerald config show` to see the exact active values and file location.
 - Use `/emerald config reload` after an edit. A success message lists the newly active values; an error confirms that the prior configuration is still active.
-- Configuration does not change market calibration, player holdings, economic time, or save-format compatibility.
+- These controls affect future simulation only. They do not rewrite market history, player holdings, or the save format.

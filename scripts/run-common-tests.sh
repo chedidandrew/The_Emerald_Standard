@@ -11,6 +11,8 @@ mapfile -t MAIN_SOURCES < <(find "$ROOT/common/src/main/java" -name '*.java' -pr
 mapfile -t TEST_SOURCES < <(find "$ROOT/common/src/test/java" -name '*.java' -print | sort)
 
 javac --release 21 -d "$BUILD" "${MAIN_SOURCES[@]}"
+javac --release 21 -cp "$BUILD" -d "$BUILD" \
+    "$ROOT/common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/EmeraldConfig.java"
 javac --release 21 -cp "$BUILD" -d "$BUILD" "${TEST_SOURCES[@]}"
 
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomyRegressionTest
@@ -24,6 +26,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ScalingAndSpatialIndexRe
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.debug.DebugReportFilesRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.BankerScreenLayoutRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.ContainerDataPackingRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.EmeraldConfigRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.FundConfirmationFingerprintRegressionTest
 
 fabric_version="$(grep '^mod_version=' "$ROOT/fabric/gradle.properties" | cut -d= -f2-)"

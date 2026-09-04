@@ -63,6 +63,7 @@ required=(
     'data/minecraft/tags/point_of_interest_type/acquirable_job_site.json'
     'data/the_emerald_standard/loot_table/blocks/exchange_desk.json'
     'data/the_emerald_standard/recipe/exchange_desk.json'
+    'data/the_emerald_standard/advancement/first_banker.json'
 )
 if [[ "$LOADER" == "fabric" ]]; then
     required+=(
@@ -133,6 +134,12 @@ done
 if ! unzip -p "$jar_file" assets/the_emerald_standard/lang/en_us.json \
         | "${PYTHON_COMMAND[@]}" -m json.tool >/dev/null; then
     echo "$jar_file contains invalid English language JSON" >&2
+    exit 1
+fi
+
+if ! unzip -p "$jar_file" data/the_emerald_standard/advancement/first_banker.json \
+        | "${PYTHON_COMMAND[@]}" -c 'import json,sys; d=json.load(sys.stdin); assert d["criteria"]["opened_banker"]["trigger"] == "minecraft:impossible"'; then
+    echo "$jar_file contains an invalid First Banker advancement" >&2
     exit 1
 fi
 

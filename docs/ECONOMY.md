@@ -4,13 +4,15 @@
 
 One Minecraft day equals one economic day. A standard Minecraft day lasts 20 real minutes, so 365 economic days equal about 5 real days, 1 hour, and 40 minutes.
 
-The larger of accumulated game time and trusted wall-clock time advances one unified remainder so ordinary online play is not double-counted. Partial progress persists across restarts. Offline catch-up is bounded, and banking pauses while a backlog remains so players cannot trade against a stale market.
+The larger of accumulated game time and trusted wall-clock time advances one unified remainder so ordinary online play is not double-counted. Partial progress persists across restarts. Offline catch-up is bounded, and banking pauses while a backlog remains so players cannot trade against a stale market. World configuration can disable wall-clock progression without pausing game-time progression and can lower the maximum credited offline gap from its protected 25,000-day default.
 
 ## Global market regimes
 
 The global economy transitions among expansion, bull, boom, stagnation, recession, crash, and recovery. Regimes are persistent and probabilistic rather than scripted. VILX and eight Minecraft-themed companies combine broad-market exposure, company-specific risk, rare deterministic events, and a private economy seed.
 
-The committed regression suite continues to target roughly 10 percent long-run VILX CAGR while allowing severe negative years, unusually strong recoveries, and long sideways periods. These are simulation targets, not guaranteed player returns.
+The committed regression suite continues to target roughly 10 percent long-run VILX CAGR while allowing severe negative years, unusually strong recoveries, and long sideways periods. In the current 250-seed, 75-year calibration corpus, VILX averages 9.50 percent CAGR, 27.4 percent of years are negative, and calendar-year outcomes range from -59.6 to +76.4 percent.
+
+VILX applies progressive upside damping only after its trailing 365-day gain exceeds 50 percent, approaching an 80 percent soft guardrail. It never converts a positive raw day into a loss; if the moving reference leaves VILX above the guardrail, it pauses further upside until the rolling window catches up. Because that reference rolls forward, the measured trailing-year ratio can temporarily exceed 80 percent—even on a down day—when an older lower price falls out of the window; the guardrail does not force an artificial price cut. This tames the diversified index's former +126.8 percent extreme tail without changing down days or gains that end at or below 50 percent. The guardrail is not a promised return: a player can still lose heavily, and future returns remain deterministic but unknown. Rare event shocks can be disabled per world without removing ordinary regimes or volatility.
 
 ## Village fundamentals
 

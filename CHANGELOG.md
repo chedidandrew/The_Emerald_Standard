@@ -15,6 +15,8 @@ All notable changes to The Emerald Standard are documented here.
 - Added a rebuildable per-dimension village spatial index and measured query/save/load regression coverage at 100, 500, and 1,000 villages and accounts.
 - Added focused debug ownership, watched-village filtering, privacy, report-limit, and timing-boundary regression coverage.
 - Added a one-time, configurable first-join discovery hint and a clearer first-Banker deposit and risk explanation.
+- Added a one-time **The Emerald Standard** advancement for the first successful Banker visit and a structured GitHub form for exact-commit manual beta evidence.
+- Added independent world controls for market events, offline economic progression, and the maximum credited wall-clock gap.
 - Added a complete world-configuration reference and an exact-commit release staging procedure.
 
 ### Changed
@@ -31,6 +33,9 @@ All notable changes to The Emerald Standard are documented here.
 - Configuration reload now rejects unknown keys as well as malformed or out-of-range values, reports the exact file, and confirms that the previous settings remain active after a failure.
 - Packaged-JAR verification now checks exact binary and sources filenames, embedded loader identity and version, manifest version, required sources, and emits SHA-256 checksums for both files.
 - Removed project-owned Gradle 10 deprecations from both loader builds while preserving the existing artifact names and metadata.
+- VILX now progressively dampens only exceptional trailing-year upside above 50 percent toward an 80 percent soft guardrail, preserving ordinary gains and every down day while reducing the former +126.8 percent calendar-year diversified-index tail.
+- Whole-economy replacement saves now reuse an exact-byte SHA-256 validation result when the primary generation is unchanged; a before/after mature-state benchmark measured roughly a threefold replacement-save improvement.
+- Unstarted village projects now inspect 20 bounded, deterministic lot candidates instead of 12, improving placement odds on rough terrain without force-loading chunks or weakening site protection.
 
 ### Fixed
 
@@ -41,11 +46,13 @@ All notable changes to The Emerald Standard are documented here.
 - Hardened malformed quote handling, persisted chronology and identifier validation, and economic-day, project-ID, casualty, and collapse counter exhaustion.
 - Invalid release artifact sets now fail before creating an output directory or copying any release files.
 - Banker dashboard synchronization now losslessly packs every logical 32-bit value into signed 16-bit menu slots, preventing client-side truncation of balances, holdings, histories, position IDs, activity, and large Fund drafts.
+- Inventory-linked transactions now checkpoint and read back only the affected player's NBT before releasing the live journal, instead of flushing every online player through an API that suppresses individual write failures.
 
 ### Configuration and compatibility
 
 - Added independent Prosperity Fund toggles plus configurable endowment payout, emergency-reserve share, and monthly spending cap. Defaults preserve endowment principal and release 4 percent annually.
 - Added `onboarding.join_hint_enabled`; existing config files safely receive its default without being rewritten.
+- Added `market.events_enabled`, `economic_clock.offline_progression_enabled`, and bounded `economic_clock.max_offline_days`; omitted keys preserve prior behavior in upgraded worlds.
 - Pinned both Gradle 9.5.1 distribution downloads to the official SHA-256 digest and verify both wrapper JARs against Gradle's published checksum in the common gate.
 - Advanced persistence to format 9. Format-8 and earlier holdings without execution history receive an explicitly inferred migration-day basis, and legacy scalar CD and lending products are promoted to identified positions.
 - Format-9 saves preserve five-year asset, commodity, and personal history, portfolio analytics, multiple term positions, village Fund balances, and donor records. Older builds reject the future format instead of silently stripping it.

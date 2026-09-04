@@ -299,6 +299,7 @@ public final class ScalingAndSpatialIndexRegressionTest {
         Path directory = Files.createTempDirectory("emerald-standard-mature-scale-");
         Path save = directory.resolve("the_emerald_standard.properties");
         long saveMillis;
+        long replacementSaveMillis;
         long loadMillis;
         long bytes;
         try {
@@ -323,6 +324,15 @@ public final class ScalingAndSpatialIndexRegressionTest {
                             .contributions.size() == EconomyState.MAX_FUND_LEDGER_ENTRIES
                             && loaded.donors.size() == MATURE_ACCOUNT_COUNT,
                     "Mature Prosperity Fund history or donor state was lost");
+
+            EconomyState.Account changed = state.accounts.get(accountId(10_099));
+            changed.cashMicro++;
+            long replacementSaveStart = System.nanoTime();
+            state.save(save);
+            replacementSaveMillis = elapsedMillis(replacementSaveStart);
+            EconomyState replaced = EconomyState.load(save, -1L, 10_000L, 20_000L);
+            require(replaced.accounts.get(accountId(10_099)).cashMicro == changed.cashMicro,
+                    "Replacement save lost a mature account mutation");
         } finally {
             deleteIfExists(save.resolveSibling(save.getFileName() + ".tmp"));
             deleteIfExists(save.resolveSibling(save.getFileName() + ".bak"));
@@ -330,13 +340,15 @@ public final class ScalingAndSpatialIndexRegressionTest {
             deleteIfExists(directory);
         }
         System.out.printf(
-                "MATURE accounts=%d history=%d ledger=%d positions=%d fund_entries=%d save_ms=%d load_ms=%d bytes=%d%n",
+                "MATURE accounts=%d history=%d ledger=%d positions=%d fund_entries=%d "
+                        + "save_ms=%d replacement_save_ms=%d load_ms=%d bytes=%d%n",
                 MATURE_ACCOUNT_COUNT,
                 MATURE_HISTORY_DAYS,
                 MATURE_LEDGER_ENTRIES,
                 EconomyState.MAX_TERM_POSITIONS * 2,
                 EconomyState.MAX_FUND_LEDGER_ENTRIES,
                 saveMillis,
+                replacementSaveMillis,
                 loadMillis,
                 bytes);
     }

@@ -52,9 +52,14 @@ final class DurabilityAndInvariantRegression {
         EconomyState recovered = EconomyState.load(main, 999L, 50_000L, 0L);
         require(recovered.account(PLAYER).cashMicro >= 10L * EconomyState.MICRO,
                 "Backup recovery lost committed data");
+        require(service.deposit(PLAYER, 2L),
+                "A valid in-memory state could not replace a corrupt primary");
         EconomyState stillGood = EconomyState.load(backup, 999L, 50_000L, 0L);
         require(stillGood.account(PLAYER).cashMicro >= 10L * EconomyState.MICRO,
                 "Corrupt primary replaced known-good backup");
+        EconomyState replacement = EconomyState.load(main, 999L, 50_000L, 0L);
+        require(replacement.account(PLAYER).cashMicro == 17L * EconomyState.MICRO,
+                "Replacement save lost state after rejecting a changed primary fingerprint");
     }
 
     private static void testEmptyPrimaryUsesBackup(Path directory) throws Exception {

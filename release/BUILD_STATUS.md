@@ -47,12 +47,12 @@ The retained workflow artifacts are:
 - Fabric server/client smoke logs: `9945146958`, `9945149086`
 - NeoForge server/client smoke logs: `9945147279`, `9945157326`
 
-Publication should reuse the verified candidate JAR artifacts rather than rebuilding another source state. Release checksums remain a publication-time requirement and have not been created.
+Those retained artifacts belong only to the older `49e1e7c` candidate and must not be published for later source. Publication must use exact artifacts from a new successful full workflow; release checksums remain a publication-time requirement and have not been created.
 
 ## Compatibility and remaining boundaries
 
 Format-7 and format-8 worlds migrate directly to format 9 for portfolio accounting, multi-position term products, commodity and personal history, Prosperity Funds, and donor records. Holdings without historical executions receive an explicitly inferred opening basis. Older builds reject format 9, so testing should begin from a world backup if downgrade may be needed.
 
-Nearby village lookup is indexed, but ordinary mutations still synchronously serialize the complete world economy; very large persistent worlds retain linear save/load cost. Economy-file bank markers and Minecraft chunk saves are not cross-file atomic, so a narrow crash window can still require fallback Banker access instead of automatic bank reconstruction.
+Nearby village lookup is indexed, but ordinary mutations still synchronously serialize the complete world economy; unchanged primary generations now avoid one redundant parse, while very large persistent worlds retain linear serialization and load cost. Economy-file bank markers and Minecraft chunk saves are not cross-file atomic, so a narrow crash window can still require fallback Banker access instead of automatic bank reconstruction.
 
 This remains an unreleased beta candidate. Automated verification cannot replace hands-on review of all seven pages and GUI scales, term-position selection, Fund controls, unusual terrain, project repair, claim integrations, multiplayer concurrency, long sessions, or subjective structure presentation.

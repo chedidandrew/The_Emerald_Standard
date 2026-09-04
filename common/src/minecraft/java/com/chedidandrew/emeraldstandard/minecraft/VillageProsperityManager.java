@@ -811,9 +811,11 @@ public final class VillageProsperityManager {
             EmeraldConfig config) {
         BlockPos center = BlockPos.of(village.centerPos);
         int[][] offsets = {
-                {36, 0}, {-36, 0}, {0, 36}, {0, -36},
-                {42, 22}, {-42, 22}, {42, -22}, {-42, -22},
-                {54, 0}, {-54, 0}, {0, 54}, {0, -54}
+                {30, 0}, {-30, 0}, {0, 30}, {0, -30},
+                {30, 18}, {-30, 18}, {30, -18}, {-30, -18},
+                {38, 38}, {-38, 38}, {38, -38}, {-38, -38},
+                {48, 0}, {-48, 0}, {0, 48}, {0, -48},
+                {52, 26}, {-52, 26}, {52, -26}, {-52, -26}
         };
         int start = Math.floorMod((int) (project.projectId ^ village.villageId.hashCode()), offsets.length);
         StructureSize size = size(project.type);

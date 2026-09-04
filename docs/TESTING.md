@@ -22,7 +22,8 @@ The suite verifies:
 - Five-year asset, commodity, and personal history retention plus bounded chart-sampling inputs
 - Up to eight independently identified CDs and eight villager-lending positions, including position-specific close and collect behavior
 - Direct Grants, protected-principal Endowments, Project Sponsorships, all seven purposes, emergency reserves, bounded spending, and donor recognition
-- Inventory transaction-journal lifecycle
+- Inventory transaction-journal lifecycle, persisted-inventory comparison, and durable journal
+  removal before later inventory changes are allowed
 - Village Prosperity simulation and project approval
 - Independent simulation, visual, market-integration, and automatic-recovery behavior
 - Physical-first extinction recovery
@@ -39,7 +40,8 @@ The suite verifies:
 - Persistent project bounds, exponential retry deadlines, and restart eligibility
 - Physical project benefits remaining inactive until verified materialization, demotion after integrity loss, and safe repair eligibility
 - Dimension-filtered nearby village snapshots and account/settlement-aware catch-up batches
-- Spatial-index equivalence, cross-dimension isolation, deterministic ties, and measured query/save/load work at 100, 500, and 1,000 villages and accounts
+- Spatial-index equivalence, cross-dimension isolation, deterministic ties, measured query/save/load
+  work at 100, 500, and 1,000 villages and accounts, and mature replacement-save timing
 - No-op bank association persistence, net-worth overflow safety, and exact oversell rejection
 - Debug capture ownership, watched-village filtering, privacy redaction, timeline limits, and separated timing categories
 - Signed-short packing and reassembly round trips for full-width balances, gains, histories, position IDs, and Fund drafts
@@ -61,6 +63,8 @@ GitHub Actions must pass for the exact candidate commit:
 - Artifact upload for both loaders and smoke logs
 
 ## Manual beta checklist
+
+Use the repository's [manual beta test form](https://github.com/chedidandrew/The_Emerald_Standard/issues/new?template=manual_beta_test.yml) for exact-commit evidence. Select one test area per report; attach the `/emerald debug` ZIP for every failure or ambiguous outcome. The canonical coverage table remains [MANUAL_TEST_MATRIX-0.4.md](MANUAL_TEST_MATRIX-0.4.md).
 
 Automated startup proves API compatibility and initialization. It cannot prove every physical-world edge case.
 

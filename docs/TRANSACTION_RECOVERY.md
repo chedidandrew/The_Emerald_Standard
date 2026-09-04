@@ -11,8 +11,11 @@ The mod uses a durable journal that survives restart and records enough informat
 1. Save a `PREPARED` journal with the original inventory count and intended bank credit.
 2. Remove the items from the live player inventory.
 3. Save the bank credit and move the journal to `BANK_COMMITTED`.
-4. Synchronously flush online player data through vanilla's public `saveAll()` path.
-5. Clear the journal.
+4. Serialize the affected player through Minecraft's normal root `saveWithoutId` NBT path, write
+   only that player's `.dat`, require the checked safe replacement to succeed, and read back an
+   identical `Inventory` payload.
+5. Synchronously persist removal of the `BANK_COMMITTED` journal before returning success and
+   allowing later inventory changes.
 
 Recovery behavior:
 
@@ -26,8 +29,8 @@ Recovery behavior:
 1. Debit bank cash and save a `BANK_COMMITTED` withdrawal journal.
 2. Insert as many emeralds as fit in the inventory.
 3. Refund any undelivered amount to bank cash and reduce the journal to the delivered quantity.
-4. Synchronously flush online player data through vanilla's public `saveAll()` path.
-5. Clear the journal.
+4. Perform the same checked, target-player-only save and persisted-inventory comparison.
+5. Synchronously persist removal of the committed journal before returning success.
 
 Recovery behavior:
 
@@ -45,11 +48,36 @@ GUI financial actions also use a short configurable game-tick cooldown to absorb
 
 The recovery comparison is intentionally capped by the original transaction quantity. It never removes or grants more than the journaled amount.
 
-## Why all online players are flushed
+## Why the transaction checkpoint writes one player directly
 
-Minecraft exposes a public all-player save operation, while the single-player save method is protected. The current implementation therefore flushes all online player data before clearing a transaction journal. This is heavier than an ideal per-player write, but it closes the inventory persistence window using supported public APIs and keeps Fabric and NeoForge behavior identical.
+Minecraft's public all-player save is both unnecessarily broad and unable to report a failed
+player-data write: the 26.2 player storage method logs and suppresses write exceptions. The
+transaction checkpoint therefore mirrors that version's player-data algorithm with public APIs:
+`saveWithoutId` supplies the same root NBT, including the current `DataVersion` and loader-added
+entity attachments; `NbtIo.writeCompressed` synchronizes the temporary file; and
+`Util.safeReplaceOrMoveFile` reports whether the `.dat`/`.dat_old` rotation succeeded. Reading the
+new file back and comparing its complete `Inventory` tag is the final condition for clearing the
+journal. The replaced target file is forced again, and the containing directory is forced where
+the filesystem provider supports directory channels. Journal removal is then committed to the
+economy file before the operation succeeds. If the server stops in the narrow interval between the
+verified player save and journal cleanup, gameplay has not resumed and login recovery can safely
+reconcile the still-current expected count.
 
-A later server-scale persistence layer can replace this flush with player-attached bank data or a loader-specific safe bridge without changing the journal semantics.
+This extra durability checkpoint intentionally saves player NBT only. Statistics, advancements,
+and loader-level notifications remain owned by Minecraft's normal autosave/logout lifecycle; they
+are not part of the bank's cross-file inventory invariant. The implementation and its live
+integration check—including a real temporary `.dat`/`.dat_old` rotation and readback—is pinned to
+Minecraft 26.2 and must be reviewed if that root serialization path changes. Filesystems that do
+not support opening a directory channel retain the synchronized file writes and checked replacement
+but cannot receive the additional best-effort directory force.
+
+## Whole-state replacement saves
+
+An economy mutation still validates, serializes, synchronizes, and atomically replaces the complete
+economy file before it is acknowledged. After a successful load or write, the in-memory state keeps
+a SHA-256 fingerprint of that exact primary generation. A later replacement hashes the old primary
+and skips a redundant full deserialize/validation pass only when the bytes match exactly; any
+external change uses the strict validation path before the old file may replace the backup.
 
 ## Operational limits
 
