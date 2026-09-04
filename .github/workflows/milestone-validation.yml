@@ -1,0 +1,129 @@
+name: 0.4 milestone validation report
+
+on:
+  push:
+    branches: [milestone-95]
+    paths-ignore:
+      - release/CI_STATUS-milestone-95.md
+
+permissions:
+  contents: write
+
+concurrency:
+  group: milestone-95-validation
+  cancel-in-progress: true
+
+jobs:
+  validate-and-report:
+    name: Validate complete milestone and publish evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: milestone-95
+          fetch-depth: 0
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install client smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1
+      - name: Run complete validation matrix
+        id: matrix
+        shell: bash
+        run: |
+          set +e
+          mkdir -p build/milestone-validation release
+          : > build/milestone-validation/results.tsv
+
+          run_check() {
+            local name="$1"
+            shift
+            local log="build/milestone-validation/${name}.log"
+            echo "Running ${name}"
+            "$@" >"$log" 2>&1
+            local code=$?
+            if [[ $code -eq 0 ]]; then
+              printf '%s\tPASS\t%s\n' "$name" "$code" >> build/milestone-validation/results.tsv
+            else
+              printf '%s\tFAIL\t%s\n' "$name" "$code" >> build/milestone-validation/results.tsv
+            fi
+            return 0
+          }
+
+          run_check common-tests bash scripts/run-common-tests.sh
+          run_check scale-tests bash scripts/run-scale-tests.sh
+          run_check fabric-build bash fabric/gradlew --no-daemon -p fabric build --stacktrace
+          run_check fabric-package bash scripts/verify-built-jar.sh fabric
+          run_check neoforge-build bash neoforge/gradlew --no-daemon -p neoforge build --stacktrace
+          run_check neoforge-package bash scripts/verify-built-jar.sh neoforge
+          run_check fabric-server bash scripts/smoke-server.sh fabric
+          run_check neoforge-server bash scripts/smoke-server.sh neoforge
+          run_check fabric-client bash scripts/smoke-client.sh fabric
+          run_check neoforge-client bash scripts/smoke-client.sh neoforge
+
+          failures=$(awk -F '\t' '$2 == "FAIL" {count++} END {print count+0}' build/milestone-validation/results.tsv)
+          echo "failures=$failures" >> "$GITHUB_OUTPUT"
+
+          {
+            echo '# Milestone 0.4 CI Status'
+            echo
+            echo '- Tested commit: `'"$(git rev-parse HEAD)"'`'
+            echo '- Workflow run: `'"${GITHUB_RUN_ID}"'`'
+            echo '- Generated: `'"$(date -u +'%Y-%m-%dT%H:%M:%SZ')"'`'
+            echo '- Automated failures: **'"$failures"'**'
+            echo
+            echo '| Check | Result | Exit code |'
+            echo '| --- | --- | ---: |'
+            while IFS=$'\t' read -r name result code; do
+              echo "| ${name} | ${result} | ${code} |"
+            done < build/milestone-validation/results.tsv
+            echo
+            echo 'Automated success does not mark the hands-on rows in `docs/MANUAL_TEST_MATRIX-0.4.md` as complete.'
+          } > release/CI_STATUS-milestone-95.md
+
+          if [[ $failures -ne 0 ]]; then
+            echo 'Failed check tails:' >> release/CI_STATUS-milestone-95.md
+            for log in build/milestone-validation/*.log; do
+              if grep -qE 'FAIL|FAILED|error:|Exception' "$log"; then
+                {
+                  echo
+                  echo '```text'
+                  echo "# $(basename "$log")"
+                  tail -n 80 "$log"
+                  echo '```'
+                } >> release/CI_STATUS-milestone-95.md
+              fi
+            done
+          fi
+      - name: Upload complete validation logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: milestone-95-validation-${{ github.sha }}
+          path: build/milestone-validation/
+          if-no-files-found: error
+      - name: Commit machine-readable status report
+        if: always()
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add release/CI_STATUS-milestone-95.md
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Record milestone 0.4 validation evidence'
+          git push origin HEAD:milestone-95
+      - name: Enforce validation result
+        if: always()
+        shell: bash
+        run: |
+          if [[ '${{ steps.matrix.outputs.failures }}' != '0' ]]; then
+            echo 'One or more milestone checks failed.' >&2
+            exit 1
+          fi
