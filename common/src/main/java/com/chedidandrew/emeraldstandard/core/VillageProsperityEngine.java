@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.core;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -507,6 +508,28 @@ public final class VillageProsperityEngine {
         project.type = desired;
         project.approvedDay = day;
         project.totalBlocks = desired.nominalBlocks();
+        if (village.architectureCharacter.isBlank()) {
+            village.architectureCharacter = VillageArchitecture.character(village.villageId).id();
+        }
+        List<VillageArchitecture.ExistingDesign> existingDesigns = village.projects.stream()
+                .filter(existing -> VillageArchitecture.MODULAR_SCHEMA.equals(existing.designSchema))
+                .map(existing -> new VillageArchitecture.ExistingDesign(
+                        existing.type,
+                        existing.designSilhouette,
+                        existing.designRoof,
+                        existing.designFrontage,
+                        existing.designMirrored,
+                        existing.designSignature))
+                .toList();
+        VillageArchitecture.Recipe recipe = VillageArchitecture.choose(
+                village.villageId, project.projectId, desired, existingDesigns);
+        project.designSchema = VillageArchitecture.MODULAR_SCHEMA;
+        project.designSeed = recipe.seed();
+        project.designSilhouette = recipe.silhouette();
+        project.designRoof = recipe.roof();
+        project.designFrontage = recipe.frontage();
+        project.designMirrored = recipe.mirrored();
+        project.designSignature = recipe.signature();
         village.projects.add(project);
     }
 

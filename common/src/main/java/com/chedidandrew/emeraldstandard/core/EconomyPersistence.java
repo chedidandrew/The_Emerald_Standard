@@ -227,6 +227,8 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "development_points", Double.toString(village.developmentPoints));
         properties.setProperty(prefix + "restoration_funded", Boolean.toString(village.restorationFunded));
         properties.setProperty(prefix + "project_serial", Long.toString(village.projectSerial));
+        properties.setProperty(prefix + "architecture.character", village.architectureCharacter);
+        properties.setProperty(prefix + "architecture.dialect", village.architectureDialect);
         writeProsperityFund(properties, prefix + "fund.", village.prosperityFund);
 
         village.residents.forEach((residentId, resident) -> {
@@ -254,6 +256,20 @@ final class EconomyPersistence {
             properties.setProperty(projectPrefix + "blocked", Boolean.toString(project.blocked));
             properties.setProperty(projectPrefix + "manual_repair_required", Boolean.toString(project.manualRepairRequired));
             properties.setProperty(projectPrefix + "abstract_only", Boolean.toString(project.abstractOnly));
+            properties.setProperty(projectPrefix + "design.schema", project.designSchema);
+            properties.setProperty(projectPrefix + "design.seed", Long.toString(project.designSeed));
+            properties.setProperty(projectPrefix + "design.silhouette", Integer.toString(project.designSilhouette));
+            properties.setProperty(projectPrefix + "design.roof", Integer.toString(project.designRoof));
+            properties.setProperty(projectPrefix + "design.frontage", Integer.toString(project.designFrontage));
+            properties.setProperty(projectPrefix + "design.mirrored", Boolean.toString(project.designMirrored));
+            properties.setProperty(projectPrefix + "design.rotation", Integer.toString(project.designRotation));
+            properties.setProperty(projectPrefix + "design.signature", Long.toString(project.designSignature));
+            properties.setProperty(projectPrefix + "design.stage", Integer.toString(project.designStage));
+            properties.setProperty(projectPrefix + "trail.anchor_set", Boolean.toString(project.trailAnchorSet));
+            properties.setProperty(projectPrefix + "trail.anchor", Long.toString(project.trailAnchorPos));
+            properties.setProperty(projectPrefix + "trail.blocks", Integer.toString(project.trailMaterializedBlocks));
+            properties.setProperty(projectPrefix + "trail.total_blocks", Integer.toString(project.trailTotalBlocks));
+            properties.setProperty(projectPrefix + "trail.complete", Boolean.toString(project.trailMaterializedComplete));
         }
         for (int index = 0; index < village.incidents.size(); index++) {
             EconomyState.VillageIncident incident = village.incidents.get(index);
@@ -529,11 +545,11 @@ final class EconomyPersistence {
                 loadGeneratedBankAnchors(state, properties);
             }
             if (format >= 6) {
-                loadVillages(state, properties);
+                loadVillages(state, properties, format);
                 loadBankVillageAssociations(state, properties);
             }
             if (format >= 7) {
-                loadVillageMarketShadows(state, properties);
+                loadVillageMarketShadows(state, properties, format);
             }
 
             if (format >= 2) {
@@ -561,7 +577,8 @@ final class EconomyPersistence {
         }
     }
 
-    private static void loadVillages(EconomyState state, Properties properties)
+    private static void loadVillages(
+            EconomyState state, Properties properties, int format)
             throws IOException {
         Map<UUID, Map<Long, EconomyState.VillageProject>> projects = new TreeMap<>();
         Map<UUID, Map<Integer, EconomyState.VillageIncident>> incidents = new TreeMap<>();
@@ -600,10 +617,11 @@ final class EconomyPersistence {
                 village.incidents.addAll(entry.getValue().values());
             }
         }
+        state.villages.values().forEach(village -> normalizeArchitecture(village, format));
     }
 
     private static void loadVillageMarketShadows(
-            EconomyState state, Properties properties) throws IOException {
+            EconomyState state, Properties properties, int format) throws IOException {
         String prefix = "market.shadow.";
         Map<UUID, Map<Long, EconomyState.VillageProject>> projects = new TreeMap<>();
         Map<UUID, Map<Integer, EconomyState.VillageIncident>> incidents = new TreeMap<>();
@@ -650,6 +668,35 @@ final class EconomyPersistence {
             if (shadow != null && shadow.counterfactualVillage != null) {
                 shadow.counterfactualVillage.incidents.addAll(entry.getValue().values());
             }
+        }
+        state.villageMarketShadows.values().stream()
+                .map(shadow -> shadow.counterfactualVillage)
+                .filter(java.util.Objects::nonNull)
+                .forEach(village -> normalizeArchitecture(village, format));
+    }
+
+    private static void normalizeArchitecture(
+            EconomyState.VillageRecord village, int format) {
+        if (format >= 10 || village == null) {
+            return;
+        }
+        village.architectureCharacter = "";
+        village.architectureDialect = "";
+        for (EconomyState.VillageProject project : village.projects) {
+            project.designSchema = VillageArchitecture.LEGACY_SCHEMA;
+            project.designSeed = 0L;
+            project.designSilhouette = 0;
+            project.designRoof = 0;
+            project.designFrontage = 0;
+            project.designMirrored = false;
+            project.designRotation = 0;
+            project.designSignature = 0L;
+            project.designStage = 0;
+            project.trailAnchorSet = false;
+            project.trailAnchorPos = 0L;
+            project.trailMaterializedBlocks = 0;
+            project.trailTotalBlocks = 0;
+            project.trailMaterializedComplete = false;
         }
     }
 
@@ -726,6 +773,8 @@ final class EconomyPersistence {
             case "development_points" -> village.developmentPoints = Double.parseDouble(value);
             case "restoration_funded" -> village.restorationFunded = Boolean.parseBoolean(value);
             case "project_serial" -> village.projectSerial = Long.parseLong(value);
+            case "architecture.character" -> village.architectureCharacter = value;
+            case "architecture.dialect" -> village.architectureDialect = value;
             default -> {
                 // Ignore unknown fields from this supported format.
             }
@@ -852,6 +901,20 @@ final class EconomyPersistence {
             case "blocked" -> project.blocked = Boolean.parseBoolean(value);
             case "manual_repair_required" -> project.manualRepairRequired = Boolean.parseBoolean(value);
             case "abstract_only" -> project.abstractOnly = Boolean.parseBoolean(value);
+            case "design.schema" -> project.designSchema = value;
+            case "design.seed" -> project.designSeed = Long.parseLong(value);
+            case "design.silhouette" -> project.designSilhouette = Integer.parseInt(value);
+            case "design.roof" -> project.designRoof = Integer.parseInt(value);
+            case "design.frontage" -> project.designFrontage = Integer.parseInt(value);
+            case "design.mirrored" -> project.designMirrored = Boolean.parseBoolean(value);
+            case "design.rotation" -> project.designRotation = Integer.parseInt(value);
+            case "design.signature" -> project.designSignature = Long.parseLong(value);
+            case "design.stage" -> project.designStage = Integer.parseInt(value);
+            case "trail.anchor_set" -> project.trailAnchorSet = Boolean.parseBoolean(value);
+            case "trail.anchor" -> project.trailAnchorPos = Long.parseLong(value);
+            case "trail.blocks" -> project.trailMaterializedBlocks = Integer.parseInt(value);
+            case "trail.total_blocks" -> project.trailTotalBlocks = Integer.parseInt(value);
+            case "trail.complete" -> project.trailMaterializedComplete = Boolean.parseBoolean(value);
             default -> {
             }
         }

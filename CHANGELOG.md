@@ -12,9 +12,9 @@ All notable changes to The Emerald Standard are documented here.
 - Added an investment carousel with previous/next controls, compact page summaries, and contextual hover explanations throughout the Banker dashboard.
 - Added distinct top, front, and side artwork plus a layered furniture model for the Exchange Desk.
 - Added live integration checks for managed Banker profession retention, Exchange Desk POI ownership, and creative-inventory visibility.
-- Added deterministic, branchable village trails that connect each new prosperity structure to the nearest earlier project or a stable settlement-edge hub.
-- Added three save-stable visual presets per prosperity project plus append-only town- and city-stage detail upgrades as development tiers rise.
-- Added live structure validation for grounded exterior details, supported lanterns, complete entrances, distinct presets, and continuous roof edges.
+- Added persisted, branchable village roads that connect each new prosperity structure to the nearest eligible earlier project or a stable settlement-edge hub.
+- Added deterministic modular prosperity architecture: each village persists a shared visual character and biome dialect, while each project combines three silhouettes, three roof families, three frontage families, and mirrored layouts for 54 save-stable recipes per project type, plus road-facing rotation and append-only town/city detail stages.
+- Added live structure validation across every modular type, character, biome dialect, recipe, and rotation for distinct base/completed designs, bounded envelopes, non-overlapping stages, authored lantern supports, required lights, beds and utility blocks, and the Exchange Hall's single Exchange Desk.
 
 ### Changed
 
@@ -25,7 +25,8 @@ All notable changes to The Emerald Standard are documented here.
 - Made the dashboard responsively fit the current logical window while preserving its tested layout, hitboxes, wrapped tooltips, and EditBox behavior; custom labels now retain the same native Minecraft glyph size as button and input text.
 - Distinguished village-project Planning from physical Building and explained when visible block placement begins.
 - Reworked Village Banks into larger biome-aware civic buildings with foundations, trim, taller windows, a sealed stepped roof, a portico and bell, lighting, storage, and a more complete service counter.
-- Enriched all ten Village Prosperity structures with grounded architectural detail, biome-matched entrances, useful interiors, lighting, project-appropriate work areas, save-stable variation, and later-tier upgrades while preserving existing-world materialization order.
+- Enriched all ten Village Prosperity structures with grounded architectural detail, biome-matched entrances, useful interiors, lighting, type-specific work areas and landmarks, village-coherent modular recipes, persisted rotations and road anchors, and later-tier upgrades while preserving in-progress placement prefixes.
+- Advanced persistence from format 9 to format 10 for village architectural character and biome dialect plus each project's architecture schema, recipe, road-facing rotation, frozen visual stage, and independent road cursor state. Format-9 and earlier projects remain `legacy_v1` without reroll, repositioning, or modular conversion; only newly approved projects use `modular_v1`.
 - Simplified dense Account, Market, Banking, Village, Fund, and Activity text; clipped variable-width values safely, wrapped contextual tooltips, and moved supporting detail into hover explanations.
 - Added the Exchange Desk to the Functional Blocks creative tab and creative search on Fabric and NeoForge.
 
@@ -40,6 +41,7 @@ All notable changes to The Emerald Standard are documented here.
 - Bridged shallow natural terrain under Village Banks and all prosperity templates, including the reported porch posts, bell accent, lantern fences, and masonry flues; a signature-guarded legacy-bank retrofit fills only exact empty footing cells.
 - Made expanded legacy prosperity templates preflight structural additions before placing them, while optional trail cells skip protected, occupied, or non-terrain positions instead of blocking later upgrades.
 - Prevented completed prosperity structures from regenerating collectible furnishings after players break them; damaged projects now suspend benefits until their authored blocks are restored in-world.
+- Decoupled modular road progress from building bounds, totals, completion, integrity audits, and economic authority. Unloaded road cells wait without force-loading, unsafe cells become gaps, and fair route selection prevents one waiting road from starving later routes.
 
 ## 0.4.0-beta.2 - 2026-09-04
 

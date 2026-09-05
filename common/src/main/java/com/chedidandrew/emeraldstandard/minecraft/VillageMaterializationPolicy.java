@@ -30,6 +30,16 @@ public final class VillageMaterializationPolicy {
         return (int) Math.floorMod((long) firstIndex + step, villageCount);
     }
 
+    /** Uses the audit ordinal, not the divisible gate pulse, so every project is visited. */
+    public static int rotatingAuditIndex(
+            long staggeredPulse, long auditPulses, int candidateCount) {
+        if (auditPulses <= 0L || candidateCount <= 0) {
+            throw new IllegalArgumentException("Audit interval and candidate count must be positive");
+        }
+        long auditOrdinal = Math.floorDiv(staggeredPulse, auditPulses);
+        return (int) Math.floorMod(auditOrdinal, candidateCount);
+    }
+
     public static int settlerHomeRadius(int developmentRadius) {
         return Math.min(MAX_SETTLER_HOME_RADIUS, Math.max(8, developmentRadius / 3));
     }
@@ -70,6 +80,7 @@ public final class VillageMaterializationPolicy {
 
     public enum SiteAvailability {
         AVAILABLE,
+        SEARCH_INCOMPLETE,
         INCOMPLETE_UNLOADED,
         UNSAFE
     }

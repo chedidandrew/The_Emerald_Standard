@@ -10,6 +10,7 @@ public final class VillageMaterializationPolicyRegressionTest {
 
     public static void main(String[] args) {
         testPerPassCapAndRotation();
+        testAuditRotationDoesNotAliasItsGate();
         testSettlerPacingAndHomeRadius();
         testIncompleteSiteClassification();
         testConservativeLegacyBounds();
@@ -72,6 +73,19 @@ public final class VillageMaterializationPolicyRegressionTest {
                 "Settler attempt did not resume at its interval boundary");
         require(VillageMaterializationPolicy.settlerAttemptDue(50L, 100L, 1_200L),
                 "Clock rollback left settler attempts permanently throttled");
+    }
+
+    private static void testAuditRotationDoesNotAliasItsGate() {
+        long auditPulses = 240L;
+        for (int candidates : new int[] {2, 3, 4, 5, 6, 8, 10}) {
+            Set<Integer> visited = new HashSet<>();
+            for (int ordinal = 0; ordinal < candidates; ordinal++) {
+                visited.add(VillageMaterializationPolicy.rotatingAuditIndex(
+                        ordinal * auditPulses, auditPulses, candidates));
+            }
+            require(visited.size() == candidates,
+                    "Audit gate aliased project selection for candidate count " + candidates);
+        }
     }
 
     private static void testIncompleteSiteClassification() {

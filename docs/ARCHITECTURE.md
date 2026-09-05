@@ -45,6 +45,18 @@ With visual progression enabled, a simulated population increase becomes a commi
 
 Economic completion and physical completion are separate. A completed economic plan becomes operational whether the village is loaded or nearby; its physical template can remain safely queued. If an already materialized authored structure later fails integrity verification, its benefits are suspended until the missing block is restored. Thus unloaded or deferred visuals never stall simulation, while verified physical damage still matters.
 
+## Modular village architecture
+
+Projects approved by format 10 use the immutable `modular_v1` generator contract. A village UUID deterministically selects one shared architectural character—Agrarian, Mercantile, Rustic, or Formal. The biome at the village's persisted center selects its material dialect—Plains, Desert, Savanna, Taiga, or Snowy—when the first modular lot is successfully reserved, and that dialect is then frozen for later projects. The result is controlled variety: buildings differ in shape and program while sharing a recognizable settlement language.
+
+Each project persists a deterministic seed, one of three silhouettes, one of three roof families, one of three frontage families, a standard or mirrored layout, and a canonical signature. This gives 3 × 3 × 3 × 2 = 54 discrete recipes per project type before seed-driven details. Selection counts prior modular projects of the same type and takes a least-used silhouette, so all three families are consumed before one can pull ahead. If the complete combination would match the immediately preceding modular project, its frontage advances deterministically. The Minecraft-side grammar composes curated masses and roofs rather than random individual blocks, then adds type-specific beds, utility blocks, market stalls, mine works, workyards, and landmark details.
+
+The recipe is persisted when the project is approved. Lot selection later determines a stable connection target before construction: the nearest eligible earlier project entrance when one exists, otherwise a settlement-edge hub. The authored north-facing entrance rotates by a persisted number of clockwise quarter turns to face that target. Rotation, biome dialect, anchor, visual stage, exact building bounds, and building total are committed atomically before the first block is placed.
+
+The base building, town stage, and city stage form append-only placement prefixes. A new project freezes the stage appropriate to its tier; a later rise preflights the complete new suffix, then atomically persists the higher target stage, total, and bounds before bounded construction resumes. A tier decline never removes a stage. Each layer receives deterministic shallow foundation columns down toward eligible natural support without mining through sound ground.
+
+Modular roads are deliberately separate from the authoritative building plan. A road stores its frozen anchor, total, cursor, and completion flag, but its cells do not participate in project bounds, building totals, physical completion, integrity audits, or economic authority. Once its building is complete, a rotating scheduler advances the best-effort road only in already-loaded chunks. Existing TES-style path blocks are adopted; protected, occupied, fluid, obstructed, or non-terrain cells become gaps, and an unloaded cell waits without force-loading or starving every later road.
+
 ## Village configuration modes
 
 The following settings are independent:
@@ -63,22 +75,22 @@ village_prosperity.automatic_recovery_enabled=true
 Prosperity projects are intentionally conservative:
 
 - No forced chunks. Passing the horizontal activation-radius check is only permission to inspect already-loaded world state.
-- Candidate lots must be flat and already loaded.
+- Candidate lots must be already loaded, naturally surfaced, and within the supported two-block terrain range.
 - The ground must match a small natural-ground whitelist.
 - Mud and thin snow layers are not structural Bank support; full snow blocks remain eligible natural ground.
 - The project floor is placed in air above the existing terrain surface.
 - Block entities, solid player blocks, paths, farmland, and occupied air volumes are not replaced.
 - Both prosperity projects and Village Banks consult `VillageDevelopmentProtection.register(PlacementGuard)` before placement. Integrations have no mandatory claim-mod dependency; a registered veto or thrown guard exception denies the placement.
 - A block advances project progress only when Minecraft accepts the placement and the resulting state matches the authored template.
-- Unsafe projects use persistent exponential retry backoff. A verified obstruction before the first placement releases the site so a later pass can choose a different lot. If the boundary is merely unloaded, the reservation is retained so blocks that may have been written before progress was journaled cannot be orphaned.
-- Partially built projects retain their exact persisted bounds and deterministic template prefix, then retry in place without clearing or overwriting intervening player work.
+- Unsafe candidates are rejected before reservation so the bounded search can try another lot. After a reservation is persisted, any later obstruction or unloaded boundary uses persistent exponential retry backoff and retains the exact site—even at a recorded zero prefix—so blocks that may have reached a chunk save before progress was journaled cannot be orphaned or duplicated.
+- Partially built projects retain their exact persisted bounds and deterministic recipe prefix, then retry in place without clearing or overwriting intervening player work.
 - A failed Bank attempt remains unmarked and supplies a fallback Banker, allowing a later safe retry. A plot scan that is incomplete only because candidate chunks are unloaded is likewise not converted into a permanent fallback. Rollback matches authored block identity so neighbor-updated pane and fence states are included.
 
 Cottages include real beds. Warehouses use chests instead of barrels so they do not unintentionally create fisherman workstations.
 
 Active resident professions contribute bounded sector multipliers to abstract production. During nearby construction, at most two suitable villagers periodically receive a one-shot low-speed route toward a safe exterior waypoint, look, swing, and emit particles near the project. Entity queries and route eligibility remain capped at the local 48-block range even when the development radius is configured to 256 or 512; a new settler's assigned home radius is separately capped at 32 blocks. These effects are deliberately non-authoritative theatre: they install no persistent AI goal and do not control economic progress.
 
-A low-frequency integrity pass checks one physically completed authored project at a time. A missing or replaced authored block demotes that project to its verified prefix and removes its economic authority. It is not automatically regenerated, preventing authored furnishings from becoming renewable items; once the block is restored in-world, a later audit restores authority. Append-only template upgrades use the ordinary loaded-chunk, collision, and protection rules. Solid player blocks, block entities, protected placements, and unloaded chunks are never overwritten or force-loaded.
+A low-frequency integrity pass checks one physically completed authored project at a time. A missing or replaced authored block demotes that project to its verified prefix and removes its economic authority. It is not automatically regenerated, preventing authored furnishings from becoming renewable items; once the block is restored in-world, a later audit restores authority. Append-only legacy-template and modular design-stage upgrades use the ordinary loaded-chunk, collision, and protection rules. Solid player blocks, block entities, protected placements, and unloaded chunks are never overwritten or force-loaded. Modular road cells are excluded from this audit because they are public, best-effort infrastructure rather than building authority.
 
 One cross-file durability limit remains explicit. Bank markers live in the economy save while bank blocks live in Minecraft chunks; those writes are not atomic together. A crash between them can leave a marker without a structure, in which case the mod uses an eligible fallback Banker and does not infer per-block ownership or auto-rebuild.
 
@@ -118,9 +130,9 @@ One emerald equals 1,000,000 micro-emeralds. Cash, savings, CDs, villager lendin
 
 No player account contains a debt balance. A Prosperity Fund contribution is an irreversible gift to a village-owned balance, not borrowing or a player investment, and a player can never owe more emeralds than were voluntarily committed.
 
-## Persistent data format 9
+## Persistent data format 10
 
-Format 9 includes:
+Format 10 includes:
 
 - Required magic identifier and explicit format number
 - SHA-256 checksum over sorted state properties
@@ -133,8 +145,11 @@ Format 9 includes:
 - Village lifecycle, resident records, incidents, resources, production, tier, restoration state, and pending settlers
 - Per-village no-player-damage counterfactual state, its daily re-priced market contribution and weight, and its capture/release metadata
 - Project approval, economic completion, site reservation, exact bounds, physical progress, retry deadline, and materialization-failure count
+- Per-village architectural character and frozen biome dialect
+- Per-project architecture schema, deterministic seed, silhouette, roof, frontage, mirror flag, canonical signature, road-facing rotation, and frozen visual stage
+- A frozen road anchor plus an independent road total, cursor, and completion flag
 
-The 0.4 line accepts both beta.4 format-7 saves and beta.1 format-8 saves and writes them forward as format 9. Format 8 introduced the expanded project catalog; format 9 adds multi-position term products, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records. Legacy scalar CD and lending products are promoted into identified position collections. Holdings without execution history receive an explicitly inferred basis at the migration-day market price. Older builds reject format 9 as a future format without stale-backup fallback. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 9 are likewise rejected without overwriting them.
+The 0.4 line accepts its earlier supported save formats and writes them forward as format 10. Format 8 introduced the expanded project catalog; format 9 added multi-position term products, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records; format 10 adds the modular architecture contract and separate road state. When a format-9 or earlier save is read, every existing project is explicitly retained as `legacy_v1`. Its generator, recipe order, reserved origin, exact bounds, and materialized prefix are not rerolled, repositioned, or converted. Only projects approved after the upgrade receive `modular_v1` recipes. Legacy scalar CD and lending products are promoted into identified position collections, and holdings without execution history receive an explicitly inferred basis at the migration-day market price. Older builds reject format 10 as a future format without stale-backup fallback. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 10 are likewise rejected without overwriting them.
 
 ## Save process
 

@@ -29,6 +29,7 @@ final class JournalAndMigrationRegression {
         testFormatFourMigration(root.resolve("format-four"));
         testFormatFiveMigration(root.resolve("format-five"));
         testLegacyProjectMetadataDefaults(root.resolve("format-six-project-defaults"));
+        testFormatNineArchitectureMigration(root.resolve("format-nine-architecture"));
         testFormatSevenProjectCatalogMigration(root.resolve("format-seven-project-catalog"));
         testVillageMarketShadowPersistence(root.resolve("market-shadow"));
         testLegacySuppressedVillageWithoutShadow(
@@ -463,6 +464,84 @@ final class JournalAndMigrationRegression {
                         .anyMatch(project -> project.type
                                 == VillageProsperityEngine.ProjectType.HOUSE),
                 "Expanded project identifier did not survive current-format reload");
+    }
+
+    private static void testFormatNineArchitectureMigration(Path directory) throws Exception {
+        Files.createDirectories(directory);
+        Path save = directory.resolve("the_emerald_standard.properties");
+        EconomyState state = EconomyState.fresh(910L, 0L, 0L);
+        state.economicDay = 9L;
+        UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000009910");
+        EconomyState.VillageRecord village = state.village(villageId);
+        village.architectureCharacter = VillageArchitecture.Character.FORMAL.id();
+        village.architectureDialect = VillageArchitecture.BiomeDialect.PLAINS.id();
+        for (int index = 0; index < 3; index++) {
+            EconomyState.VillageProject project = new EconomyState.VillageProject();
+            project.projectId = index + 1L;
+            project.type = VillageProsperityEngine.ProjectType.COTTAGE;
+            project.approvedDay = 1L;
+            project.completedDay = 2L;
+            project.economicProgress = 1.0;
+            project.economicComplete = true;
+            project.totalBlocks = project.type.nominalBlocks();
+            if (index < 2) {
+                project.originPos = packBlockPos(20 + index * 20, 64, 20);
+                project.boundsMinPos = packBlockPos(19 + index * 20, 62, 19);
+                project.boundsMaxPos = packBlockPos(30 + index * 20, 72, 30);
+                project.materializedBlocks = index == 0 ? project.totalBlocks : 10;
+                project.materializedComplete = index == 0;
+            }
+            VillageArchitecture.Recipe recipe = VillageArchitecture.choose(
+                    villageId, project.projectId, project.type, java.util.List.of());
+            project.designSchema = VillageArchitecture.MODULAR_SCHEMA;
+            project.designSeed = recipe.seed();
+            project.designSilhouette = recipe.silhouette();
+            project.designRoof = recipe.roof();
+            project.designFrontage = recipe.frontage();
+            project.designMirrored = recipe.mirrored();
+            project.designSignature = recipe.signature();
+            project.designStage = 1;
+            project.trailAnchorSet = project.originPos != 0L;
+            project.trailAnchorPos = project.originPos == 0L
+                    ? 0L
+                    : packBlockPos(14, 64, 14);
+            project.trailMaterializedBlocks = project.originPos == 0L ? 0 : index == 0 ? 20 : 4;
+            project.trailTotalBlocks = project.originPos == 0L ? 0 : 20;
+            project.trailMaterializedComplete = project.originPos != 0L && index == 0;
+            village.projects.add(project);
+        }
+        village.projectSerial = 3L;
+        state.save(save);
+
+        Properties formatNine = readProperties(save);
+        formatNine.setProperty("format", "9");
+        formatNine.stringPropertyNames().stream()
+                .filter(key -> key.contains(".design.") || key.contains(".architecture."))
+                .toList()
+                .forEach(formatNine::remove);
+        refreshChecksum(formatNine);
+        writeProperties(save, formatNine);
+
+        EconomyState migrated = EconomyState.load(save, 0L, 0L, 0L);
+        EconomyState.VillageRecord migratedVillage = migrated.existingVillage(villageId);
+        require(migratedVillage.architectureCharacter.isBlank()
+                        && migratedVillage.architectureDialect.isBlank(),
+                "Format 9 migration invented village architectural DNA");
+        require(migratedVillage.projects.stream().allMatch(project ->
+                        VillageArchitecture.LEGACY_SCHEMA.equals(project.designSchema)
+                                && project.designSeed == 0L
+                                && project.designRotation == 0
+                                && project.designStage == 0
+                                && !project.trailAnchorSet
+                                && project.trailAnchorPos == 0L
+                                && project.trailMaterializedBlocks == 0
+                                && project.trailTotalBlocks == 0
+                                && !project.trailMaterializedComplete),
+                "A format 9 project was silently promoted to the modular generator");
+        require(migratedVillage.projects.get(0).materializedComplete
+                        && migratedVillage.projects.get(1).materializedBlocks == 10
+                        && migratedVillage.projects.get(2).originPos == 0L,
+                "Format 9 completed, partial, or unbuilt project state changed during migration");
     }
 
     private static void testVillageMarketShadowPersistence(Path directory) throws Exception {

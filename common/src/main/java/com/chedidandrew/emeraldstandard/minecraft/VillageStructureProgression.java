@@ -56,6 +56,26 @@ public final class VillageStructureProgression {
     }
 
     /**
+     * Freezes a reserved incomplete prefix. Only an unreserved plan or a completed structure may
+     * expose a newly desired append-only stage for full preflight and atomic commitment.
+     */
+    public static int constructionVisualStage(
+            int developmentTier,
+            int persistedTemplateBlocks,
+            int baselineBlocks,
+            int stageOneBlocks,
+            int stageTwoBlocks,
+            boolean reserved,
+            boolean materializedComplete) {
+        return targetVisualStage(
+                reserved && !materializedComplete ? 0 : developmentTier,
+                persistedTemplateBlocks,
+                baselineBlocks,
+                stageOneBlocks,
+                stageTwoBlocks);
+    }
+
+    /**
      * Produces a connected shortest trail with deterministic, irregular turns and sparse shoulders.
      * Coordinates are caller-defined (world or structure-relative) and no world state is read.
      */

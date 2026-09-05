@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 9;
+    public static final int FORMAT_VERSION = 10;
     /** Five in-game years, shared by market, commodity, and personal history views. */
     public static final int HISTORY_DAYS = 1_825;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -502,6 +502,25 @@ public final class EconomyState {
         /** Persistent retry gate used to avoid rescanning an unsafe site every server tick. */
         public long retryAfterGameTick;
         public int materializationFailures;
+        /** Immutable generator contract. Missing pre-format-10 data remains legacy_v1. */
+        public String designSchema = VillageArchitecture.LEGACY_SCHEMA;
+        public long designSeed;
+        public int designSilhouette;
+        public int designRoof;
+        public int designFrontage;
+        public boolean designMirrored;
+        /** Clockwise quarter turns from the authored north-facing plan. */
+        public int designRotation;
+        public long designSignature;
+        /** Persisted append-only visual stage; never follows a temporary tier decline. */
+        public int designStage;
+        /** Frozen route endpoint so mutable village metadata cannot reorder the saved plan. */
+        public boolean trailAnchorSet;
+        public long trailAnchorPos;
+        /** Best-effort public road progress, intentionally separate from building authority. */
+        public int trailMaterializedBlocks;
+        public int trailTotalBlocks;
+        public boolean trailMaterializedComplete;
 
         public VillageProject copy() {
             VillageProject copy = new VillageProject();
@@ -522,6 +541,20 @@ public final class EconomyState {
             copy.boundsMaxPos = boundsMaxPos;
             copy.retryAfterGameTick = retryAfterGameTick;
             copy.materializationFailures = materializationFailures;
+            copy.designSchema = designSchema;
+            copy.designSeed = designSeed;
+            copy.designSilhouette = designSilhouette;
+            copy.designRoof = designRoof;
+            copy.designFrontage = designFrontage;
+            copy.designMirrored = designMirrored;
+            copy.designRotation = designRotation;
+            copy.designSignature = designSignature;
+            copy.designStage = designStage;
+            copy.trailAnchorSet = trailAnchorSet;
+            copy.trailAnchorPos = trailAnchorPos;
+            copy.trailMaterializedBlocks = trailMaterializedBlocks;
+            copy.trailTotalBlocks = trailTotalBlocks;
+            copy.trailMaterializedComplete = trailMaterializedComplete;
             return copy;
         }
     }
@@ -621,6 +654,9 @@ public final class EconomyState {
         public double developmentPoints;
         public boolean restorationFunded;
         public long projectSerial;
+        /** Shared authored language; biome dialect is locked when the first modular lot is reserved. */
+        public String architectureCharacter = "";
+        public String architectureDialect = "";
         public final ProsperityFund prosperityFund = new ProsperityFund();
         public final Map<UUID, ResidentRecord> residents = new LinkedHashMap<>();
         public final List<VillageProject> projects = new ArrayList<>();
@@ -640,6 +676,33 @@ public final class EconomyState {
                             && project.retryAfterGameTick <= Math.max(0L, currentGameTick))
                     .findFirst()
                     .orElse(null);
+        }
+
+        /** Returns one completed modular building whose best-effort public trail is unfinished. */
+        public VillageProject nextTrailProject() {
+            return nextTrailProject(0L);
+        }
+
+        /**
+         * Deterministically rotates across unfinished public trails. The caller supplies a cadence
+         * ordinal rather than the gated construction pulse so candidate counts that share a factor
+         * with the cadence cannot alias onto the same project forever.
+         */
+        public VillageProject nextTrailProject(long selectionOrdinal) {
+            List<VillageProject> candidates = projects.stream()
+                    .filter(project -> VillageArchitecture.MODULAR_SCHEMA.equals(
+                                    project.designSchema)
+                            && project.economicComplete
+                            && project.materializedComplete
+                            && !project.manualRepairRequired
+                            && !project.abstractOnly
+                            && project.originPos != 0L
+                            && project.trailAnchorSet
+                            && !project.trailMaterializedComplete)
+                    .toList();
+            return candidates.isEmpty()
+                    ? null
+                    : candidates.get((int) Math.floorMod(selectionOrdinal, candidates.size()));
         }
 
         public int visualBacklog() {
@@ -692,6 +755,8 @@ public final class EconomyState {
             copy.developmentPoints = developmentPoints;
             copy.restorationFunded = restorationFunded;
             copy.projectSerial = projectSerial;
+            copy.architectureCharacter = architectureCharacter;
+            copy.architectureDialect = architectureDialect;
             ProsperityFund fundCopy = prosperityFund.copy();
             copy.prosperityFund.spendableMicro.putAll(fundCopy.spendableMicro);
             copy.prosperityFund.endowmentPrincipalMicro.putAll(
@@ -1596,6 +1661,12 @@ public final class EconomyState {
                 || village.lastCollapseDay > economicDay
                 || village.marketSuppressedUntilDay < 0L
                 || village.projectSerial < 0L
+                || village.architectureCharacter == null
+                || village.architectureDialect == null
+                || (!village.architectureCharacter.isBlank()
+                        && !VillageArchitecture.isKnownCharacter(village.architectureCharacter))
+                || (!village.architectureDialect.isBlank()
+                        && !VillageArchitecture.isKnownDialect(village.architectureDialect))
                 || village.collapseCount < 0
                 || village.hostileCasualties < 0
                 || village.playerCasualties < 0
@@ -1644,6 +1715,8 @@ public final class EconomyState {
         for (VillageProject project : village.projects) {
             if (project == null
                     || project.type == null
+                    || project.designSchema == null
+                    || !VillageArchitecture.isKnownSchema(project.designSchema)
                     || project.projectId <= previousProject
                     || project.approvedDay < 0L
                     || project.approvedDay > economicDay
@@ -1655,11 +1728,44 @@ public final class EconomyState {
                     || project.materializedBlocks < 0
                     || project.totalBlocks < 0
                     || project.materializedBlocks > project.totalBlocks
+                    || project.trailMaterializedBlocks < 0
+                    || project.trailTotalBlocks < 0
+                    || project.trailMaterializedBlocks > project.trailTotalBlocks
                     || project.retryAfterGameTick < 0L
                     || project.materializationFailures < 0
+                    || project.designSilhouette < 0
+                    || project.designSilhouette >= VillageArchitecture.SILHOUETTE_COUNT
+                    || project.designRoof < 0
+                    || project.designRoof >= VillageArchitecture.ROOF_COUNT
+                    || project.designFrontage < 0
+                    || project.designFrontage >= VillageArchitecture.FRONTAGE_COUNT
+                    || project.designRotation < 0
+                    || project.designRotation > 3
+                    || project.designStage < 0
+                    || project.designStage > 2
+                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                            && village.architectureCharacter.isBlank())
+                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                            && project.designSignature != VillageArchitecture.signature(
+                                    project.type,
+                                    project.designSilhouette,
+                                    project.designRoof,
+                                    project.designFrontage,
+                                    project.designMirrored))
+                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                            && project.originPos != 0L
+                            && village.architectureDialect.isBlank())
+                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                            && project.originPos != 0L
+                            && !project.trailAnchorSet)
+                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                            && project.originPos != 0L
+                            && project.trailTotalBlocks <= 0)
                     || (project.economicComplete && project.economicProgress < 1.0)
                     || (project.materializedComplete
                             && project.materializedBlocks < project.totalBlocks)
+                    || (project.trailMaterializedComplete
+                            && project.trailMaterializedBlocks < project.trailTotalBlocks)
                     || (project.manualRepairRequired
                             && (project.materializedComplete
                                     || !project.economicComplete

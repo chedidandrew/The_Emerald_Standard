@@ -1248,6 +1248,33 @@ public final class EconomyService {
             long boundsMinPos,
             long boundsMaxPos,
             int totalBlocks) {
+        return reserveVillageProjectSite(
+                villageId,
+                projectId,
+                originPos,
+                boundsMinPos,
+                boundsMaxPos,
+                totalBlocks,
+                "",
+                0,
+                0,
+                0L,
+                0);
+    }
+
+    /** Atomically freezes a modular project's site-facing recipe with its reserved bounds. */
+    public synchronized boolean reserveVillageProjectSite(
+            UUID villageId,
+            long projectId,
+            long originPos,
+            long boundsMinPos,
+            long boundsMaxPos,
+            int totalBlocks,
+            String architectureDialect,
+            int designRotation,
+            int designStage,
+            long trailAnchorPos,
+            int trailTotalBlocks) {
         return mutateVillage(villageId, true, village -> {
             EconomyState.VillageProject project = findProject(village, projectId);
             if (project == null
@@ -1257,6 +1284,34 @@ public final class EconomyService {
                     || project.originPos != 0L
                     || totalBlocks <= 0) {
                 return false;
+            }
+            if (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)) {
+                if (architectureDialect == null
+                        || architectureDialect.isBlank()
+                        || designRotation < 0
+                        || designRotation > 3
+                        || designStage < 0
+                        || designStage > 2
+                        || trailTotalBlocks <= 0) {
+                    return false;
+                }
+                try {
+                    VillageArchitecture.BiomeDialect.fromId(architectureDialect);
+                } catch (IllegalArgumentException exception) {
+                    return false;
+                }
+                if (!village.architectureDialect.isBlank()
+                        && !village.architectureDialect.equals(architectureDialect)) {
+                    return false;
+                }
+                village.architectureDialect = architectureDialect;
+                project.designRotation = designRotation;
+                project.designStage = designStage;
+                project.trailAnchorSet = true;
+                project.trailAnchorPos = trailAnchorPos;
+                project.trailMaterializedBlocks = 0;
+                project.trailTotalBlocks = trailTotalBlocks;
+                project.trailMaterializedComplete = false;
             }
             project.originPos = originPos;
             project.boundsMinPos = boundsMinPos;
@@ -1284,6 +1339,14 @@ public final class EconomyService {
             project.boundsMinPos = 0L;
             project.boundsMaxPos = 0L;
             project.totalBlocks = project.type.nominalBlocks();
+            if (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)) {
+                project.designStage = 0;
+                project.trailAnchorSet = false;
+                project.trailAnchorPos = 0L;
+                project.trailMaterializedBlocks = 0;
+                project.trailTotalBlocks = 0;
+                project.trailMaterializedComplete = false;
+            }
             project.blocked = false;
             project.manualRepairRequired = false;
             project.retryAfterGameTick = 0L;
@@ -1336,7 +1399,98 @@ public final class EconomyService {
                 project.boundsMinPos = 0L;
                 project.boundsMaxPos = 0L;
                 project.totalBlocks = project.type.nominalBlocks();
+                if (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)) {
+                    project.designStage = 0;
+                    project.trailAnchorSet = false;
+                    project.trailAnchorPos = 0L;
+                    project.trailMaterializedBlocks = 0;
+                    project.trailTotalBlocks = 0;
+                    project.trailMaterializedComplete = false;
+                }
             }
+            return true;
+        });
+    }
+
+    /**
+     * Atomically commits a fully preflighted append-only modular stage before any suffix block is
+     * written. Construction then follows only this persisted target, never a live tier value.
+     */
+    public synchronized boolean commitVillageProjectVisualStageUpgrade(
+            UUID villageId,
+            long projectId,
+            int designStage,
+            int verifiedPrefix,
+            int expectedTotal,
+            long boundsMinPos,
+            long boundsMaxPos) {
+        if (designStage < 0
+                || designStage > 2
+                || verifiedPrefix <= 0
+                || expectedTotal <= verifiedPrefix
+                || !orderedBounds(boundsMinPos, boundsMaxPos)) {
+            return false;
+        }
+        return mutateVillage(villageId, true, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null
+                    || !VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                    || !project.economicComplete
+                    || project.abstractOnly
+                    || project.originPos == 0L
+                    || !project.trailAnchorSet
+                    || project.manualRepairRequired
+                    || !project.materializedComplete
+                    || project.materializedBlocks != project.totalBlocks
+                    || verifiedPrefix != project.totalBlocks
+                    || designStage <= project.designStage
+                    || !positionWithinBounds(
+                            project.originPos, boundsMinPos, boundsMaxPos)) {
+                return false;
+            }
+            project.designStage = designStage;
+            project.totalBlocks = expectedTotal;
+            project.materializedBlocks = verifiedPrefix;
+            project.boundsMinPos = boundsMinPos;
+            project.boundsMaxPos = boundsMaxPos;
+            project.materializedComplete = false;
+            project.blocked = false;
+            project.manualRepairRequired = false;
+            project.retryAfterGameTick = 0L;
+            project.materializationFailures = 0;
+            return true;
+        });
+    }
+
+    /** Advances the independent best-effort public-road cursor. */
+    public synchronized boolean updateVillageProjectTrailMaterialization(
+            UUID villageId,
+            long projectId,
+            int materializedBlocks,
+            int expectedTotal,
+            boolean complete) {
+        if (materializedBlocks < 0
+                || expectedTotal <= 0
+                || materializedBlocks > expectedTotal) {
+            return false;
+        }
+        return mutateVillage(villageId, complete, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null
+                    || !VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                    || !project.economicComplete
+                    || !project.materializedComplete
+                    || project.manualRepairRequired
+                    || project.abstractOnly
+                    || project.originPos == 0L
+                    || !project.trailAnchorSet
+                    || project.trailTotalBlocks != expectedTotal) {
+                return false;
+            }
+            project.trailMaterializedBlocks = Math.max(
+                    project.trailMaterializedBlocks, materializedBlocks);
+            project.trailMaterializedComplete = complete
+                    && project.trailMaterializedBlocks >= expectedTotal;
             return true;
         });
     }
@@ -1362,6 +1516,41 @@ public final class EconomyService {
                     Math.min(project.totalBlocks, materializedBlocks));
             project.materializedComplete = complete
                     || project.materializedBlocks >= project.totalBlocks;
+            project.blocked = blocked && !project.materializedComplete;
+            if (project.materializedBlocks > previousBlocks || project.materializedComplete) {
+                project.retryAfterGameTick = 0L;
+                project.materializationFailures = 0;
+            }
+            return true;
+        });
+    }
+
+    /** Records progress only against the already committed template size. */
+    public synchronized boolean updateVillageProjectMaterialization(
+            UUID villageId,
+            long projectId,
+            int materializedBlocks,
+            int expectedTotal,
+            boolean complete,
+            boolean blocked) {
+        if (materializedBlocks < 0
+                || expectedTotal <= 0
+                || materializedBlocks > expectedTotal) {
+            return false;
+        }
+        return mutateVillage(villageId, complete || blocked, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null
+                    || project.originPos == 0L
+                    || project.abstractOnly
+                    || project.manualRepairRequired
+                    || project.totalBlocks != expectedTotal) {
+                return false;
+            }
+            int previousBlocks = project.materializedBlocks;
+            project.materializedBlocks = Math.max(project.materializedBlocks, materializedBlocks);
+            project.materializedComplete = complete
+                    && project.materializedBlocks >= expectedTotal;
             project.blocked = blocked && !project.materializedComplete;
             if (project.materializedBlocks > previousBlocks || project.materializedComplete) {
                 project.retryAfterGameTick = 0L;

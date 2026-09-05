@@ -49,6 +49,18 @@ public final class VillageStructureProgressionRegressionTest {
                         && VillageStructureProgression.targetVisualStage(0, 120, 100, 120, 140) == 1
                         && VillageStructureProgression.targetVisualStage(0, 140, 100, 120, 140) == 2,
                 "A completed structure upgrade regressed with its village tier");
+        require(VillageStructureProgression.constructionVisualStage(
+                                4, 100, 100, 120, 140, true, false)
+                        == 0,
+                "A live tier increase exposed a suffix during incomplete construction");
+        require(VillageStructureProgression.constructionVisualStage(
+                                4, 100, 100, 120, 140, true, true)
+                        == 2,
+                "A completed structure could not expose an append-only upgrade for preflight");
+        require(VillageStructureProgression.constructionVisualStage(
+                                0, 120, 100, 120, 140, true, false)
+                        == 1,
+                "A committed legacy stage regressed during incomplete construction");
         boolean rejected = false;
         try {
             VillageStructureProgression.targetVisualStage(2, 100, 120, 110, 140);

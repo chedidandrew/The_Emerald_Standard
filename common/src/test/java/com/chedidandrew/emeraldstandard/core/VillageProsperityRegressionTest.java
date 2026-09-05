@@ -56,6 +56,11 @@ public final class VillageProsperityRegressionTest {
         require(village.safety >= 0.0 && village.safety <= 100.0, "Safety left bounds");
         require(!village.projects.isEmpty(), "No development project was approved");
         require(village.projects.stream().anyMatch(project -> project.economicComplete), "No development project completed economically");
+        require(village.projects.stream().allMatch(project ->
+                        VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)),
+                "A newly approved project did not receive a modular-v1 design recipe");
+        require(VillageArchitecture.isKnownCharacter(village.architectureCharacter),
+                "A developing village did not lock its shared architectural character");
         require(village.developmentTier >= 1, "Village never advanced beyond hamlet tier");
     }
 

@@ -16,7 +16,10 @@ The suite verifies:
 - Unified wall-clock/game-tick progression and bounded catch-up
 - Save migration, checksums, backup recovery, rollback, retry backoff, and no-debt invariants
 - Genuine format-5 account/bank-anchor migration, beta.1/beta.2 format-6 upgrade, safe defaults for older project records, and rejection of future formats without stale-backup fallback
-- Format-7 to format-8 project-catalog migration and format-8 to format-9 migration for multiple term positions, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records
+- Format-7 to format-8 project-catalog migration, format-8 to format-9 financial-state migration, and format-9 to format-10 architecture migration that keeps completed, partial, and unstarted projects on `legacy_v1` without reroll or modular conversion
+- Deterministic village character, least-used silhouette selection, immediate recipe anti-repeat behavior, canonical recipe signatures, cardinal road-facing rotation, and exact persistence of biome dialect, project recipe, visual stage, road anchor, and independent road cursor state
+- Atomic append-only visual-stage commits, fixed building totals during partial suffix placement, road progress that cannot alter building completion, and fair rotation among unfinished roads
+- Deterministic shallow foundation support planning, bounded support depth, and no tunnelling below sound natural ground
 - Legacy CD and lending promotion plus explicitly inferred basis for old holdings without execution history
 - Share cost basis, average purchase price, realized and unrealized gain, allocation, contributions, withdrawals, bounded transaction ledger, and five-year net-worth history
 - Five-year asset, commodity, and personal history retention plus bounded chart-sampling inputs
@@ -57,7 +60,7 @@ GitHub Actions must pass for the exact candidate commit:
 - NeoForge 26.2 build and packaged-JAR validation
 - Fabric dedicated-server launch
 - NeoForge dedicated-server launch
-- Live registration and invariant checks for Exchange Desk creative visibility, all four facings, shape and POI mapping, managed Banker job-site retention, and Bank/project templates
+- Live registration and invariant checks for Exchange Desk creative visibility, all four facings, shape and POI mapping, managed Banker job-site retention, and Bank/project templates. Modular validation expands every 54-recipe type/character/biome-dialect matrix, checks distinct base and completed signatures, and exercises every rotation, bounded envelope, disjoint stage, authored lantern support, required light/bed/utility, and Exchange Desk-count invariant.
 - Real Minecraft container-data packet round trips for Banker full-width values
 - Fabric client bootstrap under a virtual display
 - NeoForge client bootstrap under a virtual display
@@ -135,7 +138,7 @@ On both Fabric and NeoForge:
 Inspect Village Banks and all ten prosperity project types in all vanilla village biomes and difficult terrain.
 
 - Confirm construction never replaces village paths, farmland, containers, player floors, or existing buildings.
-- Confirm only naturally surfaced flat lots are accepted.
+- Confirm only already-loaded natural lots within the supported two-block terrain range are accepted, and that deterministic foundation columns ground every exterior feature across shallow drops without tunnelling below sound natural ground.
 - Confirm a new bank floor is above the old surface, failed placement is not marked generated, and two villages in one legacy grid do not share a Banker identity. Move the discovering player within the village and confirm the persisted settlement center—not the player position—keeps Bank selection stable.
 - Confirm mud and thin snow are rejected as Bank support, while an eligible full snow-block surface remains valid.
 - Place a solid block in a reserved project area before construction and confirm the project stops safely.
@@ -150,6 +153,12 @@ Inspect Village Banks and all ten prosperity project types in all vanilla villag
 - With a low view distance, leave all Bank candidates partly unloaded and confirm fallback access is available without permanently marking generation; load the area and confirm a later scan can retry.
 - Inspect each new Bank's connected, sealed roof, sheltered entrance, interior furnishings, lighting, and storage. Confirm it contains exactly one Exchange Desk, no barrels, and no other villager job site.
 - Confirm residential entrances remain clear and beds are usable. Census every prosperity template's theme-appropriate job sites; confirm no template contains barrels, lecterns, cartography tables, or currency blocks, and an Exchange Hall contains exactly one Exchange Desk.
+- In several new villages, compare multiple project types and confirm each village keeps one coherent architectural character and one biome dialect across reloads. Verify that silhouettes, roof families, frontages, mirror choices, type-specific interiors/workyards, and later landmarks create visibly different buildings without looking like unrelated themes.
+- Complete at least three repeatable projects of one housing type and confirm all three silhouette families appear before one family repeats. Restart between approvals and confirm no project rerolls and no newly adjacent project exactly repeats the preceding full recipe.
+- Place modular lots north, east, south, and west of their selected road anchors. Confirm each entrance faces its connection, its adjacent road start remains stable after reload, and rotation does not break doors, beds, stairs, rails, roofs, or interior access.
+- Raise a village through the base, town, and city visual stages. Record the exact existing structure before each rise, confirm only a preflighted suffix is added, and confirm a later tier decline removes nothing. Obstruct one proposed suffix cell and verify the older completed stage remains operational and untouched.
+- Block or protect part of a modular road and unload a later road chunk. Confirm safe loaded cells advance best-effort, unsafe cells become gaps, unloaded cells wait, and the building's bounds, completion, integrity result, and benefits do not change. Create another unfinished road and confirm the waiting route does not starve it.
+- Upgrade a copied format-9-or-earlier world containing unstarted, partial, and completed projects. Confirm all existing projects remain `legacy_v1` at the same origins, bounds, block order, and progress with no reroll or conversion, while a newly approved project uses a persisted `modular_v1` recipe and resumes identically after restart.
 - Load a completed project from an older blueprint. With every appended position safe, confirm the richer suffix enters guarded construction and the persisted bounds expand with it. Repeat with a solid player block, block entity, or protection veto in one suffix position and confirm the older project stays operational and untouched.
 - Confirm new Bankers use the registered Banker profession, claim the Exchange Desk POI, and retain scoped bank identity without gaining an unintended trade set.
 - Observe a newly assigned Banker for at least one full in-game work period and after save/reload; confirm its Banker appearance and Exchange Desk job-site memory remain stable rather than flashing for one frame.

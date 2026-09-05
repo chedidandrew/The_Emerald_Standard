@@ -47,6 +47,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Upgrade from 0.3.0-beta.3 | Not run | Not run | Backup hash, migration log, account comparison |
 | Upgrade from 0.3.0-beta.4 | Not run | Not run | Backup hash, migration log, account comparison |
 | Upgrade from format 8 to format 9 | Not run | Not run | Position migration, inferred basis flag, histories, and Fund defaults |
+| Upgrade from format 9 or earlier to format 10 | Not run | Not run | Existing unstarted, partial, and completed projects remain `legacy_v1` at the same origin, bounds, order, and progress; no reroll or modular conversion; newly approved project persists as `modular_v1` |
 | No route creates player debt or negative balance | Not run | Not run | Debug validation report |
 
 ## GUI and onboarding checks
@@ -110,7 +111,11 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Shallow-lot foundations ground every bank/project exterior detail | Not run | Not run | Two-block terrain variation plus porch posts, bell accent, lantern fences, masonry flues, and no tunnelling below natural ground |
 | Existing 13x11 bank support retrofit is signature-scoped and air-only | Not run | Not run | Expected three footings fill; altered signature or occupied footing remains untouched; second pass is idempotent |
 | Project trails connect and branch naturally without becoming economic authority | Not run | Not run | First project reaches edge hub; later project reaches nearest earlier branch; protected and non-terrain obstructions are skipped; natural-block provenance boundary is documented |
-| Three project presets and town/city visual stages are stable and monotonic | Not run | Not run | Distinct seeds, reload stability, tier 2/tier 4 additions, and no removal after tier decline |
+| Village-wide architectural character and biome dialect remain coherent | Not run | Not run | Several project types in one village plus reload; shared palette/language with type-specific interiors, work areas, and landmarks |
+| Modular recipe breadth is visible and deterministic | Not run | Not run | Three silhouettes, three roofs, three frontages, and both mirror layouts sampled; repeated housing consumes every least-used silhouette before reuse and does not reroll after restart |
+| Road-facing rotation is correct in all four directions | Not run | Not run | North/east/south/west lots face their frozen anchors; entrance stair, door, beds, rails, roofs, and access survive rotation and reload |
+| Base, town, and city visual stages are append-only and monotonic | Not run | Not run | Before/after block evidence at tier 2/tier 4, obstruction/protection veto leaves the earlier stage operational, reload stability, and no removal after tier decline |
+| Modular road cursor is independent and fair | Not run | Not run | Protected/occupied cells become gaps, unloaded cells wait, a later route still advances, and building bounds, completion, audit, and benefits remain unchanged |
 | Banker and zombie Banker jackets match the tailored blueprint without stray UV pixels | Not run | Not run | Front/side/back screenshots plus head and hat-rim inspection for both entity types |
 | Bounded construction worker movement | Not run | Not run | Video or timeline showing at most two workers and no idle task |
 | Village extinction and funded restoration | Not run | Not run | Timeline and resident counts |
