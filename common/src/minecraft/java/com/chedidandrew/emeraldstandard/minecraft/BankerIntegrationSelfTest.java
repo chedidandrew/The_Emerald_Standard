@@ -332,6 +332,7 @@ public final class BankerIntegrationSelfTest {
         return villager;
     }
 
+    @SuppressWarnings("deprecation")
     private static void verifyExchangeDeskGeometry(ServerLevel level) {
         Block exchangeDesk = BankerProfessionSupport.exchangeDeskOrLectern();
         require(exchangeDesk instanceof ExchangeDeskBlock,
@@ -343,15 +344,20 @@ public final class BankerIntegrationSelfTest {
         require(exchangeDesk.getStateDefinition().getPossibleStates().size() == 4,
                 "The Exchange Desk did not expose exactly four horizontal facings");
 
-        VoxelShape selection = north.getShape(level, BlockPos.ZERO);
-        VoxelShape collision = north.getCollisionShape(level, BlockPos.ZERO);
-        require(selection.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT
-                        && collision.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT,
-                "The Exchange Desk selection or collision shape exceeded its 13.5/16 model height");
         for (Direction facing : new Direction[] {
                 Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST
         }) {
-            require(PoiTypes.hasPoi(north.setValue(HorizontalDirectionalBlock.FACING, facing)),
+            BlockState deskState = north.setValue(HorizontalDirectionalBlock.FACING, facing);
+            VoxelShape selection = deskState.getShape(level, BlockPos.ZERO);
+            VoxelShape collision = deskState.getCollisionShape(level, BlockPos.ZERO);
+            require(selection.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT
+                            && collision.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT,
+                    "The Exchange Desk selection or collision shape exceeded its 13.5/16 "
+                            + "model height while facing " + facing);
+            require(Block.shouldRenderFace(
+                            Blocks.OAK_PLANKS.defaultBlockState(), deskState, Direction.UP),
+                    "An Exchange Desk culled the supporting floor while facing " + facing);
+            require(PoiTypes.hasPoi(deskState),
                     "An Exchange Desk facing was not mapped to the Banker POI: " + facing);
         }
     }

@@ -32,6 +32,7 @@ All notable changes to The Emerald Standard are documented here.
 
 ### Fixed
 
+- Prevented the Exchange Desk's inset base from culling the supporting floor, which could expose a bright hole through that floor at shallow viewing angles.
 - Allowed Village Bank lot selection to clear harmless replaceable vegetation instead of treating grass and flowers as solid obstructions, and made explicitly persisted Banker-only fallbacks retry safely without rebuilding ambiguous legacy, damaged, or crash-interrupted Bank anchors.
 - Prevented Creative-mode withdrawals from destroying Bank Cash when the inventory is full or only partially accepts emeralds; delivery is now measured from the actual inventory change and every undelivered emerald is refunded through the durable journal.
 - Fixed missing exchange charts for resource variants such as ingots, blocks, and ores by deriving all 18 displayed histories from their canonical commodity series and the same formulas used for live quotes.
