@@ -2,6 +2,45 @@
 
 All notable changes to The Emerald Standard are documented here.
 
+## Unreleased
+
+### Added
+
+- Added a server-paged Activity ledger with mouse-wheel scrolling, visible newer/older controls, a scroll-position indicator, exact row tooltips, and access to all 256 retained player transactions.
+- Added server-authoritative Activity filters for cash/transfers, investments, bank products, exchange, and Village Fund entries.
+- Added an exact transaction-amount field with Apply, Cancel, Enter, and All controls across banking, investing, lending, CDs, and exchange.
+- Added an investment carousel with previous/next controls, compact page summaries, and contextual hover explanations throughout the Banker dashboard.
+- Added distinct top, front, and side artwork plus a layered furniture model for the Exchange Desk.
+- Added live integration checks for managed Banker profession retention, Exchange Desk POI ownership, and creative-inventory visibility.
+- Added deterministic, branchable village trails that connect each new prosperity structure to the nearest earlier project or a stable settlement-edge hub.
+- Added three save-stable visual presets per prosperity project plus append-only town- and city-stage detail upgrades as development tiers rise.
+- Added live structure validation for grounded exterior details, supported lanterns, complete entrances, distinct presets, and continuous roof edges.
+
+### Changed
+
+- Expanded the physical-development activation radius from 96 to 256 blocks by default, widened its configurable range to 48–512, and made eligibility horizontal so altitude does not deactivate a local village. Construction considers at most 16 eligible villages per pass, continues to use loaded chunks only without force-loading, and does not expand the existing local settler/worker range.
+- Renamed the player-facing Home and Bank pages to Account and Banking, split Banking into Transfers, CDs, and Villager Loans, and replaced ambiguous money actions with explicit source-to-destination routes and projected balances.
+- Added selected-amount and post-action previews for inventory deposits/withdrawals, savings transfers, stock trades, term products, resource exchange, and village gifts.
+- Replaced the Fund's additive preset row with the same exact typed Apply, Cancel, Enter, and `All` controls used by other transactions; the applied contribution remains server-owned and live-bounded.
+- Made the dashboard responsively fit the current logical window while preserving its tested layout, hitboxes, wrapped tooltips, and EditBox behavior; custom labels now retain the same native Minecraft glyph size as button and input text.
+- Distinguished village-project Planning from physical Building and explained when visible block placement begins.
+- Reworked Village Banks into larger biome-aware civic buildings with foundations, trim, taller windows, a sealed stepped roof, a portico and bell, lighting, storage, and a more complete service counter.
+- Enriched all ten Village Prosperity structures with grounded architectural detail, biome-matched entrances, useful interiors, lighting, project-appropriate work areas, save-stable variation, and later-tier upgrades while preserving existing-world materialization order.
+- Simplified dense Account, Market, Banking, Village, Fund, and Activity text; clipped variable-width values safely, wrapped contextual tooltips, and moved supporting detail into hover explanations.
+- Added the Exchange Desk to the Functional Blocks creative tab and creative search on Fabric and NeoForge.
+
+### Fixed
+
+- Prevented Creative-mode withdrawals from destroying Bank Cash when the inventory is full or only partially accepts emeralds; delivery is now measured from the actual inventory change and every undelivered emerald is refunded through the durable journal.
+- Fixed missing exchange charts for resource variants such as ingots, blocks, and ores by deriving all 18 displayed histories from their canonical commodity series and the same formulas used for live quotes.
+- Distinguished commodity exchanges and inventory-withdrawal refunds from ordinary deposits in Activity, and retained the exchanged resource and item count for new entries.
+- Prevented managed Banker villagers from losing their custom profession immediately after assignment by using vanilla career-lock semantics and binding generated Bankers to their Exchange Desk job site.
+- Rebuilt the Banker and zombie Banker profession textures on the correct jacket UV with shaded pixel-art tailoring; removed every stray head, hat-rim, body, and leg pixel.
+- Removed the reported dashboard text collisions, tab-label cutoff, crowded investment grid, and long village/fund value overflow.
+- Bridged shallow natural terrain under Village Banks and all prosperity templates, including the reported porch posts, bell accent, lantern fences, and masonry flues; a signature-guarded legacy-bank retrofit fills only exact empty footing cells.
+- Made expanded legacy prosperity templates preflight structural additions before placing them, while optional trail cells skip protected, occupied, or non-terrain positions instead of blocking later upgrades.
+- Prevented completed prosperity structures from regenerating collectible furnishings after players break them; damaged projects now suspend benefits until their authored blocks are restored in-world.
+
 ## 0.4.0-beta.2 - 2026-09-04
 
 ### Added
@@ -21,7 +60,7 @@ All notable changes to The Emerald Standard are documented here.
 
 ### Changed
 
-- Expanded the dashboard from five pages to seven with dedicated Fund and compact Activity Log pages, commodity and personal charts, richer portfolio fields, and collision-safe term and position selectors.
+- Expanded the dashboard from five pages to seven with dedicated Fund and compact Activity pages, commodity and personal charts, richer portfolio fields, and collision-safe term and position selectors.
 - Fund amounts now use an additive server-owned `+1`, `+5`, `+10`, `+25`, `+100`, `All`, and `Clear` draft.
 - Project Sponsorship now binds to the displayed active economically unfinished project, derives its purpose from the project type, preserves unused value at saturated inputs, and rolls any post-completion remainder into that purpose.
 - Passive savings-interest ledger events now coalesce so routine accrual cannot evict active transactions from the bounded history.

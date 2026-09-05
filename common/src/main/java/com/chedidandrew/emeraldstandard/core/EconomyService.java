@@ -284,6 +284,13 @@ public final class EconomyService {
         return state == null ? Map.of() : copyHistory(state.commodityHistory);
     }
 
+    /** Quote history for an exchange item, derived without adding redundant save data. */
+    public synchronized List<Double> resourceQuoteHistorySnapshot(String resourceId) {
+        return state == null
+                ? List.of()
+                : EconomyEngine.resourceExchangeHistory(resourceId, state.commodityHistory);
+    }
+
     public synchronized String lastError() {
         return lastError;
     }
@@ -1257,6 +1264,7 @@ public final class EconomyService {
             project.totalBlocks = totalBlocks;
             project.materializedBlocks = 0;
             project.blocked = false;
+            project.manualRepairRequired = false;
             project.retryAfterGameTick = 0L;
             return true;
         });
@@ -1277,6 +1285,7 @@ public final class EconomyService {
             project.boundsMaxPos = 0L;
             project.totalBlocks = project.type.nominalBlocks();
             project.blocked = false;
+            project.manualRepairRequired = false;
             project.retryAfterGameTick = 0L;
             return true;
         });
@@ -1308,6 +1317,7 @@ public final class EconomyService {
             if (project == null
                     || !project.economicComplete
                     || project.materializedComplete
+                    || project.manualRepairRequired
                     || project.abstractOnly) {
                 return false;
             }
@@ -1339,7 +1349,10 @@ public final class EconomyService {
             boolean blocked) {
         return mutateVillage(villageId, complete || blocked, village -> {
             EconomyState.VillageProject project = findProject(village, projectId);
-            if (project == null || project.originPos == 0L || project.abstractOnly) {
+            if (project == null
+                    || project.originPos == 0L
+                    || project.abstractOnly
+                    || project.manualRepairRequired) {
                 return false;
             }
             int previousBlocks = project.materializedBlocks;
@@ -1369,25 +1382,143 @@ public final class EconomyService {
             int verifiedPrefix,
             int expectedTotal,
             boolean structurallyComplete) {
+        return reconcileVillageProjectMaterializationInternal(
+                villageId,
+                projectId,
+                verifiedPrefix,
+                expectedTotal,
+                structurallyComplete,
+                false,
+                0L,
+                0L);
+    }
+
+    /**
+     * Atomically reconciles physical progress and the authoritative authored-template bounds.
+     * This is used when an append-only template grows or an older save is found with stale bounds.
+     */
+    public synchronized boolean reconcileVillageProjectMaterializationAndBounds(
+            UUID villageId,
+            long projectId,
+            int verifiedPrefix,
+            int expectedTotal,
+            boolean structurallyComplete,
+            long boundsMinPos,
+            long boundsMaxPos) {
+        if (!orderedBounds(boundsMinPos, boundsMaxPos)) {
+            return false;
+        }
+        return reconcileVillageProjectMaterializationInternal(
+                villageId,
+                projectId,
+                verifiedPrefix,
+                expectedTotal,
+                structurallyComplete,
+                true,
+                boundsMinPos,
+                boundsMaxPos);
+    }
+
+    /**
+     * Suspends a damaged completed structure until its authored blocks are restored in-world.
+     *
+     * <p>Completed structures deliberately do not regenerate missing collectible blocks. This
+     * prevents an integrity audit from turning chests, workstations, or other authored blocks
+     * into a renewable item source. A later audit clears this state after the complete template
+     * is present again.</p>
+     */
+    public synchronized boolean requireManualVillageProjectRepair(
+            UUID villageId,
+            long projectId,
+            int verifiedPrefix,
+            int expectedTotal,
+            long boundsMinPos,
+            long boundsMaxPos) {
+        if (expectedTotal <= 0
+                || verifiedPrefix < 0
+                || verifiedPrefix >= expectedTotal
+                || !orderedBounds(boundsMinPos, boundsMaxPos)) {
+            return false;
+        }
+        return mutateVillage(villageId, true, village -> {
+            EconomyState.VillageProject project = findProject(village, projectId);
+            if (project == null
+                    || project.originPos == 0L
+                    || project.abstractOnly
+                    || !project.economicComplete
+                    || !positionWithinBounds(
+                            project.originPos, boundsMinPos, boundsMaxPos)) {
+                return false;
+            }
+            project.totalBlocks = expectedTotal;
+            project.materializedBlocks = Math.min(expectedTotal, verifiedPrefix);
+            project.boundsMinPos = boundsMinPos;
+            project.boundsMaxPos = boundsMaxPos;
+            project.materializedComplete = false;
+            project.blocked = true;
+            project.manualRepairRequired = true;
+            project.retryAfterGameTick = 0L;
+            project.materializationFailures = 0;
+            return true;
+        });
+    }
+
+    private boolean reconcileVillageProjectMaterializationInternal(
+            UUID villageId,
+            long projectId,
+            int verifiedPrefix,
+            int expectedTotal,
+            boolean structurallyComplete,
+            boolean refreshBounds,
+            long boundsMinPos,
+            long boundsMaxPos) {
         if (expectedTotal <= 0 || verifiedPrefix < 0) {
             return false;
         }
         return mutateVillage(villageId, true, village -> {
             EconomyState.VillageProject project = findProject(village, projectId);
-            if (project == null || project.originPos == 0L || project.abstractOnly) {
+            if (project == null
+                    || project.originPos == 0L
+                    || project.abstractOnly
+                    || (refreshBounds
+                            && !positionWithinBounds(
+                                    project.originPos, boundsMinPos, boundsMaxPos))) {
                 return false;
             }
             project.totalBlocks = expectedTotal;
             project.materializedBlocks = Math.min(expectedTotal, verifiedPrefix);
+            if (refreshBounds) {
+                project.boundsMinPos = boundsMinPos;
+                project.boundsMaxPos = boundsMaxPos;
+            }
             project.materializedComplete = structurallyComplete
                     && project.materializedBlocks >= expectedTotal;
+            project.manualRepairRequired = false;
+            project.blocked = false;
             if (project.materializedComplete) {
-                project.blocked = false;
                 project.retryAfterGameTick = 0L;
                 project.materializationFailures = 0;
             }
             return true;
         });
+    }
+
+    private static boolean orderedBounds(long minimum, long maximum) {
+        return unpackX(minimum) <= unpackX(maximum)
+                && unpackY(minimum) <= unpackY(maximum)
+                && unpackZ(minimum) <= unpackZ(maximum);
+    }
+
+    private static boolean positionWithinBounds(long position, long minimum, long maximum) {
+        int x = unpackX(position);
+        int y = unpackY(position);
+        int z = unpackZ(position);
+        return x >= unpackX(minimum)
+                && x <= unpackX(maximum)
+                && y >= unpackY(minimum)
+                && y <= unpackY(maximum)
+                && z >= unpackZ(minimum)
+                && z <= unpackZ(maximum);
     }
 
     public synchronized boolean consumePendingSettler(UUID villageId) {
@@ -2239,9 +2370,11 @@ public final class EconomyService {
                     account,
                     current.economicDay,
                     EconomyState.PortfolioTransactionKind.CASH_IN,
-                    transaction.kind.name(),
+                    transaction.kind == EconomyState.InventoryTransactionKind.EXCHANGE
+                            ? "EXCHANGE:" + transaction.itemKey
+                            : transaction.kind.name(),
                     0L,
-                    0.0,
+                    transaction.itemCount,
                     transaction.bankDeltaMicro,
                     0L,
                     0L);

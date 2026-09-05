@@ -10,7 +10,7 @@ Fabric and NeoForge provide lifecycle hooks, menu registration, interaction and 
 
 Managed Banker villagers are persistent vanilla villagers carrying The Emerald Standard Banker tags and the registered `the_emerald_standard:banker` profession. Its workstation and acquirable point of interest use the dedicated `the_emerald_standard:exchange_desk` block. Right-clicking a managed or naturally employed Banker, or any Exchange Desk, opens a custom `BankerMenu`; unscoped access resolves the nearest managed settlement in the same dimension, while legacy bank lecterns remain valid only at persisted bank locations. All financial and Prosperity Fund actions execute server-side against `EconomyService`; the client never owns balances, prices, settlement state, drafts, confirmations, or transaction outcomes.
 
-The seven dashboard pages are Overview, Market, Banking, Exchange, Village, Fund, and a compact player Activity Log. The menu synchronizes bounded account, portfolio-analytics, recent-ledger, market, commodity-history, donor, and local-village snapshots rather than exposing the complete world-account map or private economy seed. Irreversible or risky actions use a time-limited server-owned two-step confirmation, and the additive Fund draft is also maintained and bounded by the server.
+The seven dashboard pages are Overview, Market, Banking, Exchange, Village, Fund, and Activity. The menu synchronizes bounded account, portfolio-analytics, five-entry ledger windows, market, commodity-history, donor, and local-village snapshots rather than exposing the complete world-account map or private economy seed. Activity paging accepts only one-step newer/older requests through the player's current server menu, clamps every offset to that player's retained 256-entry ledger, and synchronizes the window, total, and position; reconnecting starts at the newest entry. Irreversible or risky actions use a time-limited server-owned two-step confirmation, and the exact Fund contribution selection is maintained and bounded by the server.
 
 Minecraft's container-data packet carries signed 16-bit values. The Banker therefore maps every logical 32-bit menu value to two signed-short wire limbs and masks both limbs when reassembling them. Existing 64-bit monetary values retain their low/high logical integers and consequently use four wire limbs. Both loaders share this packing boundary, and their dedicated-server self-tests exercise the real Minecraft packet codec at signed, unsigned, balance, Fund-draft, identifier, and 64-bit boundaries.
 
@@ -35,15 +35,15 @@ Village Prosperity deliberately separates abstract simulation from physical mate
 
 ### Abstract simulation
 
-Runs only against compact persisted village records. It can advance while the world is closed and tracks population, housing, supplies, treasury, prosperity, safety, industry output, lifecycle, incidents, residents, and projects. It never loads chunks, runs villager AI, mines blocks, creates raids, or places structures.
+Runs only against compact persisted records for known villages. It advances regardless of player distance and can catch up trusted time after the world was closed. It tracks population, housing, supplies, treasury, prosperity, safety, industry output, lifecycle, incidents, residents, and projects, but never loads chunks, runs villager AI, mines blocks, creates raids, or places structures.
 
 ### Physical materialization
 
-Runs only in already-loaded chunks with nearby players, across the server's loaded dimensions. It performs censuses, tracks actual resident state, materializes all ten curated project types using one rotating global block budget, audits completed authored structures, and spawns pending settlers only when real housing, food, spawn-space, and safety requirements are met.
+Runs only in already-loaded chunks with nearby players, across the server's loaded dimensions. A known village is eligible when a player in the same dimension is within the configured horizontal X/Z radius; Y separation is intentionally ignored. The radius defaults to 256 blocks, accepts 48–512, and admits no more than 16 villages to one construction pass. Eligibility never loads a chunk. The physical layer performs censuses, tracks actual resident state, materializes all ten curated project types using one rotating global block budget, audits completed authored structures, and spawns pending settlers only when real housing, food, spawn-space, and safety requirements are met.
 
-With visual progression enabled, a simulated population increase becomes a pending settler instead of productive population. Productive population increases only after the real villager exists and is observed by a later census. This prevents invisible residents from producing resources or influencing the market.
+With visual progression enabled, a simulated population increase becomes a committed settler: it counts toward bounded economic population immediately, and the pending count records the entity still owed to the physical village. When a later census observes that villager, it transfers pending to physical population without changing the committed total. The deliberate exception is zero-population recovery, which remains economically inactive until real settlers appear.
 
-Economic completion and physical completion are separate. In visual mode, project housing and production effects become operational only after the physical template is verified complete. Simulation-only projects remain abstract and can become operational without a structure.
+Economic completion and physical completion are separate. A completed economic plan becomes operational whether the village is loaded or nearby; its physical template can remain safely queued. If an already materialized authored structure later fails integrity verification, its benefits are suspended until the missing block is restored. Thus unloaded or deferred visuals never stall simulation, while verified physical damage still matters.
 
 ## Village configuration modes
 
@@ -62,7 +62,7 @@ village_prosperity.automatic_recovery_enabled=true
 
 Prosperity projects are intentionally conservative:
 
-- No forced chunks.
+- No forced chunks. Passing the horizontal activation-radius check is only permission to inspect already-loaded world state.
 - Candidate lots must be flat and already loaded.
 - The ground must match a small natural-ground whitelist.
 - Mud and thin snow layers are not structural Bank support; full snow blocks remain eligible natural ground.
@@ -76,9 +76,9 @@ Prosperity projects are intentionally conservative:
 
 Cottages include real beds. Warehouses use chests instead of barrels so they do not unintentionally create fisherman workstations.
 
-Active resident professions contribute bounded sector multipliers to abstract production. During nearby construction, at most two suitable villagers periodically receive a one-shot low-speed route toward a safe exterior waypoint, look, swing, and emit particles near the project. These effects are deliberately non-authoritative theatre: they install no persistent AI goal and do not control economic progress.
+Active resident professions contribute bounded sector multipliers to abstract production. During nearby construction, at most two suitable villagers periodically receive a one-shot low-speed route toward a safe exterior waypoint, look, swing, and emit particles near the project. Entity queries and route eligibility remain capped at the local 48-block range even when the development radius is configured to 256 or 512; a new settler's assigned home radius is separately capped at 32 blocks. These effects are deliberately non-authoritative theatre: they install no persistent AI goal and do not control economic progress.
 
-A low-frequency integrity pass checks one physically completed authored project at a time. A missing or replaced authored block demotes that project to its verified prefix and removes its economic authority. The ordinary construction queue may then repair safe air or replaceable positions through the same loaded-chunk, collision, and protection rules. Solid player blocks, block entities, protected placements, and unloaded chunks are never overwritten or force-loaded.
+A low-frequency integrity pass checks one physically completed authored project at a time. A missing or replaced authored block demotes that project to its verified prefix and removes its economic authority. It is not automatically regenerated, preventing authored furnishings from becoming renewable items; once the block is restored in-world, a later audit restores authority. Append-only template upgrades use the ordinary loaded-chunk, collision, and protection rules. Solid player blocks, block entities, protected placements, and unloaded chunks are never overwritten or force-loaded.
 
 One cross-file durability limit remains explicit. Bank markers live in the economy save while bank blocks live in Minecraft chunks; those writes are not atomic together. A crash between them can leave a marker without a structure, in which case the mod uses an eligible fallback Banker and does not infer per-block ownership or auto-rebuild.
 
@@ -144,9 +144,9 @@ Inventory-linked deposits, withdrawals, and exchanges use durable `PREPARED` and
 
 ## Current beta scaling boundary
 
-An in-memory, rebuildable spatial index divides villages into 64-block X/Z cells and per-dimension buckets. `villageSnapshotsNear` and nearest-village lookup use the index with exact three-dimensional distance filtering, deterministic legacy tie behavior, and a bounded fallback when a requested radius would require too many cells. It is rebuilt on world load and updated after a successful new-village observation; it is not additional persisted state.
+An in-memory, rebuildable spatial index divides villages into 64-block X/Z cells and per-dimension buckets. Nearest-village identity lookups retain exact three-dimensional distance filtering and deterministic legacy tie behavior. Multi-origin `villageSnapshotsNear` queries serve physical-development activation and therefore apply same-dimension horizontal X/Z eligibility so altitude cannot deactivate an otherwise local settlement. Both paths use a bounded fallback when a requested radius would require too many cells. The index is rebuilt on world load and updated after a successful new-village observation; it is not additional persisted state.
 
-Catch-up batches scale down with known account and settlement counts, physical development requests remain restricted to dimension-matching villages near loaded players, and snapshot lists reuse one village-fundamentals calculation. Regression measurements cover lookup correctness plus query, save, and load work at 100, 500, and 1,000 villages and accounts.
+Catch-up batches scale down with known account and settlement counts. Physical development remains restricted to dimension-matching villages within the configured horizontal radius of loaded players, considers at most 16 eligible villages per pass, and performs world work only in chunks already loaded by Minecraft. Snapshot lists reuse one village-fundamentals calculation. Regression measurements cover lookup correctness plus query, save, and load work at 100, 500, and 1,000 villages and accounts.
 
 The simulation is intentionally lightweight for single-player and ordinary multiplayer, but very large public servers will eventually need storage partitioning. Ordinary mutations still synchronously serialize the whole shared world economy file, so persistence work remains linear in world state. A player-only sidecar or write-behind path is not used because global day, price, and village changes must not be acknowledged before they are durably saved together.
 

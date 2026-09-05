@@ -1,5 +1,7 @@
 package com.chedidandrew.emeraldstandard.core;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -501,7 +503,87 @@ public final class EconomyEngine {
         if (resourceId == null || prices == null) {
             return -1L;
         }
-        double unitValue = switch (resourceId.toLowerCase(Locale.ROOT)) {
+        double unitValue = resourceExchangeUnitValue(
+                resourceId.toLowerCase(Locale.ROOT), prices);
+        if (unitValue < 0.0) {
+            return -1L;
+        }
+        double microValue = unitValue * count * EconomyState.MICRO;
+        if (!Double.isFinite(microValue) || microValue > Long.MAX_VALUE) {
+            return Long.MAX_VALUE;
+        }
+        return Math.max(0L, Math.round(microValue));
+    }
+
+    /**
+     * Builds the displayed quote history for any exchangeable resource.
+     *
+     * <p>Only the four underlying commodities are persisted. Ore variants, storage blocks, and
+     * crafted netherite therefore derive their chart from the same pricing formula as the live
+     * quote. Histories are aligned from their newest observations so legacy saves with shorter
+     * series remain safe and accurate.</p>
+     */
+    public static List<Double> resourceExchangeHistory(
+            String resourceId,
+            Map<String, List<Double>> commodityHistory) {
+        if (resourceId == null || commodityHistory == null) {
+            return List.of();
+        }
+        String normalized = resourceId.toLowerCase(Locale.ROOT);
+        List<String> dependencies = resourceCommodityDependencies(normalized);
+        if (dependencies == null) {
+            return List.of();
+        }
+
+        int historyLength;
+        if (dependencies.isEmpty()) {
+            // Emerald blocks have a fixed nine-emerald quote, but their chart should still span
+            // the same economic days as the commodity market rather than appearing unavailable.
+            historyLength = COMMODITIES.stream()
+                    .map(Commodity::id)
+                    .map(commodityHistory::get)
+                    .filter(values -> values != null && !values.isEmpty())
+                    .mapToInt(List::size)
+                    .max()
+                    .orElse(0);
+        } else {
+            historyLength = Integer.MAX_VALUE;
+            for (String dependency : dependencies) {
+                List<Double> values = commodityHistory.get(dependency);
+                if (values == null || values.isEmpty()) {
+                    return List.of();
+                }
+                historyLength = Math.min(historyLength, values.size());
+            }
+        }
+        if (historyLength <= 0 || historyLength == Integer.MAX_VALUE) {
+            return List.of();
+        }
+
+        List<Double> result = new ArrayList<>(historyLength);
+        for (int index = 0; index < historyLength; index++) {
+            Map<String, Double> prices = new HashMap<>();
+            for (String dependency : dependencies) {
+                List<Double> values = commodityHistory.get(dependency);
+                Double value = values.get(values.size() - historyLength + index);
+                if (value == null || !Double.isFinite(value) || value <= 0.0) {
+                    return List.of();
+                }
+                prices.put(dependency, value);
+            }
+            double quote = resourceExchangeUnitValue(normalized, prices);
+            if (!Double.isFinite(quote) || quote < 0.0) {
+                return List.of();
+            }
+            result.add(quote);
+        }
+        return List.copyOf(result);
+    }
+
+    private static double resourceExchangeUnitValue(
+            String normalizedResourceId,
+            Map<String, Double> prices) {
+        return switch (normalizedResourceId) {
             case "diamond", "diamond_ore", "deepslate_diamond_ore" -> price(prices, "diamond");
             case "diamond_block" -> 9.0 * price(prices, "diamond");
             case "gold", "gold_ingot", "raw_gold", "gold_ore", "deepslate_gold_ore" ->
@@ -517,14 +599,21 @@ public final class EconomyEngine {
             case "emerald_block" -> 9.0;
             default -> -1.0;
         };
-        if (unitValue < 0.0) {
-            return -1L;
-        }
-        double microValue = unitValue * count * EconomyState.MICRO;
-        if (!Double.isFinite(microValue) || microValue > Long.MAX_VALUE) {
-            return Long.MAX_VALUE;
-        }
-        return Math.max(0L, Math.round(microValue));
+    }
+
+    private static List<String> resourceCommodityDependencies(String normalizedResourceId) {
+        return switch (normalizedResourceId) {
+            case "diamond", "diamond_block", "diamond_ore", "deepslate_diamond_ore" ->
+                    List.of("diamond");
+            case "gold", "gold_ingot", "raw_gold", "gold_ore", "deepslate_gold_ore",
+                    "nether_gold_ore", "gold_block", "raw_gold_block" -> List.of("gold");
+            case "ancient_debris", "netherite_scrap" -> List.of("netherite");
+            case "netherite", "netherite_ingot", "netherite_block" ->
+                    List.of("netherite", "gold");
+            case "emerald_ore", "deepslate_emerald_ore" -> List.of("emerald_ore");
+            case "emerald_block" -> List.of();
+            default -> null;
+        };
     }
 
     static double gaussianForTesting(long key) {

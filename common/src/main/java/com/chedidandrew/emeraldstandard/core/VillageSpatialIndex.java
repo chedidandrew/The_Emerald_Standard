@@ -16,9 +16,10 @@ import java.util.UUID;
  * In-memory, rebuildable spatial index for persistent village centers.
  *
  * <p>The index is deliberately not part of the save format: the village map remains authoritative,
- * while this object only narrows candidates for frequent proximity lookups. Exact three-dimensional
- * distance checks are still performed against the current records, and oversized searches fall back
- * to walking the villages in one dimension instead of expanding an unbounded cell range.</p>
+ * while this object only narrows candidates for frequent proximity lookups. Nearest-village identity
+ * queries use exact three-dimensional distance, while multi-origin development activation uses
+ * horizontal distance so player altitude does not suspend a loaded settlement. Oversized searches
+ * fall back to walking the villages in one dimension instead of expanding an unbounded cell range.</p>
  */
 final class VillageSpatialIndex {
     static final int CELL_SIZE_BLOCKS = 64;
@@ -140,7 +141,7 @@ final class VillageSpatialIndex {
                 EconomyState.VillageRecord village = villages.get(villageId);
                 if (village != null
                         && Objects.equals(village.dimensionKey, dimensionKey)
-                        && distanceSquared(village.centerPos, packedPosition)
+                        && horizontalDistanceSquared(village.centerPos, packedPosition)
                                 <= maximumDistanceSquared) {
                     matches.add(villageId);
                 }
@@ -243,6 +244,12 @@ final class VillageSpatialIndex {
         double dy = (double) unpackY(first) - unpackY(second);
         double dz = (double) unpackZ(first) - unpackZ(second);
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static double horizontalDistanceSquared(long first, long second) {
+        double dx = (double) unpackX(first) - unpackX(second);
+        double dz = (double) unpackZ(first) - unpackZ(second);
+        return dx * dx + dz * dz;
     }
 
     private static int unpackX(long packed) {

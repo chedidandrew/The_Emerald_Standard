@@ -36,8 +36,10 @@ public final class VillageProsperityRegressionTest {
         testNetWorthCannotOverflowLongAddition();
         testEpsilonOversellIsRejected();
         testProjectBoundsAndRetryRoundTrip();
-        testPhysicalProjectBenefitsWaitForMaterialization();
+        testQueuedProjectBenefitsLeadMaterialization();
         testSimulationOnlyProjectsRemainFunctional();
+        testPendingSettlersCountExactlyOnce();
+        testUniqueProjectsNeverDuplicate();
         System.out.println("PASS VillageProsperityRegressionTest");
     }
 
@@ -851,20 +853,98 @@ public final class VillageProsperityRegressionTest {
             require(reloaded.updateVillageProjectMaterialization(
                             village.villageId, 1L, loaded.totalBlocks, true, false),
                     "Could not complete a project before integrity reconciliation");
-            require(reloaded.reconcileVillageProjectMaterialization(
-                            village.villageId, 1L, 2, loaded.totalBlocks, false),
-                    "Could not reconcile a damaged completed project");
+            require(reloaded.requireManualVillageProjectRepair(
+                            village.villageId,
+                            1L,
+                            2,
+                            loaded.totalBlocks,
+                            boundsMin,
+                            boundsMax),
+                    "Could not flag a damaged completed project for in-world repair");
             EconomyState.VillageProject damaged = reloaded.villageSnapshot(
                     village.villageId).village().projects.get(0);
+            EconomyState.VillageProject nextAfterDamage = reloaded.villageSnapshot(
+                    village.villageId).village().nextVisualProject(Long.MAX_VALUE);
             require(!damaged.materializedComplete
                             && damaged.materializedBlocks == 2
-                            && reloaded.villageSnapshot(village.villageId).village()
-                                    .nextVisualProject(Long.MAX_VALUE) != null,
-                    "Damaged project retained benefits or failed to re-enter repair queue");
+                            && damaged.manualRepairRequired
+                            && (nextAfterDamage == null
+                                    || nextAfterDamage.projectId != damaged.projectId),
+                    "Damaged project retained benefits or entered the item-regenerating queue");
+            EconomyState persistedDamage = EconomyState.load(save, 333L, 0L, 0L);
+            require(persistedDamage.existingVillage(village.villageId)
+                            .projects.get(0).manualRepairRequired,
+                    "Manual structure-repair state did not survive restart");
+            require(reloaded.reconcileVillageProjectMaterializationAndBounds(
+                            village.villageId,
+                            1L,
+                            loaded.totalBlocks,
+                            loaded.totalBlocks,
+                            true,
+                            boundsMin,
+                            boundsMax),
+                    "Could not restore authority after an in-world structure repair");
+            EconomyState.VillageProject restored = reloaded.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            EconomyState.VillageProject nextAfterRestore = reloaded.villageSnapshot(
+                    village.villageId).village().nextVisualProject(Long.MAX_VALUE);
+            require(restored.materializedComplete
+                            && !restored.manualRepairRequired
+                            && (nextAfterRestore == null
+                                    || nextAfterRestore.projectId != restored.projectId),
+                    "A restored structure retained its manual-repair gate");
+
+            long expandedMinimum = pack(17, 62, 17);
+            long expandedMaximum = pack(26, 74, 26);
+            int expandedTotal = loaded.totalBlocks + 10;
+            require(reloaded.reconcileVillageProjectMaterializationAndBounds(
+                            village.villageId,
+                            1L,
+                            2,
+                            expandedTotal,
+                            false,
+                            expandedMinimum,
+                            expandedMaximum),
+                    "Could not atomically reconcile expanded project bounds");
+            EconomyState.VillageProject expanded = reloaded.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(expanded.totalBlocks == expandedTotal
+                            && expanded.materializedBlocks == 2
+                            && expanded.boundsMinPos == expandedMinimum
+                            && expanded.boundsMaxPos == expandedMaximum,
+                    "Expanded template progress and bounds were not reconciled together");
+
+            long reversedMinimum = pack(27, 75, 27);
+            long reversedMaximum = pack(16, 61, 16);
+            require(!reloaded.reconcileVillageProjectMaterializationAndBounds(
+                            village.villageId,
+                            1L,
+                            1,
+                            expandedTotal + 1,
+                            false,
+                            reversedMinimum,
+                            reversedMaximum),
+                    "Malformed project bounds were accepted");
+            EconomyState.VillageProject unchanged = reloaded.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(unchanged.totalBlocks == expandedTotal
+                            && unchanged.materializedBlocks == 2
+                            && unchanged.boundsMinPos == expandedMinimum
+                            && unchanged.boundsMaxPos == expandedMaximum,
+                    "Rejected bounds reconciliation partially mutated project state");
+
+            EconomyService expandedReload = new EconomyService();
+            expandedReload.startWithSeed(root, 222L, 0L, 0L);
+            EconomyState.VillageProject persistedExpansion = expandedReload.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(persistedExpansion.totalBlocks == expandedTotal
+                            && persistedExpansion.boundsMinPos == expandedMinimum
+                            && persistedExpansion.boundsMaxPos == expandedMaximum,
+                    "Expanded authoritative project bounds did not survive restart");
         } finally { deleteTree(root); }
     }
 
-    private static void testPhysicalProjectBenefitsWaitForMaterialization() {
+    private static void testQueuedProjectBenefitsLeadMaterialization() {
         EconomyState state = EconomyState.fresh(4_040L, 0L, 0L);
         EconomyState.VillageRecord baseline = village(state, 12, 18);
         baseline.villageId = UUID.fromString("00000000-0000-0000-0000-000000004040");
@@ -884,17 +964,30 @@ public final class VillageProsperityRegressionTest {
                 1L, VillageProsperityEngine.ProjectType.WAREHOUSE, true, false);
         built.projects.add(builtWarehouse);
 
+        EconomyState.VillageRecord damaged = baseline.copy();
+        EconomyState.VillageProject damagedWarehouse = completedProject(
+                1L, VillageProsperityEngine.ProjectType.WAREHOUSE, false, false);
+        damagedWarehouse.originPos = pack(4, 64, 4);
+        damagedWarehouse.materializedBlocks = damagedWarehouse.totalBlocks - 1;
+        damagedWarehouse.manualRepairRequired = true;
+        damaged.projects.add(damagedWarehouse);
+
         VillageProsperityEngine.advanceOneDay(baseline, state.seed, 1L, false, true);
         VillageProsperityEngine.advanceOneDay(unbuilt, state.seed, 1L, false, true);
         VillageProsperityEngine.advanceOneDay(built, state.seed, 1L, false, true);
+        VillageProsperityEngine.advanceOneDay(damaged, state.seed, 1L, false, true);
+        require(unbuilt.tradeOutput > baseline.tradeOutput,
+                "A queued economically complete Warehouse did not affect production");
         require(Double.doubleToLongBits(unbuilt.tradeOutput)
+                        == Double.doubleToLongBits(built.tradeOutput),
+                "Queued and materialized Warehouses had different economic authority");
+        require(Double.doubleToLongBits(damaged.tradeOutput)
                         == Double.doubleToLongBits(baseline.tradeOutput),
-                "An unbuilt Warehouse affected village production");
-        require(built.tradeOutput > unbuilt.tradeOutput,
-                "A physically complete Warehouse did not affect village production");
-        require(!VillageProsperityEngine.isProjectOperational(unbuiltWarehouse)
-                        && VillageProsperityEngine.isProjectOperational(builtWarehouse),
-                "Physical project authority did not follow materialization state");
+                "A Warehouse awaiting manual repair retained its production benefit");
+        require(VillageProsperityEngine.isProjectOperational(unbuiltWarehouse)
+                        && VillageProsperityEngine.isProjectOperational(builtWarehouse)
+                        && !VillageProsperityEngine.isProjectOperational(damagedWarehouse),
+                "Project authority did not follow economic completion and manual-repair state");
 
         EconomyState.VillageRecord oldCompressedBacklog = baseline.copy();
         EconomyState.VillageProject oldAbstractWarehouse = completedProject(
@@ -903,8 +996,8 @@ public final class VillageProsperityRegressionTest {
         VillageProsperityEngine.advanceOneDay(
                 oldCompressedBacklog, state.seed, 1L, false, true);
         require(!oldAbstractWarehouse.abstractOnly
-                        && !VillageProsperityEngine.isProjectOperational(oldAbstractWarehouse),
-                "Visual mode retained an old abstract-backlog benefit without a structure");
+                        && VillageProsperityEngine.isProjectOperational(oldAbstractWarehouse),
+                "Visual mode migration changed an economic backlog's authority");
 
         EconomyState.VillageRecord housing = baseline.copy();
         int originalHousing = housing.housingCapacity;
@@ -912,12 +1005,13 @@ public final class VillageProsperityRegressionTest {
         EconomyState.VillageProject cottage = completedProject(
                 2L, VillageProsperityEngine.ProjectType.COTTAGE, false, false);
         housing.projects.add(cottage);
-        require(VillageProsperityEngine.effectiveHousingCapacity(housing) == originalHousing,
-                "Unbuilt Cottage granted usable housing");
-        cottage.materializedComplete = true;
         require(VillageProsperityEngine.effectiveHousingCapacity(housing)
                         == originalHousing + VillageProsperityEngine.ProjectType.COTTAGE.housingGain(),
-                "Completed Cottage did not grant usable housing");
+                "Queued economically complete Cottage did not grant abstract housing");
+        cottage.manualRepairRequired = true;
+        cottage.originPos = pack(8, 64, 8);
+        require(VillageProsperityEngine.effectiveHousingCapacity(housing) == originalHousing,
+                "A Cottage awaiting manual repair retained its housing benefit");
     }
 
     private static void testSimulationOnlyProjectsRemainFunctional() {
@@ -943,6 +1037,223 @@ public final class VillageProsperityRegressionTest {
         require(Double.doubleToLongBits(abstractVillage.tradeOutput)
                         == Double.doubleToLongBits(physicalEquivalent.tradeOutput),
                 "Simulation-only project lost its calibrated production benefit");
+    }
+
+    private static void testPendingSettlersCountExactlyOnce() throws Exception {
+        EconomyState state = EconomyState.fresh(4_042L, 0L, 0L);
+        EconomyState.VillageRecord queued = village(state, 7, 30);
+        queued.villageId = UUID.fromString("00000000-0000-0000-0000-000000004042");
+        queued.observedPopulation = 7;
+        queued.pendingSettlers = 5;
+        queued.foodSupply = 2_000.0;
+        queued.materialSupply = 2_000.0;
+        queued.treasury = 2_000.0;
+        queued.developmentPoints = 500.0;
+        queued.prosperity = 70.0;
+        queued.safety = 80.0;
+        queued.projects.add(completedProject(
+                1L, VillageProsperityEngine.ProjectType.WAREHOUSE, false, false));
+        queued.projects.add(completedProject(
+                2L, VillageProsperityEngine.ProjectType.MINE_ENTRANCE, false, false));
+        EconomyState.VillageProject queuedProject = new EconomyState.VillageProject();
+        queuedProject.projectId = 3L;
+        queuedProject.type = VillageProsperityEngine.ProjectType.COTTAGE;
+        queuedProject.totalBlocks = queuedProject.type.nominalBlocks();
+        queued.projects.add(queuedProject);
+        queued.projectSerial = 3L;
+
+        EconomyState.VillageRecord censused = queued.copy();
+        censused.population = 12;
+        censused.observedPopulation = 12;
+        censused.pendingSettlers = 0;
+        EconomyState.VillageRecord residentsOnly = queued.copy();
+        residentsOnly.pendingSettlers = 0;
+
+        VillageProsperityEngine.advanceOneDay(queued, state.seed, 1L, false, true);
+        VillageProsperityEngine.advanceOneDay(censused, state.seed, 1L, false, true);
+        VillageProsperityEngine.advanceOneDay(residentsOnly, state.seed, 1L, false, true);
+
+        require(VillageProsperityEngine.economicPopulation(queued) == 12
+                        && VillageProsperityEngine.economicPopulation(censused) == 12,
+                "Pending settlers were not included exactly once in economic population");
+        require(Double.doubleToLongBits(queued.agricultureOutput)
+                                == Double.doubleToLongBits(censused.agricultureOutput)
+                        && Double.doubleToLongBits(queued.miningOutput)
+                                == Double.doubleToLongBits(censused.miningOutput)
+                        && Double.doubleToLongBits(queued.tradeOutput)
+                                == Double.doubleToLongBits(censused.tradeOutput)
+                        && Double.doubleToLongBits(queued.foodSupply)
+                                == Double.doubleToLongBits(censused.foodSupply)
+                        && Double.doubleToLongBits(queued.materialSupply)
+                                == Double.doubleToLongBits(censused.materialSupply)
+                        && Double.doubleToLongBits(queued.treasury)
+                                == Double.doubleToLongBits(censused.treasury),
+                "Queued and censused versions of the same population diverged economically");
+        require(Double.doubleToLongBits(queued.projects.get(2).economicProgress)
+                                == Double.doubleToLongBits(
+                                        censused.projects.get(2).economicProgress)
+                        && queued.projects.get(2).economicProgress
+                                > residentsOnly.projects.get(2).economicProgress,
+                "Pending settlers did not contribute exactly once to project workforce");
+        require(queued.developmentTier == 3
+                        && queued.developmentTier == censused.developmentTier
+                        && residentsOnly.developmentTier < queued.developmentTier,
+                "Pending settlers did not contribute to development-tier calculations");
+        require(queued.agricultureOutput > residentsOnly.agricultureOutput,
+                "Pending settlers did not contribute to ordinary village production");
+
+        EconomyState.VillageRecord growthQueued = queued.copy();
+        growthQueued.projects.remove(2);
+        growthQueued.projectSerial = 2L;
+        growthQueued.population = 7;
+        growthQueued.observedPopulation = 7;
+        growthQueued.pendingSettlers = 5;
+        boolean grew = false;
+        for (long day = 2L; day <= 10_000L; day++) {
+            EconomyState.VillageRecord queuedAttempt = growthQueued.copy();
+            EconomyState.VillageRecord censusedAttempt = growthQueued.copy();
+            censusedAttempt.population = 12;
+            censusedAttempt.observedPopulation = 12;
+            censusedAttempt.pendingSettlers = 0;
+            VillageProsperityEngine.advanceOneDay(
+                    queuedAttempt, state.seed, day, false, true);
+            VillageProsperityEngine.advanceOneDay(
+                    censusedAttempt, state.seed, day, false, true);
+            int queuedTotal = queuedAttempt.population + queuedAttempt.pendingSettlers;
+            int censusedTotal = censusedAttempt.population + censusedAttempt.pendingSettlers;
+            require(queuedTotal == censusedTotal,
+                    "Pending settlers changed the deterministic population-growth decision");
+            if (queuedTotal > 12) {
+                require(queuedTotal == 13,
+                        "One growth decision added more than one committed settler");
+                grew = true;
+                break;
+            }
+        }
+        require(grew, "Pending-settler growth regression never reached a deterministic draw");
+
+        EconomyState shadowState = EconomyState.fresh(4_045L, 0L, 0L);
+        EconomyState.VillageRecord shadowedVillage = village(shadowState, 7, 30);
+        shadowedVillage.pendingSettlers = 5;
+        EconomyState.VillageMarketShadow committedShadow =
+                VillageProsperityEngine.captureMarketShadow(shadowedVillage, 0L, 0L);
+        require(committedShadow != null && committedShadow.recoveryPopulation == 12,
+                "Market shadow did not capture committed economic population");
+        shadowState.villageMarketShadows.put(shadowedVillage.villageId, committedShadow);
+        shadowedVillage.pendingSettlers = 4;
+        shadowState.advanceOneDay(false, false, false, false);
+        require(shadowState.villageMarketShadows.containsKey(shadowedVillage.villageId),
+                "Market shadow released before committed population recovered");
+        shadowedVillage.pendingSettlers = 5;
+        shadowState.advanceOneDay(false, false, false, false);
+        require(!shadowState.villageMarketShadows.containsKey(shadowedVillage.villageId),
+                "Market shadow ignored recovered queued settlers");
+
+        EconomyState.VillageRecord capped = growthQueued.copy();
+        capped.population = 63;
+        capped.observedPopulation = 63;
+        capped.pendingSettlers = 1;
+        capped.housingCapacity = 100;
+        VillageProsperityEngine.advanceOneDay(capped, state.seed, 10_001L, false, true);
+        require(VillageProsperityEngine.economicPopulation(capped)
+                                == VillageProsperityEngine.MAX_ABSTRACT_POPULATION
+                        && capped.population + capped.pendingSettlers
+                                == VillageProsperityEngine.MAX_ABSTRACT_POPULATION,
+                "Economic population or queued growth exceeded the shared population cap");
+
+        Path root = Files.createTempDirectory("emerald-village-pending-census-");
+        try {
+            EconomyState persisted = EconomyState.fresh(4_043L, 0L, 0L);
+            EconomyState.VillageRecord awaitingCensus = village(persisted, 7, 30);
+            awaitingCensus.pendingSettlers = 5;
+            UUID villageId = awaitingCensus.villageId;
+            persisted.save(root.resolve("the_emerald_standard.properties"));
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 4_043L, 0L, 0L);
+
+            EconomyState.VillageRecord partial = service.observeVillage(
+                    villageId,
+                    new EconomyService.VillageObservation(
+                            "minecraft:overworld",
+                            awaitingCensus.centerPos,
+                            0L,
+                            0L,
+                            8,
+                            30,
+                            0,
+                            false,
+                            List.of())).village();
+            require(partial.population == 8
+                            && partial.pendingSettlers == 4
+                            && partial.population + partial.pendingSettlers == 12,
+                    "A partial census counted a queued settler twice or lost one");
+
+            EconomyState.VillageRecord complete = service.observeVillage(
+                    villageId,
+                    new EconomyService.VillageObservation(
+                            "minecraft:overworld",
+                            awaitingCensus.centerPos,
+                            0L,
+                            0L,
+                            12,
+                            30,
+                            0,
+                            false,
+                            List.of())).village();
+            require(complete.population == 12
+                            && complete.pendingSettlers == 0
+                            && VillageProsperityEngine.economicPopulation(complete) == 12,
+                    "A complete census did not preserve committed population");
+        } finally {
+            deleteTree(root);
+        }
+    }
+
+    private static void testUniqueProjectsNeverDuplicate() {
+        EconomyState state = EconomyState.fresh(4_044L, 0L, 0L);
+        EconomyState.VillageRecord village = village(state, 32, 80);
+        village.foodSupply = 10_000.0;
+        village.materialSupply = 10_000.0;
+        village.treasury = 10_000.0;
+        village.developmentPoints = 10_000.0;
+        village.prosperity = 90.0;
+        village.safety = 90.0;
+        long projectId = 0L;
+        for (VillageProsperityEngine.ProjectType type
+                : VillageProsperityEngine.ProjectType.values()) {
+            if (type == VillageProsperityEngine.ProjectType.COTTAGE
+                    || type == VillageProsperityEngine.ProjectType.HOUSE
+                    || type == VillageProsperityEngine.ProjectType.INN) {
+                continue;
+            }
+            EconomyState.VillageProject project = completedProject(
+                    ++projectId, type, true, false);
+            if (type == VillageProsperityEngine.ProjectType.WAREHOUSE) {
+                project.materializedComplete = false;
+                project.materializedBlocks = project.totalBlocks - 1;
+                project.originPos = pack(12, 64, 12);
+                project.manualRepairRequired = true;
+            }
+            village.projects.add(project);
+        }
+        village.projectSerial = projectId;
+
+        for (long day = 1L; day <= 2_000L; day++) {
+            VillageProsperityEngine.advanceOneDay(village, state.seed, day, false, true);
+        }
+        for (VillageProsperityEngine.ProjectType type
+                : VillageProsperityEngine.ProjectType.values()) {
+            if (type == VillageProsperityEngine.ProjectType.COTTAGE
+                    || type == VillageProsperityEngine.ProjectType.HOUSE
+                    || type == VillageProsperityEngine.ProjectType.INN) {
+                continue;
+            }
+            long count = village.projects.stream()
+                    .filter(project -> project.type == type)
+                    .count();
+            require(count == 1L,
+                    "Unique project approval duplicated " + type + " after completion or damage");
+        }
     }
 
     private static EconomyState.VillageProject completedProject(

@@ -15,6 +15,10 @@ import java.util.TreeSet;
 
 /** Small world-local configuration with conservative bounds and atomic replacement. */
 public final class EmeraldConfig {
+    static final int DEFAULT_VILLAGE_DEVELOPMENT_RADIUS = 256;
+    static final int MIN_VILLAGE_DEVELOPMENT_RADIUS = 48;
+    static final int MAX_VILLAGE_DEVELOPMENT_RADIUS = 512;
+
     private static final String FILE_NAME = "the_emerald_standard-config.properties";
     private static final Set<String> KNOWN_KEYS = Set.of(
             "village_banks.enabled",
@@ -166,7 +170,12 @@ public final class EmeraldConfig {
                 bool(properties, "village_prosperity.market_integration_enabled", true),
                 bool(properties, "village_prosperity.automatic_recovery_enabled", true),
                 bounded(properties, "village_prosperity.scan_interval_ticks", 400, 40, 24_000),
-                bounded(properties, "village_prosperity.development_radius", 96, 48, 192),
+                bounded(
+                        properties,
+                        "village_prosperity.development_radius",
+                        DEFAULT_VILLAGE_DEVELOPMENT_RADIUS,
+                        MIN_VILLAGE_DEVELOPMENT_RADIUS,
+                        MAX_VILLAGE_DEVELOPMENT_RADIUS),
                 bounded(properties, "village_prosperity.construction_interval_ticks", 10, 1, 200),
                 bounded(properties, "village_prosperity.construction_blocks_per_tick", 2, 1, 64),
                 bounded(properties, "village_prosperity.settler_spawn_interval_ticks", 1_200, 200, 24_000),
@@ -378,7 +387,7 @@ public final class EmeraldConfig {
                 true,
                 true,
                 400,
-                96,
+                DEFAULT_VILLAGE_DEVELOPMENT_RADIUS,
                 10,
                 2,
                 1_200,
@@ -411,7 +420,9 @@ public final class EmeraldConfig {
         properties.setProperty("village_prosperity.market_integration_enabled", "true");
         properties.setProperty("village_prosperity.automatic_recovery_enabled", "true");
         properties.setProperty("village_prosperity.scan_interval_ticks", "400");
-        properties.setProperty("village_prosperity.development_radius", "96");
+        properties.setProperty(
+                "village_prosperity.development_radius",
+                Integer.toString(DEFAULT_VILLAGE_DEVELOPMENT_RADIUS));
         properties.setProperty("village_prosperity.construction_interval_ticks", "10");
         properties.setProperty("village_prosperity.construction_blocks_per_tick", "2");
         properties.setProperty("village_prosperity.settler_spawn_interval_ticks", "1200");

@@ -41,7 +41,7 @@ public final class BankerProfessionSupport {
     }
 
     public static Block createExchangeDeskBlock() {
-        return new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.LECTERN)
+        return new ExchangeDeskBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.LECTERN)
                 .setId(EXCHANGE_DESK_BLOCK_KEY));
     }
 

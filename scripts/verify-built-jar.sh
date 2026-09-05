@@ -44,12 +44,18 @@ fi
 required=(
     'com/chedidandrew/emeraldstandard/core/EconomyService.class'
     'com/chedidandrew/emeraldstandard/client/BankerScreenLayout.class'
+    'com/chedidandrew/emeraldstandard/client/BankerScreenScale.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerMenu.class'
+    'com/chedidandrew/emeraldstandard/minecraft/BankerAmountSelection.class'
+    'com/chedidandrew/emeraldstandard/minecraft/TerrainFoundationPlan.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageMaterializationPolicy.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageStructureProgression.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerMenuPacketCodecSelfTest.class'
     'com/chedidandrew/emeraldstandard/minecraft/ContainerDataPacking.class'
     'com/chedidandrew/emeraldstandard/minecraft/ShortPackedContainerData.class'
     'com/chedidandrew/emeraldstandard/minecraft/FundConfirmationFingerprint.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerProfessionSupport.class'
+    'com/chedidandrew/emeraldstandard/minecraft/ExchangeDeskBlock.class'
     'com/chedidandrew/emeraldstandard/minecraft/PlayerOnboarding.class'
     'com/chedidandrew/emeraldstandard/client/BankerScreen.class'
     'assets/the_emerald_standard/lang/en_us.json'
@@ -57,6 +63,9 @@ required=(
     'assets/the_emerald_standard/items/exchange_desk.json'
     'assets/the_emerald_standard/models/block/exchange_desk.json'
     'assets/the_emerald_standard/models/item/exchange_desk.json'
+    'assets/the_emerald_standard/textures/block/exchange_desk_front.png'
+    'assets/the_emerald_standard/textures/block/exchange_desk_side.png'
+    'assets/the_emerald_standard/textures/block/exchange_desk_top.png'
     'assets/the_emerald_standard/textures/entity/villager/profession/banker.png'
     'assets/the_emerald_standard/textures/entity/zombie_villager/profession/banker.png'
     'data/minecraft/tags/block/mineable/axe.json'
@@ -95,6 +104,31 @@ fi
 if ! grep -Fxq 'com/chedidandrew/emeraldstandard/client/BankerScreenLayout.java' \
         <<<"$source_listing"; then
     echo "$sources_file is missing Banker screen layout sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/client/BankerScreenScale.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing responsive Banker screen sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/BankerAmountSelection.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing exact-amount selection sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/TerrainFoundationPlan.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing terrain-foundation planning sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/VillageMaterializationPolicy.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing village-materialization policy sources" >&2
+    exit 1
+fi
+if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/VillageStructureProgression.java' \
+        <<<"$source_listing"; then
+    echo "$sources_file is missing village-structure progression sources" >&2
     exit 1
 fi
 if ! grep -Fxq 'com/chedidandrew/emeraldstandard/minecraft/FundConfirmationFingerprint.java' \

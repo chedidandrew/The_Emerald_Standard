@@ -4,6 +4,7 @@ import com.chedidandrew.emeraldstandard.core.EconomyService;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -14,6 +15,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
 
@@ -97,6 +99,19 @@ public final class BankerAccess {
      * Existing Banker tags are migrated to the supplied region id without resetting their data.
      */
     public static boolean markBanker(Villager villager, long regionKey) {
+        return markBanker(villager, regionKey, null);
+    }
+
+    /**
+     * Marks a managed Banker and, when supplied, binds it to its generated Exchange Desk.
+     *
+     * <p>Vanilla immediately clears any level-one, zero-XP profession that has no job-site
+     * memory. Managed Bankers deliberately have no trade offers, so they would otherwise show
+     * the Banker clothing for one frame and then revert to unemployed. One career XP is the
+     * vanilla profession-lock mechanism and has no visible level badge or trade side effect.</p>
+     */
+    public static boolean markBanker(
+            Villager villager, long regionKey, BlockPos exchangeDeskPosition) {
         boolean existingBanker = hasManagedBankerTag(villager);
         if (!existingBanker && !isEligibleBankerCandidate(villager)) {
             return false;
@@ -116,28 +131,135 @@ public final class BankerAccess {
         boolean legacyProfession = villager.getVillagerData().profession()
                 .is(VillagerProfession.NONE)
                 || villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN);
+        boolean professionChanged = false;
         if (!BankerProfessionSupport.isRegisteredBanker(
                         villager.getVillagerData().profession())
                 && (!existingBanker || legacyProfession)) {
-            BankerProfessionSupport.registeredBanker()
+            var profession = BankerProfessionSupport.registeredBanker()
                     .or(() -> BuiltInRegistries.VILLAGER_PROFESSION.get(
-                            VillagerProfession.LIBRARIAN))
-                    .ifPresent(profession -> villager.setVillagerData(
-                            existingBanker
-                                    ? villager.getVillagerData().withProfession(profession)
-                                    : villager.getVillagerData()
-                                            .withProfession(profession)
-                                            .withLevel(1)));
+                            VillagerProfession.LIBRARIAN));
+            if (profession.isPresent()) {
+                releasePreviousJobSite(villager);
+                villager.setVillagerData(
+                        existingBanker
+                                ? villager.getVillagerData().withProfession(profession.get())
+                                : villager.getVillagerData()
+                                        .withProfession(profession.get())
+                                        .withLevel(1));
+                professionChanged = true;
+            }
+        }
+        if (BankerProfessionSupport.isRegisteredBanker(
+                villager.getVillagerData().profession())) {
+            villager.setVillagerXp(Math.max(1, villager.getVillagerXp()));
             villager.setVillagerDataFinalized(true);
             if (villager.level() instanceof ServerLevel level) {
+                bindExchangeDesk(level, villager, exchangeDeskPosition);
+            }
+            if (professionChanged && villager.level() instanceof ServerLevel level) {
                 villager.refreshBrain(level);
             }
         }
         return true;
     }
 
+    private static void releasePreviousJobSite(Villager villager) {
+        var brain = villager.getBrain();
+        if (brain.getMemory(MemoryModuleType.JOB_SITE).isPresent()) {
+            villager.releasePoi(MemoryModuleType.JOB_SITE);
+            brain.eraseMemory(MemoryModuleType.JOB_SITE);
+        }
+        if (brain.getMemory(MemoryModuleType.POTENTIAL_JOB_SITE).isPresent()) {
+            villager.releasePoi(MemoryModuleType.POTENTIAL_JOB_SITE);
+            brain.eraseMemory(MemoryModuleType.POTENTIAL_JOB_SITE);
+        }
+    }
+
+    private static void bindExchangeDesk(
+            ServerLevel level, Villager villager, BlockPos exchangeDeskPosition) {
+        if (exchangeDeskPosition == null
+                || !BankerProfessionSupport.isExchangeDesk(
+                        level.getBlockState(exchangeDeskPosition))) {
+            return;
+        }
+
+        GlobalPos target = GlobalPos.of(level.dimension(), exchangeDeskPosition);
+        var brain = villager.getBrain();
+        var currentJobSite = brain.getMemory(MemoryModuleType.JOB_SITE);
+        if (currentJobSite.filter(target::equals).isPresent()) {
+            return;
+        }
+
+        var potentialJobSite = brain.getMemory(MemoryModuleType.POTENTIAL_JOB_SITE);
+        if (potentialJobSite.filter(target::equals).isPresent()) {
+            brain.eraseMemory(MemoryModuleType.POTENTIAL_JOB_SITE);
+            brain.setMemory(MemoryModuleType.JOB_SITE, target);
+            return;
+        }
+
+        if (currentJobSite.isPresent()) {
+            villager.releasePoi(MemoryModuleType.JOB_SITE);
+            brain.eraseMemory(MemoryModuleType.JOB_SITE);
+        }
+        if (potentialJobSite.isPresent()) {
+            villager.releasePoi(MemoryModuleType.POTENTIAL_JOB_SITE);
+            brain.eraseMemory(MemoryModuleType.POTENTIAL_JOB_SITE);
+        }
+
+        level.getPoiManager().take(
+                        holder -> holder.is(BankerProfessionSupport.BANKER_POI_KEY),
+                        (holder, position) -> position.equals(exchangeDeskPosition),
+                        exchangeDeskPosition,
+                        1)
+                .ifPresent(position -> brain.setMemory(
+                        MemoryModuleType.JOB_SITE,
+                        GlobalPos.of(level.dimension(), position)));
+    }
+
     private static boolean hasManagedBankerTag(Entity entity) {
         return entity instanceof Villager && entity.entityTags().contains(BANKER_TAG);
+    }
+
+    /**
+     * Repairs the profession lock for an already-managed Banker immediately before interaction.
+     *
+     * <p>This is intentionally tag-gated and entity-local: it upgrades old saves even when a test
+     * enclosure is not recognized as a vanilla village, without scanning for or modifying normal
+     * villagers. Region tags and all non-legacy professions are left untouched.</p>
+     */
+    static boolean repairManagedBankerForInteraction(Entity entity) {
+        if (!(entity instanceof Villager villager) || !hasManagedBankerTag(villager)) {
+            return false;
+        }
+
+        boolean registeredProfession = BankerProfessionSupport.isRegisteredBanker(
+                villager.getVillagerData().profession());
+        boolean legacyProfession = villager.getVillagerData().profession()
+                .is(VillagerProfession.NONE)
+                || villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN);
+        boolean professionChanged = false;
+        if (!registeredProfession && legacyProfession) {
+            var profession = BankerProfessionSupport.registeredBanker();
+            if (profession.isEmpty()) {
+                return false;
+            }
+            releasePreviousJobSite(villager);
+            villager.setVillagerData(
+                    villager.getVillagerData().withProfession(profession.orElseThrow()));
+            professionChanged = true;
+            registeredProfession = true;
+        }
+        if (!registeredProfession) {
+            return false;
+        }
+
+        villager.setVillagerXp(Math.max(1, villager.getVillagerXp()));
+        villager.setVillagerDataFinalized(true);
+        villager.setPersistenceRequired();
+        if (professionChanged && villager.level() instanceof ServerLevel level) {
+            villager.refreshBrain(level);
+        }
+        return true;
     }
 
     /** Compatibility overload used only when no persistent village-region identity exists. */
@@ -151,6 +273,9 @@ public final class BankerAccess {
 
     public static boolean open(
             ServerPlayer player, EconomyService economy, Entity banker) {
+        // Old managed Bankers may have been reset before a village-gated maintenance scan ran.
+        // Direct server-side interaction is a bounded, deterministic migration opportunity.
+        repairManagedBankerForInteraction(banker);
         return openAt(
                 player,
                 economy,

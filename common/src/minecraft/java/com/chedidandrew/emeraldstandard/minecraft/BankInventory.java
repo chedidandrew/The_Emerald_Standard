@@ -1,5 +1,6 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
+import com.chedidandrew.emeraldstandard.core.InventoryDeliveryAccounting;
 import java.util.List;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
@@ -132,8 +133,11 @@ final class BankInventory {
         while (remaining > 0) {
             int requested = Math.min(maxStack, remaining);
             ItemStack stack = new ItemStack(item, requested);
+            int countBefore = countItems(player, item);
             player.getInventory().add(stack);
-            int inserted = requested - stack.getCount();
+            int countAfter = countItems(player, item);
+            int inserted = InventoryDeliveryAccounting.observedInserted(
+                    requested, countBefore, countAfter);
             remaining -= inserted;
             if (inserted == 0) {
                 break;

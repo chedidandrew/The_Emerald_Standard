@@ -2,7 +2,7 @@
 
 The Village Prosperity System connects The Emerald Standard's global market to persistent local Minecraft settlements while preserving the mod's lightweight identity.
 
-The key architectural rule is simple: **offline progression changes data, not chunks or entities**. Physical village growth materializes gradually only when players are nearby and the relevant chunks are already loaded. Prosperity observation and materialization are dimension-aware; the separate Village Bank structure remains Overworld-only in the 0.4 beta.
+The key architectural rule is simple: **offline progression changes data, not chunks or entities**. Once discovered, a village's economy advances regardless of player distance and through trusted offline catch-up on the next server start. Physical village growth materializes gradually only when a player in the same dimension is within the configured horizontal X/Z activation radius and the relevant chunks are already loaded. The recommended default is 256 blocks, configurable from 48 through 512; Y separation does not affect eligibility, no more than 16 villages are considered per construction pass, and the mod never force-loads chunks. Prosperity observation and materialization are dimension-aware; the separate Village Bank structure remains Overworld-only in the 0.4 beta.
 
 ## Configuration
 
@@ -11,6 +11,7 @@ village_prosperity.simulation_enabled=true
 village_prosperity.visual_progression_enabled=true
 village_prosperity.market_integration_enabled=true
 village_prosperity.automatic_recovery_enabled=true
+village_prosperity.development_radius=256
 village_prosperity.donations_enabled=true
 village_prosperity.endowments_enabled=true
 village_prosperity.project_sponsorship_enabled=true
@@ -27,6 +28,8 @@ The simulation settings are independent.
 - `visual_progression_enabled`: allows loaded villages to materialize approved structures and reconcile physical settlers.
 - `market_integration_enabled`: allows eligible villages to contribute their capped fundamental factor to assets and commodities.
 - `automatic_recovery_enabled`: allows recoverable extinct villages to enter the recovery process after their cooldown.
+
+`development_radius` controls only same-dimension horizontal activation for physical work on known settlements. It accepts 48–512 blocks, ignores vertical distance, and does not limit their data-only economic simulation, load chunks, or expand villager AI. At most 16 eligible villages enter any one construction pass. Entity and construction-theatre searches retain their local 48-block cap, while a spawned settler's assigned home radius is separately capped at 32 blocks. Keep the recommended 256 default unless the server already loads village chunks farther away; a larger activation radius is not a view-distance or force-loading setting.
 
 Turning visual progression off never removes structures that already exist. Turning market integration off leaves the local village simulation intact but makes the global market ignore settlement fundamentals.
 
@@ -122,7 +125,7 @@ The 0.4 beta includes ten physical project types:
 - Guard Post
 - Exchange Hall
 
-Projects require population, resources, treasury, prosperity, safety, and development points. Offline simulation may complete their economic phase, but physical construction stays in a bounded visual backlog. When visual progression is enabled, an economically complete project grants no housing or production effect until its authored template is verified physically complete. In simulation-only mode, an abstract-only project can become operational without a structure.
+Projects require population, resources, treasury, prosperity, safety, and development points. Offline or distant simulation may complete their economic phase, which immediately grants the project's housing and production effects. Its authored blocks remain a separate, bounded visual backlog until the village is nearby and loaded. A project that was physically completed and is later found damaged can still lose economic authority until the missing authored block is restored; simple distance, unloaded chunks, or an unfinished visual queue do not suspend it.
 
 ### Construction safety
 
@@ -133,36 +136,41 @@ The materializer follows conservative rules:
 - No replacement of block entities
 - No replacement of solid or protected blocks
 - No replacement of the existing terrain surface
-- The project floor is placed in air directly above a flat surface made from a conservative natural-ground whitelist
+- The project floor is levelled in air above the highest sampled surface on a conservatively whitelisted natural lot with at most two blocks of height variation
+- A deterministic append-only foundation suffix bridges only shallow air gaps, stops at sound natural ground, and supplies missing y=0 footings beneath authored y=1 exterior columns
 - A failed `setBlock` result is treated as blocked instead of being counted as successful construction
 - The resulting block state must match the authored placement before progress is recorded
 - Village Banks and projects preflight `VillageDevelopmentProtection.register(PlacementGuard)` callbacks; vetoes and guard exceptions fail closed
 - A site verified blocked before the first physical placement is released so a later pass can choose another safe lot after a persistent exponential delay
-- A partially materialized deterministic template keeps its exact persisted bounds and resumes in place after the retry delay
-- A low-frequency audit verifies one completed authored structure at a time. A mismatch demotes the project to the verified template prefix, immediately suspends its benefits, and returns it to the guarded repair queue
-- Repair fills only safe air or replaceable positions; solid player blocks, block entities, protection vetoes, and unloaded chunks make it wait rather than overwrite or force-load
+- A partially materialized deterministic template keeps its exact persisted bounds and resumes in place after the retry delay; when an append-only blueprint upgrade passes preflight, its expanded bounds are persisted in the same reconciliation update
+- A low-frequency audit verifies one completed authored structure at a time. A mismatch demotes the project to the verified template prefix and immediately suspends its benefits
+- Completed structures do not regenerate missing blocks, preventing collectible furnishings from becoming renewable drops. Restoring the authored block in-world lets a later audit reactivate the project. Safe append-only template upgrades still use the guarded queue
 - Development lots use exact bounding-box overlap checks and cannot overlap the Village Bank anchor
 - Unsafe terrain, water, steep sites, and occupied air volumes are rejected
 
-Housing, storage, commerce, agriculture, and finance templates use non-workstation storage or decoration blocks so they do not silently create unrelated villager jobs. Smithies intentionally contain a small industrial workstation set as part of their gameplay identity.
+Templates use a small, theme-appropriate set of vanilla utility and job-site blocks: residences support household crafting or farming, warehouses support crafting and cloth/stone work, markets offer several trading professions, and industrial or finance landmarks provide their expected facilities. This gives ordinary villager AI useful destinations without granting those blocks custom economic authority. The Exchange Hall contains exactly one Exchange Desk. Barrels, lecterns, cartography tables, and emerald, diamond, gold, or netherite blocks are prohibited from every prosperity template.
+
+The richer blueprints are append-only relative to the original beta templates, so an older completed project retains its authored prefix. Before suspending its benefits, the integrity audit requires every added structural position to be loaded, empty or replaceable, free of a block entity, and accepted by the protection hook. A safe upgrade enters the normal guarded repair queue; any occupied or vetoed structural suffix leaves the older project operational and untouched. Matching block type alone never proves ownership. Covered templates have continuous roof planes with attached fascia, and residential entrance paths remain clear.
+
+Each project receives one of three deterministic presets derived from the stable village identity, project ID, and type. Development tiers 2-3 append the town detail layer, and tiers 4-5 append the city layer; persisted layer sizes make the progression monotonic, so a later tier decline never removes an installed upgrade. Every project also plans a bounded, slightly irregular dirt-path/gravel trail from its entrance to the nearest earlier economic project or a stable hub near the village edge. Trails are shared, non-authoritative infrastructure: matching TES-style paths are adopted, and unsafe, occupied, or protected retrofit cells are skipped without suspending project benefits. The conservative terrain whitelist permits paving dirt, grass, sand, and stone-family blocks; Minecraft has no placement provenance for those blocks, so claim integrations must register a guard if player-placed natural-looking terrain needs protection.
 
 Cottages, Houses, and Inns include real beds. Physical settler reconciliation requires actual available beds, keeping visible population tied to usable village housing.
 
 Default construction speed is intentionally slower than beta.1: two blocks every ten server ticks. Servers may tune the values in configuration.
 
-While blocks are successfully advancing, at most two nearby residents periodically receive one low-speed navigation request toward a safe exterior waypoint, look toward the site, swing an arm, and emit a small project-appropriate particle. Profession matching affects which villagers are preferred. These are bounded visual cues only; they do not install a persistent villager goal, force chunks, or become an authority for project completion.
+While blocks are successfully advancing, at most two nearby residents within the fixed local 48-block entity search range periodically receive one low-speed navigation request toward a safe exterior waypoint, look toward the site, swing an arm, and emit a small project-appropriate particle. Profession matching affects which villagers are preferred. These are bounded visual cues only; they do not install a persistent villager goal, inherit the wider development radius, force chunks, or become an authority for project completion. A materialized settler's assigned home radius is a different limit and never exceeds 32 blocks.
 
 ## Population reconciliation
 
-When visual progression is enabled, physical villagers are authoritative for productive population growth. A simulated birth or migration event queues a settler, but it does not increase productive abstract population until a real villager is materialized and a census observes it. This also lets physical villages converge after visual progression is re-enabled without relying on the old eight-settler cap.
+When visual progression is enabled, a simulated birth or migration creates a committed settler. Committed settlers count toward bounded economic population immediately, while the pending count durably records how many villager entities still need to appear. A later loaded-world census transfers an observed arrival from pending to physical population without changing that committed total or counting it twice. This lets the economy keep growing at any player distance while the visible village converges gradually after chunks are naturally loaded.
 
 Recovery behaves differently depending on configuration:
 
-- **Simulation + visuals:** recovery approval queues two settlers, but abstract productive population stays at zero until those entities actually spawn and the census observes them.
+- **Simulation + visuals:** recovery approval queues two settlers, but the special zero-population recovery path stays economically inactive until those entities actually spawn and the census observes them.
 - **Simulation only:** there is intentionally no physical population to wait for, so a recoverable settlement can resume abstractly.
 - **Automatic recovery off:** extinct settlements remain extinct until players or existing villagers restore them through other gameplay.
 
-A physical settler is only spawned when the destination is loaded, the village has enough stored food, an available real bed, no nearby hostile blocks settlement, a supported dry collision-free spawn is found, and the spawn interval has elapsed. Spawning does not immediately consume the queue; a later loaded-world census confirms the real villager and performs that reconciliation once.
+A physical settler is only spawned when the destination is loaded, the village has enough stored food, an available real bed, no nearby hostile blocks settlement, a supported dry collision-free spawn is found, and the spawn interval has elapsed. Its local entity and spawn checks remain bounded to the existing 48-block range rather than expanding with `development_radius`, and its assigned home radius is capped separately at 32 blocks. Spawning does not immediately consume the queue; a later loaded-world census confirms the real villager and performs that reconciliation once.
 
 ## Village lifecycle
 
@@ -199,7 +207,7 @@ A Banker is only an interface to world-level accounts. Losing a Banker or an ent
 
 ## Village Prosperity Fund and restoration
 
-Players may voluntarily and irreversibly transfer bank cash to the associated settlement through a separate Fund page. A contribution is a gift to a village-owned balance, not a player loan, debt, guaranteed investment return, or withdrawable account. The server owns the additive amount draft and requires a second matching contribution action inside its confirmation window.
+Players may voluntarily and irreversibly transfer bank cash to the associated settlement through a separate Fund page. A contribution is a gift to a village-owned balance, not a player loan, debt, guaranteed investment return, or withdrawable account. The server owns and live-bounds the applied exact amount and requires a second matching contribution action inside its confirmation window.
 
 Three contribution types are available when enabled:
 
@@ -231,9 +239,12 @@ Player-caused abandoned villages and empty settlements are excluded from fundame
 Village Prosperity is designed around bounded work:
 
 - No offline AI
-- No forced chunks
+- No forced chunks, including villages that pass the activation-radius check
 - Periodic loaded-world census only
 - Dimension-aware scans restricted to loaded server levels
+- Horizontal physical-development activation: 256 blocks by default, configurable from 48 through 512, with Y ignored
+- At most 16 eligible villages considered in one construction pass
+- Local entity and construction-theatre searches remain capped at 48 blocks; settler home assignment remains capped at 32 blocks
 - One compact persistent record per known village
 - Small incident and resident history limits
 - Bounded project queue
@@ -243,8 +254,8 @@ Village Prosperity is designed around bounded work:
 - Catch-up batch size adjusted for stored account and settlement counts
 - Cached village fundamentals for snapshot lists
 - A rebuildable in-memory spatial index with 64-block X/Z cells and per-dimension buckets for nearby and nearest-village lookups
-- Exact three-dimensional distance filtering, deterministic tie behavior, and bounded fallback for oversized search radii
-- Physical-development snapshots filtered to the current dimension and nearby player positions
+- Exact three-dimensional distance filtering, deterministic tie behavior, and bounded fallback for general nearby and nearest-village lookups
+- Physical-development candidates filtered separately by current dimension and horizontal distance to player positions
 - No real resource mining for simulated output
 
 Measured regressions exercise query correctness plus save and load at 100, 500, and 1,000 villages and accounts. The spatial index is rebuilt from authoritative records on load and updated after successful village observation; it is not stored separately.
@@ -254,7 +265,7 @@ For very large public servers, future storage partitioning may still be warrante
 
 ## 0.4 visible development catalog
 
-The physical layer now uses ten intentionally small, deterministic project templates. The abstract layer authorizes and funds projects, while visual-mode housing and production benefits wait for verified physical completion. Loaded villages materialize a bounded number of blocks only when a player is nearby.
+The physical layer now uses ten intentionally small, deterministic project templates. The abstract layer authorizes, funds, and economically activates completed projects anywhere; their visual templates may trail behind in a bounded queue. A loaded village may materialize a bounded number of blocks only when it is one of at most 16 villages selected for the pass and lies within the configured horizontal activation radius of a same-dimension player.
 
 | Need | Project | Primary visible/economic role |
 | --- | --- | --- |

@@ -790,6 +790,7 @@ public final class DebugFlightRecorder {
                         "totalBlocks", active.totalBlocks,
                         "materializedComplete", active.materializedComplete,
                         "blocked", active.blocked,
+                        "manualRepairRequired", active.manualRepairRequired,
                         "retryAfterGameTick", active.retryAfterGameTick,
                         "origin", active.originPos == 0L
                                 ? Map.of()

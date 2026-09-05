@@ -252,6 +252,7 @@ final class EconomyPersistence {
             properties.setProperty(projectPrefix + "total_blocks", Integer.toString(project.totalBlocks));
             properties.setProperty(projectPrefix + "materialized_complete", Boolean.toString(project.materializedComplete));
             properties.setProperty(projectPrefix + "blocked", Boolean.toString(project.blocked));
+            properties.setProperty(projectPrefix + "manual_repair_required", Boolean.toString(project.manualRepairRequired));
             properties.setProperty(projectPrefix + "abstract_only", Boolean.toString(project.abstractOnly));
         }
         for (int index = 0; index < village.incidents.size(); index++) {
@@ -849,6 +850,7 @@ final class EconomyPersistence {
             case "total_blocks" -> project.totalBlocks = Integer.parseInt(value);
             case "materialized_complete" -> project.materializedComplete = Boolean.parseBoolean(value);
             case "blocked" -> project.blocked = Boolean.parseBoolean(value);
+            case "manual_repair_required" -> project.manualRepairRequired = Boolean.parseBoolean(value);
             case "abstract_only" -> project.abstractOnly = Boolean.parseBoolean(value);
             default -> {
             }

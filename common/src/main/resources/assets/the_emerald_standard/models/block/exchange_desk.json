@@ -1,8 +1,125 @@
 {
-  "parent": "minecraft:block/cube_bottom_top",
+  "parent": "minecraft:block/block",
+  "ambientocclusion": true,
   "textures": {
-    "top": "minecraft:block/emerald_block",
-    "bottom": "minecraft:block/dark_oak_planks",
-    "side": "minecraft:block/dark_oak_planks"
+    "particle": "the_emerald_standard:block/exchange_desk_side",
+    "top": "the_emerald_standard:block/exchange_desk_top",
+    "front": "the_emerald_standard:block/exchange_desk_front",
+    "side": "the_emerald_standard:block/exchange_desk_side",
+    "bottom": "minecraft:block/dark_oak_planks"
+  },
+  "elements": [
+    {
+      "name": "plinth",
+      "from": [1, 0, 1],
+      "to": [15, 2, 15],
+      "faces": {
+        "down": { "texture": "#bottom" },
+        "up": { "texture": "#side" },
+        "north": { "texture": "#front" },
+        "south": { "texture": "#side" },
+        "west": { "texture": "#side" },
+        "east": { "texture": "#side" }
+      }
+    },
+    {
+      "name": "cabinet",
+      "from": [2, 2, 3],
+      "to": [14, 10, 15],
+      "faces": {
+        "down": { "texture": "#bottom" },
+        "up": { "texture": "#side" },
+        "north": { "texture": "#front" },
+        "south": { "texture": "#side" },
+        "west": { "texture": "#side" },
+        "east": { "texture": "#side" }
+      }
+    },
+    {
+      "name": "left_corner_post",
+      "from": [1, 2, 2],
+      "to": [3, 11, 4],
+      "faces": {
+        "down": { "texture": "#bottom" },
+        "up": { "texture": "#side" },
+        "north": { "texture": "#front" },
+        "south": { "texture": "#side" },
+        "west": { "texture": "#side" },
+        "east": { "texture": "#side" }
+      }
+    },
+    {
+      "name": "right_corner_post",
+      "from": [13, 2, 2],
+      "to": [15, 11, 4],
+      "faces": {
+        "down": { "texture": "#bottom" },
+        "up": { "texture": "#side" },
+        "north": { "texture": "#front" },
+        "south": { "texture": "#side" },
+        "west": { "texture": "#side" },
+        "east": { "texture": "#side" }
+      }
+    },
+    {
+      "name": "writing_top",
+      "from": [0, 10, 0],
+      "to": [16, 13, 16],
+      "faces": {
+        "down": { "texture": "#bottom" },
+        "up": { "texture": "#top" },
+        "north": { "texture": "#front" },
+        "south": { "texture": "#side" },
+        "west": { "texture": "#side" },
+        "east": { "texture": "#side" }
+      }
+    },
+    {
+      "name": "ledger_inset",
+      "from": [2, 13, 2],
+      "to": [14, 13.5, 13],
+      "faces": {
+        "down": { "texture": "#side" },
+        "up": { "texture": "#top" },
+        "north": { "texture": "#front" },
+        "south": { "texture": "#side" },
+        "west": { "texture": "#side" },
+        "east": { "texture": "#side" }
+      }
+    }
+  ],
+  "display": {
+    "thirdperson_righthand": {
+      "rotation": [75, 45, 0],
+      "translation": [0, 2.5, 0],
+      "scale": [0.375, 0.375, 0.375]
+    },
+    "thirdperson_lefthand": {
+      "rotation": [75, 45, 0],
+      "translation": [0, 2.5, 0],
+      "scale": [0.375, 0.375, 0.375]
+    },
+    "firstperson_righthand": {
+      "rotation": [0, 45, 0],
+      "translation": [0, 0, 0],
+      "scale": [0.4, 0.4, 0.4]
+    },
+    "firstperson_lefthand": {
+      "rotation": [0, 225, 0],
+      "translation": [0, 0, 0],
+      "scale": [0.4, 0.4, 0.4]
+    },
+    "gui": {
+      "rotation": [30, 225, 0],
+      "translation": [0, 0, 0],
+      "scale": [0.625, 0.625, 0.625]
+    },
+    "ground": {
+      "translation": [0, 3, 0],
+      "scale": [0.25, 0.25, 0.25]
+    },
+    "fixed": {
+      "scale": [0.5, 0.5, 0.5]
+    }
   }
 }

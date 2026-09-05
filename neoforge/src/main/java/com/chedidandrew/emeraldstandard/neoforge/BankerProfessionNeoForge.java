@@ -5,9 +5,11 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.ai.village.poi.PoiType;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -43,5 +45,12 @@ public final class BankerProfessionNeoForge {
         ITEMS.register(modEventBus);
         POI_TYPES.register(modEventBus);
         PROFESSIONS.register(modEventBus);
+        modEventBus.addListener(BankerProfessionNeoForge::addCreativeTabContents);
+    }
+
+    private static void addCreativeTabContents(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTabKey().equals(CreativeModeTabs.FUNCTIONAL_BLOCKS)) {
+            event.accept(EXCHANGE_DESK_ITEM.get());
+        }
     }
 }

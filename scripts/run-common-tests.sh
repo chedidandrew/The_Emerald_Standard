@@ -25,9 +25,15 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.FinanceRoadmapRegression
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ScalingAndSpatialIndexRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.debug.DebugReportFilesRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.BankerScreenLayoutRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.BankerScreenScaleRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.BankerTextureUvRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerAmountSelectionRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.ContainerDataPackingRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.EmeraldConfigRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.FundConfirmationFingerprintRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TerrainFoundationPlanRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageMaterializationPolicyRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageStructureProgressionRegressionTest
 
 fabric_version="$(grep '^mod_version=' "$ROOT/fabric/gradle.properties" | cut -d= -f2-)"
 neo_version="$(grep '^mod_version=' "$ROOT/neoforge/gradle.properties" | cut -d= -f2-)"

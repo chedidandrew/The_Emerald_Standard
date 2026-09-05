@@ -1,0 +1,18 @@
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin('fabric-loom') {
+        def targetPath = project.providers.gradleProperty('tesSmokeGameDir').get()
+        project.extensions.getByName('loom').runs.named('server').configure {
+            runDirectory = project.file(targetPath)
+        }
+    }
+
+    project.pluginManager.withPlugin('net.neoforged.moddev') {
+        def targetPath = project.providers.gradleProperty('tesSmokeGameDir').get()
+        def neoForgeExtension = project.extensions.getByName('neoForge')
+        neoForgeExtension.runs.configureEach { run ->
+            if (run.name == 'server') {
+                run.gameDirectory.set(project.file(targetPath))
+            }
+        }
+    }
+}

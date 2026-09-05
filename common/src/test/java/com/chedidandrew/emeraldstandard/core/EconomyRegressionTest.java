@@ -22,6 +22,7 @@ public final class EconomyRegressionTest {
         testLoanTermEconomics();
         testCommodities();
         testResourceQuotes();
+        testResourceQuoteHistory();
         System.out.println("PASS EconomyRegressionTest");
     }
 
@@ -351,6 +352,56 @@ public final class EconomyRegressionTest {
         require(EconomyEngine.resourceExchangeValueMicro(
                         "diamond", 1, malformedPrices) == 0L,
                 "Missing commodity data produced an unsafe quote");
+    }
+
+    private static void testResourceQuoteHistory() {
+        Map<String, List<Double>> history = Map.of(
+                "diamond", List.of(10.0, 12.0, 14.0),
+                "gold", List.of(1.0, 2.0, 3.0),
+                "netherite", List.of(15.0, 20.0, 25.0),
+                "emerald_ore", List.of(0.9, 1.0, 1.1));
+        require(EconomyEngine.resourceExchangeHistory("diamond_block", history)
+                        .equals(List.of(90.0, 108.0, 126.0)),
+                "Diamond-block history did not follow its underlying commodity");
+        require(EconomyEngine.resourceExchangeHistory("netherite_ingot", history)
+                        .equals(List.of(64.0, 88.0, 112.0)),
+                "Crafted netherite history did not combine netherite and gold");
+        require(EconomyEngine.resourceExchangeHistory("emerald_block", history)
+                        .equals(List.of(9.0, 9.0, 9.0)),
+                "Fixed-price emerald blocks did not receive a daily chart series");
+
+        Map<String, List<Double>> unevenHistory = Map.of(
+                "netherite", List.of(10.0, 20.0, 30.0),
+                "gold", List.of(1.0, 2.0));
+        require(EconomyEngine.resourceExchangeHistory("netherite_block", unevenHistory)
+                        .equals(List.of(756.0, 1152.0)),
+                "Composite history did not align legacy series from their newest observations");
+        require(EconomyEngine.resourceExchangeHistory("netherite_ingot", Map.of(
+                        "netherite", List.of(20.0))).isEmpty(),
+                "Composite history accepted a missing commodity dependency");
+        require(EconomyEngine.resourceExchangeHistory("unsupported", history).isEmpty(),
+                "Unsupported resources received chart history");
+
+        EconomyState state = EconomyState.fresh(445_566L, 0L, 0L);
+        for (int day = 0; day < 14; day++) {
+            state.advanceOneDay();
+        }
+        List<String> resources = List.of(
+                "diamond", "diamond_block", "diamond_ore", "deepslate_diamond_ore",
+                "gold_ingot", "gold_ore", "deepslate_gold_ore", "nether_gold_ore",
+                "raw_gold", "raw_gold_block", "gold_block", "ancient_debris",
+                "netherite_scrap", "netherite_ingot", "netherite_block", "emerald_block",
+                "emerald_ore", "deepslate_emerald_ore");
+        for (String resource : resources) {
+            List<Double> derived = EconomyEngine.resourceExchangeHistory(
+                    resource, state.commodityHistory);
+            require(derived.size() == 15,
+                    "Exchange resource is missing daily history: " + resource);
+            double currentQuote = EconomyEngine.resourceExchangeValueMicro(
+                    resource, 1, state.commodityPrices) / (double) EconomyState.MICRO;
+            require(Math.abs(derived.get(derived.size() - 1) - currentQuote) < 1.0e-6,
+                    "Exchange chart disagrees with the current quote: " + resource);
+        }
     }
 
     private static void require(boolean condition, String message) {

@@ -64,10 +64,28 @@ final class JournalAndMigrationRegression {
                 "Prepared journal did not survive reload");
         require(reload.commitPreparedInventoryCredit(PLAYER, restored.transactionId),
                 "Prepared journal could not commit");
-        require(reload.snapshot().account(PLAYER).cashMicro == 8L * EconomyState.MICRO,
+        EconomyState.Account afterDeposit = reload.snapshot().account(PLAYER);
+        require(afterDeposit.cashMicro == 8L * EconomyState.MICRO,
                 "Committed journal did not credit cash");
+        EconomyState.PortfolioTransaction depositEntry = afterDeposit.transactionLedger.getLast();
+        require(depositEntry.kind == EconomyState.PortfolioTransactionKind.CASH_IN
+                        && depositEntry.symbol.equals("DEPOSIT")
+                        && depositEntry.quantity == 8.0
+                        && depositEntry.amountMicro == 8L * EconomyState.MICRO,
+                "Deposit Activity lost its journal subtype, count, or amount");
+        int ledgerSizeAfterDeposit = afterDeposit.transactionLedger.size();
+        require(!reload.commitPreparedInventoryCredit(PLAYER, restored.transactionId)
+                        && reload.snapshot().account(PLAYER).transactionLedger.size()
+                                == ledgerSizeAfterDeposit,
+                "A duplicate journal commit added duplicate Activity");
         require(reload.completeInventoryTransaction(PLAYER, restored.transactionId),
                 "Committed journal did not clear");
+
+        require(InventoryDeliveryAccounting.undelivered(64, 0, 0) == 64,
+                "A full creative inventory treated a consumed temporary stack as delivery");
+        require(InventoryDeliveryAccounting.observedInserted(32, 5, 15) == 10
+                        && InventoryDeliveryAccounting.undelivered(32, 5, 15) == 22,
+                "A partially full inventory did not retain its undelivered remainder");
 
         EconomyState.PendingInventoryTransaction withdrawal =
                 reload.beginInventoryWithdrawal(PLAYER, 5, 3);
@@ -78,12 +96,72 @@ final class JournalAndMigrationRegression {
                 "Undelivered withdrawal could not refund");
         require(reload.snapshot().account(PLAYER).cashMicro == 5L * EconomyState.MICRO,
                 "Withdrawal refund was not returned to bank cash");
+        require(reload.snapshot().account(PLAYER).totalWithdrawalsMicro
+                        == 3L * EconomyState.MICRO,
+                "Partial withdrawal Activity retained the undelivered amount in its total");
+        require(reload.snapshot().account(PLAYER).transactionLedger.stream().anyMatch(
+                        entry -> entry.kind == EconomyState.PortfolioTransactionKind.CASH_IN
+                                && entry.symbol.equals("WITHDRAWAL_REFUND")),
+                "Withdrawal refund lost its Activity subtype");
         EconomyState.PendingInventoryTransaction adjusted =
                 reload.pendingInventoryTransaction(PLAYER);
         require(adjusted.itemCount == 3 && adjusted.expectedInventoryCount() == 6,
                 "Adjusted withdrawal journal is inconsistent");
         require(reload.completeInventoryTransaction(PLAYER, adjusted.transactionId),
                 "Withdrawal journal did not clear");
+
+        EconomyState beforeFullInventoryWithdrawal = reload.snapshot();
+        long netWorthBeforeFullInventoryWithdrawal = PortfolioAnalytics.netWorthMicro(
+                beforeFullInventoryWithdrawal.account(PLAYER),
+                beforeFullInventoryWithdrawal);
+        long withdrawalsBeforeFullInventoryWithdrawal = beforeFullInventoryWithdrawal
+                .account(PLAYER).totalWithdrawalsMicro;
+        EconomyState.PendingInventoryTransaction fullInventoryWithdrawal =
+                reload.beginInventoryWithdrawal(PLAYER, 5, 0);
+        require(fullInventoryWithdrawal != null,
+                "Full-inventory withdrawal journal could not start");
+        int fullInventoryRemainder = InventoryDeliveryAccounting.undelivered(5, 0, 0);
+        require(reload.reducePendingWithdrawal(
+                        PLAYER, fullInventoryWithdrawal.transactionId, fullInventoryRemainder),
+                "A completely undelivered withdrawal could not be refunded");
+        EconomyState afterFullInventoryWithdrawal = reload.snapshot();
+        require(afterFullInventoryWithdrawal.account(PLAYER).cashMicro
+                                == beforeFullInventoryWithdrawal.account(PLAYER).cashMicro
+                        && PortfolioAnalytics.netWorthMicro(
+                                        afterFullInventoryWithdrawal.account(PLAYER),
+                                        afterFullInventoryWithdrawal)
+                                == netWorthBeforeFullInventoryWithdrawal,
+                "A full inventory destroyed withdrawn Bank Cash or net worth");
+        require(afterFullInventoryWithdrawal.account(PLAYER).totalWithdrawalsMicro
+                                == withdrawalsBeforeFullInventoryWithdrawal
+                        && reload.pendingInventoryTransaction(PLAYER) == null,
+                "A fully refunded withdrawal left false Activity totals or a stale journal");
+
+        EconomyState.PendingInventoryTransaction exchange = reload.prepareInventoryCredit(
+                PLAYER,
+                EconomyState.InventoryTransactionKind.EXCHANGE,
+                "gold_ingot",
+                3,
+                7,
+                6L * EconomyState.MICRO);
+        require(exchange != null
+                        && reload.commitPreparedInventoryCredit(PLAYER, exchange.transactionId),
+                "Exchange journal could not commit");
+        EconomyState.PortfolioTransaction exchangeEntry = reload.snapshot()
+                .account(PLAYER).transactionLedger.getLast();
+        require(exchangeEntry.kind == EconomyState.PortfolioTransactionKind.CASH_IN
+                        && exchangeEntry.symbol.equals("EXCHANGE:gold_ingot")
+                        && exchangeEntry.quantity == 3.0,
+                "Exchange Activity lost its resource identity or item count");
+        require(reload.completeInventoryTransaction(PLAYER, exchange.transactionId),
+                "Exchange journal did not clear");
+        EconomyService exchangeReload = new EconomyService();
+        exchangeReload.startWithSeed(directory, 1000L, 0L, 0L);
+        EconomyState.PortfolioTransaction persistedExchange = exchangeReload.snapshot()
+                .account(PLAYER).transactionLedger.getLast();
+        require(persistedExchange.symbol.equals("EXCHANGE:gold_ingot")
+                        && persistedExchange.quantity == 3.0,
+                "Exchange Activity metadata did not survive reload");
     }
 
     private static void testVerifiedPlayerSaveDurablyClearsJournal(Path directory) throws Exception {

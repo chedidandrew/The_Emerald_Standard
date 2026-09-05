@@ -25,6 +25,7 @@ public final class ScalingAndSpatialIndexRegressionTest {
     public static void main(String[] args) throws Exception {
         long suiteStart = System.nanoTime();
         verifyBoundaryTieUpdateAndRemoval();
+        verifyHorizontalActivationDistanceAndDeduplication();
         verifyServiceRebuildsPersistedIndex();
         for (int scale : SCALES) {
             runScale(scale);
@@ -83,18 +84,24 @@ public final class ScalingAndSpatialIndexRegressionTest {
         }
         long queryMillis = elapsedMillis(queryStart);
 
-        List<UUID> expectedNear = bruteNearAny(
-                state.villages, "minecraft:overworld", loadedPositions, 128.0);
-        List<UUID> actualNear = index.nearAny(
-                        state.villages,
-                        "minecraft:overworld",
-                        loadedPositions,
-                        128.0)
-                .stream()
-                .map(village -> village.villageId)
-                .toList();
-        require(expectedNear.equals(actualNear),
-                "Indexed multi-origin lookup diverged at scale " + scale);
+        for (double activationRadius : new double[]{256.0, 512.0}) {
+            List<UUID> expectedNear = bruteNearAny(
+                    state.villages,
+                    "minecraft:overworld",
+                    loadedPositions,
+                    activationRadius);
+            List<UUID> actualNear = index.nearAny(
+                            state.villages,
+                            "minecraft:overworld",
+                            loadedPositions,
+                            activationRadius)
+                    .stream()
+                    .map(village -> village.villageId)
+                    .toList();
+            require(expectedNear.equals(actualNear),
+                    "Indexed multi-origin activation lookup diverged at radius "
+                            + activationRadius + " and scale " + scale);
+        }
 
         Path directory = Files.createTempDirectory("emerald-standard-scale-");
         Path save = directory.resolve("the_emerald_standard.properties");
@@ -383,6 +390,41 @@ public final class ScalingAndSpatialIndexRegressionTest {
                 "Removed village remained queryable");
     }
 
+    private static void verifyHorizontalActivationDistanceAndDeduplication() {
+        Map<UUID, EconomyState.VillageRecord> villages = new LinkedHashMap<>();
+        EconomyState.VillageRecord within =
+                village(20, "minecraft:overworld", 256, 64, 0);
+        EconomyState.VillageRecord outside =
+                village(21, "minecraft:overworld", 513, 64, 0);
+        EconomyState.VillageRecord wrongDimension =
+                village(22, "minecraft:the_nether", 64, 64, 0);
+        villages.put(within.villageId, within);
+        villages.put(outside.villageId, outside);
+        villages.put(wrongDimension.villageId, wrongDimension);
+
+        VillageSpatialIndex index = new VillageSpatialIndex();
+        index.rebuild(villages);
+        List<Long> playerPositions = List.of(
+                pack(0, 2_000, 0),
+                pack(0, -2_000, 0),
+                pack(1, 1_500, 0));
+        List<EconomyState.VillageRecord> activated = index.nearAny(
+                villages, "minecraft:overworld", playerPositions, 256.0);
+        require(activated.size() == 1 && activated.get(0) == within,
+                "Horizontal activation did not ignore altitude, filter dimensions, or deduplicate");
+        require(index.nearest(
+                        villages, "minecraft:overworld", playerPositions.get(0), 256.0)
+                        == null,
+                "Nearest-village identity lookup stopped using three-dimensional distance");
+
+        List<EconomyState.VillageRecord> maximumRange = index.nearAny(
+                villages, "minecraft:overworld", List.of(pack(1, 64, 0)), 512.0);
+        require(maximumRange.size() == 2
+                        && maximumRange.get(0) == within
+                        && maximumRange.get(1) == outside,
+                "Maximum activation radius lost an exact horizontal boundary match");
+    }
+
     private static void verifyServiceRebuildsPersistedIndex() throws Exception {
         Path directory = Files.createTempDirectory("emerald-standard-index-reload-");
         Path save = directory.resolve("the_emerald_standard.properties");
@@ -442,7 +484,7 @@ public final class ScalingAndSpatialIndexRegressionTest {
                 continue;
             }
             for (long position : positions) {
-                if (distanceSquared(village.centerPos, position) <= radiusSquared) {
+                if (horizontalDistanceSquared(village.centerPos, position) <= radiusSquared) {
                     result.add(village.villageId);
                     break;
                 }
@@ -483,6 +525,12 @@ public final class ScalingAndSpatialIndexRegressionTest {
         double dy = (double) unpackY(first) - unpackY(second);
         double dz = (double) unpackZ(first) - unpackZ(second);
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static double horizontalDistanceSquared(long first, long second) {
+        double dx = (double) unpackX(first) - unpackX(second);
+        double dz = (double) unpackZ(first) - unpackZ(second);
+        return dx * dx + dz * dz;
     }
 
     private static int unpackX(long packed) {

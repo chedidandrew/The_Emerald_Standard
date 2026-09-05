@@ -493,6 +493,8 @@ public final class EconomyState {
         public int totalBlocks;
         public boolean materializedComplete;
         public boolean blocked;
+        /** A completed structure was damaged and must be restored in-world, not regenerated. */
+        public boolean manualRepairRequired;
         public boolean abstractOnly;
         /** Inclusive packed BlockPos bounds reserved by the authored physical template. */
         public long boundsMinPos;
@@ -514,6 +516,7 @@ public final class EconomyState {
             copy.totalBlocks = totalBlocks;
             copy.materializedComplete = materializedComplete;
             copy.blocked = blocked;
+            copy.manualRepairRequired = manualRepairRequired;
             copy.abstractOnly = abstractOnly;
             copy.boundsMinPos = boundsMinPos;
             copy.boundsMaxPos = boundsMaxPos;
@@ -632,6 +635,7 @@ public final class EconomyState {
             return projects.stream()
                     .filter(project -> project.economicComplete
                             && !project.materializedComplete
+                            && !project.manualRepairRequired
                             && !project.abstractOnly
                             && project.retryAfterGameTick <= Math.max(0L, currentGameTick))
                     .findFirst()
@@ -1006,7 +1010,8 @@ public final class EconomyState {
                     && economicDay >= shadow.minimumReleaseDay
                     && economicDay >= village.marketSuppressedUntilDay
                     && village.lifecycle == VillageProsperityEngine.Lifecycle.ACTIVE
-                    && village.population >= shadow.recoveryPopulation;
+                    && VillageProsperityEngine.economicPopulation(village)
+                            >= shadow.recoveryPopulation;
         });
     }
 
@@ -1655,6 +1660,11 @@ public final class EconomyState {
                     || (project.economicComplete && project.economicProgress < 1.0)
                     || (project.materializedComplete
                             && project.materializedBlocks < project.totalBlocks)
+                    || (project.manualRepairRequired
+                            && (project.materializedComplete
+                                    || !project.economicComplete
+                                    || project.abstractOnly
+                                    || project.originPos == 0L))
                     || !validProjectBounds(project)) {
                 throw new IOException("Invalid village project in " + id);
             }

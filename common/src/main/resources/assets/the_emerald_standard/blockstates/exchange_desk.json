@@ -1,7 +1,19 @@
 {
   "variants": {
-    "": {
+    "facing=east": {
+      "model": "the_emerald_standard:block/exchange_desk",
+      "y": 90
+    },
+    "facing=north": {
       "model": "the_emerald_standard:block/exchange_desk"
+    },
+    "facing=south": {
+      "model": "the_emerald_standard:block/exchange_desk",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "the_emerald_standard:block/exchange_desk",
+      "y": 270
     }
   }
 }

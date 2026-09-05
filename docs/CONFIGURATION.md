@@ -22,7 +22,7 @@ Edit the file while the server is stopped, or edit it and run `/emerald config r
 | `village_prosperity.market_integration_enabled` | `true` | `true`, `false` | Allows eligible settlement fundamentals to influence market sectors. |
 | `village_prosperity.automatic_recovery_enabled` | `true` | `true`, `false` | Allows eligible non-player-caused extinction to recover after its cooldown. |
 | `village_prosperity.scan_interval_ticks` | `400` | `40`–`24000` | Delay between loaded-player settlement census scans. |
-| `village_prosperity.development_radius` | `96` | `48`–`192` | Maximum local radius considered for village development. |
+| `village_prosperity.development_radius` | `256` | `48`–`512` | Horizontal X/Z distance from a player within which a known village may be considered for physical development. |
 | `village_prosperity.construction_interval_ticks` | `10` | `1`–`200` | Delay between bounded construction passes. |
 | `village_prosperity.construction_blocks_per_tick` | `2` | `1`–`64` | Global block budget used by one construction pass. |
 | `village_prosperity.settler_spawn_interval_ticks` | `1200` | `200`–`24000` | Delay between physical settler placement attempts. |
@@ -36,6 +36,14 @@ Edit the file while the server is stopped, or edit it and run `/emerald config r
 | `village_prosperity.max_monthly_treasury_spending` | `24` | `1`–`1000000` | Maximum automatic Fund spending per 30 economic days, in emeralds. |
 
 Integers must be written without decimal points. Boolean values are case-insensitive, but must be `true` or `false`. Blank or omitted known settings use their documented defaults.
+
+`village_prosperity.development_radius` is an activation distance for physical work, not a simulation, chunk-loading, or AI distance. Known village economies continue data-only advancement when players are elsewhere and during trusted offline catch-up. For blocks, censuses, audits, and settlers, the player and village must be in the same dimension, vertical Y separation is ignored, and the relevant chunks must already be loaded. At most 16 eligible villages are considered in one construction pass, and increasing the radius never force-loads chunks. Local entity and construction-theatre searches remain capped at 48 blocks; settler home assignment is a separate limit capped at 32 blocks.
+
+New configuration files use `256`. Existing worlds keep any explicit value already stored in their
+world-local configuration—including the former `96` default—until an operator changes it and runs
+`/emerald config reload` or restarts the world.
+
+`256` is the recommended general-purpose value. Raising it toward `512` only broadens which already-loaded villages may receive physical work; it does not increase view distance or keep distant chunks active. Prefer the default instead of a very large radius unless another server mechanism already keeps the intended chunks loaded and profiling shows sufficient headroom.
 
 ## Mode combinations
 
@@ -53,7 +61,7 @@ Disabling offline progression ignores wall-clock time observed after the setting
 ## Operational guidance
 
 - Back up the world before changing several simulation settings or moving between mod versions.
-- Increase scan intervals or reduce the construction budget first if a large server needs less background work.
+- Increase scan intervals, reduce the construction budget, or lower the development radius if a large server needs less background work. The fixed 16-village-per-pass ceiling still applies at every radius.
 - Use `/emerald config show` to see the exact active values and file location.
 - Use `/emerald config reload` after an edit. A success message lists the newly active values; an error confirms that the prior configuration is still active.
 - These controls affect future simulation only. They do not rewrite market history, player holdings, or the save format.
