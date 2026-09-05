@@ -24,6 +24,7 @@ final class DurabilityAndInvariantRegression {
         testChecksumCorruptionUsesBackup(root.resolve("checksum"));
         testMutationRollback(root.resolve("rollback"));
         testBankFallbackPromotionRollback(root.resolve("bank-fallback-rollback"));
+        testBankStructureUpgradeRollback(root.resolve("bank-structure-rollback"));
         testAutomaticSaveBackoff(root.resolve("backoff"));
         testNoDebtAndCaps(root.resolve("no-debt"));
         testSaturatedVillageCounters(root.resolve("village-counters"));
@@ -156,20 +157,22 @@ final class DurabilityAndInvariantRegression {
         Files.createDirectory(save);
         Files.writeString(save.resolve("block"), "x");
 
-        require(!service.markGeneratedBankRegion(region, builtAnchor, villageId),
+        require(!service.markGeneratedBankRegion(region, builtAnchor, villageId, 2),
                 "Bank promotion succeeded without durable persistence");
         require(service.isFallbackBankRegion(region)
                         && Long.valueOf(fallbackAnchor).equals(
                                 service.generatedBankAnchor(region))
+                        && service.generatedBankStructureVersion(region) == 0
                         && villageId.equals(service.villageIdForBankRegion(region))
                         && service.villageSnapshot(villageId).village().bankAnchorPos
                                 == fallbackAnchor,
                 "Failed Bank promotion did not restore fallback ownership and anchor");
         long derivedRegion = 0x2122334455667788L;
         require(!service.markGeneratedBankRegion(
-                        derivedRegion, builtAnchor, secondVillageId),
+                        derivedRegion, builtAnchor, secondVillageId, 3),
                 "Derived Bank marker succeeded without durable village ownership");
         require(!service.hasGeneratedBankRegion(derivedRegion)
+                        && service.generatedBankStructureVersion(derivedRegion) == 0
                         && service.villageIdForBankRegion(derivedRegion) == null
                         && service.villageSnapshot(secondVillageId).village().bankRegionKey == 0L,
                 "Failed derived Bank marker left an unassociated duplicate key");
@@ -187,9 +190,39 @@ final class DurabilityAndInvariantRegression {
         require(durable.fallbackBankRegions.contains(region)
                         && Long.valueOf(fallbackAnchor).equals(
                                 durable.generatedBankAnchors.get(region))
+                        && !durable.bankStructureVersions.containsKey(region)
                         && villageId.equals(durable.bankRegionVillageIds.get(region))
                         && durable.villages.get(villageId).bankAnchorPos == fallbackAnchor,
                 "Failed Bank promotion changed the last durable fallback ownership");
+    }
+
+    private static void testBankStructureUpgradeRollback(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 4_561L, 70_000L, 0L);
+        long region = 0x4122334455667788L;
+        long anchor = 0x0405060708090102L;
+        require(service.markGeneratedBankRegion(region, anchor),
+                "Legacy Bank marker fixture failed");
+        require(!service.completeBankStructureUpgrade(region, anchor + 1L, 2)
+                        && service.generatedBankStructureVersion(region) == 0,
+                "Bank structure upgrade accepted the wrong persisted anchor");
+        require(service.deposit(PLAYER, 1L),
+                "Bank structure marker backup fixture failed");
+
+        Path save = directory.resolve("the_emerald_standard.properties");
+        Path backup = directory.resolve("the_emerald_standard.properties.bak");
+        Files.delete(save);
+        Files.createDirectory(save);
+        Files.writeString(save.resolve("block"), "x");
+
+        require(!service.completeBankStructureUpgrade(region, anchor, 2),
+                "Bank structure upgrade succeeded without durable persistence");
+        require(service.generatedBankStructureVersion(region) == 0,
+                "Failed Bank structure save left an in-memory completion marker");
+        EconomyState durable = EconomyState.load(backup, 999L, 70_000L, 0L);
+        require(Long.valueOf(anchor).equals(durable.generatedBankAnchors.get(region))
+                        && !durable.bankStructureVersions.containsKey(region),
+                "Failed Bank structure save changed the last durable marker");
     }
 
     private static void testAutomaticSaveBackoff(Path directory) throws Exception {
@@ -308,6 +341,26 @@ final class DurabilityAndInvariantRegression {
         anchorlessFallbackBank.fallbackBankRegions.add(1L);
         requireValidationFailure(anchorlessFallbackBank,
                 "Fallback Bank without an anchor passed validation");
+
+        EconomyState orphanBankVersion = EconomyState.fresh(801L, 0L, 0L);
+        orphanBankVersion.bankStructureVersions.put(1L, 2);
+        requireValidationFailure(orphanBankVersion,
+                "Bank structure version without a generated Bank passed validation");
+
+        EconomyState fallbackBankVersion = EconomyState.fresh(802L, 0L, 0L);
+        fallbackBankVersion.generatedBankRegions.add(1L);
+        fallbackBankVersion.generatedBankAnchors.put(1L, 2L);
+        fallbackBankVersion.fallbackBankRegions.add(1L);
+        fallbackBankVersion.bankStructureVersions.put(1L, 2);
+        requireValidationFailure(fallbackBankVersion,
+                "Banker-only fallback retained a generated-structure version");
+
+        EconomyState nonpositiveBankVersion = EconomyState.fresh(803L, 0L, 0L);
+        nonpositiveBankVersion.generatedBankRegions.add(1L);
+        nonpositiveBankVersion.generatedBankAnchors.put(1L, 2L);
+        nonpositiveBankVersion.bankStructureVersions.put(1L, 0);
+        requireValidationFailure(nonpositiveBankVersion,
+                "Nonpositive Bank structure version passed validation");
 
         EconomyState exhaustedClock = EconomyState.fresh(796L, 0L, 0L);
         exhaustedClock.economicDay = Long.MAX_VALUE;

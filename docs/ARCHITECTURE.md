@@ -29,6 +29,8 @@ The observed settlement center prefers the nearest loaded village bell and falls
 
 Village Banks remain an Overworld-only gameplay surface in the current beta. Existing coarse grid keys and their anchors remain valid for upgraded saves. If a new stable settlement shares an already-owned legacy grid, it receives a deterministic per-village bank key rather than borrowing or duplicating the other settlement's bank. That scoped key is carried through Banker replacement, menu lookup, and Fund mutation so proximity cannot silently redirect an action to the wrong nearby village.
 
+The current 13x11 Bank blueprint is authored structure version 2. Its north entrance has a three-block-wide landing and top stair; deterministic profiles for all three lanes must agree before the next natural approach rows add one or two equally wide descending rows within the supported two-block terrain range. This rejects cross-slopes that would leave one lane afloat. Negative-Y stair columns receive support only beneath their lowest authored cell, preserving walkable headroom. Front, rear, and transom panes carry east/west connections, while side-wall panes carry north/south connections; a live same-block normalization pass corrects surviving panes whose neighbor-derived state was lost during older structure placement.
+
 ## Village Prosperity split
 
 Village Prosperity deliberately separates abstract simulation from physical materialization.
@@ -85,6 +87,7 @@ Prosperity projects are intentionally conservative:
 - Unsafe candidates are rejected before reservation so the bounded search can try another lot. After a reservation is persisted, any later obstruction or unloaded boundary uses persistent exponential retry backoff and retains the exact site—even at a recorded zero prefix—so blocks that may have reached a chunk save before progress was journaled cannot be orphaned or duplicated.
 - Partially built projects retain their exact persisted bounds and deterministic recipe prefix, then retry in place without clearing or overwriting intervening player work.
 - A failed Bank write remains unmarked and supplies a fallback Banker, allowing a later safe retry. A plot scan that is incomplete only because candidate chunks are unloaded is likewise not converted into a permanent fallback. Only a Banker-only fallback written with explicit format-11 provenance periodically retries conservative lot selection; completing the structure durably clears that provenance. Formats 10 and earlier remain unknown and non-retryable, so legacy, damaged, or crash-interrupted Bank anchors are never guessed at or rebuilt. Replaceable vegetation is accepted during lot clearance, but solid blocks and block entities remain protected. Rollback matches authored block identity so neighbor-updated pane and fence states are included.
+- An unversioned existing Bank is upgraded only when its persisted anchor and recognized bank workstation (Exchange Desk or scoped legacy lectern), counter, doorway, threshold, roof mount, and hanging-lantern signature identify the supported 13x11 design. The whole entrance suffix must be loaded, dry, unobstructed, accepted by every protection guard, and resolve to the same stair rows in all three independently sampled lanes before placement begins. Only air or replaceable cells are changed. The retrofit defers while saving is disabled, runs Minecraft's synchronous chunk-save barrier before recording version 2, and paces failed retries; a failed placement, thrown barrier error, or structure-version save rolls the new cells back. A normal barrier return improves write ordering but does not make Minecraft chunk files and the economy file one transaction. Missing or player-replaced furnishings and panes are never inferred as Bank ownership.
 
 Cottages include real beds. Warehouses use chests instead of barrels so they do not unintentionally create fisherman workstations.
 
@@ -130,15 +133,15 @@ One emerald equals 1,000,000 micro-emeralds. Cash, savings, CDs, villager lendin
 
 No player account contains a debt balance. A Prosperity Fund contribution is an irreversible gift to a village-owned balance, not borrowing or a player investment, and a player can never owe more emeralds than were voluntarily committed.
 
-## Persistent data format 11
+## Persistent data format 12
 
-Format 11 includes:
+Format 12 includes:
 
 - Required magic identifier and explicit format number
 - SHA-256 checksum over sorted state properties
 - Global market, commodities, regime, event, and up to five years of asset and commodity history
 - Unified economic-clock state
-- Bank regions, exact Banker anchors, and explicit Banker-only fallback provenance
+- Bank regions, exact Banker anchors, explicit Banker-only fallback provenance, and positive authored structure versions for anchored non-fallback generated Banks
 - Player accounts, up to eight independently identified CDs and eight lending positions, holdings, share cost basis, realized gain, contribution and withdrawal totals, a bounded transaction ledger, personal net-worth history, and pending inventory transactions
 - Village-owned Prosperity Fund purpose balances, protected endowment principal, project sponsorships, emergency reserves, bounded contribution records, and global donor recognition
 - Stable village identities and bank associations
@@ -149,7 +152,7 @@ Format 11 includes:
 - Per-project architecture schema, deterministic seed, silhouette, roof, frontage, mirror flag, canonical signature, road-facing rotation, and frozen visual stage
 - A frozen road anchor plus an independent road total, cursor, and completion flag
 
-The 0.4 line accepts its earlier supported save formats and writes them forward as format 11. Format 8 introduced the expanded project catalog; format 9 added multi-position term products, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records; format 10 added the modular architecture contract and separate road state; format 11 adds explicit Banker-only fallback provenance. When a format-9 or earlier save is read, every existing project is explicitly retained as `legacy_v1`. Its generator, recipe order, reserved origin, exact bounds, and materialized prefix are not rerolled, repositioned, or converted. Projects approved under format 10 or later receive `modular_v1` recipes. Bank markers read from formats 10 and earlier remain non-retryable even when their anchor matches a village center, because older real Banks and fallbacks cannot be distinguished safely. Legacy scalar CD and lending products are promoted into identified position collections, and holdings without execution history receive an explicitly inferred basis at the migration-day market price. Older builds reject format 11 as a future format without stale-backup fallback. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 11 are likewise rejected without overwriting them.
+The 0.4 line accepts its earlier supported save formats and writes them forward as format 12. Format 8 introduced the expanded project catalog; format 9 added multi-position term products, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records; format 10 added the modular architecture contract and separate road state; format 11 added explicit Banker-only fallback provenance; format 12 adds the independent Bank structure-version map. When a format-9 or earlier save is read, every existing project is explicitly retained as `legacy_v1`. Its generator, recipe order, reserved origin, exact bounds, and materialized prefix are not rerolled, repositioned, or converted. Projects approved under format 10 or later receive `modular_v1` recipes. Bank markers read from format 11 or earlier acquire no trusted structure version, even if an older file contains an unknown similarly named property; a live exact-signature check, guarded upgrade, and chunk-save-before-marker ordering are required before version 2 is recorded. Bank markers read from formats 10 and earlier also remain non-retryable when their anchor matches a village center, because older real Banks and fallbacks cannot be distinguished safely. Legacy scalar CD and lending products are promoted into identified position collections, and holdings without execution history receive an explicitly inferred basis at the migration-day market price. Older builds reject format 12 as a future format without stale-backup fallback. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 12 are likewise rejected without overwriting them.
 
 ## Save process
 

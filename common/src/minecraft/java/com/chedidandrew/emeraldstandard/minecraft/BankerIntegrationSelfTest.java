@@ -25,6 +25,7 @@ import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CrossCollisionBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -114,6 +115,7 @@ public final class BankerIntegrationSelfTest {
                                 unemployed.getVillagerData().profession()),
                 "Vanilla immediately reset a managed Banker's profession");
         verifyManagedBankerWorkstation(level);
+        verifyGeneratedPaneConnections(level);
 
         Villager unlockedProfession = create(level);
         unlockedProfession.setVillagerData(
@@ -230,6 +232,15 @@ public final class BankerIntegrationSelfTest {
                                 .setValue(LanternBlock.HANGING, true),
                         Blocks.LANTERN.defaultBlockState()),
                 "Rollback ownership rejected a neighbor-updated state of the planned block");
+        BlockState plannedPane = Blocks.STAINED_GLASS_PANE.green().defaultBlockState();
+        BlockState connectedPane = plannedPane
+                .setValue(CrossCollisionBlock.EAST, true)
+                .setValue(CrossCollisionBlock.WEST, true);
+        require(VillageBankManager.isOwnedBankPlacement(connectedPane, plannedPane),
+                "Rollback ownership rejected a connected state of an authored Bank pane");
+        require(!VillageBankManager.isOwnedBankPlacement(
+                        Blocks.STAINED_GLASS_PANE.blue().defaultBlockState(), plannedPane),
+                "Rollback ownership accepted a differently colored replacement pane");
         require(!VillageBankManager.isOwnedBankPlacement(
                         Blocks.TORCH.defaultBlockState(),
                         Blocks.LANTERN.defaultBlockState()),
@@ -383,6 +394,77 @@ public final class BankerIntegrationSelfTest {
             }
             level.setBlockAndUpdate(deskPosition, previous);
         }
+    }
+
+    private static void verifyGeneratedPaneConnections(ServerLevel level) {
+        BlockPos panePosition = findEmptyPaneFixturePosition(
+                level, level.getRespawnData().pos());
+        BlockPos westPosition = panePosition.west();
+        BlockPos eastPosition = panePosition.east();
+        BlockState previousPane = level.getBlockState(panePosition);
+        BlockState previousWest = level.getBlockState(westPosition);
+        BlockState previousEast = level.getBlockState(eastPosition);
+        try {
+            require(level.setBlockAndUpdate(
+                            westPosition, Blocks.OAK_PLANKS.defaultBlockState())
+                            && level.setBlockAndUpdate(
+                                    eastPosition, Blocks.OAK_PLANKS.defaultBlockState()),
+                    "The Bank pane fixture could not place its lateral wall blocks");
+            BlockState disconnectedPane = Blocks.STAINED_GLASS_PANE.green()
+                    .defaultBlockState();
+            require(level.setBlock(
+                            panePosition,
+                            disconnectedPane,
+                            Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE),
+                    "The Bank pane fixture could not place its disconnected pane");
+            require(VillageBankManager.normalizeBankPaneState(
+                            level, panePosition, null, 0x50414E45L),
+                    "The generated Bank pane normalization was rejected");
+
+            BlockState connectedPane = level.getBlockState(panePosition);
+            require(connectedPane.is(Blocks.STAINED_GLASS_PANE.green())
+                            && connectedPane.getValue(CrossCollisionBlock.EAST)
+                            && connectedPane.getValue(CrossCollisionBlock.WEST)
+                            && !connectedPane.getValue(CrossCollisionBlock.NORTH)
+                            && !connectedPane.getValue(CrossCollisionBlock.SOUTH),
+                    "Generated Bank pane normalization did not connect exactly to both walls");
+        } finally {
+            level.setBlockAndUpdate(panePosition, previousPane);
+            level.setBlockAndUpdate(westPosition, previousWest);
+            level.setBlockAndUpdate(eastPosition, previousEast);
+        }
+    }
+
+    private static BlockPos findEmptyPaneFixturePosition(ServerLevel level, BlockPos spawn) {
+        for (int radius = 0; radius <= 8; radius++) {
+            for (int xOffset = -radius; xOffset <= radius; xOffset++) {
+                for (int zOffset = -radius; zOffset <= radius; zOffset++) {
+                    if (radius > 0
+                            && Math.abs(xOffset) != radius
+                            && Math.abs(zOffset) != radius) {
+                        continue;
+                    }
+                    int x = spawn.getX() + xOffset;
+                    int z = spawn.getZ() + zOffset;
+                    int surfaceY = level.getHeight(
+                            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                    int firstCandidate = Math.max(
+                            level.getMinY(), Math.min(level.getMaxY(), surfaceY + 1));
+                    for (int y = firstCandidate; y <= level.getMaxY(); y++) {
+                        BlockPos candidate = new BlockPos(x, y, z);
+                        if (level.getBlockState(candidate).isAir()
+                                && level.getBlockState(candidate.west()).isAir()
+                                && level.getBlockState(candidate.east()).isAir()
+                                && level.getBlockState(candidate.north()).isAir()
+                                && level.getBlockState(candidate.south()).isAir()) {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Could not find empty loaded space for the Bank pane fixture");
     }
 
     private static BlockPos findEmptyFixturePosition(ServerLevel level, BlockPos spawn) {

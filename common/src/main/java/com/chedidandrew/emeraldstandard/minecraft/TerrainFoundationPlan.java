@@ -23,11 +23,13 @@ public final class TerrainFoundationPlan {
     /**
      * Returns the deterministic suffix cells needed beneath every ground-contact column.
      *
-     * <p>A column beginning at y=1 receives the missing y=0 footing. Every column whose lowest
-     * authored cell is at or below y=1 then receives the configured negative-depth support cells.
-     * Columns beginning at y=2 or higher are treated as intentionally suspended roof/detail
-     * columns. Existing authored cells are never duplicated. The returned cells are sorted and
-     * are intended to be appended after the legacy template prefix.</p>
+     * <p>A column beginning at y=1 receives the missing y=0 footing. Every ground-contact column
+     * then receives contiguous support cells strictly beneath its lowest authored cell, down to
+     * the configured negative depth. This also supports authored terrain stairs below y=0 without
+     * filling their walkable space from above. Columns beginning at y=2 or higher are treated as
+     * intentionally suspended roof/detail columns. Existing authored cells are never duplicated.
+     * The returned cells are sorted and are intended to be appended after the legacy template
+     * prefix.</p>
      */
     public static List<Cell> appendSupportCells(List<Cell> authored, int maximumDepth) {
         if (maximumDepth < 0 || maximumDepth > 16) {
@@ -54,11 +56,9 @@ public final class TerrainFoundationPlan {
                 continue;
             }
             Column column = entry.getKey();
-            if (lowest == 1) {
-                addIfMissing(suffix, occupied, new Cell(column.x, 0, column.z));
-            }
-            for (int depth = 1; depth <= maximumDepth; depth++) {
-                addIfMissing(suffix, occupied, new Cell(column.x, -depth, column.z));
+            int firstSupportY = Math.min(0, lowest - 1);
+            for (int y = firstSupportY; y >= -maximumDepth; y--) {
+                addIfMissing(suffix, occupied, new Cell(column.x, y, column.z));
             }
         }
         return List.copyOf(suffix);

@@ -49,6 +49,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Upgrade from format 8 to format 9 | Not run | Not run | Position migration, inferred basis flag, histories, and Fund defaults |
 | Upgrade from format 9 or earlier to format 10 | Not run | Not run | Existing unstarted, partial, and completed projects remain `legacy_v1` at the same origin, bounds, order, and progress; no reroll or modular conversion; newly approved project persists as `modular_v1` |
 | Upgrade from format 10 to format 11 | Not run | Not run | Existing Bank anchors remain non-retryable; only newly persisted Banker-only fallbacks carry retry provenance; no Bank duplicates |
+| Upgrade from format 11 to format 12 | Not run | Not run | Intact unversioned Banks receive one guarded version-2 entrance upgrade; blocked or damaged Banks remain untouched; no stair regeneration after later player removal |
 | No route creates player debt or negative balance | Not run | Not run | Debug validation report |
 
 ## GUI and onboarding checks
@@ -100,7 +101,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Obstructed construction lot | Not run | Not run | Retry behavior and no overwritten blocks |
 | Chunk unload during construction | Not run | Not run | Reload result and debug ZIP |
 | Two villages inside nearby scan regions | Not run | Not run | Correct identities and separate projects |
-| New Village Bank architecture and furnishings | Not run | Not run | Sealed roof, sheltered entrance, interior/storage, exactly one Exchange Desk, no barrel or second job site |
+| New Village Bank architecture and furnishings | Not run | Not run | Sealed roof, connected 19-pane window set, three-wide lane-agreed terrain-matched staircase with cross-slope rejection, sheltered entrance, interior/storage, exactly one Exchange Desk, no barrel or second job site |
 | Cottage, House, Inn, Warehouse | Not run | Not run | Completed examples, clear residential entries, usable beds, and no duplicate placements |
 | Template job sites match their documented theme and forbidden blocks are absent | Not run | Not run | Profession/POI census plus block inspection; exactly one desk in Exchange Hall |
 | Mine Entrance, Smithy, Granary | Not run | Not run | Completed examples |

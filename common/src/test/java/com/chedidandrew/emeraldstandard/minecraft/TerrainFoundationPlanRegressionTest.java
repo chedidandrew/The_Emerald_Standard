@@ -12,6 +12,7 @@ public final class TerrainFoundationPlanRegressionTest {
         testFloorAndOutdoorPostSupports();
         testFootingWithoutTerrainDepth();
         testSuspendedDetailsStaySuspended();
+        testBelowOriginStairSupports();
         testIdempotentAndOrderedSuffix();
         testTerrainRangeBounds();
         System.out.println("PASS terrain foundation planning regressions");
@@ -51,6 +52,23 @@ public final class TerrainFoundationPlanRegressionTest {
                 0);
         require(suffix.equals(List.of(new TerrainFoundationPlan.Cell(4, 0, -1))),
                 "A y=1 outdoor detail lost its structural footing at zero terrain depth");
+    }
+
+    private static void testBelowOriginStairSupports() {
+        List<TerrainFoundationPlan.Cell> middleSupport =
+                TerrainFoundationPlan.appendSupportCells(
+                        List.of(new TerrainFoundationPlan.Cell(6, -1, -3)),
+                        2);
+        require(middleSupport.equals(List.of(
+                        new TerrainFoundationPlan.Cell(6, -2, -3))),
+                "A below-origin stair did not receive only the support beneath it");
+
+        List<TerrainFoundationPlan.Cell> lowestSupport =
+                TerrainFoundationPlan.appendSupportCells(
+                        List.of(new TerrainFoundationPlan.Cell(6, -2, -4)),
+                        2);
+        require(lowestSupport.isEmpty(),
+                "Foundation planning filled walkable space above the lowest terrain stair");
     }
 
     private static void testIdempotentAndOrderedSuffix() {

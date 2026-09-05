@@ -157,6 +157,10 @@ final class EconomyPersistence {
                 properties.setProperty(
                         "bank.anchor." + Long.toUnsignedString(region, 16),
                         Long.toString(anchor)));
+        state.bankStructureVersions.forEach((region, version) ->
+                properties.setProperty(
+                        "bank.structure_version." + Long.toUnsignedString(region, 16),
+                        Integer.toString(version)));
         state.fallbackBankRegions.forEach(region ->
                 properties.setProperty(
                         "bank.fallback." + Long.toUnsignedString(region, 16), "true"));
@@ -549,6 +553,9 @@ final class EconomyPersistence {
             }
             if (format >= 11) {
                 loadFallbackBankRegions(state, properties);
+            }
+            if (format >= 12) {
+                loadBankStructureVersions(state, properties);
             }
             if (format >= 6) {
                 loadVillages(state, properties, format);
@@ -1388,6 +1395,32 @@ final class EconomyPersistence {
                 state.fallbackBankRegions.add(region);
             } catch (NumberFormatException exception) {
                 throw new IOException("Invalid fallback bank key " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadBankStructureVersions(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.structure_version.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                int version = Integer.parseInt(properties.getProperty(key));
+                if (version <= 0
+                        || !state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)
+                        || state.fallbackBankRegions.contains(region)) {
+                    throw new IOException(
+                            "Bank structure version has no matching generated structure "
+                                    + encoded);
+                }
+                state.bankStructureVersions.put(region, version);
+            } catch (NumberFormatException exception) {
+                throw new IOException("Invalid bank structure version " + encoded, exception);
             }
         }
     }

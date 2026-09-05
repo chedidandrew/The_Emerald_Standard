@@ -311,6 +311,11 @@ public final class EconomyService {
         return state == null ? null : state.generatedBankAnchors.get(regionKey);
     }
 
+    /** Returns zero for an unversioned legacy Bank or a region without a generated structure. */
+    public synchronized int generatedBankStructureVersion(long regionKey) {
+        return state == null ? 0 : state.bankStructureVersions.getOrDefault(regionKey, 0);
+    }
+
     public synchronized boolean isFallbackBankRegion(long regionKey) {
         return state != null && state.fallbackBankRegions.contains(regionKey);
     }
@@ -325,30 +330,48 @@ public final class EconomyService {
     }
 
     public synchronized boolean markGeneratedBankRegion(long regionKey, Long packedAnchor) {
-        return persistBankRegionMarker(regionKey, packedAnchor, false, null);
+        return persistBankRegionMarker(regionKey, packedAnchor, false, null, null);
     }
 
     /** Atomically records a generated Bank and its stable village ownership when known. */
     public synchronized boolean markGeneratedBankRegion(
             long regionKey, long packedAnchor, UUID villageId) {
-        return persistBankRegionMarker(regionKey, packedAnchor, false, villageId);
+        return persistBankRegionMarker(regionKey, packedAnchor, false, villageId, null);
+    }
+
+    /** Atomically records a newly built Bank together with its authored-structure version. */
+    public synchronized boolean markGeneratedBankRegion(
+            long regionKey,
+            long packedAnchor,
+            UUID villageId,
+            int structureVersion) {
+        return persistBankRegionMarker(
+                regionKey, packedAnchor, false, villageId, structureVersion);
     }
 
     /** Records a deliberate Banker-only fallback that may safely retry future lot searches. */
     public synchronized boolean markFallbackBankRegion(long regionKey, long packedAnchor) {
-        return persistBankRegionMarker(regionKey, packedAnchor, true, null);
+        return persistBankRegionMarker(regionKey, packedAnchor, true, null, null);
     }
 
     /** Atomically records a Banker-only fallback and its stable village ownership when known. */
     public synchronized boolean markFallbackBankRegion(
             long regionKey, long packedAnchor, UUID villageId) {
-        return persistBankRegionMarker(regionKey, packedAnchor, true, villageId);
+        return persistBankRegionMarker(regionKey, packedAnchor, true, villageId, null);
     }
 
     private boolean persistBankRegionMarker(
-            long regionKey, Long packedAnchor, boolean fallback, UUID villageId) {
+            long regionKey,
+            Long packedAnchor,
+            boolean fallback,
+            UUID villageId,
+            Integer structureVersion) {
         if (state == null || path == null) {
             lastError = "Economy service has not started";
+            return false;
+        }
+        if (structureVersion != null && structureVersion <= 0) {
+            lastError = "Bank structure version must be positive";
             return false;
         }
         EconomyState.VillageRecord village = villageId == null
@@ -362,15 +385,32 @@ public final class EconomyService {
         boolean dirtyBefore = dirty;
         try {
             boolean changed = state.generatedBankRegions.add(regionKey);
-            if (packedAnchor != null
-                    && !Objects.equals(state.generatedBankAnchors.put(regionKey, packedAnchor),
-                            packedAnchor)) {
+            Long previousAnchor = state.generatedBankAnchors.get(regionKey);
+            boolean anchorChanged = packedAnchor != null
+                    && !Objects.equals(previousAnchor, packedAnchor);
+            if (anchorChanged) {
+                state.generatedBankAnchors.put(regionKey, packedAnchor);
                 changed = true;
             }
             if (fallback) {
                 changed |= state.fallbackBankRegions.add(regionKey);
+                changed |= state.bankStructureVersions.remove(regionKey) != null;
             } else {
                 changed |= state.fallbackBankRegions.remove(regionKey);
+                if (structureVersion != null) {
+                    int nextVersion = anchorChanged
+                            ? structureVersion
+                            : Math.max(
+                                    structureVersion,
+                                    state.bankStructureVersions.getOrDefault(regionKey, 0));
+                    if (!Objects.equals(
+                            state.bankStructureVersions.put(regionKey, nextVersion),
+                            nextVersion)) {
+                        changed = true;
+                    }
+                } else if (anchorChanged) {
+                    changed |= state.bankStructureVersions.remove(regionKey) != null;
+                }
             }
             if (village != null) {
                 if (!Objects.equals(state.bankRegionVillageIds.put(regionKey, villageId),
@@ -387,6 +427,50 @@ public final class EconomyService {
             if (!changed) {
                 return true;
             }
+            state.save(path);
+            dirty = false;
+            resetSaveSchedule(state.lastWallClockMs);
+            lastError = "";
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            state = before;
+            dirty = dirtyBefore;
+            lastError = message(exception);
+            scheduleSaveRetry(state.lastWallClockMs);
+            return false;
+        }
+    }
+
+    /**
+     * Durably marks a guarded in-world Bank upgrade complete without creating or moving a Bank.
+     * Repeating an already-completed or newer version is a no-op.
+     */
+    public synchronized boolean completeBankStructureUpgrade(
+            long regionKey, long expectedPackedAnchor, int structureVersion) {
+        if (state == null || path == null) {
+            lastError = "Economy service has not started";
+            return false;
+        }
+        if (structureVersion <= 0) {
+            lastError = "Bank structure version must be positive";
+            return false;
+        }
+        if (!state.generatedBankRegions.contains(regionKey)
+                || !Objects.equals(
+                        state.generatedBankAnchors.get(regionKey), expectedPackedAnchor)
+                || state.fallbackBankRegions.contains(regionKey)) {
+            lastError = "Bank structure or expected anchor is not available";
+            return false;
+        }
+        int currentVersion = state.bankStructureVersions.getOrDefault(regionKey, 0);
+        if (currentVersion >= structureVersion) {
+            return true;
+        }
+
+        EconomyState before = state.copy();
+        boolean dirtyBefore = dirty;
+        try {
+            state.bankStructureVersions.put(regionKey, structureVersion);
             state.save(path);
             dirty = false;
             resetSaveSchedule(state.lastWallClockMs);
