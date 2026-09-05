@@ -311,6 +311,10 @@ public final class EconomyService {
         return state == null ? null : state.generatedBankAnchors.get(regionKey);
     }
 
+    public synchronized boolean isFallbackBankRegion(long regionKey) {
+        return state != null && state.fallbackBankRegions.contains(regionKey);
+    }
+
     /** Read-only anchors used to recognize generated bank counters without exposing mutable state. */
     public synchronized Map<Long, Long> generatedBankAnchorsSnapshot() {
         return state == null ? Map.of() : Map.copyOf(state.generatedBankAnchors);
@@ -321,8 +325,37 @@ public final class EconomyService {
     }
 
     public synchronized boolean markGeneratedBankRegion(long regionKey, Long packedAnchor) {
+        return persistBankRegionMarker(regionKey, packedAnchor, false, null);
+    }
+
+    /** Atomically records a generated Bank and its stable village ownership when known. */
+    public synchronized boolean markGeneratedBankRegion(
+            long regionKey, long packedAnchor, UUID villageId) {
+        return persistBankRegionMarker(regionKey, packedAnchor, false, villageId);
+    }
+
+    /** Records a deliberate Banker-only fallback that may safely retry future lot searches. */
+    public synchronized boolean markFallbackBankRegion(long regionKey, long packedAnchor) {
+        return persistBankRegionMarker(regionKey, packedAnchor, true, null);
+    }
+
+    /** Atomically records a Banker-only fallback and its stable village ownership when known. */
+    public synchronized boolean markFallbackBankRegion(
+            long regionKey, long packedAnchor, UUID villageId) {
+        return persistBankRegionMarker(regionKey, packedAnchor, true, villageId);
+    }
+
+    private boolean persistBankRegionMarker(
+            long regionKey, Long packedAnchor, boolean fallback, UUID villageId) {
         if (state == null || path == null) {
             lastError = "Economy service has not started";
+            return false;
+        }
+        EconomyState.VillageRecord village = villageId == null
+                ? null
+                : state.existingVillage(villageId);
+        if (villageId != null && (packedAnchor == null || village == null)) {
+            lastError = "Bank village or anchor is not available";
             return false;
         }
         EconomyState before = state.copy();
@@ -333,6 +366,23 @@ public final class EconomyService {
                     && !Objects.equals(state.generatedBankAnchors.put(regionKey, packedAnchor),
                             packedAnchor)) {
                 changed = true;
+            }
+            if (fallback) {
+                changed |= state.fallbackBankRegions.add(regionKey);
+            } else {
+                changed |= state.fallbackBankRegions.remove(regionKey);
+            }
+            if (village != null) {
+                if (!Objects.equals(state.bankRegionVillageIds.put(regionKey, villageId),
+                        villageId)) {
+                    changed = true;
+                }
+                if (village.bankRegionKey != regionKey
+                        || village.bankAnchorPos != packedAnchor) {
+                    village.bankRegionKey = regionKey;
+                    village.bankAnchorPos = packedAnchor;
+                    changed = true;
+                }
             }
             if (!changed) {
                 return true;

@@ -46,8 +46,15 @@ public final class VillageBankManager {
     private static final int BANK_PLOT_MAX_X = BANK_WIDTH;
     private static final int BANK_PLOT_MIN_Z = -2;
     private static final int BANK_PLOT_MAX_Z = BANK_DEPTH;
+    private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
+    private static final Map<Long, Long> LAST_FALLBACK_BANK_RETRY_TICK = new HashMap<>();
 
     private VillageBankManager() {
+    }
+
+    /** Clears world-session-only retry pacing between integrated or dedicated server instances. */
+    public static void resetRuntimeState() {
+        LAST_FALLBACK_BANK_RETRY_TICK.clear();
     }
 
     public static void tick(MinecraftServer server, EconomyService economy) {
@@ -115,62 +122,89 @@ public final class VillageBankManager {
                 if (intactCounter && survivingCounterFrame) {
                     retrofitManagedBankSupports(level, anchor, villageId, bankKey);
                 }
-                // Old saves do not retain per-block bank ownership. If a counter is gone, never
-                // recreate a drop-bearing block that could be farmed. A surviving barrel frame is
-                // enough to restore the scoped Banker at the known bank; otherwise use the village.
+                boolean bankSignaturePresent = intactCounter || survivingCounterFrame;
+                boolean persistedFallback = economy.isFallbackBankRegion(bankKey);
+                Long previousRetry = LAST_FALLBACK_BANK_RETRY_TICK.get(bankKey);
+                if (packedAnchor != null
+                        && VillageBankPlacementPolicy.shouldRetryPersistedFallback(
+                                persistedFallback)
+                        && VillageBankPlacementPolicy.retryDue(
+                                gameTime,
+                                previousRetry,
+                                FALLBACK_BANK_RETRY_INTERVAL_TICKS)) {
+                    LAST_FALLBACK_BANK_RETRY_TICK.put(bankKey, gameTime);
+                    BankBuildAttempt retry = attemptBankBuild(
+                            level, anchor, villageId, bankKey);
+                    if (retry.build().built()
+                            && persistBuiltBank(level, economy, villageId, bankKey, retry)) {
+                        LAST_FALLBACK_BANK_RETRY_TICK.remove(bankKey);
+                        continue;
+                    }
+                }
+                // Old saves do not retain per-block bank ownership. Without explicit fallback
+                // provenance, a missing signature is never rebuilt: it could be a damaged or
+                // crash-interrupted Bank rather than a Banker-only fallback.
                 ensureBanker(
                         level,
-                        intactCounter || survivingCounterFrame ? anchor : villagePosition,
-                        intactCounter || survivingCounterFrame,
+                        bankSignaturePresent || persistedFallback ? anchor : villagePosition,
+                        bankSignaturePresent,
                         bankKey,
                         economy);
                 continue;
             }
 
-            BankPlotSearch plotSearch = findBankPlots(level, villagePosition, bankKey);
-            List<BlockPos> bankOrigins = plotSearch.candidates();
-            boolean completed;
-            if (!bankOrigins.isEmpty()) {
-                BankBuildResult build = BankBuildResult.failed();
-                BlockPos bankOrigin = null;
-                for (BlockPos candidate : bankOrigins) {
-                    build = buildBank(level, candidate, villageId, bankKey);
-                    if (build.built()) {
-                        bankOrigin = candidate;
-                        break;
-                    }
-                }
-                if (!build.built()) {
-                    // Protection or a transient placement failure must not remove bank access.
-                    // Leave the region unmarked so a later scan can still build once a site is
-                    // accepted, but ensure a non-destructive Banker exists in the meantime.
-                    ensureBanker(level, villagePosition, false, bankKey, economy);
-                    continue;
-                }
-                BlockPos bankerPosition = bankOrigin.offset(
-                        BANK_WIDTH / 2, 1, BANK_DEPTH - 2);
-                completed = economy.markGeneratedBankRegion(
-                        bankKey, bankerPosition.asLong());
-                if (completed) {
-                    if (villageId != null) {
-                        economy.associateBankRegionWithVillage(
-                                bankKey, villageId, bankerPosition.asLong());
-                    }
-                    ensureBanker(level, bankerPosition, true, bankKey, economy);
-                } else {
-                    rollbackBank(level, build.placements());
-                }
+            BankBuildAttempt attempt = attemptBankBuild(level, villagePosition, villageId, bankKey);
+            if (attempt.build().built()) {
+                persistBuiltBank(level, economy, villageId, bankKey, attempt);
             } else {
-                if (plotSearch.complete()) {
+                if (VillageBankPlacementPolicy.shouldPersistFallback(
+                        attempt.searchComplete(), attempt.hadCandidates())) {
                     establishFallbackBanker(
                             level, villagePosition, bankKey, villageId, economy);
                 } else {
-                    // A low view distance can leave every sampled plot partly unloaded. Preserve
-                    // access now, but do not make that transient result a permanent fallback.
+                    // An incomplete scan or a failed protected write is transient. Preserve access
+                    // now, but do not convert either case into a permanent fallback marker.
                     ensureBanker(level, villagePosition, false, bankKey, economy);
                 }
             }
         }
+    }
+
+    private static BankBuildAttempt attemptBankBuild(
+            ServerLevel level, BlockPos villagePosition, UUID villageId, long bankKey) {
+        BankPlotSearch plotSearch = findBankPlots(level, villagePosition, bankKey);
+        for (BlockPos candidate : plotSearch.candidates()) {
+            BankBuildResult build = buildBank(level, candidate, villageId, bankKey);
+            if (build.built()) {
+                return new BankBuildAttempt(
+                        candidate, build, plotSearch.complete(), true);
+            }
+        }
+        return new BankBuildAttempt(
+                null,
+                BankBuildResult.failed(),
+                plotSearch.complete(),
+                !plotSearch.candidates().isEmpty());
+    }
+
+    private static boolean persistBuiltBank(
+            ServerLevel level,
+            EconomyService economy,
+            UUID villageId,
+            long bankKey,
+            BankBuildAttempt attempt) {
+        if (attempt.origin() == null || !attempt.build().built()) {
+            return false;
+        }
+        BlockPos bankerPosition = attempt.origin().offset(
+                BANK_WIDTH / 2, 1, BANK_DEPTH - 2);
+        if (!economy.markGeneratedBankRegion(
+                bankKey, bankerPosition.asLong(), villageId)) {
+            rollbackBank(level, attempt.build().placements());
+            return false;
+        }
+        ensureBanker(level, bankerPosition, true, bankKey, economy);
+        return true;
     }
 
     private static boolean establishFallbackBanker(
@@ -180,11 +214,8 @@ public final class VillageBankManager {
             UUID villageId,
             EconomyService economy) {
         boolean completed = ensureBanker(level, villagePosition, false, bankKey, economy)
-                && economy.markGeneratedBankRegion(bankKey, villagePosition.asLong());
-        if (completed && villageId != null) {
-            economy.associateBankRegionWithVillage(
-                    bankKey, villageId, villagePosition.asLong());
-        }
+                && economy.markFallbackBankRegion(
+                        bankKey, villagePosition.asLong(), villageId);
         return completed;
     }
 
@@ -437,8 +468,11 @@ public final class VillageBankManager {
             for (int z = BANK_PLOT_MIN_Z; z <= BANK_PLOT_MAX_Z; z++) {
                 for (int y = 0; y <= BANK_HEIGHT; y++) {
                     BlockPos position = origin.offset(x, y, z);
-                    if (level.getBlockEntity(position) != null
-                            || !level.getBlockState(position).isAir()) {
+                    BlockState state = level.getBlockState(position);
+                    if (!VillageBankPlacementPolicy.acceptsVolumeCell(
+                            state.isAir(),
+                            state.canBeReplaced(),
+                            level.getBlockEntity(position) != null)) {
                         return null;
                     }
                 }
@@ -1054,6 +1088,13 @@ public final class VillageBankManager {
     }
 
     private record BankPlotSearch(List<BlockPos> candidates, boolean complete) {
+    }
+
+    private record BankBuildAttempt(
+            BlockPos origin,
+            BankBuildResult build,
+            boolean searchComplete,
+            boolean hadCandidates) {
     }
 
     private record BankBuildResult(boolean built, List<BankMutation> placements) {

@@ -48,6 +48,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Upgrade from 0.3.0-beta.4 | Not run | Not run | Backup hash, migration log, account comparison |
 | Upgrade from format 8 to format 9 | Not run | Not run | Position migration, inferred basis flag, histories, and Fund defaults |
 | Upgrade from format 9 or earlier to format 10 | Not run | Not run | Existing unstarted, partial, and completed projects remain `legacy_v1` at the same origin, bounds, order, and progress; no reroll or modular conversion; newly approved project persists as `modular_v1` |
+| Upgrade from format 10 to format 11 | Not run | Not run | Existing Bank anchors remain non-retryable; only newly persisted Banker-only fallbacks carry retry provenance; no Bank duplicates |
 | No route creates player debt or negative balance | Not run | Not run | Debug validation report |
 
 ## GUI and onboarding checks
@@ -124,7 +125,8 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Player casualty counterfactual protection | Not run | Not run | Market contribution before/after |
 | Project benefits wait for verified physical completion | Not run | Not run | Output/housing values before and after materialization |
 | Player-removed project blocks | Not run | Not run | Benefit suspension, no item regeneration, and reactivation after manual restoration |
-| Missing bank with existing marker | Not run | Not run | Fallback Banker access and confirmation that no bank blocks are auto-rebuilt |
+| Missing Bank with ordinary/non-provenanced marker | Not run | Not run | Fallback Banker access and confirmation that no Bank blocks are auto-rebuilt |
+| Explicit format-11 Banker-only fallback becomes buildable | Not run | Not run | One paced Bank build, atomic marker/anchor/ownership promotion, provenance cleared, and no duplicate |
 
 ## Multiplayer and scale checks
 

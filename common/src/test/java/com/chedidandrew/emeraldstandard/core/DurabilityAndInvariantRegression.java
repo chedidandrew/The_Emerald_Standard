@@ -9,7 +9,9 @@ import static com.chedidandrew.emeraldstandard.core.RegressionTestSupport.writeP
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 
 final class DurabilityAndInvariantRegression {
     private DurabilityAndInvariantRegression() {
@@ -21,6 +23,7 @@ final class DurabilityAndInvariantRegression {
         testEmptyPrimaryUsesBackup(root.resolve("empty-primary"));
         testChecksumCorruptionUsesBackup(root.resolve("checksum"));
         testMutationRollback(root.resolve("rollback"));
+        testBankFallbackPromotionRollback(root.resolve("bank-fallback-rollback"));
         testAutomaticSaveBackoff(root.resolve("backoff"));
         testNoDebtAndCaps(root.resolve("no-debt"));
         testSaturatedVillageCounters(root.resolve("village-counters"));
@@ -106,6 +109,87 @@ final class DurabilityAndInvariantRegression {
         require(!service.deposit(PLAYER, 5L), "Deposit succeeded without persistence");
         require(service.snapshot().account(PLAYER).cashMicro == before,
                 "Failed save did not roll back account mutation");
+    }
+
+    private static void testBankFallbackPromotionRollback(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 4_560L, 70_000L, 0L);
+        EconomyService.VillageSnapshot firstVillage = service.observeVillage(
+                new EconomyService.VillageObservation(
+                        "minecraft:overworld",
+                        packBlockPos(0, 64, 0),
+                        0L,
+                        0L,
+                        4,
+                        6,
+                        0,
+                        false,
+                        List.of()));
+        require(firstVillage != null,
+                "Fallback village fixture failed");
+        UUID villageId = firstVillage.village().villageId;
+        EconomyService.VillageSnapshot secondVillage = service.observeVillage(
+                new EconomyService.VillageObservation(
+                        "minecraft:overworld",
+                        packBlockPos(200, 64, 0),
+                        0L,
+                        0L,
+                        4,
+                        6,
+                        0,
+                        false,
+                        List.of()));
+        require(secondVillage != null,
+                "Second Bank village fixture failed");
+        UUID secondVillageId = secondVillage.village().villageId;
+        long region = 0x1122334455667788L;
+        long fallbackAnchor = 0x0102030405060708L;
+        long builtAnchor = 0x0203040506070809L;
+        require(service.markFallbackBankRegion(region, fallbackAnchor, villageId),
+                "Fallback marker fixture failed: " + service.lastError());
+        require(service.deposit(PLAYER, 1L),
+                "Fallback marker backup fixture failed");
+
+        Path save = directory.resolve("the_emerald_standard.properties");
+        Path backup = directory.resolve("the_emerald_standard.properties.bak");
+        Files.delete(save);
+        Files.createDirectory(save);
+        Files.writeString(save.resolve("block"), "x");
+
+        require(!service.markGeneratedBankRegion(region, builtAnchor, villageId),
+                "Bank promotion succeeded without durable persistence");
+        require(service.isFallbackBankRegion(region)
+                        && Long.valueOf(fallbackAnchor).equals(
+                                service.generatedBankAnchor(region))
+                        && villageId.equals(service.villageIdForBankRegion(region))
+                        && service.villageSnapshot(villageId).village().bankAnchorPos
+                                == fallbackAnchor,
+                "Failed Bank promotion did not restore fallback ownership and anchor");
+        long derivedRegion = 0x2122334455667788L;
+        require(!service.markGeneratedBankRegion(
+                        derivedRegion, builtAnchor, secondVillageId),
+                "Derived Bank marker succeeded without durable village ownership");
+        require(!service.hasGeneratedBankRegion(derivedRegion)
+                        && service.villageIdForBankRegion(derivedRegion) == null
+                        && service.villageSnapshot(secondVillageId).village().bankRegionKey == 0L,
+                "Failed derived Bank marker left an unassociated duplicate key");
+        long failedFallbackRegion = 0x3122334455667788L;
+        require(!service.markFallbackBankRegion(
+                        failedFallbackRegion, fallbackAnchor, secondVillageId),
+                "Fallback marker succeeded without durable village ownership");
+        require(!service.hasGeneratedBankRegion(failedFallbackRegion)
+                        && service.generatedBankAnchor(failedFallbackRegion) == null
+                        && !service.isFallbackBankRegion(failedFallbackRegion)
+                        && service.villageIdForBankRegion(failedFallbackRegion) == null
+                        && service.villageSnapshot(secondVillageId).village().bankRegionKey == 0L,
+                "Failed fallback save left partial marker or village ownership state");
+        EconomyState durable = EconomyState.load(backup, 999L, 70_000L, 0L);
+        require(durable.fallbackBankRegions.contains(region)
+                        && Long.valueOf(fallbackAnchor).equals(
+                                durable.generatedBankAnchors.get(region))
+                        && villageId.equals(durable.bankRegionVillageIds.get(region))
+                        && durable.villages.get(villageId).bankAnchorPos == fallbackAnchor,
+                "Failed Bank promotion changed the last durable fallback ownership");
     }
 
     private static void testAutomaticSaveBackoff(Path directory) throws Exception {
@@ -214,6 +298,17 @@ final class DurabilityAndInvariantRegression {
         requireValidationFailure(nullBankAnchor,
                 "Null generated-bank anchor passed validation");
 
+        EconomyState orphanFallbackBank = EconomyState.fresh(799L, 0L, 0L);
+        orphanFallbackBank.fallbackBankRegions.add(1L);
+        requireValidationFailure(orphanFallbackBank,
+                "Fallback Bank without a generated region passed validation");
+
+        EconomyState anchorlessFallbackBank = EconomyState.fresh(800L, 0L, 0L);
+        anchorlessFallbackBank.generatedBankRegions.add(1L);
+        anchorlessFallbackBank.fallbackBankRegions.add(1L);
+        requireValidationFailure(anchorlessFallbackBank,
+                "Fallback Bank without an anchor passed validation");
+
         EconomyState exhaustedClock = EconomyState.fresh(796L, 0L, 0L);
         exhaustedClock.economicDay = Long.MAX_VALUE;
         boolean refusedAdvance = false;
@@ -253,5 +348,11 @@ final class DurabilityAndInvariantRegression {
                         && recorded.hostileCasualties == Integer.MAX_VALUE
                         && recorded.collapseCount == Integer.MAX_VALUE,
                 "Saturated village counters wrapped while recording a casualty");
+    }
+
+    private static long packBlockPos(int x, int y, int z) {
+        return ((long) x & 0x3FFFFFFL) << 38
+                | ((long) z & 0x3FFFFFFL) << 12
+                | ((long) y & 0xFFFL);
     }
 }

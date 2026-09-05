@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 10;
+    public static final int FORMAT_VERSION = 11;
     /** Five in-game years, shared by market, commodity, and personal history views. */
     public static final int HISTORY_DAYS = 1_825;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -40,7 +40,9 @@ public final class EconomyState {
     public final Set<Long> generatedBankRegions = new HashSet<>();
     /** Packed BlockPos anchors for generated banks or fallback Banker gathering points. */
     public final Map<Long, Long> generatedBankAnchors = new HashMap<>();
-    /** Stable village identities associated with legacy bank-region markers. */
+    /** Regions deliberately persisted as Banker-only fallbacks after a complete lot search. */
+    public final Set<Long> fallbackBankRegions = new HashSet<>();
+    /** Stable village identities associated with bank-region markers. */
     public final Map<Long, UUID> bankRegionVillageIds = new HashMap<>();
     /** Persistent abstract village economies and development backlogs. */
     public final Map<UUID, VillageRecord> villages = new LinkedHashMap<>();
@@ -822,6 +824,7 @@ public final class EconomyState {
                 copy.commodityHistory.put(commodity, new ArrayList<>(values)));
         copy.generatedBankRegions.addAll(generatedBankRegions);
         copy.generatedBankAnchors.putAll(generatedBankAnchors);
+        copy.fallbackBankRegions.addAll(fallbackBankRegions);
         copy.bankRegionVillageIds.putAll(bankRegionVillageIds);
         for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
             copy.villages.put(entry.getKey(), entry.getValue().copy());
@@ -1135,6 +1138,13 @@ public final class EconomyState {
                     || entry.getValue() == null
                     || !generatedBankRegions.contains(region)) {
                 throw new IOException("Bank anchor exists without a generated region marker");
+            }
+        }
+        for (Long region : fallbackBankRegions) {
+            if (region == null
+                    || !generatedBankRegions.contains(region)
+                    || !generatedBankAnchors.containsKey(region)) {
+                throw new IOException("Fallback bank exists without a generated region anchor");
             }
         }
         for (Map.Entry<Long, UUID> entry : bankRegionVillageIds.entrySet()) {

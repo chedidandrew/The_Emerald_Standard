@@ -26,12 +26,13 @@ All notable changes to The Emerald Standard are documented here.
 - Distinguished village-project Planning from physical Building and explained when visible block placement begins.
 - Reworked Village Banks into larger biome-aware civic buildings with foundations, trim, taller windows, a sealed stepped roof, a portico and bell, lighting, storage, and a more complete service counter.
 - Enriched all ten Village Prosperity structures with grounded architectural detail, biome-matched entrances, useful interiors, lighting, type-specific work areas and landmarks, village-coherent modular recipes, persisted rotations and road anchors, and later-tier upgrades while preserving in-progress placement prefixes.
-- Advanced persistence from format 9 to format 10 for village architectural character and biome dialect plus each project's architecture schema, recipe, road-facing rotation, frozen visual stage, and independent road cursor state. Format-9 and earlier projects remain `legacy_v1` without reroll, repositioning, or modular conversion; only newly approved projects use `modular_v1`.
+- Advanced persistence from format 9 to format 10 for village architectural character and biome dialect plus each project's architecture schema, recipe, road-facing rotation, frozen visual stage, and independent road cursor state, then to format 11 for explicit Banker-only fallback provenance. Format-9 and earlier projects remain `legacy_v1` without reroll, repositioning, or modular conversion; projects approved under format 10 or later use `modular_v1`.
 - Simplified dense Account, Market, Banking, Village, Fund, and Activity text; clipped variable-width values safely, wrapped contextual tooltips, and moved supporting detail into hover explanations.
 - Added the Exchange Desk to the Functional Blocks creative tab and creative search on Fabric and NeoForge.
 
 ### Fixed
 
+- Allowed Village Bank lot selection to clear harmless replaceable vegetation instead of treating grass and flowers as solid obstructions, and made explicitly persisted Banker-only fallbacks retry safely without rebuilding ambiguous legacy, damaged, or crash-interrupted Bank anchors.
 - Prevented Creative-mode withdrawals from destroying Bank Cash when the inventory is full or only partially accepts emeralds; delivery is now measured from the actual inventory change and every undelivered emerald is refunded through the durable journal.
 - Fixed missing exchange charts for resource variants such as ingots, blocks, and ores by deriving all 18 displayed histories from their canonical commodity series and the same formulas used for live quotes.
 - Distinguished commodity exchanges and inventory-withdrawal refunds from ordinary deposits in Activity, and retained the exchanged resource and item count for new entries.

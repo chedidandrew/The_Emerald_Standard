@@ -33,6 +33,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.ContainerDataPackin
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.EmeraldConfigRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.FundConfirmationFingerprintRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TerrainFoundationPlanRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageBankPlacementPolicyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageMaterializationPolicyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageStructureProgressionRegressionTest
 

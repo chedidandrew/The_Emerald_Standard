@@ -30,6 +30,7 @@ final class JournalAndMigrationRegression {
         testFormatFiveMigration(root.resolve("format-five"));
         testLegacyProjectMetadataDefaults(root.resolve("format-six-project-defaults"));
         testFormatNineArchitectureMigration(root.resolve("format-nine-architecture"));
+        testFormatTenFallbackMigration(root.resolve("format-ten-bank-fallback"));
         testFormatSevenProjectCatalogMigration(root.resolve("format-seven-project-catalog"));
         testVillageMarketShadowPersistence(root.resolve("market-shadow"));
         testLegacySuppressedVillageWithoutShadow(
@@ -369,6 +370,47 @@ final class JournalAndMigrationRegression {
                 "Format 5 bank marker or anchor did not migrate");
         require(migrated.villages.isEmpty() && migrated.bankRegionVillageIds.isEmpty(),
                 "Format 5 migration invented format 6 village state");
+    }
+
+    private static void testFormatTenFallbackMigration(Path directory) throws Exception {
+        Path save = directory.resolve("the_emerald_standard.properties");
+        EconomyState state = EconomyState.fresh(891L, 0L, 0L);
+        long region = 0x5122334455667788L;
+        long centerAnchor = 0x0502030405060708L;
+        state.generatedBankRegions.add(region);
+        state.generatedBankAnchors.put(region, centerAnchor);
+        UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000000891");
+        EconomyState.VillageRecord village = state.village(villageId);
+        village.centerPos = centerAnchor;
+        village.bankRegionKey = region;
+        village.bankAnchorPos = centerAnchor;
+        state.bankRegionVillageIds.put(region, villageId);
+        state.save(save);
+
+        Properties properties = readProperties(save);
+        properties.setProperty("format", "10");
+        properties.setProperty(
+                "bank.fallback." + Long.toUnsignedString(region, 16), "true");
+        refreshChecksum(properties);
+        writeProperties(save, properties);
+
+        EconomyState migrated = EconomyState.load(save, 999L, 0L, 0L);
+        require(migrated.generatedBankRegions.contains(region)
+                        && Long.valueOf(centerAnchor).equals(
+                                migrated.generatedBankAnchors.get(region))
+                        && migrated.villages.get(villageId).centerPos == centerAnchor,
+                "Format 10 Bank marker or center anchor did not migrate");
+        require(migrated.fallbackBankRegions.isEmpty(),
+                "Format 10 center anchor was invented as retryable fallback provenance");
+        migrated.save(save);
+        Properties upgraded = readProperties(save);
+        require(Integer.toString(EconomyState.FORMAT_VERSION).equals(
+                        upgraded.getProperty("format"))
+                        && upgraded.getProperty(
+                                "bank.fallback." + Long.toUnsignedString(region, 16)) == null,
+                "Format 10 ignored fallback data was promoted into format 11");
+        require(EconomyState.load(save, 999L, 0L, 0L).fallbackBankRegions.isEmpty(),
+                "Rewritten format 11 save invented fallback provenance");
     }
 
     private static void testLegacyProjectMetadataDefaults(Path directory) throws Exception {
@@ -728,6 +770,22 @@ final class JournalAndMigrationRegression {
         long region = 0x12345678ABCDEF01L;
         long anchor = 0x1020304050607080L;
         require(service.markGeneratedBankRegion(region, anchor), "Bank region marker failed");
+        long fallbackRegion = 0x22345678ABCDEF01L;
+        long fallbackAnchor = 0x2020304050607080L;
+        require(service.markFallbackBankRegion(fallbackRegion, fallbackAnchor),
+                "Fallback bank marker failed");
+        Properties fallbackProperties = readProperties(
+                directory.resolve("the_emerald_standard.properties"));
+        require("true".equals(fallbackProperties.getProperty(
+                        "bank.fallback."
+                                + Long.toUnsignedString(fallbackRegion, 16))),
+                "Fallback marker was not written with its canonical unsigned key");
+        require(fallbackProperties.getProperty(
+                        "bank.fallback." + Long.toUnsignedString(region, 16)) == null,
+                "Ordinary Bank marker unexpectedly wrote fallback provenance");
+        long legacyRegion = 0x32345678ABCDEF01L;
+        require(service.markGeneratedBankRegion(legacyRegion),
+                "Legacy bank marker fixture failed");
         require(service.saveNowAt(
                         25L * EconomyService.TICKS_PER_MINECRAFT_DAY,
                         25L * EconomyService.MILLIS_PER_MINECRAFT_DAY),
@@ -745,6 +803,41 @@ final class JournalAndMigrationRegression {
                 "Generated bank region did not survive reload");
         require(Long.valueOf(anchor).equals(reload.generatedBankAnchor(region)),
                 "Generated bank anchor did not survive reload");
+        require(reload.isFallbackBankRegion(fallbackRegion)
+                        && Long.valueOf(fallbackAnchor).equals(
+                                reload.generatedBankAnchor(fallbackRegion)),
+                "Explicit fallback bank provenance did not survive reload");
+        require(!reload.isFallbackBankRegion(region)
+                        && !reload.isFallbackBankRegion(legacyRegion),
+                "Ordinary or legacy bank markers were invented as retryable fallbacks");
+
+        long builtAnchor = 0x3020304050607080L;
+        require(reload.markGeneratedBankRegion(fallbackRegion, builtAnchor),
+                "Completed Bank did not replace its fallback marker");
+        require(!reload.isFallbackBankRegion(fallbackRegion)
+                        && Long.valueOf(builtAnchor).equals(
+                                reload.generatedBankAnchor(fallbackRegion)),
+                "Completed Bank retained retryable fallback provenance");
+        require(reload.markGeneratedBankRegion(legacyRegion, anchor)
+                        && !reload.isFallbackBankRegion(legacyRegion),
+                "Legacy anchor backfill was mistaken for an explicit fallback");
+        Properties promotedProperties = readProperties(
+                directory.resolve("the_emerald_standard.properties"));
+        require(promotedProperties.getProperty(
+                        "bank.fallback."
+                                + Long.toUnsignedString(fallbackRegion, 16)) == null,
+                "Completed Bank left a raw fallback marker in the save");
+
+        EconomyService promotedReload = new EconomyService();
+        promotedReload.startWithSeed(
+                directory,
+                999L,
+                25L * EconomyService.MILLIS_PER_MINECRAFT_DAY,
+                25L * EconomyService.TICKS_PER_MINECRAFT_DAY);
+        require(!promotedReload.isFallbackBankRegion(fallbackRegion)
+                        && Long.valueOf(builtAnchor).equals(
+                                promotedReload.generatedBankAnchor(fallbackRegion)),
+                "Fallback-to-Bank promotion did not survive reload");
     }
 
     private static long packBlockPos(int x, int y, int z) {

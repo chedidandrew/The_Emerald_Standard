@@ -66,6 +66,7 @@ public final class EmeraldStandardNeoForge {
         try {
             var server = event.getServer();
             VillageProsperityManager.resetRuntimeState();
+            VillageBankManager.resetRuntimeState();
             EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
             config.applyTo(ECONOMY);
             ECONOMY.start(
@@ -95,6 +96,7 @@ public final class EmeraldStandardNeoForge {
                     ECONOMY.lastError());
         }
         VillageProsperityManager.resetRuntimeState();
+        VillageBankManager.resetRuntimeState();
     }
 
     @SubscribeEvent

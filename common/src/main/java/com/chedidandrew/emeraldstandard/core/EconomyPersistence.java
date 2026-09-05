@@ -157,6 +157,9 @@ final class EconomyPersistence {
                 properties.setProperty(
                         "bank.anchor." + Long.toUnsignedString(region, 16),
                         Long.toString(anchor)));
+        state.fallbackBankRegions.forEach(region ->
+                properties.setProperty(
+                        "bank.fallback." + Long.toUnsignedString(region, 16), "true"));
         state.bankRegionVillageIds.forEach((region, villageId) ->
                 properties.setProperty(
                         "bank.village." + Long.toUnsignedString(region, 16),
@@ -543,6 +546,9 @@ final class EconomyPersistence {
             }
             if (format >= 5) {
                 loadGeneratedBankAnchors(state, properties);
+            }
+            if (format >= 11) {
+                loadFallbackBankRegions(state, properties);
             }
             if (format >= 6) {
                 loadVillages(state, properties, format);
@@ -1361,6 +1367,27 @@ final class EconomyPersistence {
                 state.generatedBankAnchors.put(region, anchor);
             } catch (NumberFormatException exception) {
                 throw new IOException("Invalid bank anchor " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadFallbackBankRegions(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.fallback.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix) || !Boolean.parseBoolean(properties.getProperty(key))) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                if (!state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)) {
+                    throw new IOException("Fallback bank has no matching region anchor " + encoded);
+                }
+                state.fallbackBankRegions.add(region);
+            } catch (NumberFormatException exception) {
+                throw new IOException("Invalid fallback bank key " + encoded, exception);
             }
         }
     }

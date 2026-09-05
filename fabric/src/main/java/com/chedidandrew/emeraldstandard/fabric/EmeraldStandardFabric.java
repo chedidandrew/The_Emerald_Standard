@@ -52,6 +52,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
                 VillageProsperityManager.resetRuntimeState();
+                VillageBankManager.resetRuntimeState();
                 EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
                 config.applyTo(ECONOMY);
                 ECONOMY.start(
@@ -79,6 +80,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
                         ECONOMY.lastError());
             }
             VillageProsperityManager.resetRuntimeState();
+            VillageBankManager.resetRuntimeState();
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {

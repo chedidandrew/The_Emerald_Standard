@@ -84,7 +84,7 @@ Prosperity projects are intentionally conservative:
 - A block advances project progress only when Minecraft accepts the placement and the resulting state matches the authored template.
 - Unsafe candidates are rejected before reservation so the bounded search can try another lot. After a reservation is persisted, any later obstruction or unloaded boundary uses persistent exponential retry backoff and retains the exact site—even at a recorded zero prefix—so blocks that may have reached a chunk save before progress was journaled cannot be orphaned or duplicated.
 - Partially built projects retain their exact persisted bounds and deterministic recipe prefix, then retry in place without clearing or overwriting intervening player work.
-- A failed Bank attempt remains unmarked and supplies a fallback Banker, allowing a later safe retry. A plot scan that is incomplete only because candidate chunks are unloaded is likewise not converted into a permanent fallback. Rollback matches authored block identity so neighbor-updated pane and fence states are included.
+- A failed Bank write remains unmarked and supplies a fallback Banker, allowing a later safe retry. A plot scan that is incomplete only because candidate chunks are unloaded is likewise not converted into a permanent fallback. Only a Banker-only fallback written with explicit format-11 provenance periodically retries conservative lot selection; completing the structure durably clears that provenance. Formats 10 and earlier remain unknown and non-retryable, so legacy, damaged, or crash-interrupted Bank anchors are never guessed at or rebuilt. Replaceable vegetation is accepted during lot clearance, but solid blocks and block entities remain protected. Rollback matches authored block identity so neighbor-updated pane and fence states are included.
 
 Cottages include real beds. Warehouses use chests instead of barrels so they do not unintentionally create fisherman workstations.
 
@@ -92,7 +92,7 @@ Active resident professions contribute bounded sector multipliers to abstract pr
 
 A low-frequency integrity pass checks one physically completed authored project at a time. A missing or replaced authored block demotes that project to its verified prefix and removes its economic authority. It is not automatically regenerated, preventing authored furnishings from becoming renewable items; once the block is restored in-world, a later audit restores authority. Append-only legacy-template and modular design-stage upgrades use the ordinary loaded-chunk, collision, and protection rules. Solid player blocks, block entities, protected placements, and unloaded chunks are never overwritten or force-loaded. Modular road cells are excluded from this audit because they are public, best-effort infrastructure rather than building authority.
 
-One cross-file durability limit remains explicit. Bank markers live in the economy save while bank blocks live in Minecraft chunks; those writes are not atomic together. A crash between them can leave a marker without a structure, in which case the mod uses an eligible fallback Banker and does not infer per-block ownership or auto-rebuild.
+One cross-file durability limit remains explicit. Bank markers live in the economy save while bank blocks live in Minecraft chunks; those writes are not atomic together. A crash between them can leave a non-provenanced marker without a structure, in which case the mod uses an eligible fallback Banker and does not infer per-block ownership or auto-rebuild.
 
 ## Resident lifecycle
 
@@ -130,15 +130,15 @@ One emerald equals 1,000,000 micro-emeralds. Cash, savings, CDs, villager lendin
 
 No player account contains a debt balance. A Prosperity Fund contribution is an irreversible gift to a village-owned balance, not borrowing or a player investment, and a player can never owe more emeralds than were voluntarily committed.
 
-## Persistent data format 10
+## Persistent data format 11
 
-Format 10 includes:
+Format 11 includes:
 
 - Required magic identifier and explicit format number
 - SHA-256 checksum over sorted state properties
 - Global market, commodities, regime, event, and up to five years of asset and commodity history
 - Unified economic-clock state
-- Bank regions and exact Banker anchors
+- Bank regions, exact Banker anchors, and explicit Banker-only fallback provenance
 - Player accounts, up to eight independently identified CDs and eight lending positions, holdings, share cost basis, realized gain, contribution and withdrawal totals, a bounded transaction ledger, personal net-worth history, and pending inventory transactions
 - Village-owned Prosperity Fund purpose balances, protected endowment principal, project sponsorships, emergency reserves, bounded contribution records, and global donor recognition
 - Stable village identities and bank associations
@@ -149,7 +149,7 @@ Format 10 includes:
 - Per-project architecture schema, deterministic seed, silhouette, roof, frontage, mirror flag, canonical signature, road-facing rotation, and frozen visual stage
 - A frozen road anchor plus an independent road total, cursor, and completion flag
 
-The 0.4 line accepts its earlier supported save formats and writes them forward as format 10. Format 8 introduced the expanded project catalog; format 9 added multi-position term products, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records; format 10 adds the modular architecture contract and separate road state. When a format-9 or earlier save is read, every existing project is explicitly retained as `legacy_v1`. Its generator, recipe order, reserved origin, exact bounds, and materialized prefix are not rerolled, repositioned, or converted. Only projects approved after the upgrade receive `modular_v1` recipes. Legacy scalar CD and lending products are promoted into identified position collections, and holdings without execution history receive an explicitly inferred basis at the migration-day market price. Older builds reject format 10 as a future format without stale-backup fallback. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 10 are likewise rejected without overwriting them.
+The 0.4 line accepts its earlier supported save formats and writes them forward as format 11. Format 8 introduced the expanded project catalog; format 9 added multi-position term products, portfolio accounting, commodity and personal history, Prosperity Funds, and donor records; format 10 added the modular architecture contract and separate road state; format 11 adds explicit Banker-only fallback provenance. When a format-9 or earlier save is read, every existing project is explicitly retained as `legacy_v1`. Its generator, recipe order, reserved origin, exact bounds, and materialized prefix are not rerolled, repositioned, or converted. Projects approved under format 10 or later receive `modular_v1` recipes. Bank markers read from formats 10 and earlier remain non-retryable even when their anchor matches a village center, because older real Banks and fallbacks cannot be distinguished safely. Legacy scalar CD and lending products are promoted into identified position collections, and holdings without execution history receive an explicitly inferred basis at the migration-day market price. Older builds reject format 11 as a future format without stale-backup fallback. Downgrading therefore requires restoring a pre-upgrade world backup. Unsupported formats newer than 11 are likewise rejected without overwriting them.
 
 ## Save process
 
