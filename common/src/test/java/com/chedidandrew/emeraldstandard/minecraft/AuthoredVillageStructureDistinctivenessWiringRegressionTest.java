@@ -9,15 +9,15 @@ import java.util.regex.Pattern;
  *
  * <p>The production catalog depends on Minecraft block states and cannot be loaded by the common
  * test classpath. These checks make sure its catalog admission path still exports one palette-free
- * structural silhouette per active revision-2 master to the executable neutral validator.</p>
+ * structural silhouette per active revision-3 master to the executable neutral validator.</p>
  */
 public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
     private static final int ACTIVE_MASTER_TARGET = 52;
     private static final String AUTHORED_SOURCE =
             "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/"
                     + "AuthoredVillageStructures.java";
-    private static final Pattern REVISION_TWO = Pattern.compile(
-            "(?:LATEST_)?TEMPLATE_REVISION\\s*=\\s*2\\s*;");
+    private static final Pattern ACTIVE_REVISION = Pattern.compile(
+            "(?:LATEST_)?TEMPLATE_REVISION\\s*=\\s*3\\s*;");
     private static final Pattern SNAPSHOT_COLLECTION = Pattern.compile(
             "List\\s*<\\s*(?:WholeBuildingDistinctivenessValidator\\s*\\.\\s*)?"
                     + "StructuralSnapshot\\s*>\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*"
@@ -40,20 +40,21 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
                 "private static CatalogValidationResult validateCatalogDescriptor(");
         String snapshotCollection = snapshotCollection(catalog);
 
-        verifyActiveRevisionTwoCatalog(
+        verifyActiveCatalog(
                 source, catalog, descriptorValidation, snapshotCollection);
         verifyPaletteBlindStructuralSnapshot(source);
         verifyCatalogAdmissionInvokesDistinctivenessGate(catalog, snapshotCollection);
+        verifyScopedInteriorFinishing(Path.of(args[0]), source);
         System.out.println("PASS authored village structure distinctiveness wiring regression");
     }
 
-    private static void verifyActiveRevisionTwoCatalog(
+    private static void verifyActiveCatalog(
             String source,
             String catalog,
             String descriptorValidation,
             String snapshotCollection) {
-        require(REVISION_TWO.matcher(source).find(),
-                "The active authored gold masters are not revision 2");
+        require(ACTIVE_REVISION.matcher(source).find(),
+                "The active authored gold masters are not revision 3");
         require(catalog.contains(
                         "descriptor.templateRevision() == LATEST_TEMPLATE_REVISION")
                         && catalog.contains("activeDescriptors.add(descriptor)"),
@@ -72,6 +73,32 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
         require(exactCount.matcher(catalog).find(),
                 "Catalog validation no longer proves that all " + ACTIVE_MASTER_TARGET
                         + " active masters were compared");
+    }
+
+    private static void verifyScopedInteriorFinishing(Path root, String source) throws Exception {
+        String interiors = Files.readString(root.resolve(
+                "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/"
+                        + "AuthoredInteriorRefinements.java"));
+        require(source.contains("AuthoredInteriorRefinements.apply(base, metadata, materials, templateId)"),
+                "Interior finishing is no longer part of production blueprint authoring");
+        require(interiors.contains("ROOM_FINISH_TARGETS.contains(id)")
+                        && interiors.contains("FROZEN_MASTERS.contains(id)"),
+                "The reviewed furnishing pass must remain scoped to explicit master identities");
+        String mat = methodBody(interiors, "private static boolean inlaidRoomMat(");
+        require(mat.contains("claimed.contains(pos)") && mat.contains("claimed.addAll(cells)")
+                        && mat.indexOf("return false;") < mat.indexOf("claimed.addAll(cells)"),
+                "Room inlays must preflight complete non-overlapping footprints before writing");
+        String rooms = methodBody(interiors, "private static void finishReviewedRooms(");
+        require(rooms.contains("new BlockPos(x, room.getY(), z)")
+                        && rooms.contains("wallBacked(b, origin.relative(along).relative(facing.getOpposite()))")
+                        && rooms.contains("prior.distManhattan(origin) < 5"),
+                "Compact groups must respect sampled room levels, backing and minimum separation");
+        String placement = methodBody(interiors, "private static boolean placeScene(");
+        require(placement.contains("m.reservedAir.contains(pos)")
+                        && placement.contains("m.accessTargets.contains(pos)")
+                        && placement.contains("solidPropsPreserveInteractionRoutes")
+                        && placement.contains("support.state().isFaceSturdy"),
+                "Furnishing must not bypass support or existing workstation circulation checks");
     }
 
     private static void verifyPaletteBlindStructuralSnapshot(String source) {

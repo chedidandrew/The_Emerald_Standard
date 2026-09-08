@@ -44,6 +44,22 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    unitTest {
+        enable()
+        testedMod = mods.getByName(configuredModId)
+    }
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.14.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.14.2'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    maxHeapSize = '3g'
+    jvmArgs '-XX:ActiveProcessorCount=4', '-Djava.util.concurrent.ForkJoinPool.common.parallelism=3'
 }
 
 var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
@@ -79,8 +95,15 @@ tasks.register('verifyBankerMenuPacket', JavaExec) {
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BankerMenuPacketCodecSelfTest'
 }
 
+tasks.register('verifyAuthoredVillageStructures') {
+    group = 'verification'
+    description = 'Runs the exact production authored-catalog gate through NeoForge unit-test bootstrap.'
+    dependsOn tasks.named('test')
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyBankerMenuPacket')
+    dependsOn tasks.named('verifyAuthoredVillageStructures')
 }
 
 jar {

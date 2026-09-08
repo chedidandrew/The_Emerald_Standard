@@ -74,7 +74,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 2;
+    static final int LATEST_TEMPLATE_REVISION = 3;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
     private static final Map<String, Object> LIGHTING_COMPOSITION_LOCKS =
@@ -100,7 +100,9 @@ final class AuthoredVillageStructures {
         }
         Materials materials = palette(materials(character, dialect), paletteId);
         Builder base = new Builder(Set.of());
+        base.templateRevision = templateRevision;
         Metadata metadata = new Metadata();
+        metadata.templateRevision = templateRevision;
         metadata.doodadSeed = doodadSeed;
         if (templateRevision == 1) {
             switch (templateId) {
@@ -161,7 +163,12 @@ final class AuthoredVillageStructures {
                 case "market_cloister_01" -> marketRotunda(base, metadata, materials);
                 case "market_guildcourt_02" -> marketGuildcourt(base, metadata, materials);
                 case "market_crossroads_03" -> marketCrossroadsCompact(base, metadata, materials);
-                case "market_lane_04" -> marketLane(base, metadata, materials);
+                case "market_lane_04" -> {
+                    marketLane(base, metadata, materials);
+                    if (templateRevision == 3) {
+                        AuthoredMarketRefinements.finishLane(base, metadata, materials);
+                    }
+                }
                 case "market_bazaar_05" -> marketBazaar(base, metadata, materials);
                 case "guard_watch_01" -> guardGateTower(base, metadata, materials);
                 case "guard_bastion_02" -> guardBastion(base, metadata, materials);
@@ -182,6 +189,10 @@ final class AuthoredVillageStructures {
             addRegionalIdentity(base, metadata, materials);
             addArchitecturalPresentation(base, metadata, materials, templateId, scale);
             addCompactCraftLayer(base, metadata, materials, templateId, scale);
+            if (templateRevision >= 3) {
+                AuthoredRoofRefinements.apply(base, metadata, materials, templateId);
+                AuthoredInteriorRefinements.apply(base, metadata, materials, templateId);
+            }
             requireInteractionRoutesBeforePocketSealing(base, metadata, templateId);
             sealDisconnectedInteriorPockets(base, metadata, materials, templateId);
             ensureComfortableInteriorLighting(base, metadata, templateId);
@@ -192,8 +203,9 @@ final class AuthoredVillageStructures {
         }
 
         Builder stageOne = new Builder(base.positions());
+        stageOne.templateRevision = templateRevision;
         appendDressingStageOne(stageOne, metadata, materials, dressingId);
-        if (templateRevision == LATEST_TEMPLATE_REVISION) {
+        if (templateRevision >= 2) {
             appendPresentationStageOne(
                     stageOne,
                     metadata,
@@ -202,7 +214,11 @@ final class AuthoredVillageStructures {
                     VillageArchitecture.requireBlueprint(templateId, templateRevision).scale(),
                     dressingId);
         }
-        if (templateRevision == LATEST_TEMPLATE_REVISION) {
+        if (templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineStandalonePlanters(stageOne, metadata, materials);
+            AuthoredApproachRefinements.finish(stageOne, metadata, materials);
+        }
+        if (templateRevision >= 2) {
             ensureCumulativeComfortableInteriorLighting(
                     stageOne,
                     metadata,
@@ -214,8 +230,9 @@ final class AuthoredVillageStructures {
         Set<BlockPos> throughStageOne = new HashSet<>(base.positions());
         throughStageOne.addAll(stageOne.positions());
         Builder stageTwo = new Builder(throughStageOne);
+        stageTwo.templateRevision = templateRevision;
         appendDressingStageTwo(stageTwo, metadata, materials, dressingId);
-        if (templateRevision == LATEST_TEMPLATE_REVISION) {
+        if (templateRevision >= 2) {
             appendPresentationStageTwo(
                     stageTwo,
                     base,
@@ -226,7 +243,11 @@ final class AuthoredVillageStructures {
                     VillageArchitecture.requireBlueprint(templateId, templateRevision).scale(),
                     dressingId);
         }
-        if (templateRevision == LATEST_TEMPLATE_REVISION) {
+        if (templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineCompactCottageRearBench(
+                    stageTwo, metadata, materials, templateId);
+        }
+        if (templateRevision >= 2) {
             ensureCumulativeComfortableInteriorLighting(
                     stageTwo,
                     metadata,
@@ -6429,7 +6450,7 @@ final class AuthoredVillageStructures {
         return solidPropsPreserveInteractionRoutes(builder, metadata, List.of(proposed));
     }
 
-    private static boolean solidPropsPreserveInteractionRoutes(
+    static boolean solidPropsPreserveInteractionRoutes(
             Builder builder, Metadata metadata, Collection<BlockPos> proposed) {
         Map<BlockPos, BlockState> occupied = stateMap(cellMap(builder.values()));
         return solidPropsPreserveInteractionRoutes(occupied, metadata, proposed);
@@ -10072,6 +10093,9 @@ final class AuthoredVillageStructures {
                 Blocks.DIRT_PATH.defaultBlockState());
         stage.putIfFree(Phase.DECOR, footX, 1, footZ,
                 p.roofSlab.defaultBlockState());
+        if (stage.templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineDressingLamp(stage, x, z, p);
+        }
         return true;
     }
 
@@ -10494,6 +10518,10 @@ final class AuthoredVillageStructures {
                         Blocks.IRON_BARS.defaultBlockState());
             }
         }
+        if (stage.templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineLogRackZ(
+                    stage, p, x, minZ, length, tiers, railBound);
+        }
     }
 
     private static void addDoodadBenchX(
@@ -10692,6 +10720,9 @@ final class AuthoredVillageStructures {
         if (richness >= 2) {
             putDressingLamp(stage, centerX + 3, z + 3, p);
         }
+        if (stage.templateRevision == 3) {
+            AuthoredDoodadRefinements.ensureGardenShrubSubstrates(stage, p, centerX, z);
+        }
     }
 
     private static void addPlanterRunX(
@@ -10803,6 +10834,9 @@ final class AuthoredVillageStructures {
                 Blocks.DIRT_PATH.defaultBlockState());
         stage.putIfFree(Phase.DECOR, x - 1, 1, z - 1,
                 p.roofSlab.defaultBlockState());
+        if (stage.templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineCrateCluster(stage, p, x, z, stacked);
+        }
     }
 
     private static void addHandCart(
@@ -10857,6 +10891,9 @@ final class AuthoredVillageStructures {
         }
         stage.put(Phase.FOUNDATION, centerX, 0, z + 4,
                 Blocks.DIRT_PATH.defaultBlockState());
+        if (stage.templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineHandCart(stage, p, centerX, z, cargo);
+        }
     }
 
     /**
@@ -10933,6 +10970,16 @@ final class AuthoredVillageStructures {
             }
         }
         footprint.add(new BlockPos(centerX, 0, z + 4));
+        if (stage.templateRevision >= 3) {
+            // The narrowed revision-three bed and lower handle shafts use previously empty cells.
+            // Include these before selecting an anchor so they cannot intrude on another scene.
+            footprint.add(new BlockPos(centerX, 1, z));
+            footprint.add(new BlockPos(centerX, 1, z + 2));
+            for (int sideX : new int[] {centerX - 1, centerX + 1}) {
+                footprint.add(new BlockPos(sideX, 1, z + 2));
+                footprint.add(new BlockPos(sideX, 1, z + 4));
+            }
+        }
         return canPlaceDoodad(stage, m, footprint);
     }
 
@@ -11145,6 +11192,9 @@ final class AuthoredVillageStructures {
             stage.putIfFree(Phase.DECOR, x, 2, z + 2,
                     p.roofSlab.defaultBlockState());
         }
+        if (stage.templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineMaterialPile(stage, p, x, z, material, richness);
+        }
     }
 
     private static void addToolRackZ(
@@ -11177,6 +11227,9 @@ final class AuthoredVillageStructures {
                 upperRoofSlab(p));
         stage.putIfFree(Phase.DECOR, ledgeX, 2, minZ + length - 1,
                 Blocks.HEAVY_WEIGHTED_PRESSURE_PLATE.defaultBlockState());
+        if (stage.templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineToolRackZ(stage, p, x, minZ, length);
+        }
     }
 
     private static void addToolRackX(
@@ -11206,6 +11259,9 @@ final class AuthoredVillageStructures {
                 upperRoofSlab(p));
         stage.putIfFree(Phase.DECOR, minX + length - 1, 2, z + 1,
                 Blocks.HEAVY_WEIGHTED_PRESSURE_PLATE.defaultBlockState());
+        if (stage.templateRevision >= 3) {
+            AuthoredDoodadRefinements.refineToolRackX(stage, p, minX, z, length);
+        }
     }
 
     private static void addTargetRackZ(
@@ -11587,7 +11643,7 @@ final class AuthoredVillageStructures {
      */
     private static void ensureComfortableInteriorLighting(
             Builder builder, Metadata metadata, String templateId) {
-        String cacheKey = templateId + "@" + LATEST_TEMPLATE_REVISION;
+        String cacheKey = templateId + "@" + metadata.templateRevision;
         List<Cell> cached = LIGHTING_COMPOSITION_CACHE.get(cacheKey);
         if (cached != null) {
             replayLightingComposition(builder, cached);
@@ -11623,7 +11679,7 @@ final class AuthoredVillageStructures {
             String stageId,
             String dressingId,
             List<List<Cell>> layers) {
-        String cacheKey = templateId + "@" + LATEST_TEMPLATE_REVISION
+        String cacheKey = templateId + "@" + metadata.templateRevision
                 + "/" + stageId
                 + "/" + dressingId
                 + "/scene-" + Math.floorMod(metadata.doodadSeed, 4L);
@@ -12766,7 +12822,8 @@ final class AuthoredVillageStructures {
             if (outside.contains(sample)) {
                 throw new IllegalStateException(
                         "Blueprint shell/roof leaks into its interior at "
-                                + sample + " in " + blueprint.id);
+                                + sample + " in " + blueprint.id
+                                + "; open-air route " + enclosureLeakRoute(blueprint, base, sample));
             }
             boolean covered = false;
             for (int y = sample.getY() + 1; y <= blueprint.height; y++) {
@@ -12780,6 +12837,37 @@ final class AuthoredVillageStructures {
                         "Blueprint interior has no weather cover at " + sample + " in " + blueprint.id);
             }
         }
+    }
+
+    /** Failure-only route trace makes a roof regression actionable without relaxing admission. */
+    private static List<BlockPos> enclosureLeakRoute(
+            Blueprint blueprint, Map<BlockPos, BlockState> base, BlockPos sample) {
+        Map<BlockPos, BlockPos> previous = new HashMap<>();
+        ArrayDeque<BlockPos> pending = new ArrayDeque<>();
+        previous.put(sample, sample);
+        pending.add(sample);
+        while (!pending.isEmpty()) {
+            BlockPos current = pending.removeFirst();
+            if (current.getX() < 0 || current.getZ() < 0
+                    || current.getX() >= blueprint.width || current.getZ() >= blueprint.depth
+                    || current.getY() > blueprint.height) {
+                List<BlockPos> route = new ArrayList<>();
+                while (!current.equals(sample)) {
+                    route.add(current);
+                    current = previous.get(current);
+                }
+                java.util.Collections.reverse(route);
+                return route;
+            }
+            for (Direction direction : Direction.values()) {
+                BlockPos next = current.relative(direction);
+                if (next.getY() >= 1 && !base.containsKey(next) && !previous.containsKey(next)) {
+                    previous.put(next, current);
+                    pending.addLast(next);
+                }
+            }
+        }
+        return List.of();
     }
 
     private static boolean edge(int x, int z, int width, int depth) {
@@ -12855,20 +12943,21 @@ final class AuthoredVillageStructures {
             Block chimney) {
     }
 
-    private static final class Metadata {
-        private VillageProsperityEngine.ProjectType type;
-        private int width;
-        private int depth;
-        private int height;
-        private long doodadSeed;
-        private int wallHeight;
-        private int roofPeak;
-        private boolean enclosed;
-        private BlockPos entranceInside;
-        private final Set<BlockPos> accessTargets = new HashSet<>();
-        private final Set<BlockPos> reservedAir = new HashSet<>();
-        private final Set<BlockPos> interiorSamples = new HashSet<>();
-        private final List<VerticalAccess> verticalAccess = new ArrayList<>();
+    static final class Metadata {
+        VillageProsperityEngine.ProjectType type;
+        int width;
+        int depth;
+        int height;
+        int templateRevision = 2;
+        long doodadSeed;
+        int wallHeight;
+        int roofPeak;
+        boolean enclosed;
+        BlockPos entranceInside;
+        final Set<BlockPos> accessTargets = new HashSet<>();
+        final Set<BlockPos> reservedAir = new HashSet<>();
+        final Set<BlockPos> interiorSamples = new HashSet<>();
+        final List<VerticalAccess> verticalAccess = new ArrayList<>();
 
         private void begin(
                 VillageProsperityEngine.ProjectType type,
@@ -12902,7 +12991,7 @@ final class AuthoredVillageStructures {
         }
     }
 
-    private static final class Builder {
+    static final class Builder {
         private static final Comparator<Cell> ORDER = Comparator
                 .comparing(Cell::phase)
                 .thenComparingInt(Cell::y)
@@ -12911,12 +13000,13 @@ final class AuthoredVillageStructures {
 
         private final Set<BlockPos> blocked;
         private final LinkedHashMap<BlockPos, Cell> cells = new LinkedHashMap<>();
+        int templateRevision = 2;
 
-        private Builder(Set<BlockPos> blocked) {
+        Builder(Set<BlockPos> blocked) {
             this.blocked = Set.copyOf(blocked);
         }
 
-        private void put(Phase phase, int x, int y, int z, BlockState state) {
+        void put(Phase phase, int x, int y, int z, BlockState state) {
             BlockPos position = new BlockPos(x, y, z);
             if (blocked.contains(position)) {
                 throw new IllegalStateException("Blueprint stage overlaps prior cell at " + position);
@@ -12929,7 +13019,7 @@ final class AuthoredVillageStructures {
             }
         }
 
-        private void force(Phase phase, int x, int y, int z, BlockState state) {
+        void force(Phase phase, int x, int y, int z, BlockState state) {
             BlockPos position = new BlockPos(x, y, z);
             if (blocked.contains(position)) {
                 throw new IllegalStateException("Blueprint stage overlaps prior cell at " + position);
@@ -12937,19 +13027,19 @@ final class AuthoredVillageStructures {
             cells.put(position, new Cell(x, y, z, state, phase));
         }
 
-        private void remove(int x, int y, int z) {
+        void remove(int x, int y, int z) {
             cells.remove(new BlockPos(x, y, z));
         }
 
-        private boolean contains(BlockPos position) {
+        boolean contains(BlockPos position) {
             return cells.containsKey(position);
         }
 
-        private Cell cellAt(BlockPos position) {
+        Cell cellAt(BlockPos position) {
             return cells.get(position);
         }
 
-        private boolean putIfFree(Phase phase, int x, int y, int z, BlockState state) {
+        boolean putIfFree(Phase phase, int x, int y, int z, BlockState state) {
             BlockPos position = new BlockPos(x, y, z);
             if (isOccupied(position)) {
                 return false;
@@ -12958,15 +13048,15 @@ final class AuthoredVillageStructures {
             return true;
         }
 
-        private boolean isOccupied(BlockPos position) {
+        boolean isOccupied(BlockPos position) {
             return blocked.contains(position) || cells.containsKey(position);
         }
 
-        private Set<BlockPos> positions() {
+        Set<BlockPos> positions() {
             return Set.copyOf(cells.keySet());
         }
 
-        private List<Cell> values() {
+        List<Cell> values() {
             return cells.values().stream().sorted(ORDER).toList();
         }
     }

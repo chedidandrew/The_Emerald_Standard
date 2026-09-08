@@ -14,7 +14,8 @@ public final class VillageBankStructureSelfTest {
     public static void main(String[] args) {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+        VillageBankManager.validateBankV6MaterialRefinement();
         VillageBankManager.validateHeadlessBankDialectStructureContract();
-        System.out.println("PASS Village Bank v5 structure self-test (all five dialects)");
+        System.out.println("PASS Village Bank v6 structure self-test (all five dialects)");
     }
 }

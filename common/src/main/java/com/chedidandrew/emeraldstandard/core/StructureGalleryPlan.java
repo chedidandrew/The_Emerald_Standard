@@ -20,7 +20,7 @@ public final class StructureGalleryPlan {
      * Gallery render-schema revision. Increment whenever production geometry or presentation can
      * change without changing a persisted Blueprint descriptor identity.
      */
-    public static final int GALLERY_CONTENT_REVISION = 9;
+    public static final int GALLERY_CONTENT_REVISION = 11;
 
     private static final int MINIMUM_PITCH = 24;
     private static final int AUTHORED_FRONT_EXTENT = 7;
@@ -271,7 +271,7 @@ public final class StructureGalleryPlan {
 
     private static void appendControlledBlueprintLab(List<Entry> entries) {
         VillageArchitecture.BlueprintDescriptor descriptor =
-                VillageArchitecture.requireBlueprint("house_cross_01", 2);
+                VillageArchitecture.requireBlueprint("house_cross_01", 3);
         int column = 0;
 
         // Stage axis. The final entry is the shared reference for every later comparison.

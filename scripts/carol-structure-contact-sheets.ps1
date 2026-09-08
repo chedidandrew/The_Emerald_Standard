@@ -189,11 +189,11 @@ if ($RequireCompleteReviewSet) {
         throw "Completion marker signature '$($completionMarker.layout_signature)' does not match capture root '$directorySignature'"
     }
     $completionContractIsInvalid =
-        $completionMarker.gallery_content_revision -ne '9' -or
+        $completionMarker.gallery_content_revision -ne '11' -or
         $completionMarker.capture_schema_revision -ne '3' -or
         $completionMarker.shot_count -ne '267'
     if ($completionContractIsInvalid) {
-        throw "Completion marker does not describe the required rev9/schema3/267-shot review set"
+        throw "Completion marker does not describe the required rev11/schema3/267-shot review set"
     }
     [datetimeoffset]$completedAt = [datetimeoffset]::MinValue
     if (![datetimeoffset]::TryParse(

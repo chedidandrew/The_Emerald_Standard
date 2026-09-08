@@ -59,6 +59,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerAmountSelecti
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerConversionRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerDeathRetryQueueRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerLifecycleWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.SmokeServerHarnessRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.CatalogAdmissionPerformanceWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.ContainerDataPackingRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.EmeraldConfigRegressionTest

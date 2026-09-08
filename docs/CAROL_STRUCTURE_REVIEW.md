@@ -4,6 +4,113 @@ Carol is the independent visual reviewer for Blueprint V2. This ledger groups th
 renders by their 52 immutable geometry masters while retaining a separate biome-cohesion check.
 The five standalone Banks and every reusable yard-doodad archetype are scored independently.
 
+## Final result — content revision 11
+
+The final bounded review is complete. Carol personally inspected all **267 original 1920×1080
+screenshots**; the full schema-3 evidence verifier passed before final ratings were assigned. All required exterior, rear,
+night-interior and doodad views are now visually admitted; there are **no camera holds**.
+
+The mod is substantially improved, but **the universal 8+ target was not achieved**. The complete
+per-asset results, exact screenshot rows, criterion marks, remaining recommendations and stable
+review counts are authoritative in
+[the final asset checklist](CAROL_STRUCTURE_ASSET_CHECKLIST.md#accepted-content-11-final-audit--september-8-2026).
+
+| Group | Final result | Review accounting |
+| --- | --- | --- |
+| 52 Plains geometry masters | 23 reach 8+; 29 remain below, with scores from 7.6 to 8.3 overall. | 46 have used five reviews; six have used four. |
+| Five standalone Banks | All five reach 8+: Plains/Desert/Savanna/Snowy 8.2, Taiga 8.1. | All have used five reviews. |
+| 16 doodads | Four retained fifth-review passes: D3/D9/D12/D13. The five eligible motifs remain below 8 in the new views. | Eleven received qualitative checks only; D10/D16 now also close at five. |
+| Five dialect-cohesion groups | Plains 7.8, Desert 7.9, Savanna 7.9, Taiga 7.5, Snowy 7.6. | All have used five reviews. |
+
+In total, **69 of 78 review units are closed at five**. No sixth numeric rating was assigned.
+The six remaining masters and D6/D7/D15 retain their unused allowance, but this bounded pass
+stops here. A version bump, improved surroundings or a repaired camera never reset a counter.
+
+The strongest improvements are coherent market-lane canopies; useful domestic, industrial and
+financial room ensembles; supported entries; clear architectural silhouettes; natural task and
+hanging lights; and Bank 6's more legible Taiga/Snowy material contrast. Both loaders passed the
+exact-production geometry, no-skylight floor-light and fragile-attachment survival gates.
+These functional results are separate from aesthetic judgment.
+
+Remaining shortfalls are specific rather than hidden: raised raw-earth bases beneath yard
+props, oversized cart/bench/canopy members, broad blind gables, and large civic/inn rooms with
+too much unoccupied timber surface. Some complete buildings merit 8 despite a restrained scene
+deduction; the weaker ones remain below. The final doodad close-ups did not earn automatic
+passes simply because their attachments survived.
+
+### Evidence and scope
+
+Final evidence is
+`fabric/run/gallery-26.2/screenshots/tes-structure-review-e74f283216781907-capture-v3/complete-pass-05`,
+with `manifest.csv` and `capture-complete.txt`. Its 17 contact sheets are navigation indexes,
+not scoring substitutes. Masters are revision 3; standalone Banks are version 6.
+
+The camera corrections now show the actual family room, wharf work alcove, both mine-headframe
+booths, drift sorting room, citadel alcoves, garden-work corner and guard target. Failed
+preflights and targeted camera checks consumed no review. The final accepted full bundles did.
+
+This evidence includes all 52 Plains master bundles, five four-view Banks, all 16 motif
+close-ups and a 50-front matrix of ten roles across five dialects. It is **not** a full
+interior/exterior audit of all 260 geometry/palette combinations. The 23 Plains master passes
+therefore do not establish an all-dialects pass. Closed doodad scores are explicitly retained
+historical results with fresh qualitative checks, not newly assigned content-11 scores.
+
+The earlier content-10 capture and whole save remain preserved. The historical handoff below
+records the state before the final refinements and camera repairs; its pending/held language
+does not describe the completed content-11 result.
+
+<details>
+<summary>Historical content-10 handoff (preserved)</summary>
+
+## Current result — content revision 10; final capture pending
+
+The completed revision-10 audit does **not** certify every asset at 8+. Carol inspected all
+267 original 1920×1080 PNGs in `complete-pass-04`; its strict schema-3 verifier passed.
+The full evidence path, exact shot rows, ratings, criterion marks, recommendations and
+stable-identity review counts are authoritative in
+[the asset checklist](CAROL_STRUCTURE_ASSET_CHECKLIST.md#accepted-content-10-audit--september-8-2026).
+
+| Group | Accepted bundles | Current 8+ results | Accounting |
+| --- | ---: | --- | --- |
+| Geometry masters | 47 / 52 | Eight Plains masters; other admitted scores 7.0–7.9. | 46 at review 4; blockhouse and five camera-held masters at review 3. |
+| Standalone Banks | 5 / 5 | Plains, Desert and Savanna 8.0; Taiga 7.8; Snowy 7.9. | All at review 4. |
+| Doodads | 14 / 16 | D3, D9, D12 and D13 at 8.0; ten other admitted motifs below 8. | Eleven motifs have exhausted review 5; D7 and D16 are camera-held. |
+| Biome cohesion | 5 / 5 groups | None: Plains 7.8, Desert 7.9, Savanna 7.9, Taiga 7.4, Snowy 7.5. | All at review 4. |
+
+D1/D2/D3/D4/D5/D8/D9/D11/D12/D13/D14 may not receive a sixth numeric rating. Future images
+can verify a fix or expose a regression, but cannot reset that limit. Earlier passing scores
+were not automatically retained when fresh interiors and rear contexts showed weaker work.
+
+The clear gains are continuous, supported roof geometry; distinct architectural silhouettes;
+warm, naturally mounted interior lights; Bank 6's public/teller/archive organization; and a
+more restrained Savanna palette. Exact production geometry, attachment-survival and no-skylight
+floor-light gates passed both loaders. These safety results do not themselves raise visual scores.
+
+The final bounded refinement targets grade-level approaches, oversized rear furniture,
+purposeful room ensembles, blind upper gables, coherent market-lane roofing, and Taiga/Snowy
+material contrast. The checklist records the precise per-asset shortfalls. No broad redesign
+loop is planned after the final eligible review.
+
+### Evidence still held
+
+The rejected room bundles are `house_hall_04`, `warehouse_wharf_04`, `mine_headframe_01`,
+`mine_drift_04` and `guard_citadel_05`; D7 and D16 have foreground-obstructed close-ups.
+Rejected views consume no scored review. Corrected blockhouse and campfire views were admitted.
+
+The first content-11 preflight exposed a photography-route bug: a rail or ordinary door can be
+traversable even though the camera itself requires supported, two-clear-air standing space.
+Those concerns are now separate, with a functional real-block/route regression. Scoped headframe
+camera checks passed, but a later gallery-reopen attachment audit stopped capture at 246,-59,13.
+No content-11 PNG or score was accepted from either failed attempt.
+
+The next complete set is content 11, `complete-pass-05`. Scores remain frozen until its complete
+267-shot marker, strict verifier and visual admission all pass. Revision-10 evidence and the
+archived whole save remain preserved; changing the current verifier to revision 11 does not
+invalidate previously accepted history. The sections below retain the earlier scoring contract
+and historical evidence.
+
+</details>
+
 ## Scoring contract
 
 A `5` is a coherent casual-player build. An `8` is a polished build that could credibly have been
@@ -29,7 +136,7 @@ evidence bundle increments that asset's review count once, regardless of whether
 one, three, or four PNGs. The provisional iteration-1 assessment counts as the first review;
 camera/missing-view rejection does not count. No asset may exceed five scored reviews.
 
-## Evidence status
+## Historical evidence status (through content revision 9)
 
 Iteration 1 was a provisional code-and-gallery pass using the authored catalog, validators, the
 existing gallery overview, and the supplied dark-interior screenshots. The authoritative visual
@@ -53,7 +160,7 @@ contexts, FOV, declared dimensions, and decoded PNG dimensions all satisfy the c
 Running it without that switch may produce navigation sheets for a partial camera smoke, but those
 sheets do not qualify as complete scoring evidence.
 
-### Current rev9/capture-v3 evidence checklist
+### Historical rev9/capture-v3 evidence checklist
 
 - Accept only a capture-v3 directory whose completion marker identifies gallery content revision 9,
   capture schema 3, the same layout signature encoded by the capture root, and exactly 267 shots.

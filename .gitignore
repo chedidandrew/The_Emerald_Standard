@@ -7,3 +7,6 @@
 .idea/
 .vscode/
 *.iml
+
+# Local conversation history and machine-specific continuation notes.
+/LLM_HANDOFF_CONTEXT.txt

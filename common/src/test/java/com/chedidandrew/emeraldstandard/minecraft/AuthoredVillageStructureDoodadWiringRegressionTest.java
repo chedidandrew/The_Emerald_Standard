@@ -30,6 +30,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
         }
         Path root = Path.of(args[0]);
         String authored = read(root, "AuthoredVillageStructures.java");
+        String refinements = read(root, "AuthoredDoodadRefinements.java");
         String prosperity = read(root, "VillageProsperityManager.java");
         String gallery = read(root, "StructureGallery.java");
 
@@ -38,19 +39,88 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
         verifyDeterministicNonEmptyHelpers(authored);
         verifyCraftedMicroScenes(authored);
         verifyBenchCapsAdaptBelowExistingCanopies(authored);
+        verifyCompactCottageBenchScopeAndSupports(authored, refinements);
         verifyDoodadRegionAvoidsUnintendedPois(authored);
         verifyCatalogAndGalleryUseProduction(authored, prosperity, gallery);
         System.out.println("PASS authored village deterministic doodad wiring regression");
     }
 
+    private static void verifyCompactCottageBenchScopeAndSupports(
+            String authored, String refinements) {
+        String plan = methodBody(authored, "static Blueprint plan(");
+        Pattern gatedHook = Pattern.compile(
+                "if\\s*\\(\\s*templateRevision\\s*>=\\s*3\\s*\\)\\s*\\{\\s*"
+                        + "AuthoredDoodadRefinements\\.refineCompactCottageRearBench\\s*\\(\\s*"
+                        + "stageTwo\\s*,\\s*metadata\\s*,\\s*materials\\s*,\\s*templateId\\s*\\)");
+        require(gatedHook.matcher(plan).find(),
+                "Compact cottage bench must only run on revision-3 stage two with its stable ID");
+        int hook = plan.indexOf("AuthoredDoodadRefinements.refineCompactCottageRearBench(");
+        require(hook > plan.indexOf("appendPresentationStageTwo(")
+                        && hook < plan.indexOf("ensureCumulativeComfortableInteriorLighting(", hook),
+                "Cottage bench refinement must see presentation supports before final lighting");
+
+        String scope = methodBody(refinements, "private static boolean hasCompactCottageRearBench(");
+        List<String> ids = List.of("cottage_hearth_01", "cottage_garden_02",
+                "cottage_courtyard_03", "cottage_bay_04");
+        for (String id : ids) {
+            require(scope.contains("\"" + id + "\""), "Missing compact-cottage bench ID: " + id);
+        }
+        require(Pattern.compile("\"[^\"]+\"").matcher(scope).results().count() == ids.size()
+                        && scope.contains("default -> false"),
+                "The cottage refinement must not silently expand beyond its four reviewed IDs");
+        String dispatch = methodBody(refinements, "static void refineCompactCottageRearBench(");
+        require(dispatch.contains("stage.templateRevision < 3")
+                        && dispatch.contains("!hasCompactCottageRearBench(templateId)"),
+                "Direct bench refinement calls must preserve old revisions and unrelated motifs");
+        for (String bench : List.of("addDoodadBenchX", "addDoodadBenchZ")) {
+            require(!methodBody(authored, "private static void " + bench + "(")
+                            .contains("refineCompactCottageRearBench"),
+                    "Compact cottage composition must not change the global public bench motif");
+        }
+
+        String lower = methodBody(refinements, "private static void lowerExactRearBench(");
+        require(lower.contains("hasState(stage") && lower.contains("newBackCenter")
+                        && lower.contains("metadata.reservedAir.contains(newBackCenter)")
+                        && lower.contains("metadata.accessTargets.contains(newBackCenter)"),
+                "Only the exact original bench may be lowered, with its new backrest cell clear");
+        require(lower.indexOf("hasSharedBenchSupport(stage, tallAssembly)")
+                        < lower.indexOf("stage.remove(")
+                        && !lower.contains("Phase.FOUNDATION")
+                        && !lower.contains("dressingPlant"),
+                "Shared supports must be checked before removal; seats, base and plant stay intact");
+        String supports = methodBody(refinements, "private static boolean hasSharedBenchSupport(");
+        require(supports.contains("Direction.UP") && supports.contains("Direction.NORTH")
+                        && supports.contains("Direction.SOUTH") && supports.contains("Direction.WEST")
+                        && supports.contains("Direction.EAST")
+                        && supports.contains("stage.isOccupied(contact)")
+                        && supports.contains("neighbor == null")
+                        && supports.contains("Phase.ROOF") && supports.contains("Phase.FRAME"),
+                "The bench must preserve overhead, lateral and previous-stage architectural supports");
+        String bases = methodBody(refinements, "private static void preserveCottageSeatBases(");
+        require(bases.contains("Blocks.DIRT_PATH") && bases.contains("Phase.FOUNDATION")
+                        && bases.contains("seat.state().is(p.timber())")
+                        && bases.contains("seat.state().is(p.wall())")
+                        && bases.contains("p.foundation().defaultBlockState()"),
+                "Solid cottage seat/planter supports must not leave decaying path blocks below them");
+    }
+
     private static void verifyAllActiveMastersUseRoleDoodads(String source) {
-        require(Pattern.compile("(?:LATEST_)?TEMPLATE_REVISION\\s*=\\s*2\\s*;")
+        require(Pattern.compile("(?:LATEST_)?TEMPLATE_REVISION\\s*=\\s*3\\s*;")
                         .matcher(source)
                         .find(),
-                "The active authored gold masters are not revision 2");
+                "The active authored gold masters are not revision 3");
 
         String plan = methodBody(source, "static Blueprint plan(");
         for (MasterExpectation master : expectedMasters()) {
+            if (master.templateId().equals("market_lane_04")) {
+                String market = methodBody(plan, "case \"market_lane_04\" ->");
+                require(invokes(market, "marketLane", "base", "metadata", "materials")
+                                && Pattern.compile("if\\s*\\(\\s*templateRevision\\s*==\\s*3\\s*\\)\\s*\\{\\s*"
+                                        + "AuthoredMarketRefinements\\.finishLane\\(base, metadata, materials\\);")
+                                        .matcher(market).find(),
+                        "Market lane must retain its original production recipe and scoped revision-3 refinement");
+                continue;
+            }
             Pattern activeSelection = Pattern.compile(
                     "case\\s+\\\"" + Pattern.quote(master.templateId()) + "\\\"\\s*->\\s*"
                             + Pattern.quote(master.masterMethod())
@@ -280,6 +350,9 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
                 "Structure gallery bypasses the production project bridge");
         String galleryBridge = methodBody(prosperity, "static List<StructureGalleryBlock> "
                 + "galleryProjectBlueprint(");
+        require(galleryBridge.contains("galleryProjectPlacements("),
+                "Gallery placement bridge must use the shared exact production identity");
+        galleryBridge = methodBody(prosperity, "private static List<Placement> galleryProjectPlacements(");
         require(galleryBridge.contains("project.designDressingId = dressingId"),
                 "Gallery does not persist the selected dressingId on its production project");
         require(galleryBridge.contains("blueprintProjectTemplate("),

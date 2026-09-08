@@ -42,8 +42,11 @@ import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.RotatedPillarBlock;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.WallBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.block.state.properties.Half;
+import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
@@ -66,7 +69,8 @@ public final class VillageBankManager {
     private static final int LEGACY_BANK_STRUCTURE_VERSION = 2;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION = 3;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V4 = 4;
-    private static final int BANK_STRUCTURE_VERSION = 5;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V5 = 5;
+    private static final int BANK_STRUCTURE_VERSION = 6;
     private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
     private static final long BANK_UPGRADE_RETRY_INTERVAL_TICKS = 2_400L;
     private static final int FALLBACK_BANK_RECOVERY_RADIUS = 192;
@@ -2358,6 +2362,8 @@ public final class VillageBankManager {
         Map<BlockPos, BlockState> authored = new HashMap<>();
         List<BankPlacement> expectedPlan = structureVersion >= BANK_STRUCTURE_VERSION
                 ? bankPlan(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V5
+                        ? legacyBankPlanV5(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V4
                         ? legacyBankPlanV4(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION
@@ -2496,8 +2502,8 @@ public final class VillageBankManager {
         normalizeManagedBankPanes(level, origin, villageId, bankKey);
         int structureVersion = economy.generatedBankStructureVersion(bankKey);
         if (structureVersion >= LEGACY_BANK_STRUCTURE_VERSION) {
-            // Version-two and version-three Banks remain valid frozen architecture. A player's
-            // existing building is never silently reshaped; only new/replacement Banks use v5.
+            // Version-two through version-five Banks remain valid frozen architecture. A player's
+            // existing building is never silently reshaped; only new/replacement Banks use v6.
             LAST_BANK_UPGRADE_RETRY_TICK.remove(bankKey);
             return;
         }
@@ -3641,11 +3647,11 @@ public final class VillageBankManager {
     }
 
     /**
-     * Current version-five civic Bank. Version four remains an immutable prefix; this method
+     * Frozen version-five civic Bank. Version four remains an immutable prefix; this method
      * replaces only the perimeter finish and skyline, then adds supported facade, forecourt, and
      * rear-ledger compositions. Existing version-two/three/four Banks are never routed here.
      */
-    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette palette) {
+    private static List<BankPlacement> legacyBankPlanV5(BlockPos origin, BankPalette palette) {
         LinkedHashMap<BlockPos, BlockState> authored = new LinkedHashMap<>();
         for (BankPlacement placement : legacyBankPlanV4(origin, palette)) {
             authored.put(placement.position(), placement.state());
@@ -3661,6 +3667,325 @@ public final class VillageBankManager {
         return authored.entrySet().stream()
                 .map(entry -> new BankPlacement(entry.getKey(), entry.getValue()))
                 .toList();
+    }
+
+    /**
+     * Version six is a new authored composition, never an in-place upgrade. The production plot,
+     * doorway, public aisle, teller anchor and two-wide record-room route are unchanged. Its
+     * visual delta gives the belfry one readable cap and makes masonry frames finer at eye level.
+     */
+    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette palette) {
+        LinkedHashMap<BlockPos, BlockState> authored = new LinkedHashMap<>();
+        for (BankPlacement placement : legacyBankPlanV5(origin, palette)) {
+            authored.put(placement.position(), placement.state());
+        }
+        BankCivicFinish finish = bankCivicFinish(palette);
+        appendBankV6Facades(authored, origin, palette, finish);
+        appendBankV6Belfry(authored, origin, palette, finish);
+        appendBankV6RecordRoom(authored, origin, palette, finish);
+        polishBankV6Materials(authored, origin, palette);
+        return authored.entrySet().stream()
+                .map(entry -> new BankPlacement(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    private static void appendBankV6Facades(
+            Map<BlockPos, BlockState> authored, BlockPos origin,
+            BankPalette palette, BankCivicFinish finish) {
+        int centerX = BANK_WIDTH / 2;
+        // A restrained continuous structural course replaces the former dominant brick stripe.
+        // Full backing remains behind shaped projecting mouldings, so light and rain cannot leak.
+        for (int x = 0; x < BANK_WIDTH; x++) {
+            for (int z = 0; z < BANK_DEPTH; z++) {
+                if (x != 0 && x != BANK_WIDTH - 1 && z != 0 && z != BANK_DEPTH - 1) {
+                    continue;
+                }
+                if (!(z == 0 && x == centerX)) {
+                    authored.put(origin.offset(x, 4, z), finish.trim().defaultBlockState());
+                }
+                if (!bankV5FacadePier(x, z)
+                        && !((x == 0 || x == BANK_WIDTH - 1)
+                                && (z == 0 || z == BANK_DEPTH - 1))) {
+                    for (int y = 2; y <= 3; y++) {
+                        if (!isBankWindowCell(x, y, z) && !(z == 0 && x == centerX)) {
+                            authored.put(origin.offset(x, y, z), finish.wall().defaultBlockState());
+                        }
+                    }
+                }
+            }
+        }
+        // Front windows are recessed between shaped sill, slim capitals and weather lintels.
+        for (int windowX : new int[] {2, BANK_WIDTH - 3}) {
+            authored.put(origin.offset(windowX, 1, -1),
+                    bankCorniceStair(finish, Direction.NORTH, Half.TOP));
+            for (int x = windowX - 1; x <= windowX + 1; x++) {
+                authored.put(origin.offset(x, 4, -1), finish.trim().defaultBlockState());
+            }
+            for (int x : new int[] {windowX - 1, windowX + 1}) {
+                authored.put(origin.offset(x, 3, -1),
+                        bankCorniceStair(finish,
+                                x < windowX ? Direction.EAST : Direction.WEST, Half.TOP));
+            }
+        }
+        // Carved portico capitals frame a genuinely sheltered three-wide landing. The columns
+        // remain full height, but their light stone caps no longer read as unrelated brick blocks.
+        for (int z : new int[] {-2, -1}) {
+            for (int x : new int[] {centerX - 2, centerX + 2}) {
+                authored.put(origin.offset(x, 3, z), finish.trim().defaultBlockState());
+            }
+        }
+        for (int x = centerX - 3; x <= centerX + 3; x++) {
+            authored.put(origin.offset(x, 4, -2),
+                    bankCorniceStair(finish, Direction.NORTH, Half.BOTTOM));
+        }
+        // Side bay reveals and a continuous low dado make the blind elevations feel authored.
+        for (int sideX : new int[] {-1, BANK_WIDTH}) {
+            Direction outward = sideX < 0 ? Direction.WEST : Direction.EAST;
+            for (int z : new int[] {3, BANK_DEPTH - 4}) {
+                authored.put(origin.offset(sideX, 1, z),
+                        bankCorniceStair(finish, outward, Half.TOP));
+                authored.put(origin.offset(sideX, 4, z), finish.trim().defaultBlockState());
+            }
+            for (int z : new int[] {2, BANK_DEPTH - 3}) {
+                authored.put(origin.offset(sideX, 3, z),
+                        bankCorniceStair(finish, outward, Half.TOP));
+            }
+        }
+        for (int windowX : new int[] {3, centerX, BANK_WIDTH - 4}) {
+            for (int x : new int[] {windowX - 1, windowX + 1}) {
+                authored.put(origin.offset(x, 3, BANK_DEPTH),
+                        bankCorniceStair(finish,
+                                x < windowX ? Direction.EAST : Direction.WEST, Half.TOP));
+            }
+            if (windowX != centerX) {
+                authored.put(origin.offset(windowX, 1, BANK_DEPTH),
+                        bankCorniceStair(finish, Direction.SOUTH, Half.TOP));
+            }
+        }
+        for (int x = centerX - 2; x <= centerX + 2; x++) {
+            authored.put(origin.offset(x, 5, BANK_DEPTH), finish.trim().defaultBlockState());
+        }
+        // The public apron is a little civic garden rather than two isolated emblem cubes.
+        for (int x : new int[] {4, BANK_WIDTH - 5}) {
+            authored.put(origin.offset(x, 1, -3), finish.trim().defaultBlockState());
+            authored.put(origin.offset(x, 2, -3), Blocks.POTTED_FERN.defaultBlockState());
+        }
+        for (int x : new int[] {0, 1, 3, BANK_WIDTH - 4, BANK_WIDTH - 2, BANK_WIDTH - 1}) {
+            authored.put(origin.offset(x, 1, -4),
+                    palette.roofStairs().defaultBlockState()
+                            .setValue(StairBlock.FACING, Direction.NORTH));
+        }
+    }
+
+    /** A two-course glazed belfry with a single supported copper/slate/snow cap. */
+    private static void appendBankV6Belfry(
+            Map<BlockPos, BlockState> authored, BlockPos origin,
+            BankPalette palette, BankCivicFinish finish) {
+        int centerX = BANK_WIDTH / 2;
+        int centerZ = BANK_DEPTH / 2;
+        for (int x = centerX - 2; x <= centerX + 2; x++) {
+            for (int z = centerZ - 2; z <= centerZ + 2; z++) {
+                authored.remove(origin.offset(x, 10, z));
+                authored.remove(origin.offset(x, 11, z));
+            }
+        }
+        for (int y = 9; y <= 10; y++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    boolean corner = Math.abs(dx) == 1 && Math.abs(dz) == 1;
+                    if (dx == 0 && dz == 0) {
+                        if (y == 10) {
+                            authored.put(origin.offset(centerX, y, centerZ),
+                                    Blocks.LANTERN.defaultBlockState()
+                                            .setValue(LanternBlock.HANGING, true));
+                        }
+                    } else {
+                        authored.put(origin.offset(centerX + dx, y, centerZ + dz),
+                                (corner ? finish.belfryPier() : Blocks.STAINED_GLASS.green())
+                                        .defaultBlockState());
+                    }
+                }
+            }
+        }
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                BlockState cap = finish.cap().defaultBlockState();
+                // Bottom slabs meet the glazing without a half-block daylight seam. A full
+                // central crown supplies an unambiguous bearing for the pendant underneath.
+                if (cap.getBlock() instanceof SlabBlock) {
+                    cap = cap.setValue(SlabBlock.TYPE,
+                            dx == 0 && dz == 0 ? SlabType.DOUBLE : SlabType.BOTTOM);
+                }
+                authored.put(origin.offset(centerX + dx, 11, centerZ + dz), cap);
+            }
+        }
+        // Restore the front dormer's ridge where the old five-wide cap had cut into it.
+        authored.put(origin.offset(centerX, 10, centerZ - 2),
+                palette.roofCap().defaultBlockState());
+    }
+
+    private static void appendBankV6RecordRoom(
+            Map<BlockPos, BlockState> authored, BlockPos origin,
+            BankPalette palette, BankCivicFinish finish) {
+        int counterZ = BANK_DEPTH - 3;
+        // A low masonry base, narrow stone jambs and a shaped lintel distinguish secure records
+        // without the former two-block-high wall of bright iron in every lobby view.
+        for (int x = 1; x <= 4; x++) {
+            authored.put(origin.offset(x, 0, counterZ - 2), finish.trim().defaultBlockState());
+            authored.put(origin.offset(x, 3, counterZ - 2),
+                    finish.archSlab().defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM));
+        }
+        for (int x : new int[] {1, 4}) {
+            for (int y = 1; y <= 2; y++) {
+                authored.put(origin.offset(x, y, counterZ - 2),
+                        Blocks.STONE_BRICK_WALL.defaultBlockState()
+                                .setValue(WallBlock.UP, true));
+            }
+        }
+        // Two orderly drawers flank the branded desk; outer archival shelves stay recognizable.
+        // The existing rear storage capacity and each functional workstation are preserved.
+        for (int x : new int[] {4, 8}) {
+            authored.put(origin.offset(x, 1, counterZ),
+                    Blocks.CHISELED_BOOKSHELF.defaultBlockState());
+        }
+        for (int x : new int[] {2, 10}) {
+            authored.put(origin.offset(x, 1, counterZ),
+                    Blocks.CHEST.defaultBlockState());
+        }
+        // A warm shelf niche behind the waiting tables creates a distinct public reading corner.
+        for (int x : new int[] {1, BANK_WIDTH - 2}) {
+            authored.put(origin.offset(x, 3, 1), Blocks.LANTERN.defaultBlockState());
+        }
+    }
+
+    private static BlockState bankCorniceStair(
+            BankCivicFinish finish, Direction facing, Half half) {
+        return finish.archStairs().defaultBlockState()
+                .setValue(StairBlock.FACING, facing).setValue(StairBlock.HALF, half);
+    }
+
+    /** Material-only final review pass: every authored position and block shape stays intact. */
+    private static void polishBankV6Materials(
+            Map<BlockPos, BlockState> authored, BlockPos origin, BankPalette palette) {
+        boolean snowy = palette.facadePier() == Blocks.STRIPPED_DARK_OAK_LOG;
+        boolean taiga = !snowy && palette.door() == Blocks.SPRUCE_DOOR;
+        if (!snowy && !taiga) {
+            return;
+        }
+        authored.replaceAll((position, state) -> {
+            int x = position.getX() - origin.getX();
+            int y = position.getY() - origin.getY();
+            int z = position.getZ() - origin.getZ();
+            if (snowy && state.is(Blocks.SNOW_BLOCK)) {
+                // The inherited full snow cubes read as loose white blocks. Keep the exact
+                // sealed ridge volume, but make it a coherent dark timber roof crown.
+                return Blocks.DARK_OAK_PLANKS.defaultBlockState();
+            }
+            boolean shelteredFootCorner = y <= 1 && (x == 0 || x == BANK_WIDTH - 1)
+                    && (z == 0 || z == BANK_DEPTH - 1);
+            if (taiga && y <= 4 && !shelteredFootCorner) {
+                // A maintained public building uses clean masonry indoors and on its cornice.
+                // The small old roof accents and exterior footing corners retain local weathering.
+                if (state.is(Blocks.MOSSY_STONE_BRICKS)) {
+                    return Blocks.STONE_BRICKS.withPropertiesOf(state);
+                }
+                if (state.is(Blocks.MOSSY_COBBLESTONE)) {
+                    return Blocks.COBBLESTONE.withPropertiesOf(state);
+                }
+                if (state.is(Blocks.MOSSY_STONE_BRICK_STAIRS)) {
+                    return Blocks.STONE_BRICK_STAIRS.withPropertiesOf(state);
+                }
+                if (state.is(Blocks.MOSSY_STONE_BRICK_SLAB)) {
+                    return Blocks.STONE_BRICK_SLAB.withPropertiesOf(state);
+                }
+            }
+            return state;
+        });
+    }
+
+    private static Block bankV6RidgeBlock(BankPalette palette) {
+        return palette.roofCap() == Blocks.SNOW_BLOCK ? Blocks.DARK_OAK_PLANKS : palette.roofCap();
+    }
+
+    /** Headless regression: the final two palette refinements cannot alter the reviewed geometry. */
+    static void validateBankV6MaterialRefinement() {
+        for (VillageArchitecture.BiomeDialect dialect : List.of(
+                VillageArchitecture.BiomeDialect.TAIGA, VillageArchitecture.BiomeDialect.SNOWY)) {
+            BankPalette palette = paletteFor(dialect);
+            BankCivicFinish previousFinish = dialect == VillageArchitecture.BiomeDialect.TAIGA
+                    ? new BankCivicFinish(Blocks.MOSSY_STONE_BRICKS, Blocks.STONE_BRICKS,
+                            Blocks.MOSSY_STONE_BRICK_STAIRS, Blocks.MOSSY_STONE_BRICK_SLAB,
+                            Blocks.STRIPPED_SPRUCE_LOG, Blocks.COBBLED_DEEPSLATE_SLAB)
+                    : new BankCivicFinish(Blocks.CALCITE, Blocks.POLISHED_DIORITE,
+                            Blocks.POLISHED_DIORITE_STAIRS, Blocks.POLISHED_DIORITE_SLAB,
+                            Blocks.STRIPPED_DARK_OAK_LOG, Blocks.POLISHED_DIORITE_SLAB);
+            Map<BlockPos, BlockState> before = new LinkedHashMap<>();
+            for (BankPlacement placement : legacyBankPlanV5(BlockPos.ZERO, palette)) {
+                before.put(placement.position(), placement.state());
+            }
+            appendBankV6Facades(before, BlockPos.ZERO, palette, previousFinish);
+            appendBankV6Belfry(before, BlockPos.ZERO, palette, previousFinish);
+            appendBankV6RecordRoom(before, BlockPos.ZERO, palette, previousFinish);
+            Map<BlockPos, BlockState> after = new LinkedHashMap<>();
+            for (BankPlacement placement : bankPlan(BlockPos.ZERO, palette)) {
+                after.put(placement.position(), placement.state());
+            }
+            if (!before.keySet().equals(after.keySet())) {
+                throw new IllegalStateException("Final Bank material refinement changed its envelope: " + dialect);
+            }
+            int changed = 0;
+            for (Map.Entry<BlockPos, BlockState> entry : before.entrySet()) {
+                BlockPos pos = entry.getKey();
+                BlockState old = entry.getValue();
+                BlockState current = after.get(pos);
+                if (!old.getCollisionShape(EmptyBlockGetter.INSTANCE, pos).toAabbs().equals(
+                                current.getCollisionShape(EmptyBlockGetter.INSTANCE, pos).toAabbs())
+                        || old.getLightEmission() != current.getLightEmission()) {
+                    throw new IllegalStateException("Final Bank material refinement changed shape/light at "
+                            + dialect + '/' + pos);
+                }
+                if (!old.equals(current)) {
+                    changed++;
+                }
+            }
+            if (changed == 0) {
+                throw new IllegalStateException("Final Bank material refinement did not apply: " + dialect);
+            }
+            System.out.println("PASS Bank v6 material-only refinement " + dialect + ": "
+                    + changed + " changed states, identical occupied cells/collision/emission");
+        }
+    }
+
+    /** Separate v6 finish roles keep the complete v2-v5 palette and plans frozen. */
+    private static BankCivicFinish bankCivicFinish(BankPalette palette) {
+        if (palette.foundation() == Blocks.SMOOTH_SANDSTONE) {
+            return new BankCivicFinish(Blocks.CUT_SANDSTONE, Blocks.CHISELED_RED_SANDSTONE,
+                    Blocks.RED_SANDSTONE_STAIRS, Blocks.RED_SANDSTONE_SLAB,
+                    Blocks.SMOOTH_SANDSTONE, Blocks.CUT_COPPER_SLAB.waxed().unaffected());
+        }
+        if (palette.door() == Blocks.ACACIA_DOOR) {
+            return new BankCivicFinish(Blocks.SMOOTH_SANDSTONE, Blocks.POLISHED_ANDESITE,
+                    Blocks.STONE_BRICK_STAIRS, Blocks.STONE_BRICK_SLAB,
+                    Blocks.STRIPPED_DARK_OAK_LOG, Blocks.CUT_COPPER_SLAB.waxed().weathered());
+        }
+        if (palette.facadePier() == Blocks.STRIPPED_DARK_OAK_LOG) {
+            return new BankCivicFinish(Blocks.CALCITE, Blocks.POLISHED_ANDESITE,
+                    Blocks.POLISHED_ANDESITE_STAIRS, Blocks.POLISHED_ANDESITE_SLAB,
+                    Blocks.STRIPPED_DARK_OAK_LOG, Blocks.DEEPSLATE_TILE_SLAB);
+        }
+        if (palette.door() == Blocks.SPRUCE_DOOR) {
+            return new BankCivicFinish(Blocks.STONE_BRICKS, Blocks.STONE_BRICKS,
+                    Blocks.STONE_BRICK_STAIRS, Blocks.STONE_BRICK_SLAB,
+                    Blocks.STRIPPED_SPRUCE_LOG, Blocks.COBBLED_DEEPSLATE_SLAB);
+        }
+        return new BankCivicFinish(Blocks.STONE_BRICKS, Blocks.POLISHED_ANDESITE,
+                Blocks.STONE_BRICK_STAIRS, Blocks.STONE_BRICK_SLAB,
+                Blocks.STRIPPED_OAK_LOG, Blocks.CUT_COPPER_SLAB.waxed().weathered());
+    }
+
+    private record BankCivicFinish(
+            Block wall, Block trim, Block archStairs, Block archSlab,
+            Block belfryPier, Block cap) {
     }
 
     /** Rehangs the two inherited chest-top counter lamps without changing any legacy plan. */
@@ -4041,7 +4366,7 @@ public final class VillageBankManager {
             boolean allowUnregisteredDeskLectern) {
         BlockPos origin = new BlockPos(0, 64, 0);
         List<BankPlacement> plan = bankPlan(origin, palette);
-        if (plan.isEmpty() || plan.size() > 1_100) {
+        if (plan.isEmpty() || plan.size() > 1_200) {
             throw new IllegalStateException("Invalid Village Bank template size: " + plan.size());
         }
         Set<BlockPos> occupied = new HashSet<>();
@@ -4217,7 +4542,7 @@ public final class VillageBankManager {
                         || !(centralMount
                                 ? backingState.is(palette.corner())
                                 : frontBayBacking
-                                        ? backingState.is(palette.civicCornice())
+                                        ? backingState.is(bankCivicFinish(palette).trim())
                                         : backingState.is(palette.roofDeck()))) {
                     throw new IllegalStateException(
                             "Village Bank roof backing is not continuous at "
@@ -4245,7 +4570,7 @@ public final class VillageBankManager {
                                         && (roofState.is(palette.facadePier())
                                                 || roofState.is(palette.civicWall()))
                         : rearPedimentBase
-                                ? roofState != null && roofState.is(palette.civicCornice())
+                                ? roofState != null && roofState.is(bankCivicFinish(palette).trim())
                         : ridge
                                 ? roofState != null && roofState.is(palette.roofDeck())
                                 : roofState != null
@@ -4261,7 +4586,7 @@ public final class VillageBankManager {
                 }
             }
         }
-        validateBankV5Skyline(authored, palette);
+        validateBankV6Skyline(authored, palette);
         for (int x = 0; x < BANK_WIDTH; x++) {
             if (!authored.containsKey(new BlockPos(x, 5, 0))
                     || !authored.containsKey(new BlockPos(x, 5, BANK_DEPTH - 1))) {
@@ -4337,7 +4662,7 @@ public final class VillageBankManager {
 
             validateCurrentBankBlueprint(
                     palette,
-                    "village-bank-v5/" + dialect.id() + "/night-interior",
+                    "village-bank-v6/" + dialect.id() + "/night-interior",
                     allowUnregisteredDeskLectern);
         }
         if (signatures.size() != VillageArchitecture.BiomeDialect.values().length) {
@@ -4357,7 +4682,56 @@ public final class VillageBankManager {
         }
     }
 
-    /** Proves the version-five silhouette is closed, supported, and genuinely multi-massed. */
+    /** Proves the new roof feature has continuous bearing, enclosed glazing and one weather cap. */
+    private static void validateBankV6Skyline(
+            Map<BlockPos, BlockState> authored, BankPalette palette) {
+        int centerX = BANK_WIDTH / 2;
+        int centerZ = BANK_DEPTH / 2;
+        BankCivicFinish finish = bankCivicFinish(palette);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                requireBankBlock(authored, new BlockPos(centerX + dx, 8, centerZ + dz),
+                        palette.cupolaBase(), "belfry continuous bearing");
+                for (int y = 9; y <= 10; y++) {
+                    Block expected = dx == 0 && dz == 0
+                            ? y == 9 ? Blocks.BELL : Blocks.LANTERN
+                            : Math.abs(dx) == 1 && Math.abs(dz) == 1
+                                    ? finish.belfryPier() : Blocks.STAINED_GLASS.green();
+                    requireBankBlock(authored, new BlockPos(centerX + dx, y, centerZ + dz),
+                            expected, "belfry framed enclosure");
+                }
+            }
+        }
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                BlockPos capPosition = new BlockPos(centerX + dx, 11, centerZ + dz);
+                requireBankBlock(authored, capPosition,
+                        finish.cap(), "belfry single weather cap");
+                BlockState cap = authored.get(capPosition);
+                if (cap.getValue(SlabBlock.TYPE)
+                        != (dx == 0 && dz == 0 ? SlabType.DOUBLE : SlabType.BOTTOM)) {
+                    throw new IllegalStateException(
+                            "Village Bank belfry cap opened a daylight seam at " + capPosition);
+                }
+            }
+        }
+        for (int z = -1; z <= 3; z++) {
+            for (int side : new int[] {-1, 1}) {
+                requireBankStair(authored, new BlockPos(centerX + side * 2, 8, z),
+                        palette.roofStairs(), side < 0 ? Direction.WEST : Direction.EAST,
+                        "dormer lower sealed slope");
+                requireBankStair(authored, new BlockPos(centerX + side, 9, z),
+                        palette.roofStairs(), side < 0 ? Direction.WEST : Direction.EAST,
+                        "dormer upper sealed slope");
+            }
+            requireBankBlock(authored, new BlockPos(centerX, 10, z),
+                    bankV6RidgeBlock(palette), "dormer continuous ridge");
+        }
+        requireBankBlock(authored, new BlockPos(centerX, 8, BANK_DEPTH),
+                bankV6RidgeBlock(palette), "rear ledger pediment crown");
+    }
+
+    /** Frozen version-five skyline contract retained as compatibility documentation. */
     private static void validateBankV5Skyline(
             Map<BlockPos, BlockState> authored, BankPalette palette) {
         int centerX = BANK_WIDTH / 2;
@@ -4542,18 +4916,18 @@ public final class VillageBankManager {
         }
         for (int frameX = 1; frameX <= 4; frameX++) {
             if (!authored.get(new BlockPos(frameX, 0, counterZ - 2))
-                            .is(Blocks.IRON_BLOCK)
+                            .is(bankCivicFinish(palette).trim())
                     || !authored.get(new BlockPos(frameX, 3, counterZ - 2))
-                            .is(Blocks.IRON_BLOCK)) {
+                            .is(bankCivicFinish(palette).archSlab())) {
                 throw new IllegalStateException(
-                        "Village Bank secure-record alcove lost its iron base or lintel at x="
+                        "Village Bank secure-record alcove lost its masonry base or lintel at x="
                                 + frameX);
             }
         }
         for (int jambX : new int[] {1, 4}) {
             for (int y = 1; y <= 2; y++) {
                 if (!authored.get(new BlockPos(jambX, y, counterZ - 2))
-                        .is(Blocks.IRON_BLOCK)) {
+                        .is(Blocks.STONE_BRICK_WALL)) {
                     throw new IllegalStateException(
                             "Village Bank secure-record alcove lost its outer jamb at "
                                     + new BlockPos(jambX, y, counterZ - 2));

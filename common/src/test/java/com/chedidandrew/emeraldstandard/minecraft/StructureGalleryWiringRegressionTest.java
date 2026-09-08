@@ -53,7 +53,55 @@ public final class StructureGalleryWiringRegressionTest {
         verifyAutomatedReviewCapture(gallery, capture, captureLauncher);
         verifyCollisionSafeCapturePhotography(gallery);
         verifyMotifAwareDoodadPhotography(gallery);
+        verifyRuntimeAttachmentAdmission(gallery, prosperity);
         System.out.println("PASS structure gallery wiring regression");
+    }
+
+    private static void verifyRuntimeAttachmentAdmission(String gallery, String prosperity) {
+        String check = methodBody(gallery, "private static void validateFragileGalleryAttachments(");
+        String rejection = methodBody(gallery, "static void validateAttachmentState(");
+        String predicate = methodBody(gallery, "static boolean requiresAttachmentAudit(");
+        require(predicate.contains("Blocks.AZALEA") && predicate.contains("Blocks.FLOWERING_AZALEA")
+                        && predicate.contains("Blocks.RAIL") && check.contains("requiresAttachmentAudit(expected)")
+                        && check.contains("validateAttachmentState(fixture.index(), block, actual,")
+                        && rejection.contains("!actual.is(expected.state().getBlock()) || !survives")
+                        && check.contains("actual.canSurvive(level, block.position())"),
+                "Review admission must reject physically lost or unsupported plants and rail bindings");
+        require(!check.contains("setBlock(") && !check.contains("discard(")
+                        && !check.contains("removeEntity(") && rejection.contains("throw new IllegalStateException"),
+                "Runtime attachment review must be read-only, never a repair or dropped-item cleanup");
+        require(methodBody(gallery, "private static int place(")
+                        .contains("validateFragileGalleryAttachments(level, fixtures)")
+                        && methodBody(gallery, "public static void validateCapturePlan(")
+                        .contains("validateFragileGalleryAttachments(level, attachmentExpectationFixtures"),
+                "Attachment admission must run after placement and again before accepting screenshots");
+        String reset = methodBody(gallery, "private static void resetIsolatedReviewPad(");
+        require(reset.contains("Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE")
+                        && reset.contains("int y = maximumY; y >= baseY; y--"),
+                "Replacing the isolated review annex must not create teardown drops in the next scene");
+        String clone = methodBody(gallery, "private static void placeIsolatedClone(");
+        require(clone.contains("Block.UPDATE_ALL")
+                        && clone.contains("validateFragileGalleryAttachments(level, List.of(clone))"),
+                "New annex fixtures must still exercise real neighbor updates and attachment survival");
+        String resolution = methodBody(prosperity, "static List<StructureGalleryBlock> galleryProjectBlueprint(");
+        require(resolution.contains("if (StructureGallery.requiresAttachmentAudit(placement.state))")
+                        && resolution.contains("resolved.add(new StructureGalleryBlock(target, placement.state));"),
+                "Already-placed fragile cells must remain in the later read-only gallery audit");
+        String expectations = methodBody(prosperity,
+                "static List<StructureGalleryBlock> galleryProjectAttachmentExpectations(");
+        String collapse = methodBody(prosperity,
+                "static List<StructureGalleryBlock> finalGalleryAttachmentExpectations(");
+        require(expectations.contains("galleryProjectPlacements(")
+                        && expectations.contains("finalGalleryAttachmentExpectations(ordered)")
+                        && !expectations.contains("placementSatisfied(")
+                        && !expectations.contains("mayApplyPlacement(")
+                        && !expectations.contains("getBlockState(")
+                        && collapse.indexOf("finished.put(block.position(), block)")
+                                < collapse.indexOf("requiresAttachmentAudit(block.state())"),
+                "Completed gallery audit must collapse final layers before filtering, without replaying placement admission");
+        require(resolution.contains("placementSatisfied(") && resolution.contains("mayApplyPlacement(")
+                        && resolution.contains("Gallery plot is obstructed"),
+                "Separating read-only expectations must not weaken initial gallery/player-preserving admission");
     }
 
     private static void verifyAutoBuildBoundary(
@@ -126,7 +174,9 @@ public final class StructureGalleryWiringRegressionTest {
                 "Gallery Banks do not use the production-Bank bridge");
 
         String projectBridge = methodBody(prosperity, "galleryProjectBlueprint(");
-        require(projectBridge.contains("blueprintProjectTemplate("),
+        require(projectBridge.contains("galleryProjectPlacements(")
+                        && methodBody(prosperity, "private static List<Placement> galleryProjectPlacements(")
+                        .contains("blueprintProjectTemplate("),
                 "Gallery project bridge bypasses the production Blueprint V2 template");
         String bankBridge = methodBody(banks, "galleryBankBlueprint(");
         require(bankBridge.contains("bankPlan("),
@@ -278,9 +328,17 @@ public final class StructureGalleryWiringRegressionTest {
                         && doodadMatcher.contains("isCrateClusterAnchor")
                         && doodadMatcher.contains("isHandCartCargoAnchor")
                         && doodadMatcher.contains("isHitchingRailAnchor")
-                        && doodadMatcher.contains("cell.y() == 3")
+                        && doodadMatcher.contains("isFreestandingLampAnchor")
+                        && doodadMatcher.contains("isMaterialPileAnchor")
                         && doodadMatcher.contains("isToolRackAnchor"),
                 "Doodad capture selectors are not exterior-only topology signatures");
+        String lampMatcher = methodBody(gallery, "private static boolean isFreestandingLampAnchor");
+        require(lampMatcher.contains("materials().roofStairs()")
+                        && lampMatcher.contains("StairBlock.FACING")
+                        && lampMatcher.contains("direction.getOpposite()")
+                        && lampMatcher.contains("Blocks.IRON_CHAIN")
+                        && lampMatcher.contains("postX, 4, postZ, blueprint.materials().timber()"),
+                "D3 evidence must recognize the actual arm-facing stair knee and connected cap/chain");
         String doodadCapture = methodBody(
                 gallery, "private static CapturePose captureDoodadDetailPose");
         require(doodadCapture.contains("new ArrayList<>(blueprint.base())")
@@ -307,6 +365,12 @@ public final class StructureGalleryWiringRegressionTest {
                         && cartMatcher.contains("Blocks.BARREL")
                         && cartMatcher.contains("materials().roofSlab()"),
                 "D10 capture no longer recognizes varied non-container cargo by cart topology");
+        require(cartMatcher.contains("blueprint.revision() >= 3")
+                        && cartMatcher.contains("RotatedPillarBlock.AXIS")
+                        && cartMatcher.contains("Blocks.STONE_BUTTON")
+                        && cartMatcher.contains("isOpenTrapdoor")
+                        && cartMatcher.contains("materials().fence()"),
+                "Revision-three cart evidence lost its low axle, hubs, sideboards or handle signature");
         String cargoMatcher = methodBody(gallery, "private static boolean isForecourtCargoAnchor");
         require(cargoMatcher.contains("cell.y() != 2")
                         && cargoMatcher.contains("Blocks.RAIL")
@@ -318,6 +382,11 @@ public final class StructureGalleryWiringRegressionTest {
                         && crateMatcher.contains("materials().timber()")
                         && crateMatcher.contains("materials().roofSlab()"),
                 "D9 capture no longer recognizes the current framed crate cluster");
+        require(crateMatcher.contains("blueprint.revision() >= 3")
+                        && crateMatcher.contains("Blocks.NOTE_BLOCK")
+                        && crateMatcher.contains("cell.y() == 1")
+                        && crateMatcher.contains("isOpenTrapdoor"),
+                "Revision-three crate evidence lost its three-parcel low-pallet signature");
         String hitchMatcher = methodBody(gallery, "private static boolean isHitchingRailAnchor");
         require(hitchMatcher.contains("Blocks.IRON_CHAIN")
                         && countOccurrences(hitchMatcher, "materials().fence()") >= 3,
@@ -390,6 +459,7 @@ public final class StructureGalleryWiringRegressionTest {
                 "SLAB_AND_FENCE_BENCH",
                 "SAFE_CAMPFIRE_NOOK",
                 "GARDEN_WORK_CORNER",
+                "GUARD_TARGET_RACK",
                 "HAND_CART",
                 "HITCHING_RAIL",
                 "TOOL_RACK"
@@ -401,10 +471,13 @@ public final class StructureGalleryWiringRegressionTest {
                         "HAND_CART -> new DoodadCameraProfile(5.15, 4.10, 0.90, -1.35)"),
                 "Hand-cart camera no longer aims below the load to expose bed, axle, and wheels");
         require(profiles.contains(
-                        "SAFE_CAMPFIRE_NOOK -> new DoodadCameraProfile(5.10, 1.25, 1.15, -0.45)")
+                        "SAFE_CAMPFIRE_NOOK -> new DoodadCameraProfile(5.10, 3.75, 2.60, -0.30)")
                         && profiles.contains(
-                                "GARDEN_WORK_CORNER -> new DoodadCameraProfile(4.75, 4.00, 0.65, -0.25)"),
+                                "GARDEN_WORK_CORNER -> new DoodadCameraProfile(5.25, 3.25, 2.50, 0.15)"),
                 "Rear campfire camera no longer clears its bench or the garden camera regressed");
+        require(profiles.contains(
+                        "GUARD_TARGET_RACK -> new DoodadCameraProfile(5.75, 2.00, 0.10, 0.0)"),
+                "Target-rack camera no longer looks beneath the opaque shooting-line canopy");
         require(profiles.contains(
                         "TOOL_RACK -> new DoodadCameraProfile(4.90, 2.60, 0.55, -0.45)"),
                 "Tool-rack camera no longer shows the inward tool face from a low angle");
@@ -440,6 +513,45 @@ public final class StructureGalleryWiringRegressionTest {
                 gallery, "private static BlockPos bestVisibleInteriorTarget");
         String bank = methodBody(
                 gallery, "private static CapturePose captureBankInteriorPose");
+
+        String reviewZones = methodBody(gallery,
+                "private static InteriorReviewZone authoredInteriorReviewZone");
+        for (String reviewedRoom : new String[] {
+                "house_hall_04", "warehouse_wharf_04", "mine_headframe_01",
+                "mine_drift_04", "guard_citadel_05"
+        }) {
+            require(reviewZones.contains("case \"" + reviewedRoom + "\" ->"),
+                    "Missing authored occupied-room camera zone for " + reviewedRoom);
+        }
+        require(interior.contains("reachableFloor.stream().filter(reviewZone::contains)")
+                        && interior.contains("roleTargets.stream().filter(reviewZone::contains)")
+                        && interior.indexOf("reachableInteriorFloor(")
+                                < interior.indexOf("reachableFloor.stream().filter(reviewZone::contains)")
+                        && gallery.contains("position.getY() <= floorY + 1"),
+                "Room camera zones no longer constrain both camera and level aim after access proof");
+        String routeFloor = methodBody(gallery,
+                "private static List<BlockPos> traversablePhotographyFloor");
+        String routePassable = methodBody(gallery,
+                "private static boolean photographyRoutePassable");
+        String routeRegression = methodBody(gallery,
+                "private static void verifyPhotographyRouteSeparation");
+        require(routePassable.contains("feet.is(Blocks.RAIL)")
+                        && routePassable.contains("feet.getBlock() instanceof DoorBlock")
+                        && routePassable.contains("head.getBlock() instanceof DoorBlock")
+                        && routePassable.contains("feet.is(Blocks.LADDER)")
+                        && routePassable.contains("head.is(Blocks.LADDER)")
+                        && routeFloor.contains("isFaceSturdy(level, support, Direction.UP)")
+                        && routeFloor.contains("level.getFluidState(world).isEmpty()")
+                        && interior.contains(".filter(clearFloor::contains)")
+                        && interior.contains("verifyPhotographyRouteSeparation();")
+                        && routeRegression.contains("photographyRoutePassable(rail, air)")
+                        && routeRegression.contains("photographyRoutePassable(door, door)")
+                        && routeRegression.contains("photographyRoutePassable(ladder, ladder)")
+                        && routeRegression.contains("cameras.contains(ladderBridge)")
+                        && routeRegression.contains("photographyRoutePassable(stone, air)")
+                        && routeRegression.contains("strictCameraCells::contains")
+                        && routeRegression.contains("reachableInteriorFloor(blockedRoute, room, entrance, List.of())"),
+                "Photography routes must cross ordinary rails/doors/ladder boardings without a non-air camera perch");
 
         require(preflight.contains("!level.getBlockState(feet).isAir()")
                         && preflight.contains("!level.getBlockState(eyes).isAir()")

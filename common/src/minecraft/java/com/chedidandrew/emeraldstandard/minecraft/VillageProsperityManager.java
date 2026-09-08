@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.StructureGalleryPlan;
 import com.chedidandrew.emeraldstandard.core.VillageArchitecture;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import java.nio.charset.StandardCharsets;
@@ -12,6 +13,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -3318,8 +3320,78 @@ public final class VillageProsperityManager {
      * <p>The returned blocks have already passed the same satisfied/support and replaceability
      * checks used by ordinary construction. No economy village or project is registered: gallery
      * fixtures must never participate in settlement simulation, integrity audits, or relocation.
+     * Fragile review attachments are also returned when already placed, so a later read-only
+     * runtime audit checks their survival instead of seeing only remaining placement work.
      */
     static List<StructureGalleryBlock> galleryProjectBlueprint(
+            ServerLevel level,
+            BlockPos origin,
+            VillageProsperityEngine.ProjectType type,
+            VillageArchitecture.BiomeDialect dialect,
+            VillageArchitecture.Character character,
+            String templateId,
+            int templateRevision,
+            String paletteId,
+            String dressingId,
+            boolean mirrored,
+            int visualStage,
+            int rotation) {
+        List<Placement> production = galleryProjectPlacements(
+                level, origin, type, dialect, character, templateId, templateRevision,
+                paletteId, dressingId, mirrored, visualStage, rotation);
+        List<StructureGalleryBlock> resolved = new ArrayList<>(production.size());
+        for (Placement placement : production) {
+            BlockPos target = placementTarget(level, origin, placement);
+            BlockState current = level.getBlockState(target);
+            if (placementSatisfied(level, origin, target, current, placement)) {
+                if (StructureGallery.requiresAttachmentAudit(placement.state)) {
+                    resolved.add(new StructureGalleryBlock(target, placement.state));
+                }
+                continue;
+            }
+            if (level.getBlockEntity(target) != null
+                    || !level.getFluidState(target).isEmpty()
+                    || !mayApplyPlacement(current, placement)) {
+                throw new IllegalStateException(
+                        "Gallery plot is obstructed at " + target.toShortString());
+            }
+            resolved.add(new StructureGalleryBlock(target, placement.state));
+        }
+        return List.copyOf(resolved);
+    }
+
+    /**
+     * Exact finished attachment expectations for a completed opt-in gallery, not placement work.
+     * All descriptor metadata is explicit, so blueprint generation needs no world or biome lookup.
+     * Later authored stages can supersede inferred base supports; audit only the final cell state.
+     * The caller must still check actual block presence and survival in the exact disposable save.
+     */
+    static List<StructureGalleryBlock> galleryProjectAttachmentExpectations(
+            BlockPos origin, StructureGalleryPlan.Entry entry) {
+        List<Placement> production = galleryProjectPlacements(
+                null, origin, entry.type(), entry.dialect(), entry.character(),
+                entry.templateId(), entry.templateRevision(), entry.paletteId(),
+                entry.dressingId(), entry.mirrored(), entry.visualStage(), entry.rotation());
+        List<StructureGalleryBlock> ordered = new ArrayList<>(production.size());
+        for (Placement placement : production) {
+            ordered.add(new StructureGalleryBlock(
+                    origin.offset(placement.dx, placement.dy, placement.dz), placement.state));
+        }
+        return finalGalleryAttachmentExpectations(ordered);
+    }
+
+    static List<StructureGalleryBlock> finalGalleryAttachmentExpectations(
+            List<StructureGalleryBlock> ordered) {
+        Map<BlockPos, StructureGalleryBlock> finished = new LinkedHashMap<>();
+        for (StructureGalleryBlock block : ordered) {
+            finished.put(block.position(), block);
+        }
+        return finished.values().stream()
+                .filter(block -> StructureGallery.requiresAttachmentAudit(block.state()))
+                .toList();
+    }
+
+    private static List<Placement> galleryProjectPlacements(
             ServerLevel level,
             BlockPos origin,
             VillageProsperityEngine.ProjectType type,
@@ -3367,24 +3439,7 @@ public final class VillageProsperityManager {
         project.designStage = visualStage;
         project.designQualityStage = -1;
 
-        List<Placement> production = blueprintProjectTemplate(
-                level, origin, village, project, visualStage);
-        List<StructureGalleryBlock> resolved = new ArrayList<>(production.size());
-        for (Placement placement : production) {
-            BlockPos target = placementTarget(level, origin, placement);
-            BlockState current = level.getBlockState(target);
-            if (placementSatisfied(level, origin, target, current, placement)) {
-                continue;
-            }
-            if (level.getBlockEntity(target) != null
-                    || !level.getFluidState(target).isEmpty()
-                    || !mayApplyPlacement(current, placement)) {
-                throw new IllegalStateException(
-                        "Gallery plot is obstructed at " + target.toShortString());
-            }
-            resolved.add(new StructureGalleryBlock(target, placement.state));
-        }
-        return List.copyOf(resolved);
+        return blueprintProjectTemplate(level, origin, village, project, visualStage);
     }
 
     /** Recomputes pane/bar connections after a complete gallery blueprint has been placed. */

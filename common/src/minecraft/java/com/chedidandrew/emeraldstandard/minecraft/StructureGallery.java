@@ -23,6 +23,7 @@ import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -35,6 +36,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.RotatedPillarBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gamerules.GameRules;
@@ -221,6 +223,7 @@ public final class StructureGallery {
                     "Gallery capture preflight rejected " + failures.size() + " shot(s): "
                             + String.join("; ", failures));
         }
+        validateFragileGalleryAttachments(level, attachmentExpectationFixtures(surfaceY(level)));
         validatedCapturePoses = Map.copyOf(resolvedPoses);
     }
 
@@ -382,6 +385,7 @@ public final class StructureGallery {
             placeIsolatedClone(level, cloneFixture);
             freezeIsolatedCloneToSourceState(
                     level, sourceFraming, placement, baseY);
+            validateFragileGalleryAttachments(level, List.of(cloneFixture));
             if (!isolatedCloneMatches(
                     level, sourceFraming, placement, baseY)) {
                 throw new IllegalStateException(
@@ -434,19 +438,28 @@ public final class StructureGallery {
         int maximumY = Math.min(
                 level.getMaxY() - 1,
                 baseY + GalleryCaptureIsolationPlan.clearHeightBlocks());
+        // This entire opt-in annex is being replaced, not demolished through gameplay. Clear
+        // its known fixture without neighbor-shape cascades: bottom-up UPDATE_ALL used to drop
+        // old rails/shrubs when their supports vanished, polluting the next subject's screenshot.
+        // The new clone still uses UPDATE_ALL and must pass the normal runtime attachment audit.
+        int resetFlags = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
+        for (int y = maximumY; y >= baseY; y--) {
+            for (int x = minimumX; x <= maximumX; x++) {
+                for (int z = minimumZ; z <= maximumZ; z++) {
+                    BlockPos position = new BlockPos(x, y, z);
+                    if (!level.getBlockState(position).isAir()) {
+                        level.setBlock(position, Blocks.AIR.defaultBlockState(), resetFlags);
+                    }
+                }
+            }
+        }
         for (int x = minimumX; x <= maximumX; x++) {
             for (int z = minimumZ; z <= maximumZ; z++) {
                 for (int offsetY = -baselineDepth; offsetY < 0; offsetY++) {
                     BlockPos position = new BlockPos(x, baseY + offsetY, z);
                     BlockState expected = baseline.get(offsetY + baselineDepth);
                     if (!level.getBlockState(position).equals(expected)) {
-                        level.setBlock(position, expected, Block.UPDATE_ALL);
-                    }
-                }
-                for (int y = baseY; y <= maximumY; y++) {
-                    BlockPos position = new BlockPos(x, y, z);
-                    if (!level.getBlockState(position).isAir()) {
-                        level.setBlock(position, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+                        level.setBlock(position, expected, resetFlags);
                     }
                 }
             }
@@ -462,6 +475,7 @@ public final class StructureGallery {
             }
         }
         VillageProsperityManager.normalizeGalleryConnections(level, clone.blocks());
+        validateFragileGalleryAttachments(level, List.of(clone));
     }
 
     /**
@@ -576,6 +590,7 @@ public final class StructureGallery {
             VillageArchitecture.BlueprintDescriptor descriptor,
             AuthoredVillageStructures.Blueprint blueprint,
             boolean secondary) {
+        verifyPhotographyRouteSeparation();
         List<BlockPos> authoredSamples = blueprint.metadata().interiorSamples().stream()
                 .sorted(POSITION_ORDER)
                 .toList();
@@ -605,17 +620,44 @@ public final class StructureGallery {
                         authoredSamples.size() > 1 ? authoredSamples : candidates)
                 : primary;
 
+        InteriorReviewZone reviewZone = authoredInteriorReviewZone(entry.templateId(), secondary);
+        if (reviewZone != null) {
+            preferredLocal = reviewZone.center();
+        }
         List<BlockPos> clearFloor = clearInteriorFloor(
                 level, baseY, entry, descriptor, preferredLocal.getY());
+        List<BlockPos> routeFloor = reviewZone == null ? clearFloor : traversablePhotographyFloor(
+                level, baseY, entry, descriptor, preferredLocal.getY());
         List<BlockPos> reachableFloor = reachableInteriorFloor(
-                clearFloor, preferredLocal, entrance, blueprint.metadata().verticalAccess());
+                routeFloor, preferredLocal, entrance, blueprint.metadata().verticalAccess()).stream()
+                .filter(clearFloor::contains)
+                .toList();
+        if (reviewZone != null) {
+            // Restrict composition, never access: first flood the actual entrance-connected
+            // floor, then photograph the named occupied room instead of its long access lane.
+            reachableFloor = reachableFloor.stream().filter(reviewZone::contains).toList();
+        }
         if (reachableFloor.isEmpty()) {
             throw new IllegalStateException(
                     "No supported two-block-clear camera cell for " + entry.templateId()
-                            + " interior " + (secondary ? "secondary" : "primary"));
+                            + " interior " + (secondary ? "secondary" : "primary")
+                            + " zone=" + reviewZone + " all-clear=" + clearFloor
+                            + " route-floor=" + routeFloor);
         }
 
         List<BlockPos> roleTargets = authoredRoleTargets(blueprint, candidates);
+        if (reviewZone != null) {
+            roleTargets = roleTargets.stream().filter(reviewZone::contains).toList();
+        }
+        if (entry.templateId().equals("guard_blockhouse_03")) {
+            // The ladder's upper landing is a valid access target, but aiming at it turns the
+            // compact room photograph into a ceiling crop. Keep this evidence view on the
+            // occupied floor; the ladder remains visible in the background of a level room view.
+            int occupiedFloorY = preferredLocal.getY();
+            roleTargets = roleTargets.stream()
+                    .filter(target -> target.getY() <= occupiedFloorY + 1)
+                    .toList();
+        }
         Map<BlockPos, Integer> visibleFloorCounts = new HashMap<>();
         for (BlockPos cameraLocal : reachableFloor) {
             visibleFloorCounts.put(
@@ -682,6 +724,38 @@ public final class StructureGallery {
         throw new IllegalStateException(
                 "No useful clear sightline for " + entry.templateId() + " interior "
                         + (secondary ? "secondary" : "primary"));
+    }
+
+    /**
+     * Narrow photography zones grounded in the authored plan. These do not add, remove or move
+     * any world block. A zone must still contain supported, entrance-connected clear floor and
+     * an unobstructed useful sightline; failure rejects the evidence rather than choosing a hall.
+     */
+    private static InteriorReviewZone authoredInteriorReviewZone(String templateId, boolean secondary) {
+        return switch (templateId) {
+            case "house_hall_04" -> new InteriorReviewZone(1, 9, 6, 9, 1);
+            case "warehouse_wharf_04" -> new InteriorReviewZone(1, 4, 3, 11, 1);
+            case "mine_headframe_01" -> secondary
+                    ? new InteriorReviewZone(11, 13, 9, 12, 1)
+                    : new InteriorReviewZone(1, 4, 9, 12, 1);
+            case "mine_drift_04" -> new InteriorReviewZone(1, 3, 6, 11, 1);
+            case "guard_citadel_05" -> secondary
+                    ? new InteriorReviewZone(16, 19, 6, 12, 1)
+                    : new InteriorReviewZone(1, 4, 6, 12, 1);
+            default -> null;
+        };
+    }
+
+    private record InteriorReviewZone(int minX, int maxX, int minZ, int maxZ, int floorY) {
+        BlockPos center() {
+            return new BlockPos((minX + maxX) / 2, floorY, (minZ + maxZ) / 2);
+        }
+
+        boolean contains(BlockPos position) {
+            return position.getX() >= minX && position.getX() <= maxX
+                    && position.getZ() >= minZ && position.getZ() <= maxZ
+                    && position.getY() >= floorY && position.getY() <= floorY + 1;
+        }
     }
 
     /**
@@ -1809,6 +1883,76 @@ public final class StructureGallery {
         return List.copyOf(clear);
     }
 
+    /**
+     * Routes can cross a rail, ordinary door or thin ladder boarding column without making
+     * that position a camera perch. Production circulation joins a reachable ladder's boarding
+     * sides; a same-level photography route must not treat that thin column as a solid wall.
+     * This mirrors production circulation while actual support,
+     * fluids, and the strict air-only camera selection remain independent requirements.
+     */
+    private static List<BlockPos> traversablePhotographyFloor(
+            ServerLevel level,
+            int baseY,
+            StructureGalleryPlan.Entry entry,
+            VillageArchitecture.BlueprintDescriptor descriptor,
+            int localY) {
+        List<BlockPos> route = new ArrayList<>();
+        for (int x = 1; x < descriptor.width() - 1; x++) {
+            for (int z = 1; z < descriptor.depth() - 1; z++) {
+                BlockPos local = new BlockPos(x, localY, z);
+                BlockPos world = transformedWorldPosition(baseY, entry, descriptor, local);
+                BlockState feet = level.getBlockState(world);
+                BlockState head = level.getBlockState(world.above());
+                BlockPos support = world.below();
+                if (photographyRoutePassable(feet, head)
+                        && level.getFluidState(world).isEmpty()
+                        && level.getFluidState(world.above()).isEmpty()
+                        && level.getBlockState(support).isFaceSturdy(level, support, Direction.UP)) {
+                    route.add(local);
+                }
+            }
+        }
+        return List.copyOf(route);
+    }
+
+    private static boolean photographyRoutePassable(BlockState feet, BlockState head) {
+        return (feet.isAir() || feet.getBlock() instanceof DoorBlock || feet.is(Blocks.RAIL)
+                        || feet.is(Blocks.LADDER))
+                && (head.isAir() || head.getBlock() instanceof DoorBlock || head.is(Blocks.LADDER));
+    }
+
+    /** Functional capture-time regression, using real block states and the actual route flood. */
+    private static void verifyPhotographyRouteSeparation() {
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockState rail = Blocks.RAIL.defaultBlockState();
+        BlockState door = Blocks.OAK_DOOR.defaultBlockState();
+        BlockState ladder = Blocks.LADDER.defaultBlockState();
+        BlockState stone = Blocks.STONE.defaultBlockState();
+        if (!photographyRoutePassable(rail, air)
+                || !photographyRoutePassable(door, door)
+                || !photographyRoutePassable(ladder, ladder)
+                || photographyRoutePassable(stone, air)
+                || photographyRoutePassable(air, stone)
+                || photographyRoutePassable(air, rail)) {
+            throw new IllegalStateException("Photography route block-classification regression");
+        }
+        BlockPos entrance = new BlockPos(1, 1, 1);
+        BlockPos railBridge = new BlockPos(2, 1, 1);
+        BlockPos doorBridge = new BlockPos(3, 1, 1);
+        BlockPos ladderBridge = new BlockPos(4, 1, 1);
+        BlockPos room = new BlockPos(5, 1, 1);
+        List<BlockPos> route = List.of(entrance, railBridge, doorBridge, ladderBridge, room);
+        List<BlockPos> strictCameraCells = List.of(entrance, room);
+        List<BlockPos> cameras = reachableInteriorFloor(route, room, entrance, List.of()).stream()
+                .filter(strictCameraCells::contains).toList();
+        List<BlockPos> blockedRoute = List.of(entrance, railBridge, doorBridge, room);
+        if (!cameras.contains(room) || cameras.contains(railBridge) || cameras.contains(doorBridge)
+                || cameras.contains(ladderBridge)
+                || reachableInteriorFloor(blockedRoute, room, entrance, List.of()).contains(room)) {
+            throw new IllegalStateException("Photography route/camera separation regression");
+        }
+    }
+
     /** Floods the clear floor from the actual entrance/dismount component, never through walls. */
     private static List<BlockPos> reachableInteriorFloor(
             List<BlockPos> clearFloor,
@@ -2213,11 +2357,11 @@ public final class StructureGallery {
         double lateralSign = doodadLateralSign(focus, blueprint.width(), doodad);
         if (sourceView == StructureGalleryReviewPlan.View.REAR_DOODADS
                 && doodad == StructureGalleryReviewPlan.Doodad.SAFE_CAMPFIRE_NOOK) {
-            // Photograph the fire from the building-side corner.  The rear bench then becomes a
-            // backdrop instead of an opaque foreground screen, while the extra eye height keeps
-            // the campfire, four-piece curb, stools, and seat readable in one frame.
+            // The former building-side corner looked through a tall stool and clipped the host
+            // wall. Use the open outer diagonal above the seating: the campfire core and curb
+            // stay visible while the bench, chopping block and host form the surrounding scene.
             cameraX -= lateralSign * profile.standoffDistance();
-            cameraZ -= profile.tangentDistance();
+            cameraZ += profile.tangentDistance();
             return new LocalPoint(cameraX, profile.cameraFeetY(), cameraZ);
         }
         if (doodad == StructureGalleryReviewPlan.Doodad.TOOL_RACK
@@ -2275,9 +2419,12 @@ public final class StructureGallery {
             case FORECOURT_CARGO_PEDESTAL -> new DoodadCameraProfile(4.60, 2.20, 0.78, -0.10);
             case RAIL_BOUND_LOG_RACK -> new DoodadCameraProfile(5.00, 3.00, 0.85, -0.45);
             case SLAB_AND_FENCE_BENCH -> new DoodadCameraProfile(5.00, 3.60, 0.75, -0.25);
-            case SAFE_CAMPFIRE_NOOK -> new DoodadCameraProfile(5.10, 1.25, 1.15, -0.45);
-            case GARDEN_WORK_CORNER -> new DoodadCameraProfile(4.75, 4.00, 0.65, -0.25);
+            case SAFE_CAMPFIRE_NOOK -> new DoodadCameraProfile(5.10, 3.75, 2.60, -0.30);
+            case GARDEN_WORK_CORNER -> new DoodadCameraProfile(5.25, 3.25, 2.50, 0.15);
+            // Look under the shooting-line canopy rather than through its opaque upper face.
+            case GUARD_TARGET_RACK -> new DoodadCameraProfile(5.75, 2.00, 0.10, 0.0);
             case HAND_CART -> new DoodadCameraProfile(5.15, 4.10, 0.90, -1.35);
+            case MATERIAL_PILE -> new DoodadCameraProfile(5.20, 2.80, 1.10, 0.90);
             case HITCHING_RAIL -> new DoodadCameraProfile(5.00, 3.60, 0.75, -0.85);
             case TOOL_RACK -> new DoodadCameraProfile(4.90, 2.60, 0.55, -0.45);
             default -> null;
@@ -2299,28 +2446,74 @@ public final class StructureGallery {
             case PLANTER_RUN -> isPlanterRunPlant(cell, scene);
             case FORECOURT_CARGO_PEDESTAL -> isForecourtCargoAnchor(
                     cell, blueprint, scene);
-            case FREESTANDING_LAMP_POST -> state.is(Blocks.LANTERN)
-                    && state.getOptionalValue(net.minecraft.world.level.block.LanternBlock.HANGING)
-                            .orElse(false)
-                    && isBlock(scene, cell.x(), cell.y() + 1, cell.z(), Blocks.IRON_CHAIN)
-                    && isBlock(scene, cell.x(), cell.y() + 2, cell.z(),
-                            blueprint.materials().timber());
+            case FREESTANDING_LAMP_POST -> isFreestandingLampAnchor(cell, blueprint, scene);
             case RAIL_BOUND_LOG_RACK -> state.is(Blocks.RAIL);
             case SLAB_AND_FENCE_BENCH -> isBenchCenter(cell, blueprint, scene);
             case SAFE_CAMPFIRE_NOOK -> state.is(Blocks.CAMPFIRE);
             case GARDEN_WORK_CORNER -> state.is(Blocks.MOSS_BLOCK);
             case CRATE_CLUSTER -> isCrateClusterAnchor(cell, blueprint, scene);
-            case HAND_CART -> cell.y() == 3
-                    && isHandCartCargoAnchor(cell, blueprint, scene);
+            case HAND_CART -> isHandCartCargoAnchor(cell, blueprint, scene);
             case HITCHING_RAIL -> isHitchingRailAnchor(cell, blueprint, scene);
             case FEED_TROUGH -> cell.phase() == AuthoredVillageStructures.Phase.DECOR
                     && cell.y() == 1
                     && state.is(blueprint.materials().roofStairs());
             case HAY_PILE -> state.is(Blocks.HAY_BLOCK);
-            case MATERIAL_PILE -> state.is(Blocks.COAL_BLOCK);
+            case MATERIAL_PILE -> isMaterialPileAnchor(cell, blueprint, scene);
             case TOOL_RACK -> isToolRackAnchor(cell, blueprint, scene);
             case GUARD_TARGET_RACK -> state.is(Blocks.TARGET);
         };
+    }
+
+    /** D3's hanging lamp, chain, arm and grounded post must form one connected authored fixture. */
+    private static boolean isFreestandingLampAnchor(
+            AuthoredVillageStructures.Cell cell,
+            AuthoredVillageStructures.Blueprint blueprint,
+            Map<BlockPos, AuthoredVillageStructures.Cell> scene) {
+        if (cell.y() != 2 || !cell.state().is(Blocks.LANTERN)
+                || !cell.state().getOptionalValue(
+                        net.minecraft.world.level.block.LanternBlock.HANGING).orElse(false)
+                || !isBlock(scene, cell.x(), 3, cell.z(), Blocks.IRON_CHAIN)
+                || !(isBlock(scene, cell.x(), 4, cell.z(), blueprint.materials().timber())
+                        || isBlock(scene, cell.x(), 4, cell.z(), blueprint.materials().roofSlab()))) {
+            return false;
+        }
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            int postX = cell.x() + direction.getStepX();
+            int postZ = cell.z() + direction.getStepZ();
+            AuthoredVillageStructures.Cell knee = scene.get(new BlockPos(postX, 3, postZ));
+            if (isBlock(scene, postX, 4, postZ, blueprint.materials().timber())
+                    && knee != null && knee.state().is(blueprint.materials().roofStairs())
+                    && knee.state().getValue(net.minecraft.world.level.block.StairBlock.FACING)
+                            == direction.getOpposite()
+                    && isBlock(scene, postX, 2, postZ, blueprint.materials().fence())
+                    && scene.containsKey(new BlockPos(postX, 0, postZ))
+                    && (isBlock(scene, postX, 1, postZ, blueprint.materials().fence())
+                            || isBlock(scene, postX, 1, postZ, Blocks.STONE_BRICK_WALL)
+                            || isBlock(scene, postX, 1, postZ, Blocks.SANDSTONE_WALL))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** D14 keeps its coal stock in grade, directly beneath the low stone fragment pile. */
+    private static boolean isMaterialPileAnchor(
+            AuthoredVillageStructures.Cell cell,
+            AuthoredVillageStructures.Blueprint blueprint,
+            Map<BlockPos, AuthoredVillageStructures.Cell> scene) {
+        if (!cell.state().is(Blocks.COAL_BLOCK)) {
+            return false;
+        }
+        if (blueprint.revision() < 3) {
+            return cell.y() == 1;
+        }
+        int outward = cell.x() < 0 ? -1 : 1;
+        int pileX = cell.x() + outward;
+        return cell.y() == 0
+                && cell.phase() == AuthoredVillageStructures.Phase.FOUNDATION
+                && isBlock(scene, cell.x(), 1, cell.z(), Blocks.ANDESITE_SLAB)
+                && isBlock(scene, pileX, 0, cell.z() - 1, Blocks.GRAVEL)
+                && isBlock(scene, pileX, 1, cell.z() - 1, Blocks.COBBLED_DEEPSLATE_STAIRS);
     }
 
     private static boolean isExteriorYardCell(
@@ -2467,6 +2660,20 @@ public final class StructureGallery {
         boolean exteriorCluster = cell.x() < 0
                 || cell.x() >= blueprint.width()
                 || cell.z() >= blueprint.depth();
+        if (blueprint.revision() >= 3) {
+            // Three distinguishable parcels share a thin pallet; the front-left note block is
+            // the stable anchor, not its optional upper parcel or a nearby merchandise block.
+            return exteriorCluster
+                    && cell.phase() == AuthoredVillageStructures.Phase.DECOR
+                    && cell.y() == 1
+                    && cell.state().is(Blocks.NOTE_BLOCK)
+                    && isBlock(scene, cell.x(), 0, cell.z(), blueprint.materials().roofSlab())
+                    && isBlock(scene, cell.x() + 1, 0, cell.z(), blueprint.materials().roofSlab())
+                    && isBlock(scene, cell.x() + 1, 1, cell.z(), blueprint.materials().wall())
+                    && isBlock(scene, cell.x() + 1, 1, cell.z() + 1, Blocks.NOTE_BLOCK)
+                    && isOpenTrapdoor(scene, cell.x(), 1, cell.z() - 1)
+                    && isOpenTrapdoor(scene, cell.x() + 1, 1, cell.z() - 1);
+        }
         return exteriorCluster
                 && cell.phase() == AuthoredVillageStructures.Phase.DECOR
                 && cell.y() == 2
@@ -2497,6 +2704,32 @@ public final class StructureGallery {
             AuthoredVillageStructures.Cell cell,
             AuthoredVillageStructures.Blueprint blueprint,
             Map<BlockPos, AuthoredVillageStructures.Cell> scene) {
+        if (blueprint.revision() >= 3) {
+            if (cell.phase() != AuthoredVillageStructures.Phase.DECOR
+                    || cell.y() != 2
+                    || cell.state().is(Blocks.CHEST)
+                    || cell.state().is(Blocks.BARREL)
+                    || !isBlock(scene, cell.x(), 3, cell.z(), Blocks.RAIL)) {
+                return false;
+            }
+            for (int dx = -1; dx <= 1; dx++) {
+                AuthoredVillageStructures.Cell axle = scene.get(
+                        new BlockPos(cell.x() + dx, 1, cell.z()));
+                if (axle == null || !axle.state().is(BlockTags.LOGS)
+                        || axle.state().getOptionalValue(RotatedPillarBlock.AXIS)
+                                .orElse(null) != Direction.Axis.X) {
+                    return false;
+                }
+            }
+            return isBlock(scene, cell.x() - 2, 1, cell.z(), Blocks.STONE_BUTTON)
+                    && isBlock(scene, cell.x() + 2, 1, cell.z(), Blocks.STONE_BUTTON)
+                    && isOpenTrapdoor(scene, cell.x() - 1, 2, cell.z())
+                    && isOpenTrapdoor(scene, cell.x() + 1, 2, cell.z())
+                    && isBlock(scene, cell.x() - 1, 1, cell.z() + 2,
+                            blueprint.materials().fence())
+                    && isBlock(scene, cell.x() + 1, 1, cell.z() + 2,
+                            blueprint.materials().fence());
+        }
         if (cell.phase() != AuthoredVillageStructures.Phase.DECOR
                 || cell.y() != 3
                 || cell.state().is(Blocks.CHEST)
@@ -2546,12 +2779,29 @@ public final class StructureGallery {
             int x,
             int z,
             AuthoredVillageStructures.Blueprint blueprint) {
+        AuthoredVillageStructures.Cell highCap = scene.get(new BlockPos(x, 3, z));
+        if (blueprint.revision() >= 3 && highCap != null
+                && highCap.phase() == AuthoredVillageStructures.Phase.FRAME
+                && highCap.state().is(blueprint.materials().roofSlab())
+                && (isBlock(scene, x, 2, z, blueprint.materials().fence())
+                        || isBlock(scene, x, 2, z, Blocks.IRON_BARS))) {
+            return true;
+        }
+        // A rack directly beneath another authored feature intentionally retains its original
+        // supported low lintel when no free high-cap cell exists. Match that exact form as well.
         AuthoredVillageStructures.Cell header = scene.get(new BlockPos(x, 2, z));
         return header != null
                 && header.phase() == AuthoredVillageStructures.Phase.FRAME
                 && (header.state().is(blueprint.materials().timber())
                         || header.state().is(blueprint.materials().roofSlab())
                         || header.state().is(blueprint.materials().roofStairs()));
+    }
+
+    private static boolean isOpenTrapdoor(
+            Map<BlockPos, AuthoredVillageStructures.Cell> scene, int x, int y, int z) {
+        AuthoredVillageStructures.Cell cell = scene.get(new BlockPos(x, y, z));
+        return cell != null && cell.state().getBlock() instanceof TrapDoorBlock
+                && cell.state().getValue(TrapDoorBlock.OPEN);
     }
 
     private static boolean isBlock(
@@ -2862,6 +3112,23 @@ public final class StructureGallery {
         return List.copyOf(fixtures);
     }
 
+    /** Finished read-only expectations must never replay construction admission on an old layer. */
+    private static List<ResolvedFixture> attachmentExpectationFixtures(int surfaceY) {
+        List<ResolvedFixture> fixtures = new ArrayList<>(StructureGalleryPlan.totalStructureCount());
+        for (StructureGalleryPlan.Entry entry : StructureGalleryPlan.entries()) {
+            BlockPos origin = new BlockPos(entry.originX(), surfaceY, entry.originZ());
+            fixtures.add(new ResolvedFixture(entry.index(), origin,
+                    VillageProsperityManager.galleryProjectAttachmentExpectations(origin, entry)));
+        }
+        for (StructureGalleryPlan.BankEntry bank : StructureGalleryPlan.bankEntries()) {
+            BlockPos origin = new BlockPos(bank.originX(), surfaceY, bank.originZ());
+            fixtures.add(new ResolvedFixture(bank.index(), origin,
+                    VillageProsperityManager.finalGalleryAttachmentExpectations(
+                            VillageBankManager.galleryBankBlueprint(origin, bank.dialect()))));
+        }
+        return List.copyOf(fixtures);
+    }
+
     private static ResolvedFixture resolveFixture(
             ServerLevel level, int surfaceY, int internalIndex) {
         if (internalIndex < 0
@@ -2966,7 +3233,41 @@ public final class StructureGallery {
         for (ResolvedFixture fixture : fixtures) {
             VillageProsperityManager.normalizeGalleryConnections(level, fixture.blocks());
         }
+        validateFragileGalleryAttachments(level, fixtures);
         return writes;
+    }
+
+    /** Read-only runtime check: decorative drops must fail review, never be hidden or respawned. */
+    static boolean requiresAttachmentAudit(BlockState state) {
+        return state.is(Blocks.AZALEA) || state.is(Blocks.FLOWERING_AZALEA) || state.is(Blocks.RAIL);
+    }
+
+    private static void validateFragileGalleryAttachments(
+            ServerLevel level, List<ResolvedFixture> fixtures) {
+        int checked = 0;
+        for (ResolvedFixture fixture : fixtures) {
+            for (StructureGalleryBlock block : fixture.blocks()) {
+                BlockState expected = block.state();
+                if (!requiresAttachmentAudit(expected)) {
+                    continue;
+                }
+                BlockState actual = level.getBlockState(block.position());
+                validateAttachmentState(fixture.index(), block, actual,
+                        actual.canSurvive(level, block.position()));
+                checked++;
+            }
+        }
+        LOGGER.info("Gallery runtime attachment audit passed: {} plants and rail bindings", checked);
+    }
+
+    static void validateAttachmentState(
+            int fixtureIndex, StructureGalleryBlock expected, BlockState actual, boolean survives) {
+        if (!actual.is(expected.state().getBlock()) || !survives) {
+            throw new IllegalStateException("Gallery fixture " + (fixtureIndex + 1)
+                    + " has a missing or unsupported authored attachment at "
+                    + expected.position().toShortString() + ": expected " + expected.state()
+                    + ", found " + actual);
+        }
     }
 
     private static void configureReviewWorld(

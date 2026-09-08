@@ -15,7 +15,9 @@ mkdir -p "$LOG_DIR"
 RUN_DIR="$(mktemp -d "$LOG_DIR/$LOADER-run.XXXXXX")"
 SMOKE_ID="$LOADER-$(date +%s)-$$-$RANDOM"
 printf 'eula=true\n' > "$RUN_DIR/eula.txt"
-printf 'online-mode=false\nserver-port=0\n' > "$RUN_DIR/server.properties"
+# Exhaustive opt-in catalog checks run synchronously during startup. Allow a bounded three minutes
+# in this fresh smoke world under constrained CI/parallel review; ordinary server settings are untouched.
+printf 'online-mode=false\nserver-port=0\nmax-tick-time=180000\n' > "$RUN_DIR/server.properties"
 
 command=(
     bash "$ROOT/$LOADER/gradlew"

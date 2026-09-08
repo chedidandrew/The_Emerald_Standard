@@ -50,7 +50,7 @@ public final class VillageArchitecture {
      * Immutable catalog revisions. Once a descriptor ships, retain it forever; changed geometry
      * receives either a new revision or a new template id so saved projects never silently reroll.
      */
-    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(List.of(
+    private static final List<BlueprintDescriptor> REVISION_TWO_BLUEPRINT_CATALOG = validateActiveCatalog(List.of(
             blueprint(ProjectType.COTTAGE, "cottage_hearth_01", 2, 11, 10, 10, false,
                     BlueprintScale.SMALL),
             blueprint(ProjectType.COTTAGE, "cottage_garden_02", 2, 13, 11, 10, true,
@@ -158,6 +158,16 @@ public final class VillageArchitecture {
                     BlueprintScale.LARGE),
             blueprint(ProjectType.EXCHANGE_HALL, "exchange_bourse_05", 2, 27, 21, 22, true,
                     BlueprintScale.LANDMARK)));
+
+    /** New plans opt into the reviewed craft pass; revision-2 plans retain their original recipes. */
+    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_TWO_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 3,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
 
     /**
      * Shipped revision-1 envelopes remain resolvable forever so an in-progress or relocated
@@ -597,7 +607,9 @@ public final class VillageArchitecture {
 
     public static BlueprintDescriptor blueprint(String templateId, int templateRevision) {
         return java.util.stream.Stream.concat(
-                        BLUEPRINT_CATALOG.stream(), RETIRED_BLUEPRINT_CATALOG.stream())
+                        BLUEPRINT_CATALOG.stream(), java.util.stream.Stream.concat(
+                                REVISION_TWO_BLUEPRINT_CATALOG.stream(),
+                                RETIRED_BLUEPRINT_CATALOG.stream()))
                 .filter(descriptor -> descriptor.templateId.equals(templateId)
                         && descriptor.templateRevision == templateRevision)
                 .findFirst()

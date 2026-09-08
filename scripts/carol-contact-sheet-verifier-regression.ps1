@@ -181,7 +181,7 @@ try {
     $completedAt = [datetimeoffset]::UtcNow.ToString('o')
     $marker = @(
         'layout_signature=deadbeef',
-        'gallery_content_revision=9',
+        'gallery_content_revision=11',
         'capture_schema_revision=3',
         'shot_count=267',
         'pixel_width=1920',

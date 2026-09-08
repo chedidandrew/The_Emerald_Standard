@@ -50,7 +50,10 @@ public final class AuthoredVillageStructureCosmeticLifecycleRegressionTest {
 
         String gallery = methodBody(source,
                 "static List<StructureGalleryBlock> galleryProjectBlueprint(");
-        require(gallery.contains("project.designSeed = signature"),
+        String galleryPlan = methodBody(source,
+                "private static List<Placement> galleryProjectPlacements(");
+        require(gallery.contains("galleryProjectPlacements(")
+                        && galleryPlan.contains("project.designSeed = signature"),
                 "The review gallery no longer exercises per-project doodad variants");
     }
 

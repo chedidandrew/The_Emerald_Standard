@@ -63,9 +63,20 @@ tasks.register('verifyVillageBankStructure', JavaExec) {
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.VillageBankStructureSelfTest'
 }
 
+tasks.register('verifyAuthoredVillageStructures', JavaExec) {
+    group = 'verification'
+    description = 'Runs the complete production authored-catalog geometry, access and lighting gate.'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructuresSelfTest'
+    maxHeapSize = '3g'
+    jvmArgs '-XX:ActiveProcessorCount=4', '-Djava.util.concurrent.ForkJoinPool.common.parallelism=3'
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyBankerMenuPacket')
     dependsOn tasks.named('verifyVillageBankStructure')
+    dependsOn tasks.named('verifyAuthoredVillageStructures')
 }
 
 jar {
