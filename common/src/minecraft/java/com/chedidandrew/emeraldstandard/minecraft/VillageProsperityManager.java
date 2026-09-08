@@ -4,10 +4,14 @@ import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageArchitecture;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,13 +39,16 @@ import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.level.block.IronBarsBlock;
 import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.RotatedPillarBlock;
 import net.minecraft.world.level.block.SlabBlock;
@@ -52,6 +59,8 @@ import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Connects the loader-neutral Village Prosperity System to loaded Minecraft villages.
@@ -61,14 +70,17 @@ import net.minecraft.world.phys.AABB;
  * nearby.</p>
  */
 public final class VillageProsperityManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(
+            "the_emerald_standard_village_development");
     private static final String VILLAGE_TAG_PREFIX = "the_emerald_standard_village_";
     private static final int PROJECT_SITE_CANDIDATES_PER_PULSE = 1;
     private static final int PROJECT_TRAIL_INSPECTIONS_PER_PULSE = 16;
+    private static final int PROJECT_ENTRANCE_INSPECTIONS_PER_PULSE = 32;
     private static final long PROJECT_TRAIL_PULSE_CADENCE = 2L;
     private static final Map<UUID, Long> LAST_SETTLER_TICK = new HashMap<>();
     private static final Map<UUID, Long> LAST_WORKER_VISUAL_TICK = new HashMap<>();
-    private static final Map<ProjectSearchKey, SiteSearchProgress> SITE_SEARCH_PROGRESS =
-            new HashMap<>();
+    private static final Set<BlueprintMismatchKey> REPORTED_BLUEPRINT_MISMATCHES =
+            new HashSet<>();
 
     private VillageProsperityManager() {
     }
@@ -77,7 +89,7 @@ public final class VillageProsperityManager {
     public static void resetRuntimeState() {
         LAST_SETTLER_TICK.clear();
         LAST_WORKER_VISUAL_TICK.clear();
-        SITE_SEARCH_PROGRESS.clear();
+        REPORTED_BLUEPRINT_MISMATCHES.clear();
     }
 
     public static void tick(MinecraftServer server, EconomyService economy) {
@@ -110,7 +122,25 @@ public final class VillageProsperityManager {
                     gameTime / config.villageConstructionIntervalTicks(), levels.size());
             for (int step = 0; step < levels.size(); step++) {
                 ServerLevel level = levels.get((firstLevel + step) % levels.size());
-                budget = materializeDevelopment(level, economy, config, gameTime, budget);
+                try {
+                    budget = materializeDevelopment(level, economy, config, gameTime, budget);
+                } catch (BlueprintPlanMismatchException mismatch) {
+                    if (mismatch.remainingBudget != null) {
+                        budget = mismatch.remainingBudget;
+                    }
+                    economy.deferVillageProjectMaterialization(
+                            mismatch.villageId, mismatch.projectId, gameTime, true);
+                    BlueprintMismatchKey key = new BlueprintMismatchKey(
+                            mismatch.villageId, mismatch.projectId);
+                    if (REPORTED_BLUEPRINT_MISMATCHES.add(key)) {
+                        LOGGER.error(
+                                "Paused incompatible Blueprint V2 project {} for village {}; no blocks from that plan were written",
+                                mismatch.projectId,
+                                mismatch.villageId,
+                                mismatch);
+                    }
+                    continue;
+                }
                 if (budget.remainingVillages <= 0) {
                     break;
                 }
@@ -135,6 +165,7 @@ public final class VillageProsperityManager {
     /** An infected tracked resident remains a real casualty when its zombie form is killed. */
     public static void onZombieVillagerDeath(
             ZombieVillager zombie, DamageSource source, EconomyService economy) {
+        VillageBankManager.onZombieBankerDeath(zombie, economy);
         recordResidentDeath(
                 zombie,
                 professionId(zombie.getVillagerData().profession()),
@@ -228,17 +259,24 @@ public final class VillageProsperityManager {
         Set<UUID> observed = new HashSet<>();
         Set<Long> sampledAreas = new HashSet<>();
         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
-            if (player.level() != level || !level.isVillage(player.blockPosition())) {
+            if (player.level() != level) {
                 continue;
             }
-            int sampleX = Math.floorDiv(player.blockPosition().getX(), 64);
-            int sampleZ = Math.floorDiv(player.blockPosition().getZ(), 64);
+            BlockPos playerPosition = player.blockPosition();
+            // Minecraft's POI village test is height-sensitive. Use a terrain-level companion
+            // probe so creative flight and elytra discovery still census the village below.
+            BlockPos villageProbe = surfaceVillageProbe(level, playerPosition);
+            if (!level.isVillage(playerPosition) && !level.isVillage(villageProbe)) {
+                continue;
+            }
+            int sampleX = Math.floorDiv(villageProbe.getX(), 64);
+            int sampleZ = Math.floorDiv(villageProbe.getZ(), 64);
             long sampleKey = ((long) sampleX << 32) ^ (sampleZ & 0xFFFFFFFFL);
             if (!sampledAreas.add(sampleKey)) {
                 continue;
             }
 
-            AABB area = new AABB(player.blockPosition()).inflate(48.0, 24.0, 48.0);
+            AABB area = new AABB(villageProbe).inflate(48.0, 24.0, 48.0);
             List<Villager> nearbyVillagers = level.getEntitiesOfClass(
                     Villager.class, area, villager -> villager.isAlive());
             UUID preferredVillageId = preferredTaggedVillage(nearbyVillagers);
@@ -250,7 +288,7 @@ public final class VillageProsperityManager {
                                 return tagged == null || preferredVillageId.equals(tagged);
                             })
                             .toList();
-            BlockPos approximateCenter = centerOf(villagers, player.blockPosition());
+            BlockPos approximateCenter = centerOf(villagers, villageProbe);
             EconomyService.VillageSnapshot taggedVillage = preferredVillageId == null
                     ? null
                     : economy.villageSnapshot(preferredVillageId);
@@ -258,7 +296,7 @@ public final class VillageProsperityManager {
                     isMatchingVillage(taggedVillage, dimensionKey, approximateCenter, 96.0);
             BlockPos center = trustedTaggedVillage
                     ? BlockPos.of(taggedVillage.village().centerPos)
-                    : stableCenter(level, villagers, player.blockPosition());
+                    : stableCenter(level, villagers, villageProbe);
             int bedCount = countBeds(level, center, 24, 6);
             List<Monster> hostiles = level.getEntitiesOfClass(
                     Monster.class,
@@ -359,6 +397,13 @@ public final class VillageProsperityManager {
         }
         List<EconomyService.VillageSnapshot> snapshots = economy.villageSnapshotsNear(
                 dimensionKey, playerPositions, config.villageDevelopmentRadius());
+        List<EconomyService.VillageProjectLot> excludedProjectLots = new ArrayList<>(
+                economy.villageProjectLotExclusions(dimensionKey));
+        List<Long> managedBankLots = new ArrayList<>();
+        if ("minecraft:overworld".equals(dimensionKey)) {
+            managedBankLots.addAll(economy.generatedBankAnchorsSnapshot().values());
+            economy.retiredBankAnchorsSnapshot().values().forEach(managedBankLots::addAll);
+        }
         int villagesToProcess = VillageMaterializationPolicy.villagesToProcess(
                 snapshots.size(), budget.remainingVillages);
         int firstVillage = snapshots.isEmpty()
@@ -367,17 +412,26 @@ public final class VillageProsperityManager {
                         gameTime / config.villageConstructionIntervalTicks()
                                 + dimensionKey.hashCode(),
                         snapshots.size());
-        for (int step = 0; step < villagesToProcess; step++) {
-            EconomyService.VillageSnapshot snapshot = snapshots.get(
-                    VillageMaterializationPolicy.rotatingIndex(
-                            firstVillage, step, snapshots.size()));
-            EconomyState.VillageRecord village = snapshot.village();
+        int processedVillages = 0;
+        try {
+            for (int step = 0; step < villagesToProcess; step++) {
+                processedVillages++;
+                EconomyService.VillageSnapshot snapshot = snapshots.get(
+                        VillageMaterializationPolicy.rotatingIndex(
+                                firstVillage, step, snapshots.size()));
+                EconomyState.VillageRecord village = snapshot.village();
             BlockPos villageCenter = BlockPos.of(village.centerPos);
             if (!positionColumnLoaded(level, villageCenter)) {
                 continue;
             }
             spawnPendingSettler(level, economy, village, config, gameTime);
-            reconcileOneMaterializedProject(level, economy, village, config, gameTime);
+            reconcileOneMaterializedProject(
+                    level,
+                    economy,
+                    village,
+                    config,
+                    gameTime,
+                    excludedProjectLots);
             long constructionPulse = gameTime / config.villageConstructionIntervalTicks();
             long staggeredConstructionPulse = constructionPulse + village.villageId.hashCode();
             if (remainingBlockBudget > 0
@@ -386,6 +440,24 @@ public final class VillageProsperityManager {
                             == 0L) {
                 long trailSelectionOrdinal = Math.floorDiv(
                         staggeredConstructionPulse, PROJECT_TRAIL_PULSE_CADENCE);
+                remainingBlockBudget -= materializeOneModularEntranceApproach(
+                        level,
+                        economy,
+                        village,
+                        trailSelectionOrdinal,
+                        Math.min(1, remainingBlockBudget));
+                if (remainingBlockBudget <= 0) {
+                    continue;
+                }
+                remainingBlockBudget -= materializeOneModularTrailCenterSurfaceMigration(
+                        level,
+                        economy,
+                        village,
+                        trailSelectionOrdinal,
+                        Math.min(1, remainingBlockBudget));
+                if (remainingBlockBudget <= 0) {
+                    continue;
+                }
                 remainingBlockBudget -= materializeOneModularTrail(
                         level,
                         economy,
@@ -403,18 +475,43 @@ public final class VillageProsperityManager {
                     || village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED) {
                 continue;
             }
-            EconomyState.VillageProject project = village.nextVisualProject(gameTime);
+            Long selectedProjectId = economy.claimNextDueVillageVisualProject(
+                    village.villageId, gameTime);
+            if (selectedProjectId == null) {
+                continue;
+            }
+            // The integrity pass above may have changed the authoritative project record. Refresh
+            // after claiming the persisted per-village selection ordinal so this pulse never acts
+            // on the stale proximity snapshot that preceded that mutation.
+            EconomyService.VillageSnapshot claimedSnapshot = economy.villageSnapshot(
+                    village.villageId);
+            if (claimedSnapshot == null) {
+                continue;
+            }
+            village = claimedSnapshot.village();
+            EconomyState.VillageProject project = village.projects.stream()
+                    .filter(candidate -> candidate.projectId == selectedProjectId)
+                    .findFirst()
+                    .orElse(null);
             if (project == null) {
                 continue;
             }
             if (project.originPos == 0L) {
-                ProjectSiteSearch siteSearch = findProjectOrigin(level, village, project);
+                ProjectSiteSearch siteSearch = findProjectOrigin(
+                        level,
+                        economy,
+                        village,
+                        project,
+                        excludedProjectLots,
+                        managedBankLots);
                 if (siteSearch.availability
                         == VillageMaterializationPolicy.SiteAvailability.SEARCH_INCOMPLETE) {
                     continue;
                 }
                 if (siteSearch.availability
                         == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
+                    economy.deferVillageProjectMaterialization(
+                            village.villageId, project.projectId, gameTime, true);
                     DebugFlightRecorder.recordConstruction(
                             level,
                             village.villageId,
@@ -424,7 +521,7 @@ public final class VillageProsperityManager {
                             villageCenter,
                             project.materializedBlocks,
                             project.totalBlocks,
-                            "Candidate project lots were not fully loaded; no failure backoff was applied");
+                            "Candidate frontier was not fully loaded; persisted backoff lets later projects advance without force-loading chunks");
                     continue;
                 }
                 if (siteSearch.availability
@@ -444,18 +541,32 @@ public final class VillageProsperityManager {
                     continue;
                 }
                 BlockPos origin = siteSearch.origin;
-                if (isModular(project)) {
+                if (isManagedProject(project)) {
                     project.designStage = VillageStructureProgression.desiredVisualStage(
                             village.developmentTier);
                     project.trailAnchorPos = siteSearch.trailAnchor.asLong();
                     project.trailAnchorSet = true;
+                    project.entranceApproachVersion =
+                            EconomyState.ENTRANCE_APPROACH_VERSION;
+                    project.entranceApproachStepCount = siteSearch.entranceApproachStepCount;
+                    project.entranceApproachCursor = 0;
+                    project.entranceApproachTotalCells =
+                            siteSearch.entranceApproachTotalCells;
+                    project.entranceApproachComplete =
+                            siteSearch.entranceApproachTotalCells == 0;
                 }
                 List<Placement> template = projectTemplate(level, origin, village, project);
-                List<Placement> modularTrail = isModular(project)
-                        ? modularProjectTrail(origin, village, project)
+                String designPlanHash = isBlueprint(project)
+                        ? blueprintPlanHash(
+                                village,
+                                project,
+                                blueprintPlacementPlan(level, origin, village, project))
+                        : "";
+                List<Placement> modularTrail = isManagedProject(project)
+                        ? managedProjectTrail(origin, village, project)
                         : List.of();
                 ProjectBounds bounds = bounds(origin, template);
-                boolean reserved = isModular(project)
+                boolean reserved = isManagedProject(project)
                         ? economy.reserveVillageProjectSite(
                                 village.villageId,
                                 project.projectId,
@@ -467,7 +578,10 @@ public final class VillageProsperityManager {
                                 project.designRotation,
                                 project.designStage,
                                 project.trailAnchorPos,
-                                modularTrail.size())
+                                modularTrail.size(),
+                                project.entranceApproachStepCount,
+                                project.entranceApproachTotalCells,
+                                designPlanHash)
                         : economy.reserveVillageProjectSite(
                                 village.villageId,
                                 project.projectId,
@@ -482,7 +596,15 @@ public final class VillageProsperityManager {
                 project.boundsMinPos = bounds.minimum.asLong();
                 project.boundsMaxPos = bounds.maximum.asLong();
                 project.totalBlocks = template.size();
-                if (isModular(project)) {
+                if (isBlueprint(project)) {
+                    project.designPlanHash = designPlanHash;
+                }
+                // The service snapshot predates this multi-village construction pulse. Publish
+                // the new reservation into the local exclusion set immediately so a later village
+                // in the same pulse cannot reserve an overlapping sparse or unfinished footprint.
+                excludedProjectLots.add(new EconomyService.VillageProjectLot(
+                        project.boundsMinPos, project.boundsMaxPos));
+                if (isManagedProject(project)) {
                     project.trailMaterializedBlocks = 0;
                     project.trailTotalBlocks = modularTrail.size();
                     project.trailMaterializedComplete = false;
@@ -505,12 +627,31 @@ public final class VillageProsperityManager {
             }
             List<Placement> placements = projectTemplate(level, origin, village, project);
             int index = Math.min(project.materializedBlocks, placements.size());
+            int constructionTarget = VillageMaterializationPolicy.constructionTargetBlocks(
+                    project.economicProgress,
+                    project.economicComplete,
+                    placements.size(),
+                    groundbreakingPrefix(placements));
             int placedThisTick = 0;
             boolean blocked = false;
             boolean unloaded = false;
-            while (index < placements.size() && remainingBlockBudget > 0) {
+            while (index < constructionTarget && remainingBlockBudget > 0) {
                 Placement placement = placements.get(index);
+                if (placement.isCosmetic() && project.manualRepairRequired) {
+                    // A structural integrity rewind must never turn destroyed yard props into a
+                    // renewable repair source. Cosmetics get their one attempt only during fresh
+                    // construction (or when first appended by a genuine template upgrade).
+                    index++;
+                    continue;
+                }
                 if (!placementColumnLoaded(level, origin, placement)) {
+                    if (placement.isCosmetic()) {
+                        // Exterior dressing is a one-shot best effort. An unloaded side/rear
+                        // yard must never hold the economically authoritative building hostage
+                        // or cause the generator to force-load terrain just for decoration.
+                        index++;
+                        continue;
+                    }
                     // Persist the same bounded backoff used for unsafe placements instead of
                     // probing an unloaded boundary on every village pulse.
                     blocked = true;
@@ -520,7 +661,7 @@ public final class VillageProsperityManager {
                 BlockPos target = placementTarget(level, origin, placement);
                 BlockState current = level.getBlockState(target);
                 if (placementSatisfied(level, origin, target, current, placement)) {
-                    if (placement.role == PlacementRole.STRUCTURE
+                    if (placement.isStructuralAuthority()
                             && !VillageDevelopmentProtection.mayPlace(
                                     level,
                                     village.villageId,
@@ -534,6 +675,12 @@ public final class VillageProsperityManager {
                     index++;
                     continue;
                 }
+                if (placement.isAccessClearance()) {
+                    // Semantic air is an integrity assertion, never a request to remove a block.
+                    // Preserve the obstruction and suspend this project until the route is clear.
+                    blocked = true;
+                    break;
+                }
                 if (!VillageDevelopmentProtection.mayPlace(
                         level,
                         village.villageId,
@@ -541,7 +688,7 @@ public final class VillageProsperityManager {
                         target,
                         current,
                         placement.state)) {
-                    if (placement.isTrail()) {
+                    if (placement.isTrail() || placement.isCosmetic()) {
                         // A protected cell may leave a small retrofit gap, but it must not block
                         // the building's safe foundation/detail suffix or overwrite player work.
                         index++;
@@ -556,9 +703,11 @@ public final class VillageProsperityManager {
                 }
                 boolean safe = level.getBlockEntity(target) == null
                         && level.getFluidState(target).isEmpty()
-                        && mayApplyPlacement(current, placement);
+                        && mayApplyPlacement(current, placement)
+                        && (!placement.isCosmetic()
+                                || cosmeticPlacementSupported(level, origin, target, placement));
                 if (!safe) {
-                    if (placement.isTrail()) {
+                    if (placement.isTrail() || placement.isCosmetic()) {
                         index++;
                         continue;
                     }
@@ -567,6 +716,10 @@ public final class VillageProsperityManager {
                 }
                 if (!level.setBlock(target, placement.state, 3)
                         || !level.getBlockState(target).is(placement.state.getBlock())) {
+                    if (placement.isCosmetic()) {
+                        index++;
+                        continue;
+                    }
                     blocked = true;
                     break;
                 }
@@ -575,7 +728,66 @@ public final class VillageProsperityManager {
                 index++;
             }
             boolean complete = index >= placements.size();
-            if (index > project.materializedBlocks || complete) {
+            if (isManagedProject(project) && (placedThisTick > 0 || complete)) {
+                normalizeAuthoredModularConnections(
+                        level,
+                        origin,
+                        village.villageId,
+                        project.projectId,
+                        placements.subList(0, index));
+            }
+            boolean completionDamaged = false;
+            if (complete) {
+                // Construction is incremental, so a player can change an earlier authored block
+                // after its cursor has advanced. Verify the complete template once before granting
+                // authority; never repair or overwrite a mismatch discovered here.
+                int verifiedPrefix = placements.size();
+                for (int verifyIndex = 0; verifyIndex < placements.size(); verifyIndex++) {
+                    Placement placement = placements.get(verifyIndex);
+                    if (placement.isTrail() || placement.isCosmetic()) {
+                        continue;
+                    }
+                    if (!placementColumnLoaded(level, origin, placement)) {
+                        complete = false;
+                        blocked = true;
+                        unloaded = true;
+                        break;
+                    }
+                    BlockPos target = placementTarget(level, origin, placement);
+                    if (!placementSatisfied(
+                            level,
+                            origin,
+                            target,
+                            level.getBlockState(target),
+                            placement)) {
+                        verifiedPrefix = verifyIndex;
+                        complete = false;
+                        completionDamaged = true;
+                        break;
+                    }
+                }
+                if (completionDamaged) {
+                    ProjectBounds currentBounds = bounds(origin, placements);
+                    economy.requireManualVillageProjectRepair(
+                            village.villageId,
+                            project.projectId,
+                            verifiedPrefix,
+                            placements.size(),
+                            currentBounds.minimum.asLong(),
+                            currentBounds.maximum.asLong());
+                    DebugFlightRecorder.recordConstruction(
+                            level,
+                            village.villageId,
+                            project.projectId,
+                            project.type.name(),
+                            "completion_modified",
+                            origin,
+                            verifiedPrefix,
+                            placements.size(),
+                            "Player changes were preserved; the authored building remains unsafe");
+                }
+            }
+            if (!completionDamaged && (index > project.materializedBlocks || complete)) {
                 economy.updateVillageProjectMaterialization(
                         village.villageId,
                         project.projectId,
@@ -627,9 +839,156 @@ public final class VillageProsperityManager {
                             1.0F);
                 }
             }
+            }
+        } catch (BlueprintPlanMismatchException mismatch) {
+            throw mismatch.withRemainingBudget(new MaterializationBudget(
+                    remainingBlockBudget,
+                    Math.max(0, budget.remainingVillages - processedVillages)));
         }
         return new MaterializationBudget(
-                remainingBlockBudget, budget.remainingVillages - villagesToProcess);
+                remainingBlockBudget, budget.remainingVillages - processedVillages);
+    }
+
+    /** Terrain supports stay bottom-up, followed by enough authored blocks to show the worksite. */
+    private static int groundbreakingPrefix(List<Placement> placements) {
+        int prefix = 0;
+        while (prefix < placements.size()
+                && placements.get(prefix).role == PlacementRole.TERRAIN_SUPPORT) {
+            prefix++;
+        }
+        return Math.min(
+                placements.size(),
+                prefix + VillageMaterializationPolicy.GROUNDBREAKING_VISIBLE_BLOCKS);
+    }
+
+    /**
+     * Scans the historical coarse-dirt center cells once on a cursor that is deliberately
+     * independent from the append-only road cursor. A protected, obstructed, or otherwise unsafe
+     * coordinate is adopted as a permanent gap; an unloaded coordinate waits for a later pulse.
+     */
+    private static int materializeOneModularTrailCenterSurfaceMigration(
+            ServerLevel level,
+            EconomyService economy,
+            EconomyState.VillageRecord village,
+            long selectionOrdinal,
+            int writeBudget) {
+        if (writeBudget <= 0) {
+            return 0;
+        }
+        TrailCenterSurfaceWork work = nextModularTrailCenterSurfaceWork(
+                village, selectionOrdinal);
+        if (work == null) {
+            return 0;
+        }
+        EconomyState.VillageProject project = work.project;
+        List<Placement> migration = work.trail;
+        int expectedVersion = project.trailCenterSurfaceVersion;
+        if (project.trailCenterSurfaceMigrationTotalCells == 0) {
+            if (economy.initializeVillageProjectTrailCenterSurfaceMigration(
+                    village.villageId,
+                    project.projectId,
+                    expectedVersion,
+                    migration.size())) {
+                project.trailCenterSurfaceMigrationTotalCells = migration.size();
+                if (migration.isEmpty()) {
+                    project.trailCenterSurfaceVersion =
+                            EconomyState.TRAIL_CENTER_SURFACE_VERSION;
+                }
+            }
+            // Freeze the exact candidate count durably before the first world write.
+            return 0;
+        }
+        if (project.trailCenterSurfaceMigrationTotalCells != migration.size()
+                || project.trailCenterSurfaceMigrationCursor > migration.size()) {
+            return 0;
+        }
+
+        BlockPos origin = BlockPos.of(project.originPos);
+        int previousIndex = project.trailCenterSurfaceMigrationCursor;
+        int index = previousIndex;
+        int inspected = 0;
+        int placed = 0;
+        while (index < migration.size()
+                && inspected < PROJECT_TRAIL_INSPECTIONS_PER_PULSE
+                && placed < writeBudget) {
+            Placement placement = migration.get(index);
+            inspected++;
+            if (!placementColumnLoaded(level, origin, placement)) {
+                break;
+            }
+            BlockPos target = placementTarget(level, origin, placement);
+            BlockState current = level.getBlockState(target);
+            if (placementSatisfied(level, origin, target, current, placement)) {
+                index++;
+                continue;
+            }
+            boolean protectionAllowed = VillageDevelopmentProtection.mayPlace(
+                    level,
+                    village.villageId,
+                    project.projectId,
+                    target,
+                    current,
+                    placement.state);
+            boolean safe = protectionAllowed
+                    && trailHasClearance(level, target)
+                    && level.getBlockEntity(target) == null
+                    && level.getFluidState(target).isEmpty()
+                    && mayApplyPlacement(current, placement);
+            if (safe
+                    && level.setBlock(target, placement.state, 3)
+                    && level.getBlockState(target).is(placement.state.getBlock())) {
+                placed++;
+            }
+            // The migration is deliberately one-shot: claimed cells and failed optional writes
+            // are not repaired again after this coordinate has been inspected.
+            index++;
+        }
+        boolean complete = index >= migration.size();
+        if (index > previousIndex || complete) {
+            if (economy.updateVillageProjectTrailCenterSurfaceMigration(
+                    village.villageId,
+                    project.projectId,
+                    expectedVersion,
+                    previousIndex,
+                    index,
+                    migration.size(),
+                    complete)) {
+                project.trailCenterSurfaceVersion = complete
+                        ? EconomyState.TRAIL_CENTER_SURFACE_VERSION
+                        : expectedVersion;
+                project.trailCenterSurfaceMigrationCursor = complete ? 0 : index;
+                project.trailCenterSurfaceMigrationTotalCells = complete
+                        ? 0
+                        : migration.size();
+            }
+        }
+        return placed;
+    }
+
+    private static TrailCenterSurfaceWork nextModularTrailCenterSurfaceWork(
+            EconomyState.VillageRecord village, long selectionOrdinal) {
+        List<TrailCenterSurfaceWork> candidates = new ArrayList<>();
+        for (EconomyState.VillageProject project : village.projects) {
+            if (!VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                    || !project.economicComplete
+                    || !project.materializedComplete
+                    || project.manualRepairRequired
+                    || project.abstractOnly
+                    || project.originPos == 0L
+                    || !project.trailAnchorSet
+                    || !project.trailMaterializedComplete
+                    || project.trailCenterSurfaceMigrationCursor < 0
+                    || project.trailCenterSurfaceVersion
+                            >= EconomyState.TRAIL_CENTER_SURFACE_VERSION) {
+                continue;
+            }
+            BlockPos origin = BlockPos.of(project.originPos);
+            candidates.add(new TrailCenterSurfaceWork(
+                    project, modularProjectTrailCenterSurfaceMigration(origin, village, project)));
+        }
+        return candidates.isEmpty()
+                ? null
+                : candidates.get((int) Math.floorMod(selectionOrdinal, candidates.size()));
     }
 
     /**
@@ -645,14 +1004,30 @@ public final class VillageProsperityManager {
         if (writeBudget <= 0) {
             return 0;
         }
-        EconomyState.VillageProject project = village.nextTrailProject(selectionOrdinal);
-        if (project == null) {
+        TrailWork work = nextModularTrailWork(village, selectionOrdinal);
+        if (work == null) {
             return 0;
         }
+        EconomyState.VillageProject project = work.project;
         BlockPos origin = BlockPos.of(project.originPos);
-        List<Placement> trail = modularProjectTrail(origin, village, project);
-        if (trail.isEmpty() || trail.size() != project.trailTotalBlocks) {
+        List<Placement> trail = work.trail;
+        if (!VillageMaterializationPolicy.compatibleTrailTarget(
+                project.trailMaterializedBlocks,
+                project.trailTotalBlocks,
+                trail.size())) {
             return 0;
+        }
+        if (trail.size() > project.trailTotalBlocks) {
+            int persistedTotal = project.trailTotalBlocks;
+            if (!economy.extendVillageProjectTrailTarget(
+                    village.villageId,
+                    project.projectId,
+                    persistedTotal,
+                    trail.size())) {
+                return 0;
+            }
+            project.trailTotalBlocks = trail.size();
+            project.trailMaterializedComplete = false;
         }
 
         int index = Math.min(project.trailMaterializedBlocks, trail.size());
@@ -676,13 +1051,14 @@ public final class VillageProsperityManager {
                 index++;
                 continue;
             }
+            BlockState proposed = modularTrailPlacementState(placement);
             boolean protectionAllowed = VillageDevelopmentProtection.mayPlace(
                     level,
                     village.villageId,
                     project.projectId,
                     target,
                     current,
-                    placement.state);
+                    proposed);
             boolean safe = protectionAllowed
                     && trailHasClearance(level, target)
                     && trailGradeWalkable(level, origin, trail, index, target)
@@ -693,8 +1069,8 @@ public final class VillageProsperityManager {
                 index++;
                 continue;
             }
-            if (level.setBlock(target, placement.state, 3)
-                    && level.getBlockState(target).is(placement.state.getBlock())) {
+            if (level.setBlock(target, proposed, 3)
+                    && level.getBlockState(target).is(proposed.getBlock())) {
                 placed++;
             }
             // A failed optional path write must not stall the authoritative construction queue.
@@ -713,6 +1089,474 @@ public final class VillageProsperityManager {
             }
         }
         return placed;
+    }
+
+    /** Keeps the persisted historical plan order while ensuring no new center cell emits coarse dirt. */
+    private static BlockState modularTrailPlacementState(Placement placement) {
+        return placement.role == PlacementRole.TRAIL_PRIMARY
+                        && placement.state.is(Blocks.COARSE_DIRT)
+                ? Blocks.DIRT_PATH.defaultBlockState()
+                : placement.state;
+    }
+
+    /** Includes completed narrow legacy roads when their deterministic plan has a wider suffix. */
+    private static TrailWork nextModularTrailWork(
+            EconomyState.VillageRecord village, long selectionOrdinal) {
+        List<TrailWork> candidates = new ArrayList<>();
+        for (EconomyState.VillageProject project : village.projects) {
+            if (!VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                    || !project.economicComplete
+                    || !project.materializedComplete
+                    || project.manualRepairRequired
+                    || project.abstractOnly
+                    || project.originPos == 0L
+                    || !project.trailAnchorSet) {
+                continue;
+            }
+            BlockPos origin = BlockPos.of(project.originPos);
+            List<Placement> trail = managedProjectTrail(origin, village, project);
+            if (trail.isEmpty()
+                    || !VillageMaterializationPolicy.compatibleTrailTarget(
+                            project.trailMaterializedBlocks,
+                            project.trailTotalBlocks,
+                            trail.size())
+                    || (project.trailMaterializedComplete
+                            && trail.size() == project.trailTotalBlocks)) {
+                continue;
+            }
+            candidates.add(new TrailWork(project, trail));
+        }
+        return candidates.isEmpty()
+                ? null
+                : candidates.get((int) Math.floorMod(selectionOrdinal, candidates.size()));
+    }
+
+    /**
+     * Materializes one frozen, non-authoritative entrance approach as soon as its building is
+     * complete. The whole tiny plan is preflighted before it is persisted; later player changes
+     * cause the remaining work to be waived rather than overwritten or repaired.
+     */
+    private static int materializeOneModularEntranceApproach(
+            ServerLevel level,
+            EconomyService economy,
+            EconomyState.VillageRecord village,
+            long selectionOrdinal,
+            int writeBudget) {
+        if (writeBudget <= 0) {
+            return 0;
+        }
+        EconomyState.VillageProject project = nextModularEntranceApproachProject(
+                village, selectionOrdinal);
+        if (project == null) {
+            return 0;
+        }
+        BlockPos origin = BlockPos.of(project.originPos);
+
+        if (project.entranceApproachVersion < EconomyState.ENTRANCE_APPROACH_VERSION) {
+            EntranceApproachSearch search = planModularEntranceApproach(
+                    level, origin, village, project);
+            if (search.availability
+                    == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
+                return 0;
+            }
+            if (search.availability
+                    != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
+                if (economy.waiveVillageProjectEntranceApproach(
+                        village.villageId,
+                        project.projectId,
+                        project.entranceApproachVersion,
+                        project.entranceApproachCursor,
+                        project.entranceApproachTotalCells)) {
+                    project.entranceApproachVersion =
+                            EconomyState.ENTRANCE_APPROACH_VERSION;
+                    project.entranceApproachStepCount = 0;
+                    project.entranceApproachCursor = 0;
+                    project.entranceApproachTotalCells = 0;
+                    project.entranceApproachComplete = true;
+                    DebugFlightRecorder.recordConstruction(
+                            level,
+                            village.villageId,
+                            project.projectId,
+                            project.type.name(),
+                            "entrance_retrofit_waived",
+                            origin,
+                            0,
+                            0,
+                            "The existing approach was occupied or unsafe; player blocks were preserved");
+                }
+                return 0;
+            }
+            if (!economy.initializeVillageProjectEntranceApproach(
+                    village.villageId,
+                    project.projectId,
+                    project.entranceApproachVersion,
+                    search.stepCount,
+                    search.placements.size())) {
+                return 0;
+            }
+            project.entranceApproachVersion = EconomyState.ENTRANCE_APPROACH_VERSION;
+            project.entranceApproachStepCount = search.stepCount;
+            project.entranceApproachCursor = 0;
+            project.entranceApproachTotalCells = search.placements.size();
+            project.entranceApproachComplete = search.placements.isEmpty();
+            // Freeze the complete route before the first world mutation. A later pulse performs
+            // the bounded writes, making a save failure unable to reroll coordinates or facings.
+            return 0;
+        }
+
+        List<Placement> approach = modularEntranceApproachPlacements(
+                origin, village, project, project.entranceApproachStepCount);
+        if (approach.size() != project.entranceApproachTotalCells
+                || project.entranceApproachCursor > approach.size()) {
+            if (economy.waiveVillageProjectEntranceApproach(
+                    village.villageId,
+                    project.projectId,
+                    project.entranceApproachVersion,
+                    project.entranceApproachCursor,
+                    project.entranceApproachTotalCells)) {
+                project.entranceApproachCursor = project.entranceApproachTotalCells;
+                project.entranceApproachComplete = true;
+            }
+            return 0;
+        }
+
+        int previousIndex = project.entranceApproachCursor;
+        // A frozen cursor is not authority to finish around a later player edit. Re-read the
+        // already-inspected prefix without mutating it; an unloaded prefix waits, while a changed
+        // prefix permanently waives the unseen suffix instead of repairing the approach.
+        for (int prefixIndex = 0; prefixIndex < previousIndex; prefixIndex++) {
+            Placement placement = approach.get(prefixIndex);
+            if (!placementColumnLoaded(level, origin, placement)) {
+                return 0;
+            }
+            BlockPos target = placementTarget(level, origin, placement);
+            if (placementSatisfied(
+                    level,
+                    origin,
+                    target,
+                    level.getBlockState(target),
+                    placement)) {
+                continue;
+            }
+            if (economy.waiveVillageProjectEntranceApproach(
+                    village.villageId,
+                    project.projectId,
+                    project.entranceApproachVersion,
+                    previousIndex,
+                    project.entranceApproachTotalCells)) {
+                project.entranceApproachCursor = project.entranceApproachTotalCells;
+                project.entranceApproachComplete = true;
+                DebugFlightRecorder.recordConstruction(
+                        level,
+                        village.villageId,
+                        project.projectId,
+                        project.type.name(),
+                        "entrance_retrofit_prefix_modified",
+                        target,
+                        prefixIndex,
+                        approach.size(),
+                        "An already-inspected approach cell changed; the player edit was preserved and the remaining approach was waived");
+            }
+            return 0;
+        }
+
+        int index = previousIndex;
+        int inspected = 0;
+        int placed = 0;
+        while (index < approach.size()
+                && inspected < PROJECT_ENTRANCE_INSPECTIONS_PER_PULSE
+                && placed < writeBudget) {
+            Placement placement = approach.get(index);
+            inspected++;
+            if (!placementColumnLoaded(level, origin, placement)) {
+                break;
+            }
+            BlockPos target = placementTarget(level, origin, placement);
+            BlockState current = level.getBlockState(target);
+            if (placementSatisfied(level, origin, target, current, placement)) {
+                index++;
+                continue;
+            }
+            boolean safe = level.getBlockEntity(target) == null
+                    && level.getFluidState(target).isEmpty()
+                    && mayApplyPlacement(current, placement)
+                    && VillageDevelopmentProtection.mayPlace(
+                            level,
+                            village.villageId,
+                            project.projectId,
+                            target,
+                            current,
+                            placement.state);
+            if (!safe) {
+                if (economy.waiveVillageProjectEntranceApproach(
+                        village.villageId,
+                        project.projectId,
+                        project.entranceApproachVersion,
+                        previousIndex,
+                        project.entranceApproachTotalCells)) {
+                    project.entranceApproachCursor = project.entranceApproachTotalCells;
+                    project.entranceApproachComplete = true;
+                    DebugFlightRecorder.recordConstruction(
+                            level,
+                            village.villageId,
+                            project.projectId,
+                            project.type.name(),
+                            "entrance_retrofit_interrupted",
+                            target,
+                            index,
+                            approach.size(),
+                            "A later obstruction was preserved; the optional approach will not repair or overwrite it");
+                }
+                return placed;
+            }
+            if (!level.setBlock(target, placement.state, 3)
+                    || !placementSatisfied(
+                            level,
+                            origin,
+                            target,
+                            level.getBlockState(target),
+                            placement)) {
+                break;
+            }
+            placed++;
+            index++;
+        }
+        boolean complete = index >= approach.size();
+        if (index > previousIndex || complete) {
+            if (economy.updateVillageProjectEntranceApproach(
+                    village.villageId,
+                    project.projectId,
+                    project.entranceApproachVersion,
+                    previousIndex,
+                    index,
+                    approach.size(),
+                    complete)) {
+                project.entranceApproachCursor = index;
+                project.entranceApproachComplete = complete;
+            }
+        }
+        return placed;
+    }
+
+    private static EconomyState.VillageProject nextModularEntranceApproachProject(
+            EconomyState.VillageRecord village, long selectionOrdinal) {
+        List<EconomyState.VillageProject> candidates = village.projects.stream()
+                .filter(project -> VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                        && project.economicComplete
+                        && project.materializedComplete
+                        && !project.manualRepairRequired
+                        && !project.abstractOnly
+                        && project.originPos != 0L
+                        && project.trailAnchorSet
+                        && (project.entranceApproachVersion
+                                        < EconomyState.ENTRANCE_APPROACH_VERSION
+                                || !project.entranceApproachComplete))
+                .toList();
+        return candidates.isEmpty()
+                ? null
+                : candidates.get((int) Math.floorMod(selectionOrdinal, candidates.size()));
+    }
+
+    /** Plans and fully preflights the descent along the frozen primary-road coordinates. */
+    private static EntranceApproachSearch planModularEntranceApproach(
+            ServerLevel level,
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project) {
+        List<Placement> primary = modularPrimaryTrailPrefix(
+                origin,
+                village,
+                project,
+                TerrainFoundationPlan.MAX_TERRAIN_DROP + 1);
+        if (primary.isEmpty()) {
+            return EntranceApproachSearch.unsafe();
+        }
+        List<Integer> surfaceOffsets = new ArrayList<>(primary.size());
+        for (Placement routeCell : primary) {
+            int worldX = origin.getX() + routeCell.dx;
+            int worldZ = origin.getZ() + routeCell.dz;
+            if (!level.hasChunk(Math.floorDiv(worldX, 16), Math.floorDiv(worldZ, 16))) {
+                return EntranceApproachSearch.unloaded();
+            }
+            Integer surface = entranceWalkingSurface(level, worldX, worldZ, origin.getY());
+            if (surface == null) {
+                return EntranceApproachSearch.unsafe();
+            }
+            surfaceOffsets.add(surface - origin.getY());
+        }
+        var planned = VillageEntranceApproachPlan.plan(
+                surfaceOffsets, TerrainFoundationPlan.MAX_TERRAIN_DROP);
+        if (planned.isEmpty()) {
+            return EntranceApproachSearch.unsafe();
+        }
+        int stepCount = planned.orElseThrow().size();
+        List<Placement> placements = modularEntranceApproachPlacements(
+                origin, village, project, stepCount);
+        if (placements.size() > EconomyState.MAX_ENTRANCE_APPROACH_CELLS) {
+            return EntranceApproachSearch.unsafe();
+        }
+        VillageMaterializationPolicy.SiteAvailability availability =
+                mayUseEntranceApproachSite(
+                        level, village.villageId, project.projectId, origin, placements);
+        return new EntranceApproachSearch(placements, stepCount, availability);
+    }
+
+    /** Finds the first solid walking surface while allowing harmless plants and snow layers. */
+    private static Integer entranceWalkingSurface(
+            ServerLevel level, int x, int z, int originY) {
+        int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+        int bottom = originY - TerrainFoundationPlan.MAX_TERRAIN_DROP - 1;
+        for (int y = top; y >= bottom; y--) {
+            BlockPos position = new BlockPos(x, y, z);
+            BlockState state = level.getBlockState(position);
+            if (level.getBlockEntity(position) != null
+                    || !level.getFluidState(position).isEmpty()) {
+                return null;
+            }
+            if (state.isAir() || state.canBeReplaced()) {
+                continue;
+            }
+            return isEntranceApproachGround(state) ? y + 1 : null;
+        }
+        return null;
+    }
+
+    private static boolean isEntranceApproachGround(BlockState state) {
+        return isNaturalProjectGround(state) || isVillageTrailGround(state);
+    }
+
+    private static List<Placement> modularPrimaryTrailPrefix(
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            int limit) {
+        return managedProjectTrail(origin, village, project).stream()
+                .filter(placement -> placement.role == PlacementRole.TRAIL_PRIMARY)
+                .limit(Math.max(0, limit))
+                .toList();
+    }
+
+    /** Rebuilds a frozen plan from immutable recipe, rotation, anchor, and step-count data. */
+    private static List<Placement> modularEntranceApproachPlacements(
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            int stepCount) {
+        if (stepCount < 0 || stepCount > TerrainFoundationPlan.MAX_TERRAIN_DROP) {
+            return List.of();
+        }
+        List<Placement> route = modularPrimaryTrailPrefix(
+                origin, village, project, stepCount);
+        if (route.size() < stepCount) {
+            return List.of();
+        }
+        Palette palette = managedProjectPalette(village, project);
+        StructureSize structure = projectSize(project);
+        BlockPos previous = rotateRelative(
+                structure.width / 2,
+                0,
+                -1,
+                structure,
+                project.designRotation);
+
+        List<Placement> stairs = new ArrayList<>(stepCount);
+        for (int index = 0; index < stepCount; index++) {
+            Placement routeCell = route.get(index);
+            Direction facing = horizontalDirection(
+                    previous.getX() - routeCell.dx,
+                    previous.getZ() - routeCell.dz);
+            if (facing == null) {
+                return List.of();
+            }
+            int yOffset = -index - 1;
+            stairs.add(Placement.entranceStair(
+                    routeCell.dx,
+                    yOffset,
+                    routeCell.dz,
+                    palette.stairs.defaultBlockState()
+                            .setValue(StairBlock.FACING, facing)));
+            previous = new BlockPos(routeCell.dx, yOffset, routeCell.dz);
+        }
+
+        List<TerrainFoundationPlan.Cell> stairCells = stairs.stream()
+                .map(stair -> new TerrainFoundationPlan.Cell(
+                        stair.dx, stair.dy, stair.dz))
+                .toList();
+        List<Placement> supports = TerrainFoundationPlan.appendSupportCells(
+                        stairCells, TerrainFoundationPlan.MAX_TERRAIN_DROP)
+                .stream()
+                .map(cell -> Placement.entranceSupport(
+                        cell.x(),
+                        cell.y(),
+                        cell.z(),
+                        palette.floor.defaultBlockState()))
+                .sorted(Comparator.comparingInt(Placement::dy)
+                        .thenComparingInt(Placement::dz)
+                        .thenComparingInt(Placement::dx))
+                .toList();
+        List<Placement> result = new ArrayList<>(supports.size() + stairs.size() * 3);
+        result.addAll(supports);
+        Set<BlockPos> clearance = new HashSet<>();
+        for (Placement stair : stairs) {
+            for (int y : new int[] {stair.dy + 1, stair.dy + 2}) {
+                BlockPos position = new BlockPos(stair.dx, y, stair.dz);
+                if (clearance.add(position)) {
+                    result.add(Placement.entranceClearance(
+                            position.getX(), position.getY(), position.getZ()));
+                }
+            }
+        }
+        result.addAll(stairs);
+        return List.copyOf(result);
+    }
+
+    private static Direction horizontalDirection(int dx, int dz) {
+        if (dx == 1 && dz == 0) {
+            return Direction.EAST;
+        }
+        if (dx == -1 && dz == 0) {
+            return Direction.WEST;
+        }
+        if (dx == 0 && dz == 1) {
+            return Direction.SOUTH;
+        }
+        if (dx == 0 && dz == -1) {
+            return Direction.NORTH;
+        }
+        return null;
+    }
+
+    private static VillageMaterializationPolicy.SiteAvailability mayUseEntranceApproachSite(
+            ServerLevel level,
+            UUID villageId,
+            long projectId,
+            BlockPos origin,
+            List<Placement> placements) {
+        for (Placement placement : placements) {
+            if (!placementColumnLoaded(level, origin, placement)) {
+                return VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED;
+            }
+        }
+        for (Placement placement : placements) {
+            BlockPos target = placementTarget(level, origin, placement);
+            BlockState current = level.getBlockState(target);
+            if (placementSatisfied(level, origin, target, current, placement)) {
+                continue;
+            }
+            if (level.getBlockEntity(target) != null
+                    || !level.getFluidState(target).isEmpty()
+                    || !mayApplyPlacement(current, placement)
+                    || !VillageDevelopmentProtection.mayPlace(
+                            level,
+                            villageId,
+                            projectId,
+                            target,
+                            current,
+                            placement.state)) {
+                return VillageMaterializationPolicy.SiteAvailability.UNSAFE;
+            }
+        }
+        return VillageMaterializationPolicy.SiteAvailability.AVAILABLE;
     }
 
     /** Displays bounded worker theatre without creating persistent AI or economic authority. */
@@ -963,7 +1807,8 @@ public final class VillageProsperityManager {
             EconomyService economy,
             EconomyState.VillageRecord village,
             EmeraldConfig config,
-            long gameTime) {
+            long gameTime,
+            List<EconomyService.VillageProjectLot> excludedProjectLots) {
         if (village == null || village.projects.isEmpty()) {
             return;
         }
@@ -994,30 +1839,56 @@ public final class VillageProsperityManager {
         if (!positionColumnLoaded(level, origin)) {
             return;
         }
-        int desiredModularStage = isModular(project)
+        int desiredModularStage = isManagedProject(project)
                 ? Math.max(
                         project.designStage,
                         VillageStructureProgression.desiredVisualStage(village.developmentTier))
                 : 0;
-        List<Placement> expected = isModular(project)
-                ? modularProjectTemplate(level, origin, village, project, desiredModularStage)
-                : projectTemplate(level, origin, village, project);
+        boolean pendingQualityMigration = isModular(project)
+                && VillageArchitecture.hasQualityRetrofit(project.type)
+                && project.designQualityStage < 0;
+        List<Placement> expected = isBlueprint(project)
+                ? blueprintProjectTemplate(
+                        level, origin, village, project, desiredModularStage)
+                : isModular(project)
+                        ? modularProjectTemplate(
+                                level,
+                                origin,
+                                village,
+                                project,
+                                desiredModularStage,
+                                pendingQualityMigration)
+                        : projectTemplate(level, origin, village, project);
         ProjectBounds expectedBounds = bounds(origin, expected);
         boolean templateExpanded = project.totalBlocks > 0
                 && project.totalBlocks < expected.size();
         int priorTemplateSize = templateExpanded ? project.totalBlocks : expected.size();
+        if (isManagedProject(project)) {
+            // Shape properties are neighbor-derived and therefore are not template ownership.
+            // Refresh only panes already inside the persisted prefix; an unbuilt suffix cannot
+            // adopt or mutate a coincident player pane during preflight.
+            normalizeAuthoredModularConnections(
+                    level,
+                    origin,
+                    village.villageId,
+                    project.projectId,
+                    expected.subList(0, priorTemplateSize));
+        }
         ProjectBounds priorBounds = templateExpanded
                 ? bounds(origin, expected.subList(0, priorTemplateSize))
                 : expectedBounds;
         int verifiedPrefix = priorTemplateSize;
         boolean queuedTemplateUpgrade = false;
+        boolean queuedQualityUpgrade = false;
         BlockPos mismatch = null;
+        int expectedStructureCells = 0;
+        int mismatchedStructureCells = 0;
         for (int index = 0; index < priorTemplateSize; index++) {
             Placement placement = expected.get(index);
             // Trails are shared public infrastructure once authored. Normal terrain updates or a
             // player's landscaping must not suspend the economic authority of the building they
             // originally connected.
-            if (placement.isTrail()) {
+            if (placement.isTrail() || placement.isCosmetic()) {
                 continue;
             }
             if (!placementColumnLoaded(level, origin, placement)) {
@@ -1025,10 +1896,17 @@ public final class VillageProsperityManager {
             }
             BlockPos target = placementTarget(level, origin, placement);
             BlockState current = level.getBlockState(target);
+            if (placement.isStructuralAuthority()) {
+                expectedStructureCells++;
+            }
             if (!placementSatisfied(level, origin, target, current, placement)) {
-                verifiedPrefix = index;
-                mismatch = target;
-                break;
+                if (mismatch == null) {
+                    verifiedPrefix = index;
+                    mismatch = target;
+                }
+                if (placement.isStructuralAuthority()) {
+                    mismatchedStructureCells++;
+                }
             }
         }
         if (mismatch == null && templateExpanded) {
@@ -1038,12 +1916,27 @@ public final class VillageProsperityManager {
             // obstruction or overwriting their work.
             for (int index = priorTemplateSize; index < expected.size(); index++) {
                 Placement placement = expected.get(index);
+                if (placement.isCosmetic()) {
+                    // Cosmetic suffixes are never repair authority. A fresh construction cursor
+                    // gets one safe attempt; an already completed project merely adopts their
+                    // expanded bounds/hash without regenerating decoration on later audits.
+                    continue;
+                }
                 if (!placementColumnLoaded(level, origin, placement)) {
+                    recordQualityUpgradeRejection(
+                            level,
+                            village,
+                            project,
+                            pendingQualityMigration,
+                            origin.offset(placement.dx, placement.dy, placement.dz),
+                            index - priorTemplateSize,
+                            expected.size() - priorTemplateSize,
+                            "preflight column is not loaded");
                     return;
                 }
                 BlockPos target = placementTarget(level, origin, placement);
                 BlockState current = level.getBlockState(target);
-                if (placement.role != PlacementRole.STRUCTURE
+                if (!placement.isStructuralAuthority()
                         && placementSatisfied(level, origin, target, current, placement)) {
                     continue;
                 }
@@ -1054,9 +1947,12 @@ public final class VillageProsperityManager {
                         target,
                         current,
                         placement.state);
+                boolean hasBlockEntity = level.getBlockEntity(target) != null;
+                boolean fluidEmpty = level.getFluidState(target).isEmpty();
+                boolean placementAllowed = mayApplyPlacement(current, placement);
                 if (!isSafeTemplateUpgradeTarget(
                         current,
-                        level.getBlockEntity(target) != null,
+                        hasBlockEntity,
                         protectionAllowed,
                         level,
                         target,
@@ -1066,15 +1962,46 @@ public final class VillageProsperityManager {
                         // cell, but do not let one claimed/player-built cell veto later upgrades.
                         continue;
                     }
+                    recordQualityUpgradeRejection(
+                            level,
+                            village,
+                            project,
+                            pendingQualityMigration,
+                            target,
+                            index - priorTemplateSize,
+                            expected.size() - priorTemplateSize,
+                            "unsafe suffix target: role="
+                                    + placement.role
+                                    + ", current="
+                                    + current
+                                    + ", proposed="
+                                    + placement.state
+                                    + ", blockEntity="
+                                    + hasBlockEntity
+                                    + ", protectionAllowed="
+                                    + protectionAllowed
+                                    + ", fluidEmpty="
+                                    + fluidEmpty
+                                    + ", placementAllowed="
+                                    + placementAllowed);
                     return;
                 }
             }
-            Placement firstAddition = expected.get(priorTemplateSize);
-            if (!placementColumnLoaded(level, origin, firstAddition)) {
-                return;
+            Placement firstRequiredAddition = expected.subList(priorTemplateSize, expected.size())
+                    .stream()
+                    .filter(placement -> !placement.isCosmetic())
+                    .findFirst()
+                    .orElse(null);
+            if (firstRequiredAddition != null) {
+                if (!placementColumnLoaded(level, origin, firstRequiredAddition)) {
+                    return;
+                }
+                mismatch = placementTarget(level, origin, firstRequiredAddition);
+                queuedTemplateUpgrade = true;
+                queuedQualityUpgrade = isModular(project)
+                        && VillageArchitecture.hasQualityRetrofit(project.type)
+                        && project.designQualityStage < 0;
             }
-            mismatch = placementTarget(level, origin, firstAddition);
-            queuedTemplateUpgrade = true;
         }
         if (mismatch == null) {
             if (project.totalBlocks != expected.size()
@@ -1105,6 +2032,34 @@ public final class VillageProsperityManager {
             }
             return;
         }
+        VillageMaterializationPolicy.IntegrityDecision integrityDecision =
+                VillageMaterializationPolicy.assessIntegrity(
+                        expectedStructureCells, mismatchedStructureCells);
+        if (!queuedTemplateUpgrade
+                && integrityDecision == VillageMaterializationPolicy.IntegrityDecision.RELOCATE
+                && economy.relocateDestroyedVillageProject(
+                        village.villageId,
+                        project.projectId,
+                        gameTime,
+                        priorBounds.minimum.asLong(),
+                        priorBounds.maximum.asLong())) {
+            // The compact service snapshot was taken before this multi-village pulse. Publish the
+            // newly retired footprint immediately so a later project in the same pass cannot
+            // reserve inside a lot that must remain permanently abandoned.
+            excludedProjectLots.add(new EconomyService.VillageProjectLot(
+                    priorBounds.minimum.asLong(), priorBounds.maximum.asLong()));
+            DebugFlightRecorder.recordConstruction(
+                    level,
+                    village.villageId,
+                    project.projectId,
+                    project.type.name(),
+                    "destroyed_site_retired",
+                    origin,
+                    mismatchedStructureCells,
+                    expectedStructureCells,
+                    "Severe demolition retired this lot; a replacement will use a different safe site without touching the old one");
+            return;
+        }
         if (!queuedTemplateUpgrade
                 && project.manualRepairRequired
                 && project.materializedBlocks == verifiedPrefix
@@ -1114,15 +2069,25 @@ public final class VillageProsperityManager {
             return;
         }
         boolean reconciled = queuedTemplateUpgrade
-                ? isModular(project)
-                        ? economy.commitVillageProjectVisualStageUpgrade(
-                                village.villageId,
-                                project.projectId,
-                                desiredModularStage,
-                                verifiedPrefix,
-                                expected.size(),
-                                expectedBounds.minimum.asLong(),
-                                expectedBounds.maximum.asLong())
+                ? isManagedProject(project)
+                        ? queuedQualityUpgrade
+                                ? economy.commitVillageProjectQualityUpgrade(
+                                        village.villageId,
+                                        project.projectId,
+                                        desiredModularStage,
+                                        desiredModularStage,
+                                        verifiedPrefix,
+                                        expected.size(),
+                                        expectedBounds.minimum.asLong(),
+                                        expectedBounds.maximum.asLong())
+                                : economy.commitVillageProjectVisualStageUpgrade(
+                                        village.villageId,
+                                        project.projectId,
+                                        desiredModularStage,
+                                        verifiedPrefix,
+                                        expected.size(),
+                                        expectedBounds.minimum.asLong(),
+                                        expectedBounds.maximum.asLong())
                         : economy.reconcileVillageProjectMaterializationAndBounds(
                                 village.villageId,
                                 project.projectId,
@@ -1139,6 +2104,21 @@ public final class VillageProsperityManager {
                         priorBounds.minimum.asLong(),
                         priorBounds.maximum.asLong());
         if (!reconciled) {
+            recordQualityUpgradeRejection(
+                    level,
+                    village,
+                    project,
+                    queuedQualityUpgrade,
+                    mismatch,
+                    verifiedPrefix,
+                    expected.size(),
+                    "atomic quality-upgrade commit rejected after successful suffix preflight"
+                            + "; desiredStage="
+                            + desiredModularStage
+                            + ", persistedStage="
+                            + project.designStage
+                            + ", persistedQualityStage="
+                            + project.designQualityStage);
             return;
         }
         // This object is a snapshot. Mirror the persisted demotion so the repair queue can act in
@@ -1149,8 +2129,11 @@ public final class VillageProsperityManager {
                 .minimum.asLong();
         project.boundsMaxPos = (queuedTemplateUpgrade ? expectedBounds : priorBounds)
                 .maximum.asLong();
-        if (queuedTemplateUpgrade && isModular(project)) {
+        if (queuedTemplateUpgrade && isManagedProject(project)) {
             project.designStage = desiredModularStage;
+            if (queuedQualityUpgrade) {
+                project.designQualityStage = desiredModularStage;
+            }
         }
         project.materializedComplete = false;
         project.blocked = !queuedTemplateUpgrade;
@@ -1169,6 +2152,30 @@ public final class VillageProsperityManager {
                 queuedTemplateUpgrade
                         ? "A safely preflighted template upgrade entered the guarded repair queue"
                         : "A missing authored block suspended project benefits until it is restored in-world");
+    }
+
+    private static void recordQualityUpgradeRejection(
+            ServerLevel level,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            boolean qualityMigration,
+            BlockPos position,
+            int completedBlocks,
+            int totalBlocks,
+            String reason) {
+        if (!qualityMigration) {
+            return;
+        }
+        DebugFlightRecorder.recordConstruction(
+                level,
+                village.villageId,
+                project.projectId,
+                project.type.name(),
+                "quality_upgrade_rejected",
+                position,
+                completedBlocks,
+                totalBlocks,
+                reason);
     }
 
     /**
@@ -1194,6 +2201,7 @@ public final class VillageProsperityManager {
         return current != null
                 && !hasBlockEntity
                 && protectionAllowed
+                && !placement.isAccessClearance()
                 && (!placement.isTrail() || trailHasClearance(level, target))
                 && level.getFluidState(target).isEmpty()
                 && mayApplyPlacement(current, placement);
@@ -1209,6 +2217,64 @@ public final class VillageProsperityManager {
     private static boolean positionColumnLoaded(ServerLevel level, BlockPos position) {
         return level.hasChunk(
                 Math.floorDiv(position.getX(), 16), Math.floorDiv(position.getZ(), 16));
+    }
+
+    private static void normalizeAuthoredModularConnections(
+            ServerLevel level,
+            BlockPos origin,
+            UUID villageId,
+            long projectId,
+            List<Placement> placements) {
+        for (Placement placement : placements) {
+            if (placement.role == PlacementRole.STRUCTURE
+                    && isManagedConnectionBlock(placement.state)) {
+                normalizeModularConnectionState(
+                        level,
+                        origin.offset(placement.dx, placement.dy, placement.dz),
+                        placement.state,
+                        villageId,
+                        projectId);
+            }
+        }
+    }
+
+    /** Recomputes surviving authored panes/bars without recreating or replacing player blocks. */
+    static boolean normalizeModularConnectionState(
+            ServerLevel level,
+            BlockPos position,
+            BlockState authored,
+            UUID villageId,
+            long projectId) {
+        if (authored == null
+                || !isManagedConnectionBlock(authored)
+                || !positionColumnLoaded(level, position)
+                || !positionColumnLoaded(level, position.north())
+                || !positionColumnLoaded(level, position.east())
+                || !positionColumnLoaded(level, position.south())
+                || !positionColumnLoaded(level, position.west())) {
+            return false;
+        }
+        BlockState current = level.getBlockState(position);
+        if (!current.is(authored.getBlock())) {
+            return false;
+        }
+        BlockState updated = Block.updateFromNeighbourShapes(current, level, position);
+        if (updated.equals(current)) {
+            return true;
+        }
+        if (!VillageDevelopmentProtection.mayPlace(
+                level, villageId, projectId, position, current, updated)) {
+            return false;
+        }
+        return level.setBlock(
+                        position,
+                        updated,
+                        Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)
+                && level.getBlockState(position).equals(updated);
+    }
+
+    private static boolean isManagedConnectionBlock(BlockState state) {
+        return state != null && (state.is(Blocks.GLASS_PANE) || state.is(Blocks.IRON_BARS));
     }
 
     private static BlockPos placementTarget(
@@ -1228,29 +2294,48 @@ public final class VillageProsperityManager {
             BlockPos target,
             BlockState current,
             Placement placement) {
-        if (current.is(placement.state.getBlock())) {
-            return placement.role != PlacementRole.STRUCTURE
-                    || structuralStateMatches(current, placement.state);
+        if (placement.isAccessClearance()) {
+            return current.isAir()
+                    && level.getBlockEntity(target) == null
+                    && level.getFluidState(target).isEmpty();
         }
         if (placement.isTrail()) {
-            // A later branch adopts, rather than repaves, an earlier TES trail.
-            return isVillageTrailGround(current);
+            // Ordinary trail cells adopt any TES surface so branches can share infrastructure.
+            // The one-time center migration accepts dirt path and intentional gravel accents;
+            // only legacy coarse-dirt center cells need to be revisited.
+            return VillageMaterializationPolicy.trailSurfaceSatisfied(
+                    placement.isTrailCenterSurfaceRetrofit(),
+                    isVillageTrailGround(current),
+                    current.is(Blocks.DIRT_PATH) || current.is(Blocks.GRAVEL));
         }
-        if (placement.role != PlacementRole.TERRAIN_SUPPORT) {
+        if (current.is(placement.state.getBlock())) {
+            return (!placement.isStructuralAuthority()
+                            && placement.role != PlacementRole.ENTRANCE_STAIR)
+                    || structuralStateMatches(current, placement.state);
+        }
+        if (placement.role != PlacementRole.TERRAIN_SUPPORT
+                && placement.role != PlacementRole.COSMETIC_SUPPORT
+                && placement.role != PlacementRole.ENTRANCE_SUPPORT) {
             return false;
         }
-        if (isNaturalProjectGround(current)) {
+        if (isSupportGround(current, placement)) {
             return true;
         }
-        // Once a support column meets natural ground, deeper authored support cells are no-ops.
+        // Once a support column meets approved ground, deeper authored support cells are no-ops.
         // This prevents a shallow foundation from tunnelling into a cave beneath sound terrain.
         for (int y = placement.dy + 1; y <= 0; y++) {
             BlockPos above = origin.offset(placement.dx, y, placement.dz);
-            if (isNaturalProjectGround(level.getBlockState(above))) {
+            if (isSupportGround(level.getBlockState(above), placement)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean isSupportGround(BlockState state, Placement placement) {
+        return placement.role == PlacementRole.ENTRANCE_SUPPORT
+                ? isEntranceApproachGround(state)
+                : isNaturalProjectGround(state);
     }
 
     private static boolean structuralStateMatches(BlockState current, BlockState expected) {
@@ -1300,9 +2385,67 @@ public final class VillageProsperityManager {
 
     private static boolean mayApplyPlacement(BlockState current, Placement placement) {
         if (placement.isTrail()) {
-            return isNaturalProjectGround(current) || isVillageTrailGround(current);
+            return VillageMaterializationPolicy.mayApplyTrailSurface(
+                    placement.isTrailCenterSurfaceRetrofit(),
+                    isPaveableTrailGround(current),
+                    isVillageTrailGround(current),
+                    current.is(Blocks.COARSE_DIRT));
         }
         return current.isAir() || current.canBeReplaced();
+    }
+
+    /**
+     * Keeps optional yard dressing grounded without making its supports economically essential.
+     *
+     * <p>The authored origin is levelled from the required building lot, while side/rear doodads
+     * may extend beyond that lot onto a drop. A cosmetic column is therefore eligible only when
+     * natural terrain exists within the same bounded depth used by normal foundations. Each cell
+     * must also satisfy vanilla attachment rules and touch a stable adjacent course. Checking all
+     * six faces preserves legitimate hanging chains/lanterns and wall-mounted trim without letting
+     * a disconnected full block pass merely because its default state can survive in air. If any
+     * of those checks fail, the materialization cursor permanently adopts that cell as a gap.</p>
+     */
+    private static boolean cosmeticPlacementSupported(
+            ServerLevel level, BlockPos origin, BlockPos target, Placement placement) {
+        boolean groundedColumn = false;
+        for (int dy = -1;
+                dy >= -(TerrainFoundationPlan.MAX_TERRAIN_DROP + 1);
+                dy--) {
+            BlockPos ground = origin.offset(placement.dx, dy, placement.dz);
+            if (!placementColumnLoaded(level, origin, placement)
+                    || level.getBlockEntity(ground) != null
+                    || !level.getFluidState(ground).isEmpty()) {
+                return false;
+            }
+            if (isNaturalProjectGround(level.getBlockState(ground))) {
+                groundedColumn = true;
+                break;
+            }
+        }
+        if (!groundedColumn) {
+            return false;
+        }
+        // Vanilla survival checks may inspect a horizontal attachment across a chunk boundary.
+        // Optional dressing must never force-load that neighbor merely to decide whether it stays.
+        for (Direction direction : Direction.values()) {
+            if (!positionColumnLoaded(level, target.relative(direction))) {
+                return false;
+            }
+        }
+        if (!placement.state.canSurvive(level, target)) {
+            return false;
+        }
+        for (Direction direction : Direction.values()) {
+            BlockPos attachment = target.relative(direction);
+            BlockState support = level.getBlockState(attachment);
+            if (level.getBlockEntity(attachment) == null
+                    && level.getFluidState(attachment).isEmpty()
+                    && !support.isAir()
+                    && !support.canBeReplaced()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean trailHasClearance(ServerLevel level, BlockPos ground) {
@@ -1353,32 +2496,40 @@ public final class VillageProsperityManager {
 
     private static ProjectSiteSearch findProjectOrigin(
             ServerLevel level,
+            EconomyService economy,
             EconomyState.VillageRecord village,
-            EconomyState.VillageProject project) {
+            EconomyState.VillageProject project,
+            List<EconomyService.VillageProjectLot> excludedProjectLots,
+            List<Long> managedBankLots) {
         BlockPos center = BlockPos.of(village.centerPos);
-        int[][] offsets = {
-                {30, 0}, {-30, 0}, {0, 30}, {0, -30},
-                {30, 18}, {-30, 18}, {30, -18}, {-30, -18},
-                {38, 38}, {-38, 38}, {38, -38}, {-38, -38},
-                {48, 0}, {-48, 0}, {0, 48}, {0, -48},
-                {52, 26}, {-52, 26}, {52, -26}, {-52, -26}
-        };
-        int start = Math.floorMod((int) (project.projectId ^ village.villageId.hashCode()), offsets.length);
-        ProjectSearchKey searchKey = new ProjectSearchKey(
-                dimensionKey(level), village.villageId, project.projectId);
-        SiteSearchProgress progress = SITE_SEARCH_PROGRESS.computeIfAbsent(
-                searchKey, ignored -> new SiteSearchProgress());
+        List<VillageMaterializationPolicy.SiteOffset> offsets =
+                VillageMaterializationPolicy.projectSiteOffsets(
+                        project.materializationFailures);
+        int start = Math.floorMod(
+                (int) (project.projectId ^ village.villageId.hashCode()), offsets.size());
+        int testedCandidates = Math.min(project.siteSearchCursor, offsets.size());
+        boolean sawUnloadedCandidate = project.siteSearchSawUnloadedCandidate;
         String persistedDialect = village.architectureDialect;
+        String planningDialect = persistedDialect;
+        if (isManagedProject(project) && planningDialect.isBlank()) {
+            // The village center is already loaded. Locking this before candidate planning avoids
+            // querying an unloaded frontier merely to choose a palette.
+            planningDialect = biomeDialect(level, center).id();
+        }
         int attempts = Math.min(
                 PROJECT_SITE_CANDIDATES_PER_PULSE,
-                offsets.length - progress.testedCandidates);
+                offsets.size() - testedCandidates);
         for (int attempt = 0; attempt < attempts; attempt++) {
-            int step = progress.testedCandidates++;
-            int[] offset = offsets[(start + step) % offsets.length];
-            int centerX = center.getX() + offset[0];
-            int centerZ = center.getZ() + offset[1];
+            if (isManagedProject(project)) {
+                village.architectureDialect = planningDialect;
+            }
+            int step = testedCandidates++;
+            VillageMaterializationPolicy.SiteOffset offset =
+                    offsets.get((start + step) % offsets.size());
+            int centerX = center.getX() + offset.x();
+            int centerZ = center.getZ() + offset.z();
             BlockPos candidateTrailAnchor = null;
-            if (isModular(project)) {
+            if (isManagedProject(project)) {
                 candidateTrailAnchor = trailAnchor(
                         centerX, center.getY(), centerZ, village, project);
                 project.designRotation = VillageArchitecture.rotationToward(
@@ -1388,32 +2539,76 @@ public final class VillageProsperityManager {
                         candidateTrailAnchor.getZ());
             }
             StructureSize siteSize = rotatedSize(projectSize(project), project.designRotation);
-            ProjectSiteSearch originSearch = safeOrigin(level, centerX, centerZ, siteSize);
+            List<TerrainFoundationPlan.Column> authoritativeGroundContact = List.of();
+            if (isBlueprint(project)) {
+                BlockPos provisionalOrigin = new BlockPos(
+                        centerX - siteSize.width / 2,
+                        center.getY(),
+                        centerZ - siteSize.depth / 2);
+                authoritativeGroundContact = authoritativeGroundContactColumns(
+                        blueprintPlacementPlan(level, provisionalOrigin, village, project).base());
+            }
+            ProjectSiteSearch originSearch = safeOrigin(
+                    level,
+                    centerX,
+                    centerZ,
+                    siteSize,
+                    authoritativeGroundContact);
             if (originSearch.availability
                     == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
-                progress.sawUnloadedCandidate = true;
+                sawUnloadedCandidate = true;
+                checkpointProjectSiteSearch(
+                        economy, village, project, testedCandidates, sawUnloadedCandidate);
                 continue;
             }
             if (originSearch.availability
                     != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
+                checkpointProjectSiteSearch(
+                        economy, village, project, testedCandidates, sawUnloadedCandidate);
                 continue;
             }
             BlockPos origin = originSearch.origin;
-            if (isModular(project)) {
-                village.architectureDialect = persistedDialect.isBlank()
-                        ? biomeDialect(level, center).id()
-                        : persistedDialect;
+            if (isManagedProject(project)) {
+                village.architectureDialect = planningDialect;
             }
             if (village.bankAnchorPos != 0L
                     && origin.distSqr(BlockPos.of(village.bankAnchorPos)) < 18.0 * 18.0) {
                 village.architectureDialect = persistedDialect;
+                checkpointProjectSiteSearch(
+                        economy, village, project, testedCandidates, sawUnloadedCandidate);
                 continue;
             }
             EconomyState.VillageProject planningProject = project;
-            if (isModular(project)) {
+            EntranceApproachSearch entranceApproach = EntranceApproachSearch.flat();
+            if (isManagedProject(project)) {
                 planningProject = project.copy();
                 planningProject.trailAnchorSet = true;
                 planningProject.trailAnchorPos = candidateTrailAnchor.asLong();
+                entranceApproach = planModularEntranceApproach(
+                        level, origin, village, planningProject);
+                if (entranceApproach.availability
+                        == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
+                    sawUnloadedCandidate = true;
+                    village.architectureDialect = persistedDialect;
+                    checkpointProjectSiteSearch(
+                            economy, village, project, testedCandidates, sawUnloadedCandidate);
+                    continue;
+                }
+                if (entranceApproach.availability
+                        != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
+                    village.architectureDialect = persistedDialect;
+                    checkpointProjectSiteSearch(
+                            economy, village, project, testedCandidates, sawUnloadedCandidate);
+                    continue;
+                }
+                planningProject.entranceApproachVersion =
+                        EconomyState.ENTRANCE_APPROACH_VERSION;
+                planningProject.entranceApproachStepCount = entranceApproach.stepCount;
+                planningProject.entranceApproachCursor = 0;
+                planningProject.entranceApproachTotalCells =
+                        entranceApproach.placements.size();
+                planningProject.entranceApproachComplete =
+                        entranceApproach.placements.isEmpty();
             }
             List<Placement> planned = projectTemplate(
                     level, origin, village, planningProject);
@@ -1421,12 +2616,16 @@ public final class VillageProsperityManager {
                     level, village.villageId, project.projectId, origin, planned);
             if (siteAvailability
                     == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
-                progress.sawUnloadedCandidate = true;
+                sawUnloadedCandidate = true;
                 village.architectureDialect = persistedDialect;
+                checkpointProjectSiteSearch(
+                        economy, village, project, testedCandidates, sawUnloadedCandidate);
                 continue;
             }
             if (siteAvailability != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
                 village.architectureDialect = persistedDialect;
+                checkpointProjectSiteSearch(
+                        economy, village, project, testedCandidates, sawUnloadedCandidate);
                 continue;
             }
             ProjectBounds candidateBounds = bounds(origin, planned);
@@ -1434,26 +2633,53 @@ public final class VillageProsperityManager {
                     .filter(other -> other.originPos != 0L && other.projectId != project.projectId)
                     .map(VillageProsperityManager::projectBounds)
                     .anyMatch(other -> overlaps(candidateBounds, other, 2));
-            if (!overlaps) {
-                SITE_SEARCH_PROGRESS.remove(searchKey);
+            boolean overlapsExcludedProjectSite = excludedProjectLots.stream()
+                    .map(VillageProsperityManager::excludedProjectBounds)
+                    .anyMatch(other -> overlapsHorizontally(candidateBounds, other, 4));
+            boolean overlapsManagedBank = managedBankLots.stream().anyMatch(anchor ->
+                    VillageBankManager.overlapsManagedBankLot(
+                            anchor,
+                            candidateBounds.minimum.getX(),
+                            candidateBounds.maximum.getX(),
+                            candidateBounds.minimum.getZ(),
+                            candidateBounds.maximum.getZ(),
+                            4));
+            if (!overlaps && !overlapsExcludedProjectSite && !overlapsManagedBank) {
                 return new ProjectSiteSearch(
                         origin,
                         candidateTrailAnchor,
+                        entranceApproach.stepCount,
+                        entranceApproach.placements.size(),
                         VillageMaterializationPolicy.SiteAvailability.AVAILABLE);
             }
             village.architectureDialect = persistedDialect;
+            checkpointProjectSiteSearch(
+                    economy, village, project, testedCandidates, sawUnloadedCandidate);
         }
         village.architectureDialect = persistedDialect;
-        if (progress.testedCandidates < offsets.length) {
+        if (testedCandidates < offsets.size()) {
             return new ProjectSiteSearch(
                     null, VillageMaterializationPolicy.SiteAvailability.SEARCH_INCOMPLETE);
         }
-        boolean sawUnloadedCandidate = progress.sawUnloadedCandidate;
-        SITE_SEARCH_PROGRESS.remove(searchKey);
         return new ProjectSiteSearch(
                 null,
                 VillageMaterializationPolicy.completedSiteSearch(
                         false, sawUnloadedCandidate));
+    }
+
+    private static void checkpointProjectSiteSearch(
+            EconomyService economy,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            int testedCandidates,
+            boolean sawUnloadedCandidate) {
+        project.siteSearchCursor = Math.max(project.siteSearchCursor, testedCandidates);
+        project.siteSearchSawUnloadedCandidate |= sawUnloadedCandidate;
+        economy.recordVillageProjectSiteSearchProgress(
+                village.villageId,
+                project.projectId,
+                project.siteSearchCursor,
+                project.siteSearchSawUnloadedCandidate);
     }
 
     private static VillageMaterializationPolicy.SiteAvailability mayUseProjectSite(
@@ -1465,17 +2691,26 @@ public final class VillageProsperityManager {
         // Finish the chunk-only preflight before any height, block-state, or protection read. A
         // partial view cannot prove the lot unsafe and must not trigger persistent failure backoff.
         for (Placement placement : placements) {
-            if (!placement.isTrail() && !placementColumnLoaded(level, origin, placement)) {
+            if (!placement.isTrail()
+                    && !placement.isCosmetic()
+                    && !placementColumnLoaded(level, origin, placement)) {
                 return VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED;
             }
         }
         BlockPos previousPrimaryTrail = null;
         for (Placement placement : placements) {
-            if (placement.isTrail() && !placementColumnLoaded(level, origin, placement)) {
+            if ((placement.isTrail() || placement.isCosmetic())
+                    && !placementColumnLoaded(level, origin, placement)) {
                 continue;
             }
             BlockPos target = placementTarget(level, origin, placement);
             BlockState existing = level.getBlockState(target);
+            if (placement.isAccessClearance()) {
+                if (!placementSatisfied(level, origin, target, existing, placement)) {
+                    return VillageMaterializationPolicy.SiteAvailability.UNSAFE;
+                }
+                continue;
+            }
             if (placement.role == PlacementRole.TRAIL_PRIMARY) {
                 if (previousPrimaryTrail != null
                         && Math.abs(target.getY() - previousPrimaryTrail.getY()) > 1) {
@@ -1484,7 +2719,7 @@ public final class VillageProsperityManager {
                 }
                 previousPrimaryTrail = target;
             }
-            if (placement.role != PlacementRole.STRUCTURE
+            if (!placement.isStructuralAuthority()
                     && placementSatisfied(level, origin, target, existing, placement)) {
                 continue;
             }
@@ -1502,7 +2737,7 @@ public final class VillageProsperityManager {
                     level,
                     target,
                     placement)) {
-                if (placement.isTrail()) {
+                if (placement.isTrail() || placement.isCosmetic()) {
                     continue;
                 }
                 return VillageMaterializationPolicy.SiteAvailability.UNSAFE;
@@ -1511,12 +2746,62 @@ public final class VillageProsperityManager {
         return VillageMaterializationPolicy.SiteAvailability.AVAILABLE;
     }
 
+    private static List<TerrainFoundationPlan.Column> authoritativeGroundContactColumns(
+            List<Placement> transformedBase) {
+        List<TerrainFoundationPlan.Cell> authoritative = new ArrayList<>();
+        for (Placement placement : transformedBase) {
+            if (placement.isTrail()
+                    || !placement.isGroundAuthoritative()
+                    || placement.isAccessClearance()) {
+                continue;
+            }
+            authoritative.add(new TerrainFoundationPlan.Cell(
+                    placement.dx, placement.dy, placement.dz));
+        }
+        return TerrainFoundationPlan.groundContactColumns(authoritative);
+    }
+
     private static ProjectSiteSearch safeOrigin(
-            ServerLevel level, int centerX, int centerZ, StructureSize size) {
-        int minimumX = centerX - size.width / 2 - 1;
-        int maximumX = centerX + size.width / 2 + 1;
-        int minimumZ = centerZ - size.depth / 2 - 2;
-        int maximumZ = centerZ + size.depth / 2 + 1;
+            ServerLevel level,
+            int centerX,
+            int centerZ,
+            StructureSize size,
+            List<TerrainFoundationPlan.Column> authoritativeGroundContact) {
+        // This is deliberately the required building/approach envelope. Blueprint V2 side and
+        // rear dressing may extend farther, but reserving only sites with an entirely empty yard
+        // would make harmless player landscaping prevent essential village construction. Those
+        // outlying COSMETIC cells receive a loaded/protection/ground-depth check at their single
+        // materialization attempt and are permanently skipped when the local terrain is unsafe.
+        int originX = centerX - size.width / 2;
+        int originZ = centerZ - size.depth / 2;
+        List<TerrainFoundationPlan.Column> terrainColumns = new ArrayList<>();
+        Set<Long> seenColumns = new HashSet<>();
+        for (int x = centerX - size.width / 2 - 1;
+                x <= centerX + size.width / 2 + 1;
+                x++) {
+            for (int z = centerZ - size.depth / 2 - 2;
+                    z <= centerZ + size.depth / 2 + 1;
+                    z++) {
+                if (seenColumns.add(packXZ(x, z))) {
+                    terrainColumns.add(new TerrainFoundationPlan.Column(x, z));
+                }
+            }
+        }
+        for (TerrainFoundationPlan.Column relative : authoritativeGroundContact) {
+            int x = originX + relative.x();
+            int z = originZ + relative.z();
+            if (seenColumns.add(packXZ(x, z))) {
+                terrainColumns.add(new TerrainFoundationPlan.Column(x, z));
+            }
+        }
+        int minimumX = terrainColumns.stream().mapToInt(TerrainFoundationPlan.Column::x)
+                .min().orElse(originX - 1);
+        int maximumX = terrainColumns.stream().mapToInt(TerrainFoundationPlan.Column::x)
+                .max().orElse(originX + size.width);
+        int minimumZ = terrainColumns.stream().mapToInt(TerrainFoundationPlan.Column::z)
+                .min().orElse(originZ - 2);
+        int maximumZ = terrainColumns.stream().mapToInt(TerrainFoundationPlan.Column::z)
+                .max().orElse(originZ + size.depth);
         if (!areaColumnsLoaded(level, minimumX, maximumX, minimumZ, maximumZ)) {
             return new ProjectSiteSearch(
                     null,
@@ -1524,21 +2809,20 @@ public final class VillageProsperityManager {
         }
         int minimum = Integer.MAX_VALUE;
         int maximum = Integer.MIN_VALUE;
-        for (int x = minimumX; x <= maximumX; x++) {
-            for (int z = minimumZ; z <= maximumZ; z++) {
-                int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-                BlockPos ground = new BlockPos(x, surface - 1, z);
-                BlockState groundState = level.getBlockState(ground);
-                if (groundState.isAir()
-                        || level.getBlockEntity(ground) != null
-                        || !level.getFluidState(ground).isEmpty()
-                        || !isNaturalProjectGround(groundState)) {
-                    return new ProjectSiteSearch(
-                            null, VillageMaterializationPolicy.SiteAvailability.UNSAFE);
-                }
-                minimum = Math.min(minimum, surface);
-                maximum = Math.max(maximum, surface);
+        for (TerrainFoundationPlan.Column column : terrainColumns) {
+            int surface = level.getHeight(
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.x(), column.z());
+            BlockPos ground = new BlockPos(column.x(), surface - 1, column.z());
+            BlockState groundState = level.getBlockState(ground);
+            if (groundState.isAir()
+                    || level.getBlockEntity(ground) != null
+                    || !level.getFluidState(ground).isEmpty()
+                    || !isNaturalProjectGround(groundState)) {
+                return new ProjectSiteSearch(
+                        null, VillageMaterializationPolicy.SiteAvailability.UNSAFE);
             }
+            minimum = Math.min(minimum, surface);
+            maximum = Math.max(maximum, surface);
         }
         if (!TerrainFoundationPlan.supportsTerrainRange(
                 minimum, maximum, TerrainFoundationPlan.MAX_TERRAIN_DROP)) {
@@ -1548,24 +2832,31 @@ public final class VillageProsperityManager {
         // Level at the highest sampled natural surface. The deterministic terrain-support suffix
         // bridges only small drops; natural ground satisfies a support without being replaced.
         BlockPos origin = new BlockPos(
-                centerX - size.width / 2,
+                originX,
                 maximum,
-                centerZ - size.depth / 2);
-        for (int x = -1; x <= size.width; x++) {
-            for (int z = -2; z <= size.depth; z++) {
-                for (int y = 0; y <= size.height; y++) {
-                    BlockPos target = origin.offset(x, y, z);
-                    BlockState state = level.getBlockState(target);
-                    if (level.getBlockEntity(target) != null
-                            || (!state.isAir() && !state.canBeReplaced())) {
-                        return new ProjectSiteSearch(
-                                null, VillageMaterializationPolicy.SiteAvailability.UNSAFE);
-                    }
+                originZ);
+        for (TerrainFoundationPlan.Column column : terrainColumns) {
+            for (int y = 0; y <= size.height; y++) {
+                BlockPos target = new BlockPos(column.x(), maximum + y, column.z());
+                BlockState state = level.getBlockState(target);
+                if (level.getBlockEntity(target) != null
+                        || !level.getFluidState(target).isEmpty()
+                        || (!state.isAir() && !state.canBeReplaced())) {
+                    return new ProjectSiteSearch(
+                            null, VillageMaterializationPolicy.SiteAvailability.UNSAFE);
                 }
             }
         }
         return new ProjectSiteSearch(
                 origin, VillageMaterializationPolicy.SiteAvailability.AVAILABLE);
+    }
+
+    private static BlockPos surfaceVillageProbe(ServerLevel level, BlockPos playerPosition) {
+        int surface = level.getHeight(
+                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                playerPosition.getX(),
+                playerPosition.getZ());
+        return new BlockPos(playerPosition.getX(), surface, playerPosition.getZ());
     }
 
     private static boolean areaColumnsLoaded(
@@ -1631,6 +2922,12 @@ public final class VillageProsperityManager {
                 origin.offset(relative.maximumX(), relative.maximumY(), relative.maximumZ()));
     }
 
+    private static ProjectBounds excludedProjectBounds(EconomyService.VillageProjectLot lot) {
+        return new ProjectBounds(
+                BlockPos.of(lot.boundsMinPos()),
+                BlockPos.of(lot.boundsMaxPos()));
+    }
+
     private static boolean overlaps(
             ProjectBounds first, ProjectBounds second, int horizontalMargin) {
         return first.minimum.getX() - horizontalMargin
@@ -1639,6 +2936,19 @@ public final class VillageProsperityManager {
                         >= second.minimum.getX() - horizontalMargin
                 && first.minimum.getY() <= second.maximum.getY()
                 && first.maximum.getY() >= second.minimum.getY()
+                && first.minimum.getZ() - horizontalMargin
+                        <= second.maximum.getZ() + horizontalMargin
+                && first.maximum.getZ() + horizontalMargin
+                        >= second.minimum.getZ() - horizontalMargin;
+    }
+
+    /** Retired player-edited lots remain excluded even when later terrain selects another Y. */
+    private static boolean overlapsHorizontally(
+            ProjectBounds first, ProjectBounds second, int horizontalMargin) {
+        return first.minimum.getX() - horizontalMargin
+                        <= second.maximum.getX() + horizontalMargin
+                && first.maximum.getX() + horizontalMargin
+                        >= second.minimum.getX() - horizontalMargin
                 && first.minimum.getZ() - horizontalMargin
                         <= second.maximum.getZ() + horizontalMargin
                 && first.maximum.getZ() + horizontalMargin
@@ -1654,6 +2964,9 @@ public final class VillageProsperityManager {
             BlockPos origin,
             EconomyState.VillageRecord village,
             EconomyState.VillageProject project) {
+        if (isBlueprint(project)) {
+            return blueprintProjectTemplate(level, origin, village, project);
+        }
         if (isModular(project)) {
             return modularProjectTemplate(level, origin, village, project);
         }
@@ -1672,7 +2985,9 @@ public final class VillageProsperityManager {
         result.addAll(legacy);
         result.addAll(layers.supports);
         result.addAll(layers.variation);
-        result.addAll(projectTrail(palette, origin, village, project));
+        // Legacy project roads are embedded before later building stages. Their original narrow
+        // list must stay exact; modular roads have an independent cursor for appended retrofits.
+        result.addAll(projectTrail(palette, origin, village, project, false));
         int baselineBlocks = result.size();
         int stageOneBlocks = baselineBlocks + layers.stageOne.size();
         int stageTwoBlocks = stageOneBlocks + layers.stageTwo.size();
@@ -1694,6 +3009,214 @@ public final class VillageProsperityManager {
         return List.copyOf(result);
     }
 
+    private static List<Placement> blueprintProjectTemplate(
+            ServerLevel level,
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project) {
+        int visualStage = project.originPos == 0L
+                ? VillageStructureProgression.desiredVisualStage(village.developmentTier)
+                : project.designStage;
+        return blueprintProjectTemplate(level, origin, village, project, visualStage);
+    }
+
+    private static List<Placement> blueprintProjectTemplate(
+            ServerLevel level,
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            int visualStage) {
+        if (visualStage < 0 || visualStage > VillageStructureProgression.MAX_VISUAL_STAGE) {
+            throw new IllegalStateException(
+                    "Invalid persisted Blueprint V2 visual stage " + visualStage);
+        }
+        BlueprintPlacementPlan plan;
+        try {
+            plan = blueprintPlacementPlan(level, origin, village, project);
+        } catch (BlueprintPlanMismatchException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new BlueprintPlanMismatchException(
+                    village.villageId,
+                    project.projectId,
+                    "Blueprint V2 template is invalid for project " + project.projectId,
+                    exception);
+        }
+        String canonicalHash = blueprintPlanHash(village, project, plan);
+        if (!project.designPlanHash.isBlank()
+                && !project.designPlanHash.equals(canonicalHash)) {
+            throw new BlueprintPlanMismatchException(
+                    village.villageId,
+                    project.projectId,
+                    "Blueprint V2 plan hash changed for project " + project.projectId);
+        }
+        return orderedBlueprintLayers(plan.base, plan.stageOne, plan.stageTwo, visualStage);
+    }
+
+    private static BlueprintPlacementPlan blueprintPlacementPlan(
+            ServerLevel level,
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project) {
+        VillageArchitecture.Character character = village.architectureCharacter.isBlank()
+                ? VillageArchitecture.character(village.villageId)
+                : VillageArchitecture.Character.fromId(village.architectureCharacter);
+        VillageArchitecture.BiomeDialect dialect = village.architectureDialect.isBlank()
+                ? biomeDialect(level, origin)
+                : VillageArchitecture.BiomeDialect.fromId(village.architectureDialect);
+        AuthoredVillageStructures.Blueprint blueprint = AuthoredVillageStructures.plan(
+                project.type,
+                project.designTemplateId,
+                project.designTemplateRevision,
+                project.designPaletteId,
+                project.designDressingId,
+                character,
+                dialect,
+                project.designSeed);
+        StructureSize structure = projectSize(project);
+        Set<BlockPos> requiredSafetyFixtures = cumulativeRequiredSafetyFixturePositions(
+                blueprint.base(), blueprint.stageOne(), blueprint.stageTwo());
+
+        List<Placement> semanticBase = new ArrayList<>(
+                toBlueprintPlacements(
+                        blueprint.base(), PlacementRole.STRUCTURE, requiredSafetyFixtures));
+        semanticBase.addAll(blueprintAccessClearances(blueprint));
+        List<Placement> canonicalBase = withFoundationSupports(
+                List.of(), semanticBase, blueprint.materials().foundation());
+        List<Placement> canonicalStageOne = withFoundationSupports(
+                canonicalBase,
+                toBlueprintPlacements(
+                        blueprint.stageOne(), PlacementRole.COSMETIC, requiredSafetyFixtures),
+                blueprint.materials().foundation());
+        List<Placement> throughStageOne = new ArrayList<>(
+                canonicalBase.size() + canonicalStageOne.size());
+        throughStageOne.addAll(canonicalBase);
+        throughStageOne.addAll(canonicalStageOne);
+        List<Placement> canonicalStageTwo = withFoundationSupports(
+                throughStageOne,
+                toBlueprintPlacements(
+                        blueprint.stageTwo(), PlacementRole.COSMETIC, requiredSafetyFixtures),
+                blueprint.materials().foundation());
+
+        List<Placement> base = rotatePlacements(
+                mirrorPlacements(canonicalBase, structure, project.designMirrored),
+                structure,
+                project.designRotation);
+        List<Placement> stageOne = rotatePlacements(
+                mirrorPlacements(canonicalStageOne, structure, project.designMirrored),
+                structure,
+                project.designRotation);
+        List<Placement> stageTwo = rotatePlacements(
+                mirrorPlacements(canonicalStageTwo, structure, project.designMirrored),
+                structure,
+                project.designRotation);
+        return new BlueprintPlacementPlan(
+                List.copyOf(base),
+                List.copyOf(stageOne),
+                List.copyOf(stageTwo),
+                List.copyOf(canonicalBase),
+                List.copyOf(canonicalStageOne),
+                List.copyOf(canonicalStageTwo),
+                VillageArchitecture.requireBlueprint(
+                        project.designTemplateId, project.designTemplateRevision),
+                character.id(),
+                dialect.id(),
+                blueprint.materials());
+    }
+
+    private static List<Placement> orderedBlueprintLayers(
+            List<Placement> base,
+            List<Placement> stageOne,
+            List<Placement> stageTwo,
+            int visualStage) {
+        List<Placement> result = new ArrayList<>(
+                base.size() + stageOne.size() + stageTwo.size());
+        result.addAll(base);
+        if (visualStage >= 1) {
+            result.addAll(stageOne);
+        }
+        if (visualStage >= 2) {
+            result.addAll(stageTwo);
+        }
+        return List.copyOf(result);
+    }
+
+    private static String blueprintPlanHash(
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            BlueprintPlacementPlan plan) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateBlueprintDigest(digest, VillageArchitecture.BLUEPRINT_SCHEMA);
+            updateBlueprintDigest(digest, Integer.toString(
+                    VillageArchitecture.BLUEPRINT_PLAN_HASH_VERSION));
+            updateBlueprintDigest(digest, project.type.name());
+            updateBlueprintDigest(digest, project.designTemplateId);
+            updateBlueprintDigest(digest, Integer.toString(project.designTemplateRevision));
+            updateBlueprintDigest(digest, project.designPaletteId);
+            updateBlueprintDigest(digest, project.designDressingId);
+            updateBlueprintDigest(digest, Boolean.toString(project.designMirrored));
+            updateBlueprintDigest(digest, plan.characterId);
+            updateBlueprintDigest(digest, plan.dialectId);
+            updateBlueprintDigest(digest, Integer.toString(plan.descriptor.width()));
+            updateBlueprintDigest(digest, Integer.toString(plan.descriptor.depth()));
+            updateBlueprintDigest(digest, Integer.toString(plan.descriptor.height()));
+            updateBlueprintDigest(digest, Boolean.toString(plan.descriptor.mirrorable()));
+            updateBlueprintDigest(digest, "base");
+            updateBlueprintDigest(digest, Integer.toString(plan.canonicalBase.size()));
+            for (Placement placement : plan.canonicalBase) {
+                updateBlueprintDigest(
+                        digest,
+                        placement.dx + "," + placement.dy + "," + placement.dz
+                                + ":" + placement.role + ":"
+                                + canonicalBlockState(placement.state));
+            }
+            updateBlueprintDigest(digest, "stage_one");
+            updateBlueprintDigest(digest, Integer.toString(plan.canonicalStageOne.size()));
+            for (Placement placement : plan.canonicalStageOne) {
+                updateBlueprintDigest(
+                        digest,
+                        placement.dx + "," + placement.dy + "," + placement.dz
+                                + ":" + placement.role + ":"
+                                + canonicalBlockState(placement.state));
+            }
+            updateBlueprintDigest(digest, "stage_two");
+            updateBlueprintDigest(digest, Integer.toString(plan.canonicalStageTwo.size()));
+            for (Placement placement : plan.canonicalStageTwo) {
+                updateBlueprintDigest(
+                        digest,
+                        placement.dx + "," + placement.dy + "," + placement.dz
+                                + ":" + placement.role + ":"
+                                + canonicalBlockState(placement.state));
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("JVM is missing SHA-256", exception);
+        }
+    }
+
+    private static void updateBlueprintDigest(MessageDigest digest, String value) {
+        digest.update(value.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) 0);
+    }
+
+    private static String canonicalBlockState(BlockState state) {
+        StringBuilder result = new StringBuilder(
+                BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+        state.getProperties().stream()
+                .sorted(Comparator.comparing(Property::getName))
+                .forEach(property -> result.append(';')
+                        .append(property.getName())
+                        .append('=')
+                        .append(propertyValueName(state, property)));
+        return result.toString();
+    }
+
+    private static <T extends Comparable<T>> String propertyValueName(
+            BlockState state, Property<T> property) {
+        return property.getName(state.getValue(property));
+    }
+
     private static List<Placement> modularProjectTemplate(
             ServerLevel level,
             BlockPos origin,
@@ -1711,6 +3234,17 @@ public final class VillageProsperityManager {
             EconomyState.VillageRecord village,
             EconomyState.VillageProject project,
             int visualStage) {
+        return modularProjectTemplate(
+                level, origin, village, project, visualStage, false);
+    }
+
+    private static List<Placement> modularProjectTemplate(
+            ServerLevel level,
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            int visualStage,
+            boolean includeQualityMigration) {
         VillageArchitecture.Character character = village.architectureCharacter.isBlank()
                 ? VillageArchitecture.character(village.villageId)
                 : VillageArchitecture.Character.fromId(village.architectureCharacter);
@@ -1745,47 +3279,226 @@ public final class VillageProsperityManager {
                 throughStageOne,
                 toPlacements(layers.stageTwo()),
                 layers.materials().foundation());
+        List<Placement> quality = withFoundationSupports(
+                base, toPlacements(layers.quality()), layers.materials().foundation());
 
         int rotation = project.designRotation;
         List<Placement> rotatedBase = rotatePlacements(base, structure, rotation);
         List<Placement> rotatedStageOne = rotatePlacements(stageOne, structure, rotation);
         List<Placement> rotatedStageTwo = rotatePlacements(stageTwo, structure, rotation);
+        List<Placement> rotatedQuality = rotatePlacements(quality, structure, rotation);
 
-        List<Placement> result = new ArrayList<>(
-                rotatedBase.size() + rotatedStageOne.size() + rotatedStageTwo.size());
-        result.addAll(rotatedBase);
         if (visualStage < 0 || visualStage > VillageStructureProgression.MAX_VISUAL_STAGE) {
             throw new IllegalStateException("Invalid persisted modular visual stage " + visualStage);
         }
+        boolean includeQuality = project.designQualityStage >= 0 || includeQualityMigration;
+        int qualityInsertionStage = project.designQualityStage >= 0
+                ? project.designQualityStage
+                : visualStage;
+        if (includeQuality
+                && (qualityInsertionStage < 0 || qualityInsertionStage > visualStage)) {
+            throw new IllegalStateException(
+                    "Invalid persisted modular quality insertion stage "
+                            + qualityInsertionStage
+                            + " for visual stage "
+                            + visualStage);
+        }
+        return orderedModularLayers(
+                rotatedBase,
+                rotatedStageOne,
+                rotatedStageTwo,
+                rotatedQuality,
+                visualStage,
+                includeQuality ? qualityInsertionStage : -1);
+    }
+
+    /**
+     * Resolves the exact production Blueprint V2 building for the opt-in structure review gallery.
+     *
+     * <p>The returned blocks have already passed the same satisfied/support and replaceability
+     * checks used by ordinary construction. No economy village or project is registered: gallery
+     * fixtures must never participate in settlement simulation, integrity audits, or relocation.
+     */
+    static List<StructureGalleryBlock> galleryProjectBlueprint(
+            ServerLevel level,
+            BlockPos origin,
+            VillageProsperityEngine.ProjectType type,
+            VillageArchitecture.BiomeDialect dialect,
+            VillageArchitecture.Character character,
+            String templateId,
+            int templateRevision,
+            String paletteId,
+            String dressingId,
+            boolean mirrored,
+            int visualStage,
+            int rotation) {
+        if (!StructureGallery.enabled()) {
+            throw new IllegalStateException("Structure gallery JVM opt-in is not enabled");
+        }
+        long signature = VillageArchitecture.blueprintSignature(
+                type,
+                templateId,
+                templateRevision,
+                paletteId,
+                dressingId,
+                mirrored);
+        EconomyState.VillageRecord village = new EconomyState.VillageRecord();
+        village.villageId = new UUID(
+                0x54455347414c4c45L,
+                signature ^ ((long) type.ordinal() << 32));
+        village.developmentTier = 5;
+        village.architectureDialect = dialect.id();
+        village.architectureCharacter = character.id();
+
+        EconomyState.VillageProject project = new EconomyState.VillageProject();
+        project.projectId = signature;
+        project.type = type;
+        project.originPos = origin.asLong();
+        project.designSchema = VillageArchitecture.BLUEPRINT_SCHEMA;
+        project.designTemplateId = templateId;
+        project.designTemplateRevision = templateRevision;
+        project.designPaletteId = paletteId;
+        project.designDressingId = dressingId;
+        project.designPlanHashVersion = VillageArchitecture.BLUEPRINT_PLAN_HASH_VERSION;
+        project.designMirrored = mirrored;
+        project.designRotation = rotation;
+        project.designSignature = signature;
+        project.designSeed = signature;
+        project.designStage = visualStage;
+        project.designQualityStage = -1;
+
+        List<Placement> production = blueprintProjectTemplate(
+                level, origin, village, project, visualStage);
+        List<StructureGalleryBlock> resolved = new ArrayList<>(production.size());
+        for (Placement placement : production) {
+            BlockPos target = placementTarget(level, origin, placement);
+            BlockState current = level.getBlockState(target);
+            if (placementSatisfied(level, origin, target, current, placement)) {
+                continue;
+            }
+            if (level.getBlockEntity(target) != null
+                    || !level.getFluidState(target).isEmpty()
+                    || !mayApplyPlacement(current, placement)) {
+                throw new IllegalStateException(
+                        "Gallery plot is obstructed at " + target.toShortString());
+            }
+            resolved.add(new StructureGalleryBlock(target, placement.state));
+        }
+        return List.copyOf(resolved);
+    }
+
+    /** Recomputes pane/bar connections after a complete gallery blueprint has been placed. */
+    static void normalizeGalleryConnections(
+            ServerLevel level, List<StructureGalleryBlock> blocks) {
+        for (StructureGalleryBlock block : blocks) {
+            if (!isManagedConnectionBlock(block.state())) {
+                continue;
+            }
+            BlockState current = level.getBlockState(block.position());
+            if (!current.is(block.state().getBlock())) {
+                continue;
+            }
+            BlockState updated = Block.updateFromNeighbourShapes(
+                    current, level, block.position());
+            if (!updated.equals(current)) {
+                level.setBlock(
+                        block.position(),
+                        updated,
+                        Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+            }
+        }
+    }
+
+    /** Orders a quality layer around its durable insertion stage without moving any old cells. */
+    private static List<Placement> orderedModularLayers(
+            List<Placement> base,
+            List<Placement> stageOne,
+            List<Placement> stageTwo,
+            List<Placement> quality,
+            int visualStage,
+            int qualityInsertionStage) {
+        List<Placement> result = new ArrayList<>(
+                base.size() + stageOne.size() + stageTwo.size() + quality.size());
+        result.addAll(base);
+        if (qualityInsertionStage == 0) {
+            result.addAll(quality);
+        }
         if (visualStage >= 1) {
-            result.addAll(rotatedStageOne);
+            result.addAll(stageOne);
+            if (qualityInsertionStage == 1) {
+                result.addAll(quality);
+            }
         }
         if (visualStage >= 2) {
-            result.addAll(rotatedStageTwo);
+            result.addAll(stageTwo);
+            if (qualityInsertionStage == 2) {
+                result.addAll(quality);
+            }
         }
         return List.copyOf(result);
     }
 
-    private static List<Placement> modularProjectTrail(
+    private static List<Placement> managedProjectTrail(
             BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project) {
+        return projectTrail(
+                managedProjectPalette(village, project), origin, village, project, true);
+    }
+
+    private static Palette managedProjectPalette(
             EconomyState.VillageRecord village,
             EconomyState.VillageProject project) {
         VillageArchitecture.Character character = VillageArchitecture.Character.fromId(
                 village.architectureCharacter);
         VillageArchitecture.BiomeDialect dialect = VillageArchitecture.BiomeDialect.fromId(
                 village.architectureDialect);
-        ModularVillageStructures.Materials materials =
-                ModularVillageStructures.materials(character, dialect);
-        Palette palette = new Palette(
-                materials.foundation(),
-                materials.wall(),
-                materials.timber(),
-                materials.roofSlab(),
-                materials.fence(),
-                materials.accent(),
-                materials.door(),
-                materials.entryStairs());
-        return projectTrail(palette, origin, village, project);
+        Palette palette;
+        if (isBlueprint(project)) {
+            AuthoredVillageStructures.Materials materials = AuthoredVillageStructures.plan(
+                    project.type,
+                    project.designTemplateId,
+                    project.designTemplateRevision,
+                    project.designPaletteId,
+                    project.designDressingId,
+                    character,
+                    dialect).materials();
+            palette = new Palette(
+                    materials.foundation(),
+                    materials.wall(),
+                    materials.timber(),
+                    materials.roofSlab(),
+                    materials.fence(),
+                    materials.accent(),
+                    materials.door(),
+                    materials.entryStairs());
+        } else {
+            ModularVillageStructures.Materials materials =
+                    ModularVillageStructures.materials(character, dialect);
+            palette = new Palette(
+                    materials.foundation(),
+                    materials.wall(),
+                    materials.timber(),
+                    materials.roofSlab(),
+                    materials.fence(),
+                    materials.accent(),
+                    materials.door(),
+                    materials.entryStairs());
+        }
+        return palette;
+    }
+
+    /** Exact historical primary cells whose frozen selector emitted coarse dirt. */
+    private static List<Placement> modularProjectTrailCenterSurfaceMigration(
+            BlockPos origin,
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project) {
+        return managedProjectTrail(origin, village, project).stream()
+                .filter(placement -> placement.role == PlacementRole.TRAIL_PRIMARY
+                        && placement.state.is(Blocks.COARSE_DIRT))
+                .map(placement -> Placement.trailCenterSurfaceRetrofit(
+                        placement.dx, placement.dz))
+                .toList();
     }
 
     private static List<Placement> toPlacements(
@@ -1795,6 +3508,158 @@ public final class VillageProsperityManager {
                 .toList();
     }
 
+    private static List<Placement> toBlueprintPlacements(
+            List<AuthoredVillageStructures.Cell> cells,
+            PlacementRole role,
+            Set<BlockPos> requiredSafetyFixtures) {
+        List<Placement> placements = new ArrayList<>(cells.size());
+        int firstDecor = cells.size();
+        for (int index = 0; index < cells.size(); index++) {
+            AuthoredVillageStructures.Cell cell = cells.get(index);
+            if (cell.phase() == AuthoredVillageStructures.Phase.DECOR) {
+                firstDecor = Math.min(firstDecor, index);
+            }
+            PlacementRole persistedRole = role == PlacementRole.STRUCTURE
+                            && cell.phase() == AuthoredVillageStructures.Phase.DECOR
+                    ? PlacementRole.COSMETIC
+                    : role;
+            BlockPos position = new BlockPos(cell.x(), cell.y(), cell.z());
+            placements.add(new Placement(
+                    cell.x(),
+                    cell.y(),
+                    cell.z(),
+                    cell.state(),
+                    persistedRole,
+                    requiredSafetyFixtures.contains(position)));
+        }
+        // DECOR is the final authored phase and is otherwise already in stable placement order.
+        // Put chain runs top-down before hanging lamps so the attachment exists when vanilla
+        // evaluates canSurvive. Required safety fixtures retain their historical COSMETIC role in
+        // the immutable v1 blueprint hash, but are never optional at runtime.
+        placements.subList(firstDecor, placements.size()).sort(Comparator
+                .comparingInt(VillageProsperityManager::cosmeticAttachmentPriority)
+                .thenComparingInt(placement -> placement.state.is(Blocks.IRON_CHAIN)
+                        ? -placement.dy
+                        : 0));
+        return List.copyOf(placements);
+    }
+
+    /**
+     * Computes one immutable safety-authority set from every observable cumulative stage. A later
+     * stage fixture may hang from an earlier cosmetic beam, so layer-local scans are insufficient:
+     * the emitter, its attachment, every intervening chain, and the terminal authored support all
+     * remain required together. Ordinary non-luminous decoration stays optional.
+     *
+     * <p>The bit is intentionally independent of PlacementRole. Saved Blueprint V2 hashes retain
+     * their original v1 role bytes, so strengthening runtime safety does not rewrite plan identity
+     * or any frozen geometry.</p>
+     */
+    private static Set<BlockPos> cumulativeRequiredSafetyFixturePositions(
+            List<AuthoredVillageStructures.Cell> base,
+            List<AuthoredVillageStructures.Cell> stageOne,
+            List<AuthoredVillageStructures.Cell> stageTwo) {
+        Map<BlockPos, AuthoredVillageStructures.Cell> authored = new HashMap<>();
+        Set<BlockPos> required = new HashSet<>();
+        for (List<AuthoredVillageStructures.Cell> layer : List.of(base, stageOne, stageTwo)) {
+            for (AuthoredVillageStructures.Cell cell : layer) {
+                authored.put(new BlockPos(cell.x(), cell.y(), cell.z()), cell);
+            }
+            required.addAll(requiredSafetyFixturePositions(authored));
+        }
+        return Set.copyOf(required);
+    }
+
+    private static Set<BlockPos> requiredSafetyFixturePositions(
+            Map<BlockPos, AuthoredVillageStructures.Cell> authored) {
+        Set<BlockPos> required = new HashSet<>();
+        for (Map.Entry<BlockPos, AuthoredVillageStructures.Cell> entry : authored.entrySet()) {
+            AuthoredVillageStructures.Cell cell = entry.getValue();
+            BlockState state = cell.state();
+            if (state.getLightEmission() <= 0) {
+                continue;
+            }
+            BlockPos emitter = entry.getKey();
+            required.add(emitter);
+
+            BlockPos support;
+            boolean followsHangingChain = false;
+            if (state.getBlock() instanceof LanternBlock) {
+                followsHangingChain = state.getValue(LanternBlock.HANGING);
+                support = followsHangingChain ? emitter.above() : emitter.below();
+            } else if (state.is(Blocks.WALL_TORCH) || state.is(Blocks.SOUL_WALL_TORCH)) {
+                support = emitter.relative(
+                        state.getValue(HorizontalDirectionalBlock.FACING).getOpposite());
+            } else if (state.is(Blocks.TORCH) || state.is(Blocks.SOUL_TORCH)) {
+                support = emitter.below();
+            } else {
+                continue;
+            }
+
+            while (true) {
+                AuthoredVillageStructures.Cell supportCell = authored.get(support);
+                if (supportCell == null) {
+                    break;
+                }
+                required.add(support);
+                if (!followsHangingChain || !supportCell.state().is(Blocks.IRON_CHAIN)) {
+                    break;
+                }
+                support = support.above();
+            }
+        }
+        return Set.copyOf(required);
+    }
+
+    private static int cosmeticAttachmentPriority(Placement placement) {
+        if (placement.state.is(Blocks.IRON_CHAIN)) {
+            return 0;
+        }
+        if (placement.state.getBlock() instanceof LanternBlock
+                && placement.state.getValue(LanternBlock.HANGING)) {
+            return 2;
+        }
+        return 1;
+    }
+
+    /**
+     * Converts authored navigation semantics into persistent, non-writing runtime assertions.
+     * Reserved aisles and workstation/entrance standing space must remain air for a structure to
+     * become or remain operational, but the materializer never clears a player obstruction.
+     */
+    private static List<Placement> blueprintAccessClearances(
+            AuthoredVillageStructures.Blueprint blueprint) {
+        Set<BlockPos> occupied = new HashSet<>();
+        for (AuthoredVillageStructures.Cell cell : blueprint.base()) {
+            occupied.add(new BlockPos(cell.x(), cell.y(), cell.z()));
+        }
+        Set<BlockPos> clearance = new HashSet<>(blueprint.metadata().reservedAir());
+        addStandingClearance(clearance, blueprint.metadata().entranceInside());
+        for (BlockPos accessTarget : blueprint.metadata().accessTargets()) {
+            addStandingClearance(clearance, accessTarget);
+        }
+        for (AuthoredVillageStructures.VerticalAccess access
+                : blueprint.metadata().verticalAccess()) {
+            // The ladder and hatch are authored STRUCTURE cells. Only their upper dismount and
+            // headroom are air assertions; treating ladder coordinates as air would erase access.
+            addStandingClearance(clearance, access.to().above(2));
+        }
+        return clearance.stream()
+                .filter(position -> !occupied.contains(position))
+                .sorted(Comparator.comparingInt((BlockPos position) -> position.getY())
+                        .thenComparingInt(position -> position.getZ())
+                        .thenComparingInt(position -> position.getX()))
+                .map(position -> Placement.accessClearance(
+                        position.getX(), position.getY(), position.getZ()))
+                .toList();
+    }
+
+    private static void addStandingClearance(Set<BlockPos> clearance, BlockPos feet) {
+        if (feet != null) {
+            clearance.add(feet);
+            clearance.add(feet.above());
+        }
+    }
+
     private static List<Placement> withFoundationSupports(
             List<Placement> previous,
             List<Placement> layer,
@@ -1802,27 +3667,45 @@ public final class VillageProsperityManager {
         List<TerrainFoundationPlan.Cell> authored = new ArrayList<>(
                 previous.size() + layer.size());
         Set<BlockPos> occupied = new HashSet<>();
+        List<TerrainFoundationPlan.Cell> authoritative = new ArrayList<>();
         for (List<Placement> placements : List.of(previous, layer)) {
             for (Placement placement : placements) {
-                if (placement.isTrail()) {
+                if (placement.isTrail() || placement.isAccessClearance()) {
                     continue;
                 }
                 authored.add(new TerrainFoundationPlan.Cell(
                         placement.dx, placement.dy, placement.dz));
                 occupied.add(new BlockPos(placement.dx, placement.dy, placement.dz));
+                if (placement.isGroundAuthoritative()) {
+                    authoritative.add(new TerrainFoundationPlan.Cell(
+                            placement.dx, placement.dy, placement.dz));
+                }
             }
         }
+        Set<Long> authoritativeGroundContactColumns = TerrainFoundationPlan
+                .groundContactColumns(authoritative)
+                .stream()
+                .map(column -> packXZ(column.x(), column.z()))
+                .collect(java.util.stream.Collectors.toSet());
         List<Placement> supports = new ArrayList<>();
         for (TerrainFoundationPlan.Cell support
                 : TerrainFoundationPlan.appendSupportCells(
                         authored, TerrainFoundationPlan.MAX_TERRAIN_DROP)) {
             BlockPos position = new BlockPos(support.x(), support.y(), support.z());
             if (occupied.add(position)) {
-                supports.add(Placement.support(
-                        support.x(),
-                        support.y(),
-                        support.z(),
-                        foundation.defaultBlockState()));
+                boolean cosmeticColumn = !authoritativeGroundContactColumns.contains(
+                        packXZ(support.x(), support.z()));
+                supports.add(cosmeticColumn
+                        ? Placement.cosmeticSupport(
+                                support.x(),
+                                support.y(),
+                                support.z(),
+                                foundation.defaultBlockState())
+                        : Placement.support(
+                                support.x(),
+                                support.y(),
+                                support.z(),
+                                foundation.defaultBlockState()));
             }
         }
         // Modular projects are a new schema, so their persisted order can establish foundations
@@ -1843,6 +3726,22 @@ public final class VillageProsperityManager {
         }
         return placements.stream()
                 .map(placement -> rotatePlacement(placement, structure, rotation))
+                .toList();
+    }
+
+    private static List<Placement> mirrorPlacements(
+            List<Placement> placements, StructureSize structure, boolean mirrored) {
+        if (!mirrored) {
+            return placements;
+        }
+        return placements.stream()
+                .map(placement -> new Placement(
+                        structure.width - 1 - placement.dx,
+                        placement.dy,
+                        placement.dz,
+                        placement.state.mirror(Mirror.FRONT_BACK),
+                        placement.role,
+                        placement.requiredSafetyFixture))
                 .toList();
     }
 
@@ -2168,9 +4067,10 @@ public final class VillageProsperityManager {
             Palette palette,
             BlockPos origin,
             EconomyState.VillageRecord village,
-            EconomyState.VillageProject project) {
+            EconomyState.VillageProject project,
+            boolean includeModularRetrofits) {
         StructureSize structure = projectSize(project);
-        int rotation = isModular(project) ? project.designRotation : 0;
+        int rotation = isManagedProject(project) ? project.designRotation : 0;
         int startX = structure.width / 2;
         int startZ = trailEntranceZ(project);
         BlockPos anchor = project.trailAnchorSet
@@ -2190,16 +4090,41 @@ public final class VillageProsperityManager {
 
         List<VillageStructureProgression.TrailCell> primary = new ArrayList<>();
         List<VillageStructureProgression.TrailCell> shoulders = new ArrayList<>();
+        List<VillageStructureProgression.TrailCell> widenedShoulders = new ArrayList<>();
         if (targetZ <= startZ) {
-            appendTrailSegment(primary, shoulders, startX, startZ, targetX, targetZ, seed);
-        } else if (targetZ >= structure.depth + 1) {
-            int sideX = trailSide(structure, targetX, seed);
-            appendTrailSegment(primary, shoulders, startX, startZ, sideX, startZ, seed);
-            appendTrailSegment(
-                    primary, shoulders, sideX, startZ, sideX, structure.depth + 2, seed + 1L);
             appendTrailSegment(
                     primary,
                     shoulders,
+                    widenedShoulders,
+                    startX,
+                    startZ,
+                    targetX,
+                    targetZ,
+                    seed);
+        } else if (targetZ >= structure.depth + 1) {
+            int sideX = trailSide(structure, targetX, seed);
+            appendTrailSegment(
+                    primary,
+                    shoulders,
+                    widenedShoulders,
+                    startX,
+                    startZ,
+                    sideX,
+                    startZ,
+                    seed);
+            appendTrailSegment(
+                    primary,
+                    shoulders,
+                    widenedShoulders,
+                    sideX,
+                    startZ,
+                    sideX,
+                    structure.depth + 2,
+                    seed + 1L);
+            appendTrailSegment(
+                    primary,
+                    shoulders,
+                    widenedShoulders,
                     sideX,
                     structure.depth + 2,
                     targetX,
@@ -2207,16 +4132,41 @@ public final class VillageProsperityManager {
                     seed + 2L);
         } else {
             int sideX = targetX < 0 ? -3 : structure.width + 2;
-            appendTrailSegment(primary, shoulders, startX, startZ, sideX, startZ, seed);
-            appendTrailSegment(primary, shoulders, sideX, startZ, sideX, targetZ, seed + 1L);
-            appendTrailSegment(primary, shoulders, sideX, targetZ, targetX, targetZ, seed + 2L);
+            appendTrailSegment(
+                    primary,
+                    shoulders,
+                    widenedShoulders,
+                    startX,
+                    startZ,
+                    sideX,
+                    startZ,
+                    seed);
+            appendTrailSegment(
+                    primary,
+                    shoulders,
+                    widenedShoulders,
+                    sideX,
+                    startZ,
+                    sideX,
+                    targetZ,
+                    seed + 1L);
+            appendTrailSegment(
+                    primary,
+                    shoulders,
+                    widenedShoulders,
+                    sideX,
+                    targetZ,
+                    targetX,
+                    targetZ,
+                    seed + 2L);
         }
         if (primary.isEmpty() || primary.size() > 192) {
             return List.of();
         }
 
         Set<Long> primaryCells = new HashSet<>();
-        List<Placement> result = new ArrayList<>(primary.size() + shoulders.size());
+        List<Placement> result = new ArrayList<>(
+                primary.size() * 2 + shoulders.size() + widenedShoulders.size());
         for (VillageStructureProgression.TrailCell cell : primary) {
             if (insideStructureEnvelope(cell.x(), cell.z(), structure)
                     || !primaryCells.add(packXZ(cell.x(), cell.z()))) {
@@ -2226,7 +4176,15 @@ public final class VillageProsperityManager {
             result.add(Placement.trail(
                     rotated.getX(),
                     rotated.getZ(),
-                    trailState(palette, seed, rotated.getX(), rotated.getZ(), false),
+                    trailState(
+                            palette,
+                            seed,
+                            rotated.getX(),
+                            rotated.getZ(),
+                            false,
+                            isManagedProject(project)
+                                    && project.trailCenterSurfaceVersion
+                                            >= EconomyState.TRAIL_CENTER_SURFACE_VERSION),
                     false));
         }
         Set<Long> emitted = new HashSet<>(primaryCells);
@@ -2237,7 +4195,40 @@ public final class VillageProsperityManager {
                 result.add(Placement.trail(
                         rotated.getX(),
                         rotated.getZ(),
-                        trailState(palette, seed, rotated.getX(), rotated.getZ(), true),
+                        trailState(
+                                palette,
+                                seed,
+                                rotated.getX(),
+                                rotated.getZ(),
+                                true,
+                                isManagedProject(project)
+                                        && project.trailCenterSurfaceVersion
+                                                >= EconomyState.TRAIL_CENTER_SURFACE_VERSION),
+                        true));
+            }
+        }
+        if (!includeModularRetrofits) {
+            return List.copyOf(result);
+        }
+        // The primary lane and legacy sparse shoulders above are a frozen compatibility prefix.
+        // Append both complete side lanes afterward, excluding the building envelope, so an old
+        // persisted cursor can safely grow into the wider road without rerolling earlier cells.
+        for (VillageStructureProgression.TrailCell cell : widenedShoulders) {
+            long packed = packXZ(cell.x(), cell.z());
+            if (!insideStructureEnvelope(cell.x(), cell.z(), structure) && emitted.add(packed)) {
+                BlockPos rotated = rotateRelative(cell.x(), 0, cell.z(), structure, rotation);
+                result.add(Placement.trail(
+                        rotated.getX(),
+                        rotated.getZ(),
+                        trailState(
+                                palette,
+                                seed,
+                                rotated.getX(),
+                                rotated.getZ(),
+                                true,
+                                isManagedProject(project)
+                                        && project.trailCenterSurfaceVersion
+                                                >= EconomyState.TRAIL_CENTER_SURFACE_VERSION),
                         true));
             }
         }
@@ -2250,7 +4241,7 @@ public final class VillageProsperityManager {
             EconomyState.VillageProject project,
             StructureSize structure) {
         BlockPos reference;
-        if (isModular(project)) {
+        if (isManagedProject(project)) {
             BlockPos centerOffset = rotateRelative(
                     structure.width / 2,
                     0,
@@ -2286,7 +4277,11 @@ public final class VillageProsperityManager {
                         && candidate.projectId < project.projectId
                         && candidate.originPos != 0L
                         && !candidate.abstractOnly
-                        && candidate.economicComplete)
+                        && candidate.economicComplete
+                        && candidate.materializedComplete
+                        && !candidate.blocked
+                        && !candidate.manualRepairRequired
+                        && !candidate.relocationPending)
                 .min(Comparator.<EconomyState.VillageProject>comparingLong(candidate -> {
                     BlockPos candidateOrigin = BlockPos.of(candidate.originPos);
                     BlockPos entrance = projectEntrance(candidateOrigin, candidate);
@@ -2313,7 +4308,7 @@ public final class VillageProsperityManager {
     }
 
     private static int trailEntranceZ(EconomyState.VillageProject project) {
-        if (isModular(project)) {
+        if (isManagedProject(project)) {
             return -2;
         }
         return project.type == VillageProsperityEngine.ProjectType.MARKET_SQUARE
@@ -2330,7 +4325,7 @@ public final class VillageProsperityManager {
                 0,
                 trailEntranceZ(project),
                 structure,
-                isModular(project) ? project.designRotation : 0);
+                isManagedProject(project) ? project.designRotation : 0);
         return origin.offset(offset.getX(), offset.getY(), offset.getZ());
     }
 
@@ -2348,6 +4343,7 @@ public final class VillageProsperityManager {
     private static void appendTrailSegment(
             List<VillageStructureProgression.TrailCell> primary,
             List<VillageStructureProgression.TrailCell> shoulders,
+            List<VillageStructureProgression.TrailCell> widenedShoulders,
             int startX,
             int startZ,
             int targetX,
@@ -2355,6 +4351,7 @@ public final class VillageProsperityManager {
             long seed) {
         List<VillageStructureProgression.TrailCell> segment = VillageStructureProgression.trail(
                 startX, startZ, targetX, targetZ, seed, 192);
+        widenedShoulders.addAll(VillageStructureProgression.threeWideShoulders(segment));
         for (VillageStructureProgression.TrailCell cell : segment) {
             if (cell.shoulder()) {
                 shoulders.add(cell);
@@ -2371,23 +4368,30 @@ public final class VillageProsperityManager {
     }
 
     private static BlockState trailState(
-            Palette palette, long seed, int x, int z, boolean shoulder) {
-        long detail = VillageStructureProgression.mix64(
-                seed ^ (long) x * 0x9E3779B97F4A7C15L ^ (long) z * 0xC2B2AE3D27D4EB4FL);
-        if (palette.floor == Blocks.SMOOTH_SANDSTONE
+            Palette palette,
+            long seed,
+            int x,
+            int z,
+            boolean shoulder,
+            boolean useCurrentCenterSurface) {
+        long detail = VillageStructureProgression.trailDetail(seed, x, z);
+        boolean desertPalette = isDesertTrailPalette(palette);
+        VillageMaterializationPolicy.TrailSurface surface = useCurrentCenterSurface
+                ? VillageMaterializationPolicy.plannedTrailSurface(
+                        desertPalette, shoulder, detail)
+                : VillageMaterializationPolicy.frozenTrailSurface(
+                        desertPalette, shoulder, detail);
+        return switch (surface) {
+            case DIRT_PATH -> Blocks.DIRT_PATH.defaultBlockState();
+            case GRAVEL -> Blocks.GRAVEL.defaultBlockState();
+            case COARSE_DIRT -> Blocks.COARSE_DIRT.defaultBlockState();
+        };
+    }
+
+    private static boolean isDesertTrailPalette(Palette palette) {
+        return palette.floor == Blocks.SMOOTH_SANDSTONE
                 || palette.floor == Blocks.SANDSTONE
-                || palette.wall == Blocks.CUT_SANDSTONE) {
-            return (shoulder || Math.floorMod(detail, 5L) == 0L
-                            ? Blocks.COARSE_DIRT
-                            : Blocks.GRAVEL)
-                    .defaultBlockState();
-        }
-        if (shoulder || Math.floorMod(detail, 11L) == 0L) {
-            return Blocks.COARSE_DIRT.defaultBlockState();
-        }
-        return Math.floorMod(detail, 7L) == 0L
-                ? Blocks.GRAVEL.defaultBlockState()
-                : Blocks.DIRT_PATH.defaultBlockState();
+                || palette.wall == Blocks.CUT_SANDSTONE;
     }
 
     private static long packXZ(int x, int z) {
@@ -2413,6 +4417,7 @@ public final class VillageProsperityManager {
 
     /** Validates every authored template during the live server smoke test. */
     static void validateProjectTemplates(ServerLevel level) {
+        long validationStarted = System.nanoTime();
         BlockPos origin = new BlockPos(0, 64, 0);
         for (VillageProsperityEngine.ProjectType type
                 : VillageProsperityEngine.ProjectType.values()) {
@@ -2498,7 +4503,168 @@ public final class VillageProsperityManager {
             }
             validateProgressionLayers(type, palette(level, origin), placements);
         }
+        long legacyFinished = System.nanoTime();
+        AuthoredVillageStructures.validateCatalog();
+        long authoredFinished = System.nanoTime();
         validateModularProjectTemplates();
+        long modularFinished = System.nanoTime();
+        validateModularEntranceApproachRecipes();
+        long approachesFinished = System.nanoTime();
+        LOGGER.info(
+                "Project-template admission passed in {} ms (legacy={} ms, authored={} ms, modular={} ms, approaches={} ms)",
+                elapsedMillis(validationStarted, approachesFinished),
+                elapsedMillis(validationStarted, legacyFinished),
+                elapsedMillis(legacyFinished, authoredFinished),
+                elapsedMillis(authoredFinished, modularFinished),
+                elapsedMillis(modularFinished, approachesFinished));
+    }
+
+    private static long elapsedMillis(long started, long finished) {
+        return Math.max(0L, (finished - started) / 1_000_000L);
+    }
+
+    /** Exercises every material family, project footprint, rotation, and supported stair depth. */
+    private static void validateModularEntranceApproachRecipes() {
+        BlockPos origin = new BlockPos(0, 64, 0);
+        UUID villageId = UUID.fromString("98ad11cc-8e15-4e2a-a3d3-7f07874605a1");
+        for (VillageArchitecture.BiomeDialect dialect
+                : VillageArchitecture.BiomeDialect.values()) {
+            for (VillageArchitecture.Character character
+                    : VillageArchitecture.Character.values()) {
+                EconomyState.VillageRecord village = new EconomyState.VillageRecord();
+                village.villageId = villageId;
+                village.architectureDialect = dialect.id();
+                village.architectureCharacter = character.id();
+                for (VillageProsperityEngine.ProjectType type
+                        : VillageProsperityEngine.ProjectType.values()) {
+                    StructureSize structure = modularSize(type);
+                    for (int rotation = 0; rotation < 4; rotation++) {
+                        EconomyState.VillageProject project = new EconomyState.VillageProject();
+                        project.projectId = 1L + type.ordinal() * 4L + rotation;
+                        project.type = type;
+                        project.designSchema = VillageArchitecture.MODULAR_SCHEMA;
+                        project.designRotation = rotation;
+                        project.trailAnchorSet = true;
+                        BlockPos rotatedAnchor = rotateRelative(
+                                structure.width / 2,
+                                0,
+                                -10,
+                                structure,
+                                rotation);
+                        project.trailAnchorPos = origin.offset(rotatedAnchor).asLong();
+
+                        List<Placement> route = modularPrimaryTrailPrefix(
+                                origin,
+                                village,
+                                project,
+                                TerrainFoundationPlan.MAX_TERRAIN_DROP + 1);
+                        if (route.size() <= TerrainFoundationPlan.MAX_TERRAIN_DROP) {
+                            throw new IllegalStateException(
+                                    "Modular entrance route is too short for "
+                                            + dialect + " " + character + " " + type
+                                            + " rotation " + rotation);
+                        }
+                        for (int stepCount = 0;
+                                stepCount <= TerrainFoundationPlan.MAX_TERRAIN_DROP;
+                                stepCount++) {
+                            List<Placement> approach = modularEntranceApproachPlacements(
+                                    origin, village, project, stepCount);
+                            List<Placement> repeated = modularEntranceApproachPlacements(
+                                    origin, village, project, stepCount);
+                            if (!approach.equals(repeated)
+                                    || approach.size() > EconomyState.MAX_ENTRANCE_APPROACH_CELLS) {
+                                throw new IllegalStateException(
+                                        "Modular entrance approach is unstable or unbounded for "
+                                                + type + " rotation " + rotation);
+                            }
+                            validateModularEntranceApproach(
+                                    approach, route, structure, rotation, stepCount);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void validateModularEntranceApproach(
+            List<Placement> approach,
+            List<Placement> route,
+            StructureSize structure,
+            int rotation,
+            int stepCount) {
+        Set<BlockPos> occupied = new HashSet<>();
+        Map<Long, Placement> stairsByColumn = new HashMap<>();
+        int stairCount = 0;
+        int clearanceCount = 0;
+        for (Placement placement : approach) {
+            BlockPos position = new BlockPos(placement.dx, placement.dy, placement.dz);
+            if (!occupied.add(position)) {
+                throw new IllegalStateException(
+                        "Duplicate modular entrance placement at " + position);
+            }
+            BlockPos local = inverseRotateRelative(
+                    placement.dx, placement.dy, placement.dz, structure, rotation);
+            if (insideStructureEnvelope(local.getX(), local.getZ(), structure)) {
+                throw new IllegalStateException(
+                        "Modular entrance approach entered its building envelope at " + position);
+            }
+            if (placement.role == PlacementRole.ENTRANCE_STAIR) {
+                stairsByColumn.put(packXZ(placement.dx, placement.dz), placement);
+                stairCount++;
+            } else if (placement.role == PlacementRole.ENTRANCE_CLEARANCE) {
+                clearanceCount++;
+            } else if (placement.role != PlacementRole.ENTRANCE_SUPPORT) {
+                throw new IllegalStateException(
+                        "Unexpected modular entrance role " + placement.role);
+            }
+        }
+        if (stairCount != stepCount || clearanceCount != stepCount * 2) {
+            throw new IllegalStateException(
+                    "Modular entrance approach lost stairs or headroom at depth " + stepCount);
+        }
+
+        BlockPos previous = rotateRelative(
+                structure.width / 2, 0, -1, structure, rotation);
+        for (int index = 0; index < stepCount; index++) {
+            Placement routeCell = route.get(index);
+            Placement stair = stairsByColumn.get(packXZ(routeCell.dx, routeCell.dz));
+            Direction expectedFacing = horizontalDirection(
+                    previous.getX() - routeCell.dx,
+                    previous.getZ() - routeCell.dz);
+            if (stair == null
+                    || stair.dy != -index - 1
+                    || expectedFacing == null
+                    || !stair.state.hasProperty(StairBlock.FACING)
+                    || stair.state.getValue(StairBlock.FACING) != expectedFacing) {
+                throw new IllegalStateException(
+                        "Modular entrance stair lost route continuity at step " + index);
+            }
+            BlockState oppositeFacing = stair.state.setValue(
+                    StairBlock.FACING, expectedFacing.getOpposite());
+            if (!structuralStateMatches(stair.state, stair.state)
+                    || structuralStateMatches(oppositeFacing, stair.state)) {
+                throw new IllegalStateException(
+                        "Modular entrance post-write verification lost stair facing at step "
+                                + index);
+            }
+            previous = new BlockPos(stair.dx, stair.dy, stair.dz);
+        }
+        for (Placement placement : approach) {
+            if (placement.role != PlacementRole.ENTRANCE_SUPPORT
+                    && placement.role != PlacementRole.ENTRANCE_CLEARANCE) {
+                continue;
+            }
+            Placement stair = stairsByColumn.get(packXZ(placement.dx, placement.dz));
+            boolean valid = stair != null
+                    && (placement.role == PlacementRole.ENTRANCE_SUPPORT
+                            ? placement.dy < stair.dy
+                            : placement.dy == stair.dy + 1 || placement.dy == stair.dy + 2);
+            if (!valid) {
+                throw new IllegalStateException(
+                        "Modular entrance support/headroom detached at "
+                                + new BlockPos(placement.dx, placement.dy, placement.dz));
+            }
+        }
     }
 
     private static void validateModularProjectTemplates() {
@@ -2507,12 +4673,12 @@ public final class VillageProsperityManager {
             for (VillageProsperityEngine.ProjectType type
                     : VillageProsperityEngine.ProjectType.values()) {
                 StructureSize declared = modularSize(type);
-                Set<String> silhouetteSignatures = new HashSet<>();
+                Set<ModularPositionSignature> silhouetteSignatures = new HashSet<>();
                 for (VillageArchitecture.Character character
                         : VillageArchitecture.Character.values()) {
-                    Set<String> baseRecipeSignatures = new HashSet<>();
-                    Set<String> completeRecipeSignatures = new HashSet<>();
-                    Set<String> exteriorFamilySignatures = new HashSet<>();
+                    Set<ModularCellSignature> baseRecipeSignatures = new HashSet<>();
+                    Set<ModularLayerSignature> completeRecipeSignatures = new HashSet<>();
+                    Set<ModularCellSignature> exteriorFamilySignatures = new HashSet<>();
                     for (int silhouette = 0;
                             silhouette < VillageArchitecture.SILHOUETTE_COUNT;
                             silhouette++) {
@@ -2543,8 +4709,29 @@ public final class VillageProsperityManager {
                                                     declared.width,
                                                     declared.depth,
                                                     declared.height);
+                                    if (VillageArchitecture.hasQualityRetrofit(type)) {
+                                        ModularVillageStructures.Layers repeated =
+                                                ModularVillageStructures.plan(
+                                                        type,
+                                                        recipe,
+                                                        character,
+                                                        dialect,
+                                                        declared.width,
+                                                        declared.depth,
+                                                        declared.height);
+                                        if (!layers.quality().equals(repeated.quality())) {
+                                            throw new IllegalStateException(
+                                                    "Modular quality layer rerolled for "
+                                                            + dialect
+                                                            + " "
+                                                            + type
+                                                            + " recipe "
+                                                            + recipe.signature());
+                                        }
+                                    }
                                     validateModularLayers(
                                             type, dialect, recipe, layers, declared);
+                                    validateModularQualityPrefix(type, layers);
                                     baseRecipeSignatures.add(
                                             modularCellSignature(layers.base()));
                                     completeRecipeSignatures.add(
@@ -2557,15 +4744,8 @@ public final class VillageProsperityManager {
                                             && roof == 0
                                             && frontage == 0
                                             && !mirrored) {
-                                        String signature = layers.base().stream()
-                                                .map(cell -> cell.x()
-                                                        + ":"
-                                                        + cell.y()
-                                                        + ":"
-                                                        + cell.z())
-                                                .sorted()
-                                                .reduce("", (left, right) -> left + "|" + right);
-                                        silhouetteSignatures.add(signature);
+                                        silhouetteSignatures.add(
+                                                modularPositionSignature(layers.base()));
                                     }
                                 }
                             }
@@ -2620,7 +4800,7 @@ public final class VillageProsperityManager {
     private static void validateTradeBuildingExteriorIdentities(
             VillageArchitecture.BiomeDialect dialect) {
         for (VillageArchitecture.Character character : VillageArchitecture.Character.values()) {
-            Set<String> signatures = new HashSet<>();
+            Set<ModularCellSignature> signatures = new HashSet<>();
             for (VillageProsperityEngine.ProjectType type : List.of(
                     VillageProsperityEngine.ProjectType.WAREHOUSE,
                     VillageProsperityEngine.ProjectType.SMITHY,
@@ -2653,36 +4833,35 @@ public final class VillageProsperityManager {
         }
     }
 
-    private static String modularLayerSignature(ModularVillageStructures.Layers layers) {
-        StringBuilder signature = new StringBuilder();
-        for (List<ModularVillageStructures.Cell> layer
-                : List.of(layers.base(), layers.stageOne(), layers.stageTwo())) {
-            signature.append('/').append(modularCellSignature(layer));
+    private static ModularLayerSignature modularLayerSignature(
+            ModularVillageStructures.Layers layers) {
+        return new ModularLayerSignature(
+                modularCellSignature(layers.base()),
+                modularCellSignature(layers.stageOne()),
+                modularCellSignature(layers.stageTwo()),
+                modularCellSignature(layers.quality()));
+    }
+
+    private static ModularCellSignature modularCellSignature(
+            List<ModularVillageStructures.Cell> cells) {
+        ArrayList<ModularVillageStructures.Cell> canonical = new ArrayList<>(cells);
+        canonical.sort(MODULAR_CELL_ORDER);
+        return new ModularCellSignature(List.copyOf(canonical));
+    }
+
+    private static ModularPositionSignature modularPositionSignature(
+            List<ModularVillageStructures.Cell> cells) {
+        ArrayList<ModularPosition> canonical = new ArrayList<>(cells.size());
+        for (ModularVillageStructures.Cell cell : cells) {
+            canonical.add(new ModularPosition(cell.x(), cell.y(), cell.z()));
         }
-        return signature.toString();
+        canonical.sort(MODULAR_POSITION_ORDER);
+        return new ModularPositionSignature(List.copyOf(canonical));
     }
 
-    private static String modularCellSignature(List<ModularVillageStructures.Cell> cells) {
-        StringBuilder signature = new StringBuilder();
-        cells.stream()
-                .sorted(Comparator.comparingInt(ModularVillageStructures.Cell::y)
-                        .thenComparingInt(ModularVillageStructures.Cell::z)
-                        .thenComparingInt(ModularVillageStructures.Cell::x))
-                .forEach(cell -> signature.append(cell.x())
-                        .append(':')
-                        .append(cell.y())
-                        .append(':')
-                        .append(cell.z())
-                        .append('=')
-                        .append(cell.state())
-                        .append(';'));
-        return signature.toString();
-    }
-
-    private static String modularExteriorSignature(
+    private static ModularCellSignature modularExteriorSignature(
             List<ModularVillageStructures.Cell> cells, StructureSize declared) {
-        StringBuilder signature = new StringBuilder();
-        cells.stream()
+        List<ModularVillageStructures.Cell> exterior = cells.stream()
                 .filter(cell -> cell.y() > 0)
                 .filter(cell -> cell.y() >= 3
                         || cell.x() <= 1
@@ -2697,18 +4876,43 @@ public final class VillageProsperityManager {
                         && !cell.state().is(BlockTags.BEDS)
                         && !cell.state().is(Blocks.CHEST)
                         && !isUsefulProjectBlock(cell.state()))
-                .sorted(Comparator.comparingInt(ModularVillageStructures.Cell::y)
-                        .thenComparingInt(ModularVillageStructures.Cell::z)
-                        .thenComparingInt(ModularVillageStructures.Cell::x))
-                .forEach(cell -> signature.append(cell.x())
-                        .append(':')
-                        .append(cell.y())
-                        .append(':')
-                        .append(cell.z())
-                        .append('=')
-                        .append(cell.state())
-                        .append(';'));
-        return signature.toString();
+                .toList();
+        return modularCellSignature(exterior);
+    }
+
+    private static final Comparator<ModularVillageStructures.Cell> MODULAR_CELL_ORDER =
+            Comparator.comparingInt(ModularVillageStructures.Cell::y)
+                    .thenComparingInt(ModularVillageStructures.Cell::z)
+                    .thenComparingInt(ModularVillageStructures.Cell::x);
+
+    private static final Comparator<ModularPosition> MODULAR_POSITION_ORDER =
+            Comparator.comparingInt(ModularPosition::y)
+                    .thenComparingInt(ModularPosition::z)
+                    .thenComparingInt(ModularPosition::x);
+
+    /**
+     * Exact structural keys for exhaustive modular-v1 admission.
+     *
+     * <p>These deliberately retain canonical cells rather than a textual rendering or a digest.
+     * {@link HashSet} may use a hash to find a bucket, but record/list equality still compares every
+     * coordinate and canonical {@link BlockState}; a hash collision therefore cannot hide a clone.
+     * Avoiding {@code BlockState.toString()} also keeps the integration self-test below the server
+     * watchdog budget.</p>
+     */
+    private record ModularCellSignature(List<ModularVillageStructures.Cell> cells) {
+    }
+
+    private record ModularLayerSignature(
+            ModularCellSignature base,
+            ModularCellSignature stageOne,
+            ModularCellSignature stageTwo,
+            ModularCellSignature quality) {
+    }
+
+    private record ModularPosition(int x, int y, int z) {
+    }
+
+    private record ModularPositionSignature(List<ModularPosition> positions) {
     }
 
     private static void validateModularLayers(
@@ -2727,6 +4931,31 @@ public final class VillageProsperityManager {
         complete.addAll(layers.base());
         complete.addAll(layers.stageOne());
         complete.addAll(layers.stageTwo());
+        complete.addAll(layers.quality());
+        if (VillageArchitecture.hasQualityRetrofit(type) != !layers.quality().isEmpty()) {
+            throw new IllegalStateException(
+                    "Modular quality layer coverage changed for " + dialect + " " + type);
+        }
+        Set<BlockPos> legacyPositions = new HashSet<>();
+        for (List<ModularVillageStructures.Cell> legacyLayer
+                : List.of(layers.base(), layers.stageOne(), layers.stageTwo())) {
+            for (ModularVillageStructures.Cell cell : legacyLayer) {
+                legacyPositions.add(new BlockPos(cell.x(), cell.y(), cell.z()));
+            }
+        }
+        for (ModularVillageStructures.Cell cell : layers.quality()) {
+            BlockPos position = new BlockPos(cell.x(), cell.y(), cell.z());
+            if (cell.y() <= 0 && !legacyPositions.contains(position)) {
+                throw new IllegalStateException(
+                        "Quality retrofit introduced a ground-plane structure cell outside the"
+                                + " legacy prefix for "
+                                + dialect
+                                + " "
+                                + type
+                                + " at "
+                                + position);
+            }
+        }
         if (complete.size() > 2_000) {
             throw new IllegalStateException(
                     "Modular plan exceeded its bounded cell budget for " + type);
@@ -2784,6 +5013,26 @@ public final class VillageProsperityManager {
                     "Modular Exchange Hall must contain exactly one Exchange Desk");
         }
         for (Map.Entry<BlockPos, BlockState> entry : authored.entrySet()) {
+            if (!entry.getValue().is(Blocks.GLASS_PANE)) {
+                continue;
+            }
+            BlockPos position = entry.getKey();
+            int connections = authoredPaneConnections(authored, position, entry.getValue());
+            if (connections == 0) {
+                throw new IllegalStateException(
+                        "Modular plan has an orphaned pane for "
+                                + dialect
+                                + " "
+                                + type
+                                + " recipe "
+                                + recipe.signature()
+                                + " at "
+                                + position
+                                + ": horizontal connections="
+                                + connections);
+            }
+        }
+        for (Map.Entry<BlockPos, BlockState> entry : authored.entrySet()) {
             if (!entry.getValue().is(Blocks.LANTERN)) {
                 continue;
             }
@@ -2813,6 +5062,200 @@ public final class VillageProsperityManager {
                             "Modular rotation escaped or collapsed for " + type + " recipe "
                                     + recipe.signature());
                 }
+            }
+        }
+        if (type == VillageProsperityEngine.ProjectType.MINE_ENTRANCE) {
+            validateMineClearance(recipe, authored, declared);
+        } else if (type == VillageProsperityEngine.ProjectType.GUARD_POST) {
+            validateGuardQualitySupport(dialect, recipe, layers, authored, declared);
+        }
+    }
+
+    /** Mirrors the vanilla pane attachment predicate against the completed authored template. */
+    private static int authoredPaneConnections(
+            Map<BlockPos, BlockState> authored, BlockPos panePosition, BlockState paneState) {
+        if (!(paneState.getBlock() instanceof IronBarsBlock pane)) {
+            return 0;
+        }
+        int connections = 0;
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos neighborPosition = panePosition.relative(direction);
+            BlockState neighbor = authored.getOrDefault(
+                    neighborPosition, Blocks.AIR.defaultBlockState());
+            boolean sturdyFace = neighbor.isFaceSturdy(
+                    EmptyBlockGetter.INSTANCE,
+                    neighborPosition,
+                    direction.getOpposite());
+            if (pane.attachsTo(neighbor, sturdyFace)) {
+                connections++;
+            }
+        }
+        return connections;
+    }
+
+    private static void validateModularQualityPrefix(
+            VillageProsperityEngine.ProjectType type,
+            ModularVillageStructures.Layers layers) {
+        if (!VillageArchitecture.hasQualityRetrofit(type)) {
+            return;
+        }
+        List<Placement> base = withFoundationSupports(
+                List.of(), toPlacements(layers.base()), layers.materials().foundation());
+        List<Placement> stageOne = withFoundationSupports(
+                base, toPlacements(layers.stageOne()), layers.materials().foundation());
+        List<Placement> throughStageOne = new ArrayList<>(base);
+        throughStageOne.addAll(stageOne);
+        List<Placement> stageTwo = withFoundationSupports(
+                throughStageOne,
+                toPlacements(layers.stageTwo()),
+                layers.materials().foundation());
+        List<Placement> quality = withFoundationSupports(
+                base, toPlacements(layers.quality()), layers.materials().foundation());
+
+        if (type == VillageProsperityEngine.ProjectType.MINE_ENTRANCE) {
+            for (Placement placement : quality) {
+                if (placement.role == PlacementRole.TERRAIN_SUPPORT
+                        || placement.dy < 3) {
+                    throw new IllegalStateException(
+                            "Mine quality retrofit must remain an upper-only suffix; found "
+                                    + placement.role
+                                    + " at "
+                                    + new BlockPos(
+                                            placement.dx, placement.dy, placement.dz));
+                }
+            }
+        }
+
+        for (int insertionStage = 0;
+                insertionStage <= VillageStructureProgression.MAX_VISUAL_STAGE;
+                insertionStage++) {
+            List<Placement> old = orderedModularLayers(
+                    base, stageOne, stageTwo, quality, insertionStage, -1);
+            List<Placement> migrated = orderedModularLayers(
+                    base, stageOne, stageTwo, quality, insertionStage, insertionStage);
+            if (migrated.size() <= old.size()
+                    || !migrated.subList(0, old.size()).equals(old)) {
+                throw new IllegalStateException(
+                        "Quality retrofit moved the saved "
+                                + type
+                                + " stage-"
+                                + insertionStage
+                                + " prefix");
+            }
+            for (int futureStage = insertionStage + 1;
+                    futureStage <= VillageStructureProgression.MAX_VISUAL_STAGE;
+                    futureStage++) {
+                List<Placement> future = orderedModularLayers(
+                        base,
+                        stageOne,
+                        stageTwo,
+                        quality,
+                        futureStage,
+                        insertionStage);
+                if (!future.subList(0, migrated.size()).equals(migrated)) {
+                    throw new IllegalStateException(
+                            "A future "
+                                    + type
+                                    + " stage reordered its quality-retrofit prefix");
+                }
+            }
+        }
+    }
+
+    private static void validateMineClearance(
+            VillageArchitecture.Recipe recipe,
+            Map<BlockPos, BlockState> authored,
+            StructureSize declared) {
+        int center = declared.width / 2;
+        BlockPos entrance = new BlockPos(center, 0, 0);
+        BlockPos portal = new BlockPos(center, 0, declared.depth - 2);
+        List<BlockPos> queue = new ArrayList<>();
+        Set<BlockPos> visited = new HashSet<>();
+        queue.add(entrance);
+        visited.add(entrance);
+        for (int index = 0; index < queue.size(); index++) {
+            BlockPos current = queue.get(index);
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                BlockPos next = current.relative(direction);
+                if (next.getX() < center - 2
+                        || next.getX() > center + 2
+                        || next.getZ() < 0
+                        || next.getZ() > declared.depth - 2
+                        || visited.contains(next)) {
+                    continue;
+                }
+                BlockState feet = authored.get(next.above());
+                boolean walkableFeet = feet == null
+                        || feet.getBlock() instanceof BaseRailBlock;
+                if (walkableFeet
+                        && !authored.containsKey(next.above(2))
+                        && authored.containsKey(next)) {
+                    visited.add(next);
+                    queue.add(next);
+                }
+            }
+        }
+        if (!visited.contains(portal)) {
+            throw new IllegalStateException(
+                    "Mine quality pass obstructed the two-high route from entrance to rail portal"
+                            + (recipe.mirrored() ? " (mirrored)" : ""));
+        }
+    }
+
+    private static void validateGuardQualitySupport(
+            VillageArchitecture.BiomeDialect dialect,
+            VillageArchitecture.Recipe recipe,
+            ModularVillageStructures.Layers layers,
+            Map<BlockPos, BlockState> authored,
+            StructureSize declared) {
+        int roofY = layers.quality().stream()
+                .filter(cell -> cell.state().is(layers.materials().roofSlab()))
+                .mapToInt(ModularVillageStructures.Cell::y)
+                .max()
+                .orElse(-1);
+        if (roofY < 0 || roofY > declared.height) {
+            throw new IllegalStateException(
+                    "Guard quality canopy is missing or out of bounds for "
+                            + dialect
+                            + " recipe "
+                            + recipe.signature()
+                            + " (silhouette="
+                            + recipe.silhouette()
+                            + ", roof="
+                            + recipe.roof()
+                            + ", frontage="
+                            + recipe.frontage()
+                            + ", mirrored="
+                            + recipe.mirrored()
+                            + ", qualityRoofY="
+                            + roofY
+                            + ", height="
+                            + declared.height
+                            + ")");
+        }
+        for (int x : new int[] {2, declared.width - 3}) {
+            for (int z : new int[] {2, declared.depth - 3}) {
+                BlockPos post = new BlockPos(x, roofY - 1, z);
+                if (!authored.containsKey(post)
+                        || !authored.containsKey(post.below())
+                        || !authored.containsKey(post.above())) {
+                    throw new IllegalStateException(
+                            "Guard quality canopy lost a supported corner at " + post);
+                }
+            }
+        }
+        for (ModularVillageStructures.Cell cell : layers.quality()) {
+            if (!cell.state().is(Blocks.IRON_BARS)) {
+                continue;
+            }
+            BlockPos position = new BlockPos(cell.x(), cell.y(), cell.z());
+            boolean eastWest = authored.containsKey(position.east())
+                    && authored.containsKey(position.west());
+            boolean northSouth = authored.containsKey(position.north())
+                    && authored.containsKey(position.south());
+            if (!eastWest && !northSouth) {
+                throw new IllegalStateException(
+                        "Guard quality rail has a disconnected bar at " + position);
             }
         }
     }
@@ -3474,11 +5917,25 @@ public final class VillageProsperityManager {
                 && VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema);
     }
 
+    private static boolean isBlueprint(EconomyState.VillageProject project) {
+        return project != null
+                && VillageArchitecture.BLUEPRINT_SCHEMA.equals(project.designSchema);
+    }
+
+    private static boolean isManagedProject(EconomyState.VillageProject project) {
+        return project != null
+                && VillageArchitecture.isManagedStructureSchema(project.designSchema);
+    }
+
     private static StructureSize projectSize(EconomyState.VillageProject project) {
-        if (!isModular(project)) {
-            return size(project.type);
+        if (isBlueprint(project)) {
+            VillageArchitecture.BlueprintDescriptor descriptor =
+                    VillageArchitecture.requireBlueprint(
+                            project.designTemplateId, project.designTemplateRevision);
+            return new StructureSize(
+                    descriptor.width(), descriptor.depth(), descriptor.height());
         }
-        return modularSize(project.type);
+        return isModular(project) ? modularSize(project.type) : size(project.type);
     }
 
     private static StructureSize modularSize(VillageProsperityEngine.ProjectType type) {
@@ -3489,7 +5946,7 @@ public final class VillageProsperityManager {
             case WAREHOUSE, SMITHY, GRANARY -> new StructureSize(11, 9, 12);
             case MINE_ENTRANCE -> new StructureSize(9, 9, 10);
             case MARKET_SQUARE -> new StructureSize(13, 13, 7);
-            case GUARD_POST -> new StructureSize(9, 9, 14);
+            case GUARD_POST -> new StructureSize(9, 9, 16);
             case EXCHANGE_HALL -> new StructureSize(15, 11, 14);
         };
     }
@@ -3539,7 +5996,8 @@ public final class VillageProsperityManager {
                 position.getY(),
                 position.getZ(),
                 placement.state.rotate(rotation),
-                placement.role);
+                placement.role,
+                placement.requiredSafetyFixture);
     }
 
     private static VillageArchitecture.BiomeDialect biomeDialect(
@@ -3661,6 +6119,22 @@ public final class VillageProsperityManager {
                 || state.is(Blocks.SNOW_BLOCK);
     }
 
+    /**
+     * Limits public-trail paving to soft, terrain-like soil.
+     *
+     * <p>The broader site/foundation predicate deliberately accepts natural stone and snow, but a
+     * trail must not rewrite those common full construction blocks. Dirt and sand still have no
+     * vanilla placement provenance, so protection integrations remain authoritative for them.</p>
+     */
+    static boolean isPaveableTrailGround(BlockState state) {
+        return state.is(BlockTags.DIRT)
+                || state.is(Blocks.GRASS_BLOCK)
+                || state.is(Blocks.PODZOL)
+                || state.is(Blocks.MYCELIUM)
+                || state.is(Blocks.SAND)
+                || state.is(Blocks.RED_SAND);
+    }
+
     private static BlockPos centerOf(List<Villager> villagers, BlockPos fallback) {
         if (villagers.isEmpty()) {
             return fallback;
@@ -3752,18 +6226,68 @@ public final class VillageProsperityManager {
 
     private enum PlacementRole {
         STRUCTURE,
+        COSMETIC,
+        COSMETIC_SUPPORT,
         TERRAIN_SUPPORT,
+        ACCESS_CLEARANCE,
+        ENTRANCE_SUPPORT,
+        ENTRANCE_CLEARANCE,
+        ENTRANCE_STAIR,
         TRAIL_PRIMARY,
-        TRAIL_SHOULDER
+        TRAIL_SHOULDER,
+        TRAIL_CENTER_SURFACE_RETROFIT
     }
 
-    private record Placement(int dx, int dy, int dz, BlockState state, PlacementRole role) {
+    private record Placement(
+            int dx,
+            int dy,
+            int dz,
+            BlockState state,
+            PlacementRole role,
+            boolean requiredSafetyFixture) {
         private Placement(int dx, int dy, int dz, BlockState state) {
-            this(dx, dy, dz, state, PlacementRole.STRUCTURE);
+            this(dx, dy, dz, state, PlacementRole.STRUCTURE, false);
+        }
+
+        private Placement(
+                int dx, int dy, int dz, BlockState state, PlacementRole role) {
+            this(dx, dy, dz, state, role, false);
         }
 
         private static Placement support(int dx, int dy, int dz, BlockState state) {
             return new Placement(dx, dy, dz, state, PlacementRole.TERRAIN_SUPPORT);
+        }
+
+        private static Placement cosmeticSupport(int dx, int dy, int dz, BlockState state) {
+            return new Placement(dx, dy, dz, state, PlacementRole.COSMETIC_SUPPORT);
+        }
+
+        private static Placement accessClearance(int dx, int dy, int dz) {
+            return new Placement(
+                    dx,
+                    dy,
+                    dz,
+                    Blocks.AIR.defaultBlockState(),
+                    PlacementRole.ACCESS_CLEARANCE);
+        }
+
+        private static Placement entranceSupport(
+                int dx, int dy, int dz, BlockState state) {
+            return new Placement(dx, dy, dz, state, PlacementRole.ENTRANCE_SUPPORT);
+        }
+
+        private static Placement entranceClearance(int dx, int dy, int dz) {
+            return new Placement(
+                    dx,
+                    dy,
+                    dz,
+                    Blocks.AIR.defaultBlockState(),
+                    PlacementRole.ENTRANCE_CLEARANCE);
+        }
+
+        private static Placement entranceStair(
+                int dx, int dy, int dz, BlockState state) {
+            return new Placement(dx, dy, dz, state, PlacementRole.ENTRANCE_STAIR);
         }
 
         private static Placement trail(
@@ -3776,12 +6300,89 @@ public final class VillageProsperityManager {
                     shoulder ? PlacementRole.TRAIL_SHOULDER : PlacementRole.TRAIL_PRIMARY);
         }
 
+        private static Placement trailCenterSurfaceRetrofit(int dx, int dz) {
+            return new Placement(
+                    dx,
+                    0,
+                    dz,
+                    Blocks.DIRT_PATH.defaultBlockState(),
+                    PlacementRole.TRAIL_CENTER_SURFACE_RETROFIT);
+        }
+
         private boolean isTrail() {
-            return role == PlacementRole.TRAIL_PRIMARY || role == PlacementRole.TRAIL_SHOULDER;
+            return role == PlacementRole.TRAIL_PRIMARY
+                    || role == PlacementRole.TRAIL_SHOULDER
+                    || role == PlacementRole.TRAIL_CENTER_SURFACE_RETROFIT;
+        }
+
+        private boolean isTrailCenterSurfaceRetrofit() {
+            return role == PlacementRole.TRAIL_CENTER_SURFACE_RETROFIT;
+        }
+
+        private boolean isCosmetic() {
+            return !requiredSafetyFixture
+                    && (role == PlacementRole.COSMETIC
+                            || role == PlacementRole.COSMETIC_SUPPORT);
+        }
+
+        private boolean isStructuralAuthority() {
+            return role == PlacementRole.STRUCTURE || requiredSafetyFixture;
+        }
+
+        /** Retains the historical terrain-footprint boundary used by v1 blueprints. */
+        private boolean isGroundAuthoritative() {
+            return role != PlacementRole.COSMETIC
+                    && role != PlacementRole.COSMETIC_SUPPORT;
+        }
+
+        private boolean isAccessClearance() {
+            return role == PlacementRole.ACCESS_CLEARANCE;
         }
     }
 
     private record StructureSize(int width, int depth, int height) {
+    }
+
+    private record BlueprintPlacementPlan(
+            List<Placement> base,
+            List<Placement> stageOne,
+            List<Placement> stageTwo,
+            List<Placement> canonicalBase,
+            List<Placement> canonicalStageOne,
+            List<Placement> canonicalStageTwo,
+            VillageArchitecture.BlueprintDescriptor descriptor,
+            String characterId,
+            String dialectId,
+            AuthoredVillageStructures.Materials materials) {
+    }
+
+    private record BlueprintMismatchKey(UUID villageId, long projectId) {
+    }
+
+    private static final class BlueprintPlanMismatchException extends IllegalStateException {
+        private final UUID villageId;
+        private final long projectId;
+        private MaterializationBudget remainingBudget;
+
+        private BlueprintPlanMismatchException(
+                UUID villageId, long projectId, String message) {
+            super(message);
+            this.villageId = villageId;
+            this.projectId = projectId;
+        }
+
+        private BlueprintPlanMismatchException(
+                UUID villageId, long projectId, String message, RuntimeException cause) {
+            super(message, cause);
+            this.villageId = villageId;
+            this.projectId = projectId;
+        }
+
+        private BlueprintPlanMismatchException withRemainingBudget(
+                MaterializationBudget remainingBudget) {
+            this.remainingBudget = remainingBudget;
+            return this;
+        }
     }
 
     private record ProjectBounds(BlockPos minimum, BlockPos maximum) {
@@ -3790,19 +6391,47 @@ public final class VillageProsperityManager {
     private record ProjectSiteSearch(
             BlockPos origin,
             BlockPos trailAnchor,
+            int entranceApproachStepCount,
+            int entranceApproachTotalCells,
             VillageMaterializationPolicy.SiteAvailability availability) {
         private ProjectSiteSearch(
                 BlockPos origin, VillageMaterializationPolicy.SiteAvailability availability) {
-            this(origin, null, availability);
+            this(origin, null, 0, 0, availability);
         }
     }
 
-    private record ProjectSearchKey(String dimensionKey, UUID villageId, long projectId) {
+    private record EntranceApproachSearch(
+            List<Placement> placements,
+            int stepCount,
+            VillageMaterializationPolicy.SiteAvailability availability) {
+        private static EntranceApproachSearch flat() {
+            return new EntranceApproachSearch(
+                    List.of(),
+                    0,
+                    VillageMaterializationPolicy.SiteAvailability.AVAILABLE);
+        }
+
+        private static EntranceApproachSearch unsafe() {
+            return new EntranceApproachSearch(
+                    List.of(),
+                    0,
+                    VillageMaterializationPolicy.SiteAvailability.UNSAFE);
+        }
+
+        private static EntranceApproachSearch unloaded() {
+            return new EntranceApproachSearch(
+                    List.of(),
+                    0,
+                    VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED);
+        }
     }
 
-    private static final class SiteSearchProgress {
-        private int testedCandidates;
-        private boolean sawUnloadedCandidate;
+    private record TrailWork(
+            EconomyState.VillageProject project, List<Placement> trail) {
+    }
+
+    private record TrailCenterSurfaceWork(
+            EconomyState.VillageProject project, List<Placement> trail) {
     }
 
     private record MaterializationBudget(int remainingBlocks, int remainingVillages) {

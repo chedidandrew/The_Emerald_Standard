@@ -36,7 +36,14 @@ public final class VillageProsperityRegressionTest {
         testNetWorthCannotOverflowLongAddition();
         testEpsilonOversellIsRejected();
         testProjectBoundsAndRetryRoundTrip();
+        testDueProjectSelectionCannotStarveLaterWork();
+        testPersistentFairProjectClaimAndSearchProgress();
+        testApprovedProjectCanBreakGroundBeforeEconomicCompletion();
+        testDestroyedProjectRelocatesWithoutRepairingOldLot();
+        testProjectRelocationHistoryIsBounded();
         testQueuedProjectBenefitsLeadMaterialization();
+        testBaseHousingSurvivesProjectSuspensionAndObservation();
+        testPostBuildCensusDoesNotAbsorbAuthoredHousing();
         testSimulationOnlyProjectsRemainFunctional();
         testPendingSettlersCountExactlyOnce();
         testUniqueProjectsNeverDuplicate();
@@ -57,8 +64,16 @@ public final class VillageProsperityRegressionTest {
         require(!village.projects.isEmpty(), "No development project was approved");
         require(village.projects.stream().anyMatch(project -> project.economicComplete), "No development project completed economically");
         require(village.projects.stream().allMatch(project ->
-                        VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)),
-                "A newly approved project did not receive a modular-v1 design recipe");
+                        VillageArchitecture.BLUEPRINT_SCHEMA.equals(project.designSchema)
+                                && VillageArchitecture.isKnownBlueprintSelection(
+                                        project.type,
+                                        project.designTemplateId,
+                                        project.designTemplateRevision,
+                                        project.designPaletteId,
+                                        project.designDressingId,
+                                        project.designMirrored,
+                                        project.designSignature)),
+                "A newly approved project did not receive an immutable Blueprint V2 selection");
         require(VillageArchitecture.isKnownCharacter(village.architectureCharacter),
                 "A developing village did not lock its shared architectural character");
         require(village.developmentTier >= 1, "Village never advanced beyond hamlet tier");
@@ -949,6 +964,221 @@ public final class VillageProsperityRegressionTest {
         } finally { deleteTree(root); }
     }
 
+    private static void testDueProjectSelectionCannotStarveLaterWork() {
+        EconomyState.VillageRecord village = new EconomyState.VillageRecord();
+        for (long projectId = 1L; projectId <= 3L; projectId++) {
+            EconomyState.VillageProject project = new EconomyState.VillageProject();
+            project.projectId = projectId;
+            project.type = VillageProsperityEngine.ProjectType.COTTAGE;
+            project.economicProgress = 0.25;
+            village.projects.add(project);
+        }
+        require(village.nextVisualProject(1_000L, 0L).projectId == 1L
+                        && village.nextVisualProject(1_000L, 1L).projectId == 2L
+                        && village.nextVisualProject(1_000L, 2L).projectId == 3L
+                        && village.nextVisualProject(1_000L, 3L).projectId == 1L,
+                "A long-running site scan can still starve later due projects");
+        village.projects.get(1).retryAfterGameTick = 2_000L;
+        require(village.nextVisualProject(1_000L, 1L).projectId == 3L,
+                "An unloaded-frontier backoff prevented rotation among the remaining due work");
+    }
+
+    private static void testPersistentFairProjectClaimAndSearchProgress() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-project-selection-");
+        try {
+            EconomyState seed = EconomyState.fresh(7_654L, 0L, 0L);
+            EconomyState.VillageRecord village = village(seed, 8, 12);
+            for (long projectId = 1L; projectId <= 3L; projectId++) {
+                EconomyState.VillageProject project = new EconomyState.VillageProject();
+                project.projectId = projectId;
+                project.type = VillageProsperityEngine.ProjectType.COTTAGE;
+                project.economicProgress = 1.0;
+                project.economicComplete = true;
+                project.totalBlocks = project.type.nominalBlocks();
+                village.projects.add(project);
+            }
+            village.projectSerial = 3L;
+            Path save = root.resolve("the_emerald_standard.properties");
+            seed.save(save);
+
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 999L, 0L, 0L);
+            require(Long.valueOf(1L).equals(
+                            service.claimNextDueVillageVisualProject(village.villageId, 1_000L))
+                            && Long.valueOf(2L).equals(
+                                    service.claimNextDueVillageVisualProject(
+                                            village.villageId, 1_000L)),
+                    "Atomic visual-project claims did not rotate in project order");
+            require(service.recordVillageProjectSiteSearchProgress(
+                            village.villageId, 2L, 1, true)
+                            && service.recordVillageProjectSiteSearchProgress(
+                                    village.villageId, 2L, 2, false)
+                            && !service.recordVillageProjectSiteSearchProgress(
+                                    village.villageId, 2L, 1, false),
+                    "Site-search checkpoints were not monotonic");
+            EconomyState.VillageRecord beforeReload =
+                    service.villageSnapshot(village.villageId).village();
+            require(beforeReload.visualProjectSelectionCursor == 2L
+                            && beforeReload.projects.get(1).siteSearchCursor == 2
+                            && beforeReload.projects.get(1).siteSearchSawUnloadedCandidate,
+                    "Fair-selection or site-search state was not copied into snapshots");
+            require(service.saveNow(), "Could not persist fair-selection/search checkpoints");
+
+            EconomyService reloaded = new EconomyService();
+            reloaded.startWithSeed(root, 111L, 0L, 0L);
+            EconomyState.VillageRecord afterReload =
+                    reloaded.villageSnapshot(village.villageId).village();
+            require(afterReload.visualProjectSelectionCursor == 2L
+                            && afterReload.projects.get(1).siteSearchCursor == 2
+                            && afterReload.projects.get(1).siteSearchSawUnloadedCandidate
+                            && Long.valueOf(3L).equals(
+                                    reloaded.claimNextDueVillageVisualProject(
+                                            village.villageId, 1_000L)),
+                    "Fair rotation or resumable site search did not survive restart");
+
+            long origin = pack(20, 64, 20);
+            require(reloaded.reserveVillageProjectSite(
+                            village.villageId,
+                            2L,
+                            origin,
+                            pack(18, 63, 18),
+                            pack(25, 70, 25),
+                            VillageProsperityEngine.ProjectType.COTTAGE.nominalBlocks()),
+                    "Could not reserve the searched project");
+            EconomyState.VillageProject reserved = reloaded.villageSnapshot(
+                    village.villageId).village().projects.get(1);
+            require(reserved.siteSearchCursor == 0
+                            && !reserved.siteSearchSawUnloadedCandidate
+                            && !reloaded.recordVillageProjectSiteSearchProgress(
+                                    village.villageId, 2L, 3, true),
+                    "A successful reservation retained or accepted stale site-search progress");
+
+            require(reloaded.recordVillageProjectSiteSearchProgress(
+                            village.villageId, 1L, 4, true)
+                            && reloaded.deferVillageProjectMaterialization(
+                                    village.villageId, 1L, 2_000L),
+                    "Could not checkpoint and defer an unreserved site search");
+            EconomyState.VillageProject deferred = reloaded.villageSnapshot(
+                    village.villageId).village().projects.getFirst();
+            require(deferred.siteSearchCursor == 0
+                            && !deferred.siteSearchSawUnloadedCandidate,
+                    "A completed/deferred site sweep did not reset its persisted checkpoint");
+        } finally {
+            deleteTree(root);
+        }
+    }
+
+    private static void testApprovedProjectCanBreakGroundBeforeEconomicCompletion()
+            throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-progressive-project-");
+        try {
+            EconomyState seed = EconomyState.fresh(766L, 0L, 0L);
+            EconomyState.VillageRecord village = village(seed, 8, 12);
+            EconomyState.VillageProject project = new EconomyState.VillageProject();
+            project.projectId = 1L;
+            project.type = VillageProsperityEngine.ProjectType.GUARD_POST;
+            project.approvedDay = seed.economicDay;
+            project.economicProgress = 0.03861566281071356;
+            project.economicComplete = false;
+            project.totalBlocks = project.type.nominalBlocks();
+            village.projectSerial = project.projectId;
+            village.projects.add(project);
+
+            require(village.nextVisualProject(0L) == project && village.visualBacklog() == 1,
+                    "Approved economic work did not enter the visual construction queue");
+
+            EconomyState invalid = seed.copy();
+            EconomyState.VillageProject prematurelyComplete = invalid
+                    .existingVillage(village.villageId).projects.getFirst();
+            prematurelyComplete.materializedBlocks = prematurelyComplete.totalBlocks;
+            prematurelyComplete.materializedComplete = true;
+            boolean prematureCompletionRejected = false;
+            try {
+                invalid.validate();
+            } catch (java.io.IOException expected) {
+                prematureCompletionRejected = true;
+            }
+            require(prematureCompletionRejected,
+                    "Validation accepted physical completion before economic completion");
+
+            EconomyState invalidFullCursor = seed.copy();
+            EconomyState.VillageProject fullCursor = invalidFullCursor
+                    .existingVillage(village.villageId).projects.getFirst();
+            fullCursor.materializedBlocks = fullCursor.totalBlocks;
+            boolean fullCursorRejected = false;
+            try {
+                invalidFullCursor.validate();
+            } catch (java.io.IOException expected) {
+                fullCursorRejected = true;
+            }
+            require(fullCursorRejected,
+                    "Validation accepted a full physical cursor before economic completion");
+
+            Path save = root.resolve("the_emerald_standard.properties");
+            seed.save(save);
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 1_000L, 0L, 0L);
+            long origin = pack(20, 64, 20);
+            long boundsMin = pack(18, 63, 18);
+            long boundsMax = pack(25, 70, 25);
+            require(service.reserveVillageProjectSite(
+                            village.villageId,
+                            project.projectId,
+                            origin,
+                            boundsMin,
+                            boundsMax,
+                            project.totalBlocks),
+                    "Economically incomplete project could not reserve a safe construction site");
+            require(service.updateVillageProjectMaterialization(
+                            village.villageId,
+                            project.projectId,
+                            24,
+                            project.totalBlocks,
+                            false,
+                            false),
+                    "Economically incomplete project could not persist its visible prefix");
+            require(!service.updateVillageProjectMaterialization(
+                            village.villageId,
+                            project.projectId,
+                            project.totalBlocks,
+                            project.totalBlocks,
+                            false,
+                            false),
+                    "Materialization API accepted a full cursor before economic completion");
+            require(service.deferVillageProjectMaterialization(
+                            village.villageId, project.projectId, 1_000L),
+                    "Economically incomplete project could not persist a materialization retry");
+
+            EconomyState.VillageProject deferred = service.villageSnapshot(
+                    village.villageId).village().projects.getFirst();
+            require(!deferred.economicComplete
+                            && !deferred.materializedComplete
+                            && deferred.originPos == origin
+                            && deferred.boundsMinPos == boundsMin
+                            && deferred.boundsMaxPos == boundsMax
+                            && deferred.materializedBlocks == 24
+                            && deferred.retryAfterGameTick > 1_000L,
+                    "Progressive construction lost its economic gate, visible prefix, or reservation");
+            require(service.villageSnapshot(village.villageId).village()
+                            .nextVisualProject(deferred.retryAfterGameTick - 1L) == null,
+                    "Progressive project ignored its persistent retry gate");
+
+            EconomyService reloaded = new EconomyService();
+            reloaded.startWithSeed(root, 1_001L, 0L, 0L);
+            EconomyState.VillageProject loaded = reloaded.villageSnapshot(
+                    village.villageId).village().projects.getFirst();
+            require(!loaded.economicComplete
+                            && loaded.materializedBlocks == 24
+                            && loaded.retryAfterGameTick == deferred.retryAfterGameTick
+                            && reloaded.villageSnapshot(village.villageId).village()
+                                    .nextVisualProject(loaded.retryAfterGameTick).projectId
+                                    == project.projectId,
+                    "Progressive construction did not survive restart or resume when due");
+        } finally {
+            deleteTree(root);
+        }
+    }
+
     private static void testQueuedProjectBenefitsLeadMaterialization() {
         EconomyState state = EconomyState.fresh(4_040L, 0L, 0L);
         EconomyState.VillageRecord baseline = village(state, 12, 18);
@@ -1042,6 +1272,148 @@ public final class VillageProsperityRegressionTest {
         require(Double.doubleToLongBits(abstractVillage.tradeOutput)
                         == Double.doubleToLongBits(physicalEquivalent.tradeOutput),
                 "Simulation-only project lost its calibrated production benefit");
+    }
+
+    private static void testBaseHousingSurvivesProjectSuspensionAndObservation() {
+        EconomyState state = EconomyState.fresh(4_042L, 0L, 0L);
+        EconomyState.VillageRecord village = village(state, 8, 10);
+        EconomyState.VillageProject cottage = completedProject(
+                1L, VillageProsperityEngine.ProjectType.COTTAGE, true, false);
+        cottage.originPos = pack(12, 64, 12);
+        village.projects.add(cottage);
+        int cottageGain = VillageProsperityEngine.ProjectType.COTTAGE.housingGain();
+        village.housingCapacity += cottageGain;
+        require(village.housingCapacity == 10 + cottageGain
+                        && VillageProsperityEngine.effectiveHousingCapacity(village)
+                                == 10 + cottageGain,
+                "A completed Cottage was not counted exactly once above base housing");
+
+        cottage.manualRepairRequired = true;
+        require(VillageProsperityEngine.effectiveHousingCapacity(village) == 10,
+                "Damaged housing did not suspend exactly its own project gain");
+        cottage.manualRepairRequired = false;
+        require(VillageProsperityEngine.effectiveHousingCapacity(village)
+                        == 10 + cottageGain,
+                "Repairing housing counted its project gain more than once");
+
+        // A normal post-build census sees both the original ten beds and the Cottage's authored
+        // beds. Population has grown into that project capacity, so it must not be reused as a
+        // census floor. Breaking a non-bed structural cell leaves the raw bed count unchanged, but
+        // must still suspend the Cottage's abstract housing benefit.
+        village.population = 12;
+        village.observedPopulation = 12;
+        VillageProsperityEngine.observeHousingCensus(
+                village, 10 + cottageGain, 0);
+        cottage.manualRepairRequired = true;
+        VillageProsperityEngine.observeHousingCensus(
+                village, 10 + cottageGain, 0);
+        require(village.observedHousingCapacity == 10
+                        && VillageProsperityEngine.effectiveHousingCapacity(village) == 10,
+                "A post-build census absorbed authored beds after non-bed structure damage");
+        cottage.manualRepairRequired = false;
+
+        VillageProsperityEngine.observeHousingCensus(
+                village, 20 + cottageGain, 0);
+        require(village.observedHousingCapacity == 20
+                        && village.housingCapacity == 20 + cottageGain,
+                "A later external housing observation was mixed into the Cottage benefit");
+
+        cottage.manualRepairRequired = true;
+        require(VillageProsperityEngine.effectiveHousingCapacity(village) == 20,
+                "Suspending damaged housing subtracted from the observed housing baseline");
+        cottage.manualRepairRequired = false;
+        cottage.relocationPending = true;
+        require(VillageProsperityEngine.effectiveHousingCapacity(village) == 20,
+                "Relocating housing subtracted from the observed housing baseline");
+        cottage.relocationPending = false;
+        require(VillageProsperityEngine.effectiveHousingCapacity(village)
+                        == 20 + cottageGain,
+                "Restoring housing counted its project gain more than once");
+
+        cottage.retiredLots.add(new EconomyState.RetiredProjectLot(
+                pack(-8, 60, -8), pack(-2, 68, -2)));
+        VillageProsperityEngine.observeHousingCensus(
+                village, 20 + cottageGain * 2, 0);
+        require(village.observedHousingCapacity == 20,
+                "Beds left in a retired housing lot leaked into the external housing floor");
+
+        EconomyState.VillageRecord partial = village(
+                EconomyState.fresh(4_044L, 0L, 0L), 8, 10);
+        EconomyState.VillageProject partialCottage = completedProject(
+                1L, VillageProsperityEngine.ProjectType.COTTAGE, false, false);
+        partialCottage.originPos = pack(4, 64, 4);
+        partialCottage.materializedBlocks = 1;
+        partial.projects.add(partialCottage);
+        partial.housingCapacity += cottageGain;
+        VillageProsperityEngine.observeHousingCensus(partial, 10 + cottageGain, 0);
+        require(partial.observedHousingCapacity == 10,
+                "Partially materialized authored beds leaked into the external housing floor");
+
+        partialCottage.retiredLots.add(new EconomyState.RetiredProjectLot(
+                pack(200, 60, 200), pack(208, 72, 208)));
+        VillageProsperityEngine.observeHousingCensus(partial, 20 + cottageGain, 0);
+        require(partial.observedHousingCapacity == 20,
+                "A retired lot outside the bed-census bounds hid newly observed housing");
+    }
+
+    private static void testPostBuildCensusDoesNotAbsorbAuthoredHousing()
+            throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-housing-census-");
+        try {
+            EconomyState seed = EconomyState.fresh(4_043L, 0L, 0L);
+            EconomyState.VillageRecord village = village(seed, 8, 10);
+            EconomyState.VillageProject cottage = completedProject(
+                    1L, VillageProsperityEngine.ProjectType.COTTAGE, true, false);
+            cottage.originPos = pack(12, 64, 12);
+            cottage.boundsMinPos = pack(10, 60, 10);
+            cottage.boundsMaxPos = pack(18, 72, 18);
+            village.projects.add(cottage);
+            village.projectSerial = 1L;
+            village.housingCapacity += cottage.type.housingGain();
+            seed.save(root.resolve("the_emerald_standard.properties"));
+
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 8_086L, 0L, 0L);
+            EconomyService.VillageObservation postBuild =
+                    new EconomyService.VillageObservation(
+                            village.dimensionKey,
+                            village.centerPos,
+                            0L,
+                            0L,
+                            12,
+                            10 + cottage.type.housingGain(),
+                            0,
+                            false,
+                            List.of());
+            EconomyService.VillageSnapshot censused =
+                    service.observeVillage(village.villageId, postBuild);
+            require(censused != null
+                            && censused.village().observedPopulation == 12
+                            && censused.village().observedHousingCapacity == 10
+                            && VillageProsperityEngine.effectiveHousingCapacity(
+                                    censused.village()) == 14,
+                    "A normal post-build census absorbed the Cottage's authored beds");
+
+            // The raw bed count deliberately stays unchanged: this models a player breaking a
+            // non-bed structural cell while all four legacy Cottage beds remain in the census.
+            require(service.requireManualVillageProjectRepair(
+                            village.villageId,
+                            cottage.projectId,
+                            cottage.totalBlocks - 1,
+                            cottage.totalBlocks,
+                            cottage.boundsMinPos,
+                            cottage.boundsMaxPos),
+                    "Non-bed Cottage damage could not enter manual-repair state");
+            EconomyService.VillageSnapshot afterDamageCensus =
+                    service.observeVillage(village.villageId, postBuild);
+            require(afterDamageCensus != null
+                            && afterDamageCensus.village().observedHousingCapacity == 10
+                            && VillageProsperityEngine.effectiveHousingCapacity(
+                                    afterDamageCensus.village()) == 10,
+                    "A non-bed damage census kept unsafe Cottage housing operational");
+        } finally {
+            deleteTree(root);
+        }
     }
 
     private static void testPendingSettlersCountExactlyOnce() throws Exception {
@@ -1398,6 +1770,239 @@ public final class VillageProsperityRegressionTest {
                 "Net worth lost a balance while avoiding overflow");
     }
 
+    private static void testDestroyedProjectRelocatesWithoutRepairingOldLot() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-project-relocation-");
+        try {
+            EconomyState seed = EconomyState.fresh(1_313L, 0L, 0L);
+            EconomyState.VillageRecord village = village(seed, 8, 12);
+            EconomyState.VillageProject project = new EconomyState.VillageProject();
+            project.projectId = 1L;
+            project.type = VillageProsperityEngine.ProjectType.COTTAGE;
+            project.economicProgress = 1.0;
+            project.economicComplete = true;
+            project.completedDay = seed.economicDay;
+            project.originPos = pack(20, 64, 20);
+            project.boundsMinPos = pack(18, 60, 18);
+            project.boundsMaxPos = pack(26, 72, 26);
+            project.totalBlocks = project.type.nominalBlocks();
+            project.materializedBlocks = project.totalBlocks;
+            project.materializedComplete = true;
+            village.projectSerial = 1L;
+            village.projects.add(project);
+            village.housingCapacity += project.type.housingGain();
+            seed.save(root.resolve("the_emerald_standard.properties"));
+
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 2_626L, 0L, 0L);
+            require(service.relocateDestroyedVillageProject(village.villageId, 1L, 500L),
+                    "Severely destroyed project did not enter relocation");
+            EconomyState.VillageProject relocating = service.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(relocating.relocationPending
+                            && !relocating.manualRepairRequired
+                            && relocating.originPos == 0L
+                            && relocating.retiredLots.size() == 1
+                            && sameRetiredLot(
+                                    relocating.retiredLots.getFirst(),
+                                    project.boundsMinPos,
+                                    project.boundsMaxPos)
+                            && relocating.materializedBlocks == 0
+                            && !relocating.materializedComplete,
+                    "Relocation did not retire the old lot without repairing it");
+            require(service.villageSnapshot(village.villageId).village()
+                            .nextVisualProject(500L).projectId == 1L,
+                    "Replacement did not enter the normal guarded site queue");
+            require(!VillageProsperityEngine.isProjectOperational(relocating)
+                            && VillageProsperityEngine.effectiveHousingCapacity(
+                                    service.villageSnapshot(village.villageId).village()) == 12,
+                    "Destroyed housing consumed the village's base capacity during relocation");
+
+            long replacementOrigin = pack(-40, 67, 36);
+            long replacementMin = pack(-42, 63, 34);
+            long replacementMax = pack(-34, 75, 42);
+            require(service.reserveVillageProjectSite(
+                            village.villageId,
+                            1L,
+                            replacementOrigin,
+                            replacementMin,
+                            replacementMax,
+                            project.totalBlocks),
+                    "Replacement could not reserve a different lot");
+            require(service.updateVillageProjectMaterialization(
+                            village.villageId, 1L, project.totalBlocks, true, false),
+                    "Replacement could not complete materialization");
+            EconomyState.VillageProject replacement = service.villageSnapshot(
+                    village.villageId).village().projects.get(0);
+            require(!replacement.relocationPending
+                            && replacement.materializedComplete
+                            && replacement.originPos == replacementOrigin
+                            && replacement.retiredLots.size() == 1
+                            && sameRetiredLot(
+                                    replacement.retiredLots.getFirst(),
+                                    project.boundsMinPos,
+                                    project.boundsMaxPos)
+                            && VillageProsperityEngine.isProjectOperational(replacement),
+                    "Completed replacement lost its retired-lot guard or remained unavailable");
+
+            require(service.relocateDestroyedVillageProject(village.villageId, 1L, 750L),
+                    "A second destroyed replacement did not enter relocation");
+            EconomyState.VillageProject relocatingAgain = service.villageSnapshot(
+                    village.villageId).village().projects.getFirst();
+            require(relocatingAgain.retiredLots.size() == 2
+                            && sameRetiredLot(
+                                    relocatingAgain.retiredLots.get(0),
+                                    project.boundsMinPos,
+                                    project.boundsMaxPos)
+                            && sameRetiredLot(
+                                    relocatingAgain.retiredLots.get(1),
+                                    replacementMin,
+                                    replacementMax),
+                    "A repeated relocation forgot an earlier player-edited lot");
+
+            long secondReplacementOrigin = pack(72, 66, -48);
+            long secondReplacementMin = pack(70, 62, -50);
+            long secondReplacementMax = pack(78, 74, -42);
+            require(service.reserveVillageProjectSite(
+                            village.villageId,
+                            1L,
+                            secondReplacementOrigin,
+                            secondReplacementMin,
+                            secondReplacementMax,
+                            project.totalBlocks)
+                            && service.updateVillageProjectMaterialization(
+                                    village.villageId,
+                                    1L,
+                                    project.totalBlocks,
+                                    true,
+                                    false),
+                    "Second replacement could not complete materialization");
+
+            EconomyState persisted = EconomyState.load(
+                    root.resolve("the_emerald_standard.properties"), 9_999L, 0L, 0L);
+            EconomyState.VillageProject persistedReplacement = persisted
+                    .existingVillage(village.villageId).projects.get(0);
+            require(persistedReplacement.retiredLots.size() == 2
+                            && sameRetiredLot(
+                                    persistedReplacement.retiredLots.get(0),
+                                    project.boundsMinPos,
+                                    project.boundsMaxPos)
+                            && sameRetiredLot(
+                                    persistedReplacement.retiredLots.get(1),
+                                    replacementMin,
+                                    replacementMax)
+                            && persistedReplacement.originPos == secondReplacementOrigin
+                            && !persistedReplacement.relocationPending,
+                    "Complete retired-lot history did not survive restart");
+        } finally {
+            deleteTree(root);
+        }
+    }
+
+    private static void testProjectRelocationHistoryIsBounded() throws Exception {
+        Path root = Files.createTempDirectory("emerald-village-project-relocation-cap-");
+        try {
+            EconomyState seed = EconomyState.fresh(1_414L, 0L, 0L);
+            EconomyState.VillageRecord village = village(seed, 8, 12);
+            EconomyState.VillageProject project = new EconomyState.VillageProject();
+            project.projectId = 1L;
+            project.type = VillageProsperityEngine.ProjectType.COTTAGE;
+            project.economicProgress = 1.0;
+            project.economicComplete = true;
+            project.completedDay = seed.economicDay;
+            project.originPos = pack(120, 64, 120);
+            project.boundsMinPos = pack(118, 60, 118);
+            project.boundsMaxPos = pack(126, 72, 126);
+            project.totalBlocks = project.type.nominalBlocks();
+            project.materializedBlocks = project.totalBlocks;
+            project.materializedComplete = true;
+            village.projectSerial = 1L;
+            village.projects.add(project);
+            village.housingCapacity += project.type.housingGain();
+            seed.save(root.resolve("the_emerald_standard.properties"));
+
+            EconomyService service = new EconomyService();
+            service.startWithSeed(root, 2_828L, 0L, 0L);
+            java.util.ArrayList<long[]> retired = new java.util.ArrayList<>();
+            long currentOrigin = project.originPos;
+            long currentMin = project.boundsMinPos;
+            long currentMax = project.boundsMaxPos;
+            for (int index = 0; index < EconomyState.MAX_RETIRED_PROJECT_LOTS; index++) {
+                require(service.relocateDestroyedVillageProject(
+                                village.villageId, 1L, 1_000L + index),
+                        "Project relocation stopped before its bounded history was full");
+                retired.add(new long[] {currentMin, currentMax});
+                EconomyState.VillageProject relocating = service.villageSnapshot(
+                        village.villageId).village().projects.getFirst();
+                require(relocating.retiredLots.size() == retired.size(),
+                        "Project relocation history lost or invented a lot");
+                for (int retiredIndex = 0; retiredIndex < retired.size(); retiredIndex++) {
+                    long[] expected = retired.get(retiredIndex);
+                    require(sameRetiredLot(
+                                    relocating.retiredLots.get(retiredIndex),
+                                    expected[0],
+                                    expected[1]),
+                            "Project relocation history changed an earlier lot");
+                }
+
+                int x = 160 + index * 20;
+                int z = -140 - index * 17;
+                currentOrigin = pack(x, 65, z);
+                currentMin = pack(x - 2, 61, z - 2);
+                currentMax = pack(x + 6, 73, z + 6);
+                require(service.reserveVillageProjectSite(
+                                village.villageId,
+                                1L,
+                                currentOrigin,
+                                currentMin,
+                                currentMax,
+                                project.totalBlocks)
+                                && service.updateVillageProjectMaterialization(
+                                        village.villageId,
+                                        1L,
+                                        project.totalBlocks,
+                                        true,
+                                        false),
+                        "Could not materialize a replacement while filling history");
+            }
+
+            require(!service.relocateDestroyedVillageProject(
+                            village.villageId, 1L, 2_000L),
+                    "Project relocation exceeded its bounded retired-lot history");
+            EconomyState.VillageProject capped = service.villageSnapshot(
+                    village.villageId).village().projects.getFirst();
+            require(capped.retiredLots.size() == EconomyState.MAX_RETIRED_PROJECT_LOTS
+                            && capped.originPos == currentOrigin
+                            && capped.boundsMinPos == currentMin
+                            && capped.boundsMaxPos == currentMax
+                            && capped.materializedComplete,
+                    "Rejected over-cap relocation mutated the active project or its history");
+
+            EconomyState persisted = EconomyState.load(
+                    root.resolve("the_emerald_standard.properties"), 4_242L, 0L, 0L);
+            EconomyState.VillageProject persistedProject = persisted
+                    .existingVillage(village.villageId).projects.getFirst();
+            require(persistedProject.retiredLots.size()
+                            == EconomyState.MAX_RETIRED_PROJECT_LOTS,
+                    "Full project relocation history did not survive restart");
+            for (int index = 0; index < retired.size(); index++) {
+                require(sameRetiredLot(
+                                persistedProject.retiredLots.get(index),
+                                retired.get(index)[0],
+                                retired.get(index)[1]),
+                        "Restart reordered or changed retired project lots");
+            }
+        } finally {
+            deleteTree(root);
+        }
+    }
+
+    private static boolean sameRetiredLot(
+            EconomyState.RetiredProjectLot lot, long boundsMinPos, long boundsMaxPos) {
+        return lot != null
+                && lot.boundsMinPos == boundsMinPos
+                && lot.boundsMaxPos == boundsMaxPos;
+    }
+
     private static void testEpsilonOversellIsRejected() throws Exception {
         Path root = Files.createTempDirectory("emerald-village-oversell-");
         try {
@@ -1433,6 +2038,7 @@ public final class VillageProsperityRegressionTest {
         village.lastCensusDay = state.economicDay;
         village.population = population;
         village.observedPopulation = population;
+        village.observedHousingCapacity = housing;
         village.housingCapacity = housing;
         village.foodSupply = Math.max(0, population * 24.0);
         village.materialSupply = Math.max(24, population * 12.0);
@@ -1453,6 +2059,7 @@ public final class VillageProsperityRegressionTest {
         village.lastCensusDay = state.economicDay;
         village.population = population;
         village.observedPopulation = population;
+        village.observedHousingCapacity = housing;
         village.housingCapacity = housing;
         village.foodSupply = population * 24.0;
         village.materialSupply = population * 12.0;
@@ -1583,6 +2190,7 @@ public final class VillageProsperityRegressionTest {
                 || expected.lastIncidentCause != actual.lastIncidentCause
                 || expected.population != actual.population
                 || expected.observedPopulation != actual.observedPopulation
+                || expected.observedHousingCapacity != actual.observedHousingCapacity
                 || expected.housingCapacity != actual.housingCapacity
                 || expected.hostileCasualties != actual.hostileCasualties
                 || expected.playerCasualties != actual.playerCasualties

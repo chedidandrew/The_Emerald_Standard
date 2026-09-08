@@ -10,6 +10,7 @@ public final class BankerScreenLayoutRegressionTest {
         require(BankerScreenLayout.TOOLTIP_WRAP_WIDTH <= BankerScreenLayout.WIDTH - 24,
                 "Context tooltips can still render as screen-wide single lines");
         testHistoryControlDoesNotCoverCharts();
+        testExchangeVisualsStayInsidePanel();
         testOverviewValuesStayOutsideChart();
         testOverviewSummaryRowsDoNotCollide();
         testVillageDetailRowsStayInsidePanels();
@@ -21,6 +22,7 @@ public final class BankerScreenLayoutRegressionTest {
         testFundHeaderDoesNotCollideWithControls();
         testContextualTooltipStates();
         testActivityRowsStayAboveFooter();
+        testNewsLayout();
         System.out.println("PASS Banker screen layout regression tests");
     }
 
@@ -216,6 +218,8 @@ public final class BankerScreenLayoutRegressionTest {
     }
 
     private static void testTabStripFits() {
+        require(BankerScreenLayout.TAB_COUNT == 8,
+                "The local News page is missing from the tab strip");
         BankerScreenLayout.Rect last = new BankerScreenLayout.Rect(
                 BankerScreenLayout.TAB_X
                         + (BankerScreenLayout.TAB_COUNT - 1) * BankerScreenLayout.TAB_STEP,
@@ -223,7 +227,7 @@ public final class BankerScreenLayoutRegressionTest {
                 BankerScreenLayout.TAB_WIDTH,
                 BankerScreenLayout.TAB_HEIGHT);
         require(last.right() <= BankerScreenLayout.WIDTH - 10,
-                "The seven-tab strip overflows the Banker screen");
+                "The eight-tab strip overflows the Banker screen");
         BankerScreenLayout.Rect indicator = new BankerScreenLayout.Rect(
                 BankerScreenLayout.TAB_X,
                 BankerScreenLayout.TAB_INDICATOR_Y,
@@ -232,6 +236,42 @@ public final class BankerScreenLayoutRegressionTest {
         require(indicator.y() >= last.bottom()
                         && indicator.bottom() <= BankerScreenLayout.MARKET_TITLE_Y,
                 "The selected-tab indicator overlaps a tab or page content");
+    }
+
+    private static void testExchangeVisualsStayInsidePanel() {
+        BankerScreenLayout.Rect panel = new BankerScreenLayout.Rect(
+                BankerScreenLayout.EXCHANGE_PANEL_X,
+                BankerScreenLayout.EXCHANGE_PANEL_Y,
+                BankerScreenLayout.EXCHANGE_PANEL_WIDTH,
+                BankerScreenLayout.EXCHANGE_PANEL_HEIGHT);
+        BankerScreenLayout.Rect resourceIcon = new BankerScreenLayout.Rect(
+                BankerScreenLayout.EXCHANGE_RESOURCE_ICON_X,
+                BankerScreenLayout.EXCHANGE_ICON_Y,
+                BankerScreenLayout.EXCHANGE_ICON_SIZE,
+                BankerScreenLayout.EXCHANGE_ICON_SIZE);
+        BankerScreenLayout.Rect emeraldIcon = new BankerScreenLayout.Rect(
+                BankerScreenLayout.EXCHANGE_EMERALD_ICON_X,
+                BankerScreenLayout.EXCHANGE_ICON_Y,
+                BankerScreenLayout.EXCHANGE_ICON_SIZE,
+                BankerScreenLayout.EXCHANGE_ICON_SIZE);
+        BankerScreenLayout.Rect text = new BankerScreenLayout.Rect(
+                BankerScreenLayout.EXCHANGE_TEXT_X,
+                69,
+                BankerScreenLayout.EXCHANGE_TEXT_WIDTH,
+                96 - 69 + BankerScreenLayout.TEXT_HEIGHT);
+        BankerScreenLayout.Rect chart = new BankerScreenLayout.Rect(
+                BankerScreenLayout.EXCHANGE_CHART_X,
+                BankerScreenLayout.EXCHANGE_CHART_Y,
+                BankerScreenLayout.EXCHANGE_CHART_WIDTH,
+                BankerScreenLayout.EXCHANGE_CHART_HEIGHT);
+        require(contains(panel, resourceIcon) && contains(panel, emeraldIcon)
+                        && contains(panel, text),
+                "Trade icons or labels escaped the quote panel");
+        require(!resourceIcon.overlaps(text) && !emeraldIcon.overlaps(text)
+                        && !resourceIcon.overlaps(emeraldIcon),
+                "Trade icons overlap each other or the localized quote labels");
+        require(!panel.overlaps(chart),
+                "Trade item visuals overlap the quote-history chart");
     }
 
     private static void testMarketRowsDoNotCollide() {
@@ -456,6 +496,69 @@ public final class BankerScreenLayoutRegressionTest {
                         && !filter.overlaps(textRow(BankerScreenLayout.FOOTER_Y))
                         && !ordering.overlaps(textRow(BankerScreenLayout.FOOTER_Y)),
                 "Activity filter or newest-first hint overlaps another control");
+    }
+
+    private static void testNewsLayout() {
+        BankerScreenLayout.Rect panel = new BankerScreenLayout.Rect(
+                BankerScreenLayout.NEWS_PANEL_X,
+                BankerScreenLayout.NEWS_PANEL_Y,
+                BankerScreenLayout.NEWS_PANEL_WIDTH,
+                BankerScreenLayout.NEWS_PANEL_HEIGHT);
+        BankerScreenLayout.Rect visual = new BankerScreenLayout.Rect(
+                BankerScreenLayout.NEWS_VISUAL_X,
+                BankerScreenLayout.NEWS_VISUAL_Y,
+                BankerScreenLayout.NEWS_VISUAL_SIZE,
+                BankerScreenLayout.NEWS_VISUAL_SIZE);
+        BankerScreenLayout.Rect divider = new BankerScreenLayout.Rect(
+                BankerScreenLayout.NEWS_GUIDANCE_X,
+                BankerScreenLayout.NEWS_DIVIDER_Y,
+                BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                1);
+        for (float scale : new float[] {
+                BankerScreenScale.MIN_SCALE, 1.0F, BankerScreenScale.MAX_SCALE
+        }) {
+            int nativeTextHeight =
+                    BankerScreenScale.logicalSpanForNativePixels(
+                            BankerScreenLayout.TEXT_HEIGHT, scale);
+            int guidanceLineStep = BankerScreenLayout.newsGuidanceLineStep(scale);
+            int guidanceHeight = BankerScreenLayout.newsGuidanceBlockHeight(scale);
+            BankerScreenLayout.Rect headline = new BankerScreenLayout.Rect(
+                    BankerScreenLayout.NEWS_HEADLINE_X,
+                    BankerScreenLayout.NEWS_HEADLINE_Y,
+                    BankerScreenLayout.NEWS_TEXT_WIDTH,
+                    nativeTextHeight);
+            BankerScreenLayout.Rect article = new BankerScreenLayout.Rect(
+                    BankerScreenLayout.NEWS_HEADLINE_X,
+                    BankerScreenLayout.NEWS_ARTICLE_Y,
+                    BankerScreenLayout.NEWS_TEXT_WIDTH,
+                    (BankerScreenLayout.NEWS_ARTICLE_MAX_LINES - 1)
+                                    * BankerScreenLayout.NEWS_ARTICLE_LINE_STEP
+                            + nativeTextHeight);
+            BankerScreenLayout.Rect prosperity = new BankerScreenLayout.Rect(
+                    BankerScreenLayout.NEWS_GUIDANCE_X,
+                    BankerScreenLayout.NEWS_PROSPERITY_Y,
+                    BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                    guidanceHeight);
+            BankerScreenLayout.Rect safety = new BankerScreenLayout.Rect(
+                    BankerScreenLayout.NEWS_GUIDANCE_X,
+                    BankerScreenLayout.newsSafetyY(scale),
+                    BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                    guidanceHeight);
+            require(guidanceLineStep >= nativeTextHeight,
+                    "News guidance line spacing shrinks below the native font height");
+            require(contains(panel, visual) && contains(panel, headline)
+                            && contains(panel, article) && contains(panel, divider)
+                            && contains(panel, prosperity) && contains(panel, safety),
+                    "News content escaped its panel at responsive scale " + scale);
+            require(!visual.overlaps(headline) && !visual.overlaps(article)
+                            && !article.overlaps(divider)
+                            && !divider.overlaps(prosperity)
+                            && !prosperity.overlaps(safety),
+                    "News visual, article, or guidance rows overlap at responsive scale "
+                            + scale);
+        }
+        require(!panel.overlaps(textRow(BankerScreenLayout.FOOTER_Y)),
+                "News panel overlaps the shared footer");
     }
 
     private static void testFundHeaderDoesNotCollideWithControls() {

@@ -10,8 +10,15 @@ import java.util.TreeMap;
 
 /** Loader-neutral planning rules for terrain-safe authored-structure foundations. */
 public final class TerrainFoundationPlan {
-    /** Maximum natural surface drop accepted across a generated structure lot. */
-    public static final int MAX_TERRAIN_DROP = 2;
+    /**
+     * Maximum natural surface drop accepted across a generated structure lot.
+     *
+     * <p>Four blocks is enough to bridge ordinary village hills without turning the generator
+     * into a terrain excavator. The placement preflight still rejects every solid occupied cell,
+     * block entity, fluid, path, and non-natural foundation, so the extra tolerance only produces
+     * deeper authored supports and entrance steps on otherwise untouched terrain.</p>
+     */
+    public static final int MAX_TERRAIN_DROP = 4;
 
     private static final Comparator<Column> COLUMN_ORDER = Comparator
             .comparingInt(Column::z)
@@ -64,6 +71,32 @@ public final class TerrainFoundationPlan {
         return List.copyOf(suffix);
     }
 
+    /**
+     * Returns every authored column that actually reaches the structure's ground course.
+     *
+     * <p>The input is intentionally supplied by the runtime after mirror/rotation transforms and
+     * after optional cells have been removed. That makes this the authoritative terrain footprint,
+     * including annexes which extend beyond a catalog descriptor's nominal rectangle. Columns
+     * whose lowest cell is above y=1 are roof projections or hanging detail and do not acquire a
+     * synthetic foundation.</p>
+     */
+    public static List<Column> groundContactColumns(List<Cell> authored) {
+        if (authored == null || authored.isEmpty()) {
+            return List.of();
+        }
+        Map<Column, Integer> lowestByColumn = new TreeMap<>(COLUMN_ORDER);
+        for (Cell cell : authored) {
+            if (cell == null) {
+                throw new IllegalArgumentException("Authored foundation cell cannot be null");
+            }
+            lowestByColumn.merge(new Column(cell.x, cell.z), cell.y, Math::min);
+        }
+        return lowestByColumn.entrySet().stream()
+                .filter(entry -> entry.getValue() <= 1)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
     /** True when a sampled natural lot can be bridged by the configured foundation depth. */
     public static boolean supportsTerrainRange(
             int minimumSurface, int maximumSurface, int maximumDepth) {
@@ -83,6 +116,6 @@ public final class TerrainFoundationPlan {
     public record Cell(int x, int y, int z) {
     }
 
-    private record Column(int x, int z) {
+    public record Column(int x, int z) {
     }
 }

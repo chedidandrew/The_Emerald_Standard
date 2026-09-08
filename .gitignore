@@ -3,6 +3,7 @@
 **/run/
 *.class
 *.log
+*.log.gz
 .idea/
 .vscode/
 *.iml

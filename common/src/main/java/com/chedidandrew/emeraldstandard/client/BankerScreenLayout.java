@@ -11,12 +11,12 @@ public final class BankerScreenLayout {
     public static final int HEIGHT = 230;
     public static final int TOOLTIP_WRAP_WIDTH = 180;
 
-    public static final int TAB_X = 10;
+    public static final int TAB_X = 8;
     public static final int TAB_Y = 27;
-    public static final int TAB_STEP = 43;
-    public static final int TAB_WIDTH = 42;
+    public static final int TAB_STEP = 38;
+    public static final int TAB_WIDTH = 36;
     public static final int TAB_HEIGHT = 18;
-    public static final int TAB_COUNT = 7;
+    public static final int TAB_COUNT = 8;
     public static final int TAB_INDICATOR_Y = TAB_Y + TAB_HEIGHT;
     public static final int TAB_INDICATOR_HEIGHT = 2;
 
@@ -67,6 +67,21 @@ public final class BankerScreenLayout {
     public static final int MARKET_ACTION_Y = 168;
     public static final int MARKET_BULLETIN_X = 12;
     public static final int MARKET_BULLETIN_WIDTH = 296;
+
+    public static final int EXCHANGE_PANEL_X = 52;
+    public static final int EXCHANGE_PANEL_Y = 62;
+    public static final int EXCHANGE_PANEL_WIDTH = 216;
+    public static final int EXCHANGE_PANEL_HEIGHT = 47;
+    public static final int EXCHANGE_RESOURCE_ICON_X = 61;
+    public static final int EXCHANGE_EMERALD_ICON_X = 243;
+    public static final int EXCHANGE_ICON_Y = 77;
+    public static final int EXCHANGE_ICON_SIZE = 16;
+    public static final int EXCHANGE_TEXT_X = 82;
+    public static final int EXCHANGE_TEXT_WIDTH = 156;
+    public static final int EXCHANGE_CHART_X = 52;
+    public static final int EXCHANGE_CHART_Y = 116;
+    public static final int EXCHANGE_CHART_WIDTH = 216;
+    public static final int EXCHANGE_CHART_HEIGHT = 45;
 
     public static final int BANKING_SUBTAB_Y = 54;
     public static final int BANKING_SUBTAB_HEIGHT = 18;
@@ -130,6 +145,30 @@ public final class BankerScreenLayout {
     public static final int VILLAGE_PRIMARY_DETAIL_Y = 148;
     public static final int VILLAGE_SECONDARY_DETAIL_Y = 162;
 
+    public static final int NEWS_PANEL_X = 10;
+    public static final int NEWS_PANEL_Y = 54;
+    public static final int NEWS_PANEL_WIDTH = 298;
+    public static final int NEWS_PANEL_HEIGHT = 130;
+    public static final int NEWS_VISUAL_X = 16;
+    public static final int NEWS_VISUAL_Y = 60;
+    public static final int NEWS_VISUAL_SIZE = 52;
+    public static final int NEWS_ICON_X = 26;
+    public static final int NEWS_ICON_Y = 70;
+    public static final int NEWS_ICON_SCALE = 2;
+    public static final int NEWS_HEADLINE_X = 76;
+    public static final int NEWS_HEADLINE_Y = 60;
+    public static final int NEWS_TEXT_WIDTH = 226;
+    public static final int NEWS_ARTICLE_Y = 77;
+    public static final int NEWS_ARTICLE_LINE_STEP = 12;
+    public static final int NEWS_ARTICLE_MAX_LINES = 4;
+    public static final int NEWS_DIVIDER_Y = 130;
+    public static final int NEWS_GUIDANCE_X = 16;
+    public static final int NEWS_GUIDANCE_WIDTH = 286;
+    public static final int NEWS_GUIDANCE_LINE_STEP = 9;
+    public static final int NEWS_GUIDANCE_MAX_LINES = 2;
+    public static final int NEWS_PROSPERITY_Y = 136;
+    public static final int NEWS_SAFETY_Y = 154;
+
     public static final int FOOTER_Y = 188;
     public static final int AMOUNT_LABEL_Y = 198;
     public static final int AMOUNT_BUTTON_Y = 207;
@@ -146,6 +185,27 @@ public final class BankerScreenLayout {
     static final int TEXT_HEIGHT = 9;
 
     private BankerScreenLayout() {
+    }
+
+    /** Logical line spacing that preserves the native nine-pixel font at compact UI scales. */
+    public static int newsGuidanceLineStep(float interfaceScale) {
+        return Math.max(
+                NEWS_GUIDANCE_LINE_STEP,
+                BankerScreenScale.logicalSpanForNativePixels(TEXT_HEIGHT, interfaceScale));
+    }
+
+    /** Maximum logical height occupied by one wrapped guidance block. */
+    public static int newsGuidanceBlockHeight(float interfaceScale) {
+        int lineStep = newsGuidanceLineStep(interfaceScale);
+        return lineStep * (NEWS_GUIDANCE_MAX_LINES - 1)
+                + BankerScreenScale.logicalSpanForNativePixels(TEXT_HEIGHT, interfaceScale);
+    }
+
+    /** Keeps the Safety block below the Prosperity block as native-size text is unscaled. */
+    public static int newsSafetyY(float interfaceScale) {
+        return Math.max(
+                NEWS_SAFETY_Y,
+                NEWS_PROSPERITY_Y + newsGuidanceBlockHeight(interfaceScale));
     }
 
     public static CdCloseTooltipState cdCloseTooltipState(

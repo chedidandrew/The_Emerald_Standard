@@ -1,5 +1,6 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
+import java.util.HashSet;
 import java.util.List;
 
 /** Regression coverage for natural-lot clearance and safe fallback Bank retries. */
@@ -8,16 +9,31 @@ public final class VillageBankPlacementPolicyRegressionTest {
     }
 
     public static void main(String[] args) {
-        require(VillageBankPlacementPolicy.acceptsVolumeCell(true, false, false),
+        require(VillageBankPlacementPolicy.acceptsVolumeCell(true, false, true, false),
                 "Air was rejected from a Bank lot");
-        require(VillageBankPlacementPolicy.acceptsVolumeCell(false, true, false),
+        require(VillageBankPlacementPolicy.acceptsVolumeCell(false, true, true, false),
                 "Replaceable vegetation was treated as a solid obstruction");
-        require(!VillageBankPlacementPolicy.acceptsVolumeCell(false, false, false),
+        require(!VillageBankPlacementPolicy.acceptsVolumeCell(false, false, true, false),
                 "A solid block was accepted inside a Bank lot");
-        require(!VillageBankPlacementPolicy.acceptsVolumeCell(true, true, true),
+        require(!VillageBankPlacementPolicy.acceptsVolumeCell(true, true, true, true),
                 "A block entity was accepted inside a Bank lot");
+        require(!VillageBankPlacementPolicy.acceptsVolumeCell(false, true, false, false),
+                "Replaceable fluid was accepted inside a Bank lot");
+        require(VillageBankPlacementPolicy.preservesOutdoorClearance(
+                        false, true, true, false),
+                "Dry replaceable growth made Bank approach headroom unsafe");
+        require(!VillageBankPlacementPolicy.preservesOutdoorClearance(
+                        false, true, false, false),
+                "Fluid in Bank approach headroom was treated as harmless growth");
+        require(!VillageBankPlacementPolicy.preservesOutdoorClearance(
+                        false, true, true, true),
+                "A block entity in Bank approach headroom was treated as harmless growth");
+        require(!VillageBankPlacementPolicy.preservesOutdoorClearance(
+                        false, false, true, false),
+                "Solid construction in Bank approach headroom was ignored");
 
         testEntranceApproachPlanning();
+        testOutsideVillageRecoverySearch();
         testUpgradeAttemptGate();
 
         require(VillageBankPlacementPolicy.shouldRetryPersistedFallback(true),
@@ -36,13 +52,62 @@ public final class VillageBankPlacementPolicyRegressionTest {
 
         require(VillageBankPlacementPolicy.shouldPersistFallback(true, false),
                 "A complete terrain search with no candidates did not persist fallback access");
-        require(!VillageBankPlacementPolicy.shouldPersistFallback(false, false),
-                "An incomplete chunk search was made permanently final");
+        require(VillageBankPlacementPolicy.shouldPersistFallback(false, false),
+                "An incomplete no-candidate scan did not persist its retryable Banker state");
         require(!VillageBankPlacementPolicy.shouldPersistFallback(false, true),
-                "An incomplete protected-write attempt was made permanently final");
+                "An incomplete protected-write attempt claimed durable placement ownership");
         require(!VillageBankPlacementPolicy.shouldPersistFallback(true, true),
-                "A transient protected write failure was made permanently final");
+                "A protected write failure claimed durable placement ownership");
         System.out.println("PASS village bank placement policy regression");
+    }
+
+    private static void testOutsideVillageRecoverySearch() {
+        var standard = VillageBankPlacementPolicy.candidateSiteOffsets(false);
+        var recovery = VillageBankPlacementPolicy.candidateSiteOffsets(true);
+        require(standard.size() == 48,
+                "The bounded ordinary Bank search changed unexpectedly");
+        require(recovery.size() == 96,
+                "The fallback search did not add its bounded outer perimeter");
+        require(new HashSet<>(recovery).size() == recovery.size(),
+                "The fallback perimeter repeats a Bank candidate");
+        require(recovery.containsAll(standard),
+                "The recovery search discarded an ordinary safe Bank candidate");
+        require(recovery.stream().anyMatch(offset ->
+                        Math.max(Math.abs(offset.x()), Math.abs(offset.z())) >= 128),
+                "The recovery perimeter cannot reach beyond broad village POI influence");
+
+        long key = 0x5EEDB4A9L;
+        var nearOutside = VillageBankPlacementPolicy.candidatePriority(
+                true, 96, 0, key);
+        var farOutside = VillageBankPlacementPolicy.candidatePriority(
+                true, 128, 0, key);
+        var nearInside = VillageBankPlacementPolicy.candidatePriority(
+                false, 28, 0, key);
+        require(nearOutside.compareTo(nearInside) < 0,
+                "A closer overlapping lot outranked a safe outside-village lot");
+        require(nearOutside.compareTo(farOutside) < 0,
+                "The nearest outside-village lot was not preferred");
+
+        var south = VillageBankPlacementPolicy.candidatePriority(true, 0, 96, key);
+        var north = VillageBankPlacementPolicy.candidatePriority(true, 0, -96, key);
+        require(south.compareTo(north) < 0,
+                "An equal-distance Bank whose entrance faces the village was not preferred");
+        require(south.equals(VillageBankPlacementPolicy.candidatePriority(
+                        true, 0, 96, key)),
+                "Bank candidate scoring was not deterministic");
+
+        require(VillageBankPlacementPolicy.shouldProbeVillage(true, false),
+                "A player inside a newly discovered village did not trigger a Bank probe");
+        require(VillageBankPlacementPolicy.shouldProbeVillage(false, true),
+                "A known village stopped retrying when the player stepped onto its outskirts");
+        require(!VillageBankPlacementPolicy.shouldProbeVillage(false, false),
+                "An unrelated wilderness player triggered Village Bank work");
+        require(VillageBankPlacementPolicy.recoveryActive(0, 0, 192, 0, 192),
+                "The recovery radius excluded its boundary");
+        require(!VillageBankPlacementPolicy.recoveryActive(0, 0, 193, 0, 192),
+                "A distant player activated fallback construction");
+        require(!VillageBankPlacementPolicy.recoveryActive(0, 0, 0, 0, 0),
+                "A disabled recovery radius remained active");
     }
 
     private static void testEntranceApproachPlanning() {

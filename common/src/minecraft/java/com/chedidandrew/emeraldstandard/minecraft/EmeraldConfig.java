@@ -44,6 +44,7 @@ public final class EmeraldConfig {
             "village_prosperity.project_sponsorship_enabled",
             "village_prosperity.targeted_donations_enabled",
             "village_prosperity.donor_recognition_enabled",
+            "village_prosperity.fast_track_capital_enabled",
             "village_prosperity.endowment_annual_payout_bps",
             "village_prosperity.minimum_emergency_reserve_percent",
             "village_prosperity.max_monthly_treasury_spending");
@@ -75,6 +76,7 @@ public final class EmeraldConfig {
     private final boolean prosperityFundProjectSponsorshipEnabled;
     private final boolean prosperityFundTargetedDonationsEnabled;
     private final boolean prosperityFundDonorRecognitionEnabled;
+    private final boolean prosperityFundFastTrackCapitalEnabled;
     private final int prosperityFundEndowmentAnnualPayoutBps;
     private final int prosperityFundMinimumEmergencyReservePercent;
     private final int prosperityFundMaximumMonthlySpending;
@@ -103,6 +105,7 @@ public final class EmeraldConfig {
             boolean prosperityFundProjectSponsorshipEnabled,
             boolean prosperityFundTargetedDonationsEnabled,
             boolean prosperityFundDonorRecognitionEnabled,
+            boolean prosperityFundFastTrackCapitalEnabled,
             int prosperityFundEndowmentAnnualPayoutBps,
             int prosperityFundMinimumEmergencyReservePercent,
             int prosperityFundMaximumMonthlySpending) {
@@ -129,6 +132,7 @@ public final class EmeraldConfig {
         this.prosperityFundProjectSponsorshipEnabled = prosperityFundProjectSponsorshipEnabled;
         this.prosperityFundTargetedDonationsEnabled = prosperityFundTargetedDonationsEnabled;
         this.prosperityFundDonorRecognitionEnabled = prosperityFundDonorRecognitionEnabled;
+        this.prosperityFundFastTrackCapitalEnabled = prosperityFundFastTrackCapitalEnabled;
         this.prosperityFundEndowmentAnnualPayoutBps = prosperityFundEndowmentAnnualPayoutBps;
         this.prosperityFundMinimumEmergencyReservePercent =
                 prosperityFundMinimumEmergencyReservePercent;
@@ -184,6 +188,7 @@ public final class EmeraldConfig {
                 bool(properties, "village_prosperity.project_sponsorship_enabled", true),
                 bool(properties, "village_prosperity.targeted_donations_enabled", true),
                 bool(properties, "village_prosperity.donor_recognition_enabled", true),
+                bool(properties, "village_prosperity.fast_track_capital_enabled", true),
                 bounded(properties, "village_prosperity.endowment_annual_payout_bps", 400, 0, 10_000),
                 bounded(properties, "village_prosperity.minimum_emergency_reserve_percent", 20, 0, 90),
                 bounded(properties, "village_prosperity.max_monthly_treasury_spending", 24, 1, 1_000_000));
@@ -312,6 +317,10 @@ public final class EmeraldConfig {
         return prosperityFundMaximumMonthlySpending;
     }
 
+    public boolean prosperityFundFastTrackCapitalEnabled() {
+        return prosperityFundFastTrackCapitalEnabled;
+    }
+
     /** Applies every simulation option atomically to the shared economy service. */
     public void applyTo(EconomyService economy) {
         economy.configureMarketEvents(marketEventsEnabled);
@@ -329,7 +338,8 @@ public final class EmeraldConfig {
                 prosperityFundEnabled && villageProsperitySimulationEnabled,
                 prosperityFundEndowmentAnnualPayoutRate(),
                 prosperityFundEmergencyReserveFraction(),
-                dailyCapMicro));
+                dailyCapMicro,
+                prosperityFundFastTrackCapitalEnabled));
     }
 
     public String summary() {
@@ -342,7 +352,8 @@ public final class EmeraldConfig {
                         + "development radius=%d, construction=%d block(s)/%d tick(s), "
                         + "settler interval=%d ticks, prosperity fund=%s, endowments=%s, "
                         + "project sponsorship=%s, targeted donations=%s, donor recognition=%s, "
-                        + "endowment payout=%.2f%%, emergency reserve=%d%%, monthly spending cap=%d",
+                        + "fast-track capital=%s, endowment payout=%.2f%%, emergency reserve=%d%%, "
+                        + "routine monthly spending cap=%d",
                 villageBanksEnabled,
                 villageScanIntervalTicks,
                 villageRegionSize,
@@ -366,6 +377,7 @@ public final class EmeraldConfig {
                 prosperityFundProjectSponsorshipEnabled,
                 prosperityFundTargetedDonationsEnabled,
                 prosperityFundDonorRecognitionEnabled,
+                prosperityFundFastTrackCapitalEnabled,
                 prosperityFundEndowmentAnnualPayoutBps / 100.0,
                 prosperityFundMinimumEmergencyReservePercent,
                 prosperityFundMaximumMonthlySpending);
@@ -391,6 +403,7 @@ public final class EmeraldConfig {
                 10,
                 2,
                 1_200,
+                true,
                 true,
                 true,
                 true,
@@ -431,6 +444,7 @@ public final class EmeraldConfig {
         properties.setProperty("village_prosperity.project_sponsorship_enabled", "true");
         properties.setProperty("village_prosperity.targeted_donations_enabled", "true");
         properties.setProperty("village_prosperity.donor_recognition_enabled", "true");
+        properties.setProperty("village_prosperity.fast_track_capital_enabled", "true");
         properties.setProperty("village_prosperity.endowment_annual_payout_bps", "400");
         properties.setProperty("village_prosperity.minimum_emergency_reserve_percent", "20");
         properties.setProperty("village_prosperity.max_monthly_treasury_spending", "24");

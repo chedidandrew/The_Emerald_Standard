@@ -55,8 +55,17 @@ tasks.register('verifyBankerMenuPacket', JavaExec) {
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BankerMenuPacketCodecSelfTest'
 }
 
+tasks.register('verifyVillageBankStructure', JavaExec) {
+    group = 'verification'
+    description = 'Runs the exact production Bank admission gate for every current biome dialect.'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.VillageBankStructureSelfTest'
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyBankerMenuPacket')
+    dependsOn tasks.named('verifyVillageBankStructure')
 }
 
 jar {

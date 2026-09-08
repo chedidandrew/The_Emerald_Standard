@@ -29,6 +29,8 @@ import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
  * an existing method requires a new design schema.</p>
  */
 final class ModularVillageStructures {
+    private static final int LEGACY_GUARD_HEIGHT = 14;
+
     private ModularVillageStructures() {
     }
 
@@ -41,13 +43,20 @@ final class ModularVillageStructures {
             int depth,
             int height) {
         Materials materials = materials(character, dialect);
+        // Guard base/stage cells shipped against a 14-block envelope. Keep that immutable prefix
+        // while allowing the additive quality layer to use the taller declared envelope required
+        // by steep-roof variants.
+        int legacyHeight = type == VillageProsperityEngine.ProjectType.GUARD_POST
+                ? Math.min(height, LEGACY_GUARD_HEIGHT)
+                : height;
         Canvas base = new Canvas(Set.of());
         if (type == VillageProsperityEngine.ProjectType.MARKET_SQUARE) {
             buildMarket(base, materials, character, recipe, width, depth);
         } else if (type == VillageProsperityEngine.ProjectType.MINE_ENTRANCE) {
             buildMine(base, materials, character, recipe, width, depth);
         } else {
-            buildEnclosed(base, materials, character, type, recipe, width, depth, height);
+            buildEnclosed(
+                    base, materials, character, type, recipe, width, depth, legacyHeight);
         }
 
         Canvas stageOne = new Canvas(base.positions());
@@ -56,8 +65,20 @@ final class ModularVillageStructures {
         Set<BlockPos> stageTwoBlocked = new HashSet<>(base.positions());
         stageTwoBlocked.addAll(stageOne.positions());
         Canvas stageTwo = new Canvas(stageTwoBlocked);
-        appendLandmark(stageTwo, base, materials, type, recipe, width, depth, height);
-        return new Layers(base.values(), stageOne.values(), stageTwo.values(), materials);
+        appendLandmark(
+                stageTwo, base, materials, type, recipe, width, depth, legacyHeight);
+
+        Set<BlockPos> qualityBlocked = new HashSet<>(stageTwoBlocked);
+        qualityBlocked.addAll(stageTwo.positions());
+        Canvas quality = new Canvas(qualityBlocked);
+        appendQualityRetrofit(
+                quality, base, materials, type, recipe, width, depth, height);
+        return new Layers(
+                base.values(),
+                stageOne.values(),
+                stageTwo.values(),
+                quality.values(),
+                materials);
     }
 
     static Materials materials(
@@ -683,6 +704,125 @@ final class ModularVillageStructures {
         for (int z = minZ + 2; z < maxZ; z += 2) {
             canvas.put(minX, deckY + 1, z, parapet.defaultBlockState());
             canvas.put(maxX, deckY + 1, z, parapet.defaultBlockState());
+        }
+    }
+
+    /**
+     * Additive detail pass introduced after modular-v1 shipped. These cells are deliberately kept
+     * in a separate layer: the manager persists the visual stage at which the suffix is first
+     * adopted, so no already-built base or stage prefix is ever reordered.
+     */
+    private static void appendQualityRetrofit(
+            Canvas quality,
+            Canvas base,
+            Materials materials,
+            VillageProsperityEngine.ProjectType type,
+            VillageArchitecture.Recipe recipe,
+            int width,
+            int depth,
+            int height) {
+        if (type == VillageProsperityEngine.ProjectType.GUARD_POST) {
+            appendGuardQuality(quality, base, materials, width, depth, height);
+        } else if (type == VillageProsperityEngine.ProjectType.MINE_ENTRANCE) {
+            appendMineQuality(quality, base, materials, recipe, width, depth, height);
+        }
+    }
+
+    /** Turns the old exposed watch slab into a braced, roofed lookout with a continuous rail. */
+    private static void appendGuardQuality(
+            Canvas quality,
+            Canvas base,
+            Materials materials,
+            int width,
+            int depth,
+            int height) {
+        int minX = 2;
+        int maxX = width - 3;
+        int minZ = 2;
+        int maxZ = depth - 3;
+        int parapetY = base.highestOverall();
+        int deckY = parapetY - 1;
+        if (deckY < 2) {
+            return;
+        }
+
+        // A solid perimeter beam visually and structurally transfers the stone deck to its four
+        // timber legs instead of leaving a thin slab apparently floating above the main roof.
+        int beamY = deckY - 1;
+        for (int x = minX; x <= maxX; x++) {
+            quality.putIfAbsent(x, beamY, minZ, materials.timber.defaultBlockState());
+            quality.putIfAbsent(x, beamY, maxZ, materials.timber.defaultBlockState());
+        }
+        for (int z = minZ + 1; z < maxZ; z++) {
+            quality.putIfAbsent(minX, beamY, z, materials.timber.defaultBlockState());
+            quality.putIfAbsent(maxX, beamY, z, materials.timber.defaultBlockState());
+        }
+
+        // Fill only the deliberate crenel gaps. The existing stone wall posts remain untouched;
+        // iron infill reads as a safe guard rail and never blocks the open lookout floor.
+        for (int x = minX; x <= maxX; x++) {
+            quality.putIfAbsent(x, parapetY, minZ, Blocks.IRON_BARS.defaultBlockState());
+            quality.putIfAbsent(x, parapetY, maxZ, Blocks.IRON_BARS.defaultBlockState());
+        }
+        for (int z = minZ + 1; z < maxZ; z++) {
+            quality.putIfAbsent(minX, parapetY, z, Blocks.IRON_BARS.defaultBlockState());
+            quality.putIfAbsent(maxX, parapetY, z, Blocks.IRON_BARS.defaultBlockState());
+        }
+
+        if (parapetY + 2 > height) {
+            return;
+        }
+        // Posts stand on the original stone corner crenels. A restrained slab canopy gives the
+        // vertical tower a clear cap without repeating the oversized roof below it.
+        for (int x : new int[] {minX, maxX}) {
+            for (int z : new int[] {minZ, maxZ}) {
+                quality.putIfAbsent(
+                        x, parapetY + 1, z, materials.timber.defaultBlockState());
+            }
+        }
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                quality.putIfAbsent(
+                        x, parapetY + 2, z, materials.roofSlab.defaultBlockState());
+            }
+        }
+    }
+
+    /** Adds upper timber bracing and lighting while retaining the original rail aisle. */
+    private static void appendMineQuality(
+            Canvas quality,
+            Canvas base,
+            Materials materials,
+            VillageArchitecture.Recipe recipe,
+            int width,
+            int depth,
+            int height) {
+        int center = width / 2;
+
+        // Keep the shipped wool shelf roof-suspended. Low exterior retrofit posts would become
+        // terrain-dependent on old hillside saves and make the support planner extend below the
+        // immutable legacy footprint.
+
+        // Illuminate the rail without occupying either two-high side aisle. Each hanging lantern
+        // is directly supported by an existing authored tunnel cross-beam.
+        int lightX = center + (recipe.mirrored() ? 1 : -1);
+        for (int z : new int[] {3, 7}) {
+            if (z < depth && base.contains(lightX, 4, z) && 3 <= height) {
+                quality.putIfAbsent(
+                        lightX,
+                        3,
+                        z,
+                        Blocks.LANTERN.defaultBlockState()
+                                .setValue(LanternBlock.HANGING, true));
+            }
+        }
+
+        // A second timber band immediately below the stone cross-beams softens the abrupt,
+        // top-heavy stone strip visible from outside while keeping y=1..2 fully traversable.
+        for (int z = 1; z < depth - 1; z += 2) {
+            for (int x = center - 1; x <= center + 1; x++) {
+                quality.putIfAbsent(x, 3, z, materials.timber.defaultBlockState());
+            }
         }
     }
 
@@ -1337,6 +1477,7 @@ final class ModularVillageStructures {
             List<Cell> base,
             List<Cell> stageOne,
             List<Cell> stageTwo,
+            List<Cell> quality,
             Materials materials) {
     }
 
@@ -1440,6 +1581,15 @@ final class ModularVillageStructures {
                     && !blocked.contains(new BlockPos(x, 1, z))
                     && !cells.containsKey(new BlockPos(x, 1, z))
                     && !cells.containsKey(new BlockPos(x, 2, z));
+        }
+
+        private boolean contains(int x, int y, int z) {
+            return cells.containsKey(new BlockPos(x, y, z));
+        }
+
+        private boolean hasBlock(int x, int y, int z, Block block) {
+            Cell cell = cells.get(new BlockPos(x, y, z));
+            return cell != null && cell.state().is(block);
         }
 
         private int highest(int x, int z) {

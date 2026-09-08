@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 12;
+    public static final int FORMAT_VERSION = 18;
     /** Five in-game years, shared by market, commodity, and personal history views. */
     public static final int HISTORY_DAYS = 1_825;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -23,11 +23,26 @@ public final class EconomyState {
     public static final int MAX_TERM_POSITIONS = 8;
     public static final long MICRO = 1_000_000L;
     public static final int MAX_PENDING_INVENTORY_ITEMS = 100_000;
+    /** Bounded histories prevent repeated relocation from ever reclaiming earlier player-edited sites. */
+    public static final int MAX_RETIRED_BANK_ANCHORS_PER_REGION = 16;
+    public static final int MAX_RETIRED_PROJECT_LOTS = 16;
+    /** Current one-time modular-road center-surface migration. */
+    public static final int TRAIL_CENTER_SURFACE_VERSION = 1;
+    /** Primary routes are bounded to 192 cells by their deterministic planner. */
+    public static final int MAX_TRAIL_CENTER_SURFACE_MIGRATION_CELLS = 192;
+    /** Current frozen modular-entrance approach plan. */
+    public static final int ENTRANCE_APPROACH_VERSION = 1;
+    /** Bounded stair, landing, and support cells for one modular entrance. */
+    public static final int MAX_ENTRANCE_APPROACH_CELLS = 64;
+    /** Maximum deterministic candidates in one failure-expanded project-site sweep. */
+    public static final int MAX_PROJECT_SITE_SEARCH_CANDIDATES = 256;
 
     public long seed;
     public long economicDay;
     public long lastWallClockMs;
     public long lastGameTicks;
+    /** Last commandable Overworld-clock observation included in economic progress. */
+    public long lastOverworldClockTicks;
     public long pendingEconomicMillis;
     public EconomyEngine.Regime regime;
     public EconomyEngine.MarketEvent lastMarketEvent = EconomyEngine.MarketEvent.NONE;
@@ -42,10 +57,33 @@ public final class EconomyState {
     public final Map<Long, Long> generatedBankAnchors = new HashMap<>();
     /** Positive authored-structure versions for generated banks that completed safe upgrades. */
     public final Map<Long, Integer> bankStructureVersions = new HashMap<>();
+    /** Append-only authored Bank anchors excluded after severe demolition and safe relocation. */
+    public final Map<Long, List<Long>> retiredBankAnchors = new HashMap<>();
     /** Regions deliberately persisted as Banker-only fallbacks after a complete lot search. */
     public final Set<Long> fallbackBankRegions = new HashSet<>();
     /** Stable village identities associated with bank-region markers. */
     public final Map<Long, UUID> bankRegionVillageIds = new HashMap<>();
+    /** Canonical managed Banker entity per region; retained while that entity is unloaded. */
+    public final Map<Long, UUID> bankRegionBankerIds = new HashMap<>();
+    /** Last generated anchor durably assigned to each canonical Banker. */
+    public final Map<Long, Long> bankRegionBankerAnchors = new HashMap<>();
+    /**
+     * Explicit death observations awaiting atomic canonical-Banker replacement.
+     *
+     * <p>A missing entity lookup is never sufficient to populate this map: unloaded entities are
+     * intentionally indistinguishable from absent ones. Keeping the dead UUID beside the current
+     * canonical assignment lets recovery survive a restart without opening a duplicate-Banker
+     * window.</p>
+     */
+    public final Map<Long, UUID> pendingBankerDeaths = new HashMap<>();
+    /**
+     * Save-ordered vanilla-conversion handoffs that globally block Banker replacement.
+     *
+     * <p>The target entity can live in an unloaded chunk after a crash, so an entity marker is
+     * only corroborating evidence. This economy record remains authoritative until the exact
+     * tuple commits, rolls back to its immediate source, or retires as a confirmed death.</p>
+     */
+    public final Map<Long, PendingBankerConversion> pendingBankerConversions = new HashMap<>();
     /** Persistent abstract village economies and development backlogs. */
     public final Map<UUID, VillageRecord> villages = new LinkedHashMap<>();
     /** Pre-incident market contributions held while player-damaged villages recover. */
@@ -72,6 +110,42 @@ public final class EconomyState {
     public enum InventoryTransactionStage {
         PREPARED,
         BANK_COMMITTED
+    }
+
+    public enum BankerConversionPhase {
+        PREPARED,
+        TARGET_DURABLE,
+        SOURCE_DURABLE,
+        RETIRE_DURABLE,
+        ROOT_DURABLE
+    }
+
+    public enum BankerConversionDisposition {
+        CONTINUE_BANKER,
+        TERMINAL
+    }
+
+    public static final class PendingBankerConversion {
+        public UUID rootCanonicalId;
+        public UUID immediateSourceId;
+        public UUID targetId;
+        public String targetDimension;
+        public long targetPos;
+        public BankerConversionPhase phase = BankerConversionPhase.PREPARED;
+        public BankerConversionDisposition disposition =
+                BankerConversionDisposition.CONTINUE_BANKER;
+
+        public PendingBankerConversion copy() {
+            PendingBankerConversion copy = new PendingBankerConversion();
+            copy.rootCanonicalId = rootCanonicalId;
+            copy.immediateSourceId = immediateSourceId;
+            copy.targetId = targetId;
+            copy.targetDimension = targetDimension;
+            copy.targetPos = targetPos;
+            copy.phase = phase;
+            copy.disposition = disposition;
+            return copy;
+        }
     }
 
     /**
@@ -403,6 +477,9 @@ public final class EconomyState {
     public static final class ProsperityFund {
         public final Map<DonationPurpose, Long> spendableMicro =
                 new EnumMap<>(DonationPurpose.class);
+        /** Player-origin liquid capital eligible for exact-needs project fast-tracking. */
+        public final Map<DonationPurpose, Long> fastTrackSpendableMicro =
+                new EnumMap<>(DonationPurpose.class);
         public final Map<DonationPurpose, Long> endowmentPrincipalMicro =
                 new EnumMap<>(DonationPurpose.class);
         public final Map<Long, Long> projectSponsorshipMicro = new LinkedHashMap<>();
@@ -413,6 +490,8 @@ public final class EconomyState {
         public long lifetimeSpentMicro;
         public long lastSpendingDay = -1L;
         public long spentTodayMicro;
+        /** Distinguishes a persisted empty provenance map from a legacy save needing migration. */
+        public boolean fastTrackProvenanceKnown;
 
         public long endowmentPrincipalTotalMicro() {
             long total = 0L;
@@ -433,6 +512,7 @@ public final class EconomyState {
         public ProsperityFund copy() {
             ProsperityFund copy = new ProsperityFund();
             copy.spendableMicro.putAll(spendableMicro);
+            copy.fastTrackSpendableMicro.putAll(fastTrackSpendableMicro);
             copy.endowmentPrincipalMicro.putAll(endowmentPrincipalMicro);
             copy.projectSponsorshipMicro.putAll(projectSponsorshipMicro);
             copy.donorTotalsMicro.putAll(donorTotalsMicro);
@@ -442,6 +522,7 @@ public final class EconomyState {
             copy.lifetimeSpentMicro = lifetimeSpentMicro;
             copy.lastSpendingDay = lastSpendingDay;
             copy.spentTodayMicro = spentTodayMicro;
+            copy.fastTrackProvenanceKnown = fastTrackProvenanceKnown;
             return copy;
         }
     }
@@ -484,6 +565,24 @@ public final class EconomyState {
         }
     }
 
+    /** One permanently retired authored-project lot. */
+    public static final class RetiredProjectLot {
+        public long boundsMinPos;
+        public long boundsMaxPos;
+
+        public RetiredProjectLot() {
+        }
+
+        public RetiredProjectLot(long boundsMinPos, long boundsMaxPos) {
+            this.boundsMinPos = boundsMinPos;
+            this.boundsMaxPos = boundsMaxPos;
+        }
+
+        public RetiredProjectLot copy() {
+            return new RetiredProjectLot(boundsMinPos, boundsMaxPos);
+        }
+    }
+
     public static final class VillageProject {
         public long projectId;
         public VillageProsperityEngine.ProjectType type =
@@ -499,6 +598,10 @@ public final class EconomyState {
         public boolean blocked;
         /** A completed structure was damaged and must be restored in-world, not regenerated. */
         public boolean manualRepairRequired;
+        /** Severe demolition retired the old lot and queued this same project at a new safe lot. */
+        public boolean relocationPending;
+        /** All retired lots, retained so later replacements never rebuild over player changes. */
+        public final List<RetiredProjectLot> retiredLots = new ArrayList<>();
         public boolean abstractOnly;
         /** Inclusive packed BlockPos bounds reserved by the authored physical template. */
         public long boundsMinPos;
@@ -506,6 +609,10 @@ public final class EconomyState {
         /** Persistent retry gate used to avoid rescanning an unsafe site every server tick. */
         public long retryAfterGameTick;
         public int materializationFailures;
+        /** Next deterministic site candidate to inspect in the active bounded sweep. */
+        public int siteSearchCursor;
+        /** Whether the active sweep has encountered at least one unloaded candidate. */
+        public boolean siteSearchSawUnloadedCandidate;
         /** Immutable generator contract. Missing pre-format-10 data remains legacy_v1. */
         public String designSchema = VillageArchitecture.LEGACY_SCHEMA;
         public long designSeed;
@@ -518,6 +625,21 @@ public final class EconomyState {
         public long designSignature;
         /** Persisted append-only visual stage; never follows a temporary tier decline. */
         public int designStage;
+        /**
+         * Visual stage after which the first quality-retrofit suffix was inserted. A value of -1
+         * identifies a pre-retrofit modular plan. Keeping the insertion point durable lets later
+         * stage upgrades append after that suffix without ever reordering a saved prefix.
+         */
+        public int designQualityStage = -1;
+        /** Immutable authored resource identity. Empty for legacy_v1 and modular_v1 projects. */
+        public String designTemplateId = "";
+        public int designTemplateRevision;
+        /** Semantic choices resolved through the village biome without changing this project. */
+        public String designPaletteId = "";
+        public String designDressingId = "";
+        /** Versioned canonical placement hash; blank until the physical plan is first frozen. */
+        public int designPlanHashVersion;
+        public String designPlanHash = "";
         /** Frozen route endpoint so mutable village metadata cannot reorder the saved plan. */
         public boolean trailAnchorSet;
         public long trailAnchorPos;
@@ -525,6 +647,22 @@ public final class EconomyState {
         public int trailMaterializedBlocks;
         public int trailTotalBlocks;
         public boolean trailMaterializedComplete;
+        /** Completed one-time center-surface migration version. */
+        public int trailCenterSurfaceVersion = TRAIL_CENTER_SURFACE_VERSION;
+        /** Cursor for the next bounded center-surface migration. */
+        public int trailCenterSurfaceMigrationCursor;
+        /** Frozen coordinate count for the active migration version; zero means uninitialized. */
+        public int trailCenterSurfaceMigrationTotalCells;
+        /** Zero identifies an existing project whose entrance approach has not been planned yet. */
+        public int entranceApproachVersion;
+        /** Frozen vertical step count for the reserved entrance approach. */
+        public int entranceApproachStepCount;
+        /** Next append-only entrance-approach cell to inspect. */
+        public int entranceApproachCursor;
+        /** Frozen coordinate count for this entrance-approach version. */
+        public int entranceApproachTotalCells;
+        /** True once every frozen cell was inspected or the approach was safely waived. */
+        public boolean entranceApproachComplete;
 
         public VillageProject copy() {
             VillageProject copy = new VillageProject();
@@ -540,11 +678,15 @@ public final class EconomyState {
             copy.materializedComplete = materializedComplete;
             copy.blocked = blocked;
             copy.manualRepairRequired = manualRepairRequired;
+            copy.relocationPending = relocationPending;
+            retiredLots.forEach(lot -> copy.retiredLots.add(lot.copy()));
             copy.abstractOnly = abstractOnly;
             copy.boundsMinPos = boundsMinPos;
             copy.boundsMaxPos = boundsMaxPos;
             copy.retryAfterGameTick = retryAfterGameTick;
             copy.materializationFailures = materializationFailures;
+            copy.siteSearchCursor = siteSearchCursor;
+            copy.siteSearchSawUnloadedCandidate = siteSearchSawUnloadedCandidate;
             copy.designSchema = designSchema;
             copy.designSeed = designSeed;
             copy.designSilhouette = designSilhouette;
@@ -554,11 +696,27 @@ public final class EconomyState {
             copy.designRotation = designRotation;
             copy.designSignature = designSignature;
             copy.designStage = designStage;
+            copy.designQualityStage = designQualityStage;
+            copy.designTemplateId = designTemplateId;
+            copy.designTemplateRevision = designTemplateRevision;
+            copy.designPaletteId = designPaletteId;
+            copy.designDressingId = designDressingId;
+            copy.designPlanHashVersion = designPlanHashVersion;
+            copy.designPlanHash = designPlanHash;
             copy.trailAnchorSet = trailAnchorSet;
             copy.trailAnchorPos = trailAnchorPos;
             copy.trailMaterializedBlocks = trailMaterializedBlocks;
             copy.trailTotalBlocks = trailTotalBlocks;
             copy.trailMaterializedComplete = trailMaterializedComplete;
+            copy.trailCenterSurfaceVersion = trailCenterSurfaceVersion;
+            copy.trailCenterSurfaceMigrationCursor = trailCenterSurfaceMigrationCursor;
+            copy.trailCenterSurfaceMigrationTotalCells =
+                    trailCenterSurfaceMigrationTotalCells;
+            copy.entranceApproachVersion = entranceApproachVersion;
+            copy.entranceApproachStepCount = entranceApproachStepCount;
+            copy.entranceApproachCursor = entranceApproachCursor;
+            copy.entranceApproachTotalCells = entranceApproachTotalCells;
+            copy.entranceApproachComplete = entranceApproachComplete;
             return copy;
         }
     }
@@ -635,6 +793,12 @@ public final class EconomyState {
                 VillageProsperityEngine.IncidentCause.NONE;
         public int population;
         public int observedPopulation;
+        /**
+         * Conservatively classified non-TES housing floor. Physical authored-bed estimates are
+         * removed before a census can raise this value.
+         */
+        public int observedHousingCapacity;
+        /** Monotonic legacy aggregate, including each economically completed project gain once. */
         public int housingCapacity;
         public int pendingSettlers;
         public int developmentTier;
@@ -658,7 +822,9 @@ public final class EconomyState {
         public double developmentPoints;
         public boolean restorationFunded;
         public long projectSerial;
-        /** Shared authored language; biome dialect is locked when the first modular lot is reserved. */
+        /** Persistent ordinal used to rotate fairly across currently due visual projects. */
+        public long visualProjectSelectionCursor;
+        /** Shared authored language; biome dialect is locked when the first managed lot is reserved. */
         public String architectureCharacter = "";
         public String architectureDialect = "";
         public final ProsperityFund prosperityFund = new ProsperityFund();
@@ -670,19 +836,35 @@ public final class EconomyState {
             return nextVisualProject(Long.MAX_VALUE);
         }
 
-        /** Returns the next project whose persisted placement retry delay has elapsed. */
+        /**
+         * Returns the next project whose persisted placement retry delay has elapsed.
+         *
+         * <p>Approved physical projects enter this queue before abstract work reaches 100%. The
+         * world-side materializer independently limits their authored prefix to economic progress,
+         * making construction visible without granting unfinished buildings economic authority.</p>
+         */
         public VillageProject nextVisualProject(long currentGameTick) {
-            return projects.stream()
-                    .filter(project -> project.economicComplete
-                            && !project.materializedComplete
+            return nextVisualProject(currentGameTick, 0L);
+        }
+
+        /**
+         * Rotates fairly across every due physical project while retaining deterministic order.
+         * A project whose site scan is still in progress therefore cannot monopolize construction
+         * pulses or starve a later project; each candidate keeps its own resumable search cursor.
+         */
+        public VillageProject nextVisualProject(long currentGameTick, long selectionOrdinal) {
+            List<VillageProject> candidates = projects.stream()
+                    .filter(project -> !project.materializedComplete
                             && !project.manualRepairRequired
                             && !project.abstractOnly
                             && project.retryAfterGameTick <= Math.max(0L, currentGameTick))
-                    .findFirst()
-                    .orElse(null);
+                    .toList();
+            return candidates.isEmpty()
+                    ? null
+                    : candidates.get((int) Math.floorMod(selectionOrdinal, candidates.size()));
         }
 
-        /** Returns one completed modular building whose best-effort public trail is unfinished. */
+        /** Returns one completed managed building whose best-effort public trail is unfinished. */
         public VillageProject nextTrailProject() {
             return nextTrailProject(0L);
         }
@@ -694,7 +876,7 @@ public final class EconomyState {
          */
         public VillageProject nextTrailProject(long selectionOrdinal) {
             List<VillageProject> candidates = projects.stream()
-                    .filter(project -> VillageArchitecture.MODULAR_SCHEMA.equals(
+                    .filter(project -> VillageArchitecture.isManagedStructureSchema(
                                     project.designSchema)
                             && project.economicComplete
                             && project.materializedComplete
@@ -711,8 +893,7 @@ public final class EconomyState {
 
         public int visualBacklog() {
             return (int) projects.stream()
-                    .filter(project -> project.economicComplete
-                            && !project.materializedComplete
+                    .filter(project -> !project.materializedComplete
                             && !project.abstractOnly)
                     .count();
         }
@@ -736,6 +917,7 @@ public final class EconomyState {
             copy.lastIncidentCause = lastIncidentCause;
             copy.population = population;
             copy.observedPopulation = observedPopulation;
+            copy.observedHousingCapacity = observedHousingCapacity;
             copy.housingCapacity = housingCapacity;
             copy.pendingSettlers = pendingSettlers;
             copy.developmentTier = developmentTier;
@@ -759,10 +941,13 @@ public final class EconomyState {
             copy.developmentPoints = developmentPoints;
             copy.restorationFunded = restorationFunded;
             copy.projectSerial = projectSerial;
+            copy.visualProjectSelectionCursor = visualProjectSelectionCursor;
             copy.architectureCharacter = architectureCharacter;
             copy.architectureDialect = architectureDialect;
             ProsperityFund fundCopy = prosperityFund.copy();
             copy.prosperityFund.spendableMicro.putAll(fundCopy.spendableMicro);
+            copy.prosperityFund.fastTrackSpendableMicro.putAll(
+                    fundCopy.fastTrackSpendableMicro);
             copy.prosperityFund.endowmentPrincipalMicro.putAll(
                     fundCopy.endowmentPrincipalMicro);
             copy.prosperityFund.projectSponsorshipMicro.putAll(
@@ -774,6 +959,8 @@ public final class EconomyState {
             copy.prosperityFund.lifetimeSpentMicro = fundCopy.lifetimeSpentMicro;
             copy.prosperityFund.lastSpendingDay = fundCopy.lastSpendingDay;
             copy.prosperityFund.spentTodayMicro = fundCopy.spentTodayMicro;
+            copy.prosperityFund.fastTrackProvenanceKnown =
+                    fundCopy.fastTrackProvenanceKnown;
             residents.forEach((id, resident) -> copy.residents.put(id, resident.copy()));
             projects.forEach(project -> copy.projects.add(project.copy()));
             incidents.forEach(incident -> copy.incidents.add(incident.copy()));
@@ -782,10 +969,16 @@ public final class EconomyState {
     }
 
     public static EconomyState fresh(long seed, long now, long gameTicks) {
+        return fresh(seed, now, gameTicks, gameTicks);
+    }
+
+    public static EconomyState fresh(
+            long seed, long now, long gameTicks, long overworldClockTicks) {
         EconomyState state = new EconomyState();
         state.seed = seed;
         state.lastWallClockMs = Math.max(0L, now);
         state.lastGameTicks = Math.max(0L, gameTicks);
+        state.lastOverworldClockTicks = Math.max(0L, overworldClockTicks);
         state.regime = EconomyEngine.initialRegime(seed);
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
             state.prices.put(asset.ticker(), 100.0);
@@ -801,7 +994,17 @@ public final class EconomyState {
 
     public static EconomyState load(Path path, long fallbackSeed, long now, long ticks)
             throws IOException {
-        return EconomyPersistence.load(path, fallbackSeed, now, ticks);
+        return load(path, fallbackSeed, now, ticks, ticks);
+    }
+
+    public static EconomyState load(
+            Path path,
+            long fallbackSeed,
+            long now,
+            long ticks,
+            long overworldClockTicks) throws IOException {
+        return EconomyPersistence.load(
+                path, fallbackSeed, now, ticks, overworldClockTicks);
     }
 
     public void save(Path path) throws IOException {
@@ -814,6 +1017,7 @@ public final class EconomyState {
         copy.economicDay = economicDay;
         copy.lastWallClockMs = lastWallClockMs;
         copy.lastGameTicks = lastGameTicks;
+        copy.lastOverworldClockTicks = lastOverworldClockTicks;
         copy.pendingEconomicMillis = pendingEconomicMillis;
         copy.regime = regime;
         copy.lastMarketEvent = lastMarketEvent;
@@ -827,8 +1031,15 @@ public final class EconomyState {
         copy.generatedBankRegions.addAll(generatedBankRegions);
         copy.generatedBankAnchors.putAll(generatedBankAnchors);
         copy.bankStructureVersions.putAll(bankStructureVersions);
+        retiredBankAnchors.forEach((region, anchors) ->
+                copy.retiredBankAnchors.put(region, new ArrayList<>(anchors)));
         copy.fallbackBankRegions.addAll(fallbackBankRegions);
         copy.bankRegionVillageIds.putAll(bankRegionVillageIds);
+        copy.bankRegionBankerIds.putAll(bankRegionBankerIds);
+        copy.bankRegionBankerAnchors.putAll(bankRegionBankerAnchors);
+        copy.pendingBankerDeaths.putAll(pendingBankerDeaths);
+        pendingBankerConversions.forEach((region, conversion) ->
+                copy.pendingBankerConversions.put(region, conversion.copy()));
         for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
             copy.villages.put(entry.getKey(), entry.getValue().copy());
         }
@@ -928,6 +1139,7 @@ public final class EconomyState {
                 endowmentAnnualPayoutRate,
                 emergencyReserveFraction,
                 dailyFundSpendingCapMicro,
+                false,
                 true);
     }
 
@@ -940,6 +1152,30 @@ public final class EconomyState {
             double endowmentAnnualPayoutRate,
             double emergencyReserveFraction,
             long dailyFundSpendingCapMicro,
+            boolean marketEventsEnabled) {
+        advanceOneDay(
+                villageProsperitySimulationEnabled,
+                villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled,
+                villageAutomaticRecoveryEnabled,
+                prosperityFundEnabled,
+                endowmentAnnualPayoutRate,
+                emergencyReserveFraction,
+                dailyFundSpendingCapMicro,
+                false,
+                marketEventsEnabled);
+    }
+
+    public void advanceOneDay(
+            boolean villageProsperitySimulationEnabled,
+            boolean villageVisualProgressionEnabled,
+            boolean villageMarketIntegrationEnabled,
+            boolean villageAutomaticRecoveryEnabled,
+            boolean prosperityFundEnabled,
+            double endowmentAnnualPayoutRate,
+            double emergencyReserveFraction,
+            long dailyFundSpendingCapMicro,
+            boolean fastTrackCapitalEnabled,
             boolean marketEventsEnabled) {
         if (economicDay == Long.MAX_VALUE) {
             throw new IllegalStateException("Economic day range is exhausted");
@@ -1045,7 +1281,12 @@ public final class EconomyState {
                         endowmentAnnualPayoutRate,
                         emergencyReserveFraction);
                 spendProsperityFundAutomatically(
-                        village, economicDay, dailyFundSpendingCapMicro);
+                        village,
+                        seed,
+                        economicDay,
+                        dailyFundSpendingCapMicro,
+                        fastTrackCapitalEnabled && villageProsperitySimulationEnabled,
+                        villageVisualProgressionEnabled);
             }
         }
 
@@ -1117,6 +1358,7 @@ public final class EconomyState {
                 || economicDay < 0L
                 || lastWallClockMs < 0L
                 || lastGameTicks < 0L
+                || lastOverworldClockTicks < 0L
                 || pendingEconomicMillis < 0L) {
             throw new IOException("Economy clock or regime is invalid");
         }
@@ -1163,12 +1405,96 @@ public final class EconomyState {
                         "Bank structure version exists without an anchored generated structure");
             }
         }
+        for (Map.Entry<Long, List<Long>> entry : retiredBankAnchors.entrySet()) {
+            if (entry.getKey() == null
+                    || entry.getValue() == null
+                    || entry.getValue().isEmpty()
+                    || entry.getValue().size() > MAX_RETIRED_BANK_ANCHORS_PER_REGION
+                    || entry.getValue().stream().anyMatch(java.util.Objects::isNull)
+                    || new HashSet<>(entry.getValue()).size() != entry.getValue().size()
+                    || !generatedBankRegions.contains(entry.getKey())
+                    || !generatedBankAnchors.containsKey(entry.getKey())
+                    || !bankStructureVersions.containsKey(entry.getKey())
+                    || fallbackBankRegions.contains(entry.getKey())) {
+                throw new IOException(
+                        "Retired Bank anchor exists without a current authored Bank");
+            }
+        }
         for (Map.Entry<Long, UUID> entry : bankRegionVillageIds.entrySet()) {
             if (entry.getKey() == null
                     || entry.getValue() == null
                     || !generatedBankRegions.contains(entry.getKey())
                     || !villages.containsKey(entry.getValue())) {
                 throw new IOException("Bank-region village association is invalid");
+            }
+        }
+        Set<UUID> canonicalBankers = new HashSet<>();
+        Map<UUID, Long> bankerLineageOwners = new HashMap<>();
+        for (Map.Entry<Long, UUID> entry : bankRegionBankerIds.entrySet()) {
+            if (entry.getKey() == null
+                    || entry.getValue() == null
+                    || !generatedBankRegions.contains(entry.getKey())
+                    || !generatedBankAnchors.containsKey(entry.getKey())
+                    || !bankRegionBankerAnchors.containsKey(entry.getKey())
+                    || !canonicalBankers.add(entry.getValue())
+                    || bankerLineageOwners.putIfAbsent(
+                            entry.getValue(), entry.getKey()) != null) {
+                throw new IOException("Canonical Banker association is invalid");
+            }
+        }
+        for (Map.Entry<Long, Long> entry : bankRegionBankerAnchors.entrySet()) {
+            if (entry.getKey() == null
+                    || entry.getValue() == null
+                    || !bankRegionBankerIds.containsKey(entry.getKey())
+                    || !generatedBankRegions.contains(entry.getKey())
+                    || !generatedBankAnchors.containsKey(entry.getKey())) {
+                throw new IOException("Canonical Banker anchor assignment is invalid");
+            }
+        }
+        for (Map.Entry<Long, UUID> entry : pendingBankerDeaths.entrySet()) {
+            if (entry.getKey() == null
+                    || entry.getValue() == null
+                    || !entry.getValue().equals(bankRegionBankerIds.get(entry.getKey()))
+                    || !bankRegionBankerAnchors.containsKey(entry.getKey())
+                    || !generatedBankRegions.contains(entry.getKey())
+                    || !generatedBankAnchors.containsKey(entry.getKey())) {
+                throw new IOException("Pending canonical Banker death is invalid");
+            }
+        }
+        for (Map.Entry<Long, PendingBankerConversion> entry
+                : pendingBankerConversions.entrySet()) {
+            Long region = entry.getKey();
+            PendingBankerConversion conversion = entry.getValue();
+            if (region == null
+                    || conversion == null
+                    || conversion.rootCanonicalId == null
+                    || conversion.immediateSourceId == null
+                    || conversion.targetId == null
+                    || conversion.targetDimension == null
+                    || conversion.targetDimension.isBlank()
+                    || conversion.targetDimension.indexOf('|') >= 0
+                    || conversion.phase == null
+                    || conversion.disposition == null
+                    || (conversion.phase == BankerConversionPhase.SOURCE_DURABLE
+                            && conversion.immediateSourceId.equals(
+                                    conversion.rootCanonicalId))
+                    || conversion.rootCanonicalId.equals(conversion.targetId)
+                    || conversion.immediateSourceId.equals(conversion.targetId)
+                    || !conversion.rootCanonicalId.equals(bankRegionBankerIds.get(region))
+                    || !bankRegionBankerAnchors.containsKey(region)
+                    || !generatedBankRegions.contains(region)
+                    || !generatedBankAnchors.containsKey(region)
+                    || bankerLineageOwners.putIfAbsent(
+                            conversion.targetId, region) != null
+                    || (!conversion.immediateSourceId.equals(conversion.rootCanonicalId)
+                            && bankerLineageOwners.putIfAbsent(
+                                    conversion.immediateSourceId, region) != null)) {
+                throw new IOException("Pending canonical Banker conversion is invalid");
+            }
+            UUID pendingDeath = pendingBankerDeaths.get(region);
+            if (pendingDeath != null
+                    && !pendingDeath.equals(conversion.rootCanonicalId)) {
+                throw new IOException("Pending Banker conversion death identity is invalid");
             }
         }
         for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
@@ -1347,13 +1673,24 @@ public final class EconomyState {
     }
 
     private static void spendProsperityFundAutomatically(
-            VillageRecord village, long day, long dailyCapMicro) {
+            VillageRecord village,
+            long worldSeed,
+            long day,
+            long dailyCapMicro,
+            boolean fastTrackCapitalEnabled,
+            boolean requirePhysicalWorld) {
         ProsperityFund fund = village.prosperityFund;
         if (fund.lastSpendingDay != day) {
             fund.lastSpendingDay = day;
             fund.spentTodayMicro = 0L;
         }
         rollCompletedProjectSponsorships(village);
+        if (fastTrackCapitalEnabled) {
+            VillageProsperityEngine.fastTrackNextProjectFromFund(
+                    village, worldSeed, day, requirePhysicalWorld);
+            VillageProsperityEngine.fastTrackActiveProjectLaborFromFund(
+                    village, day, requirePhysicalWorld);
+        }
         long remainingCap = Math.max(0L, dailyCapMicro - fund.spentTodayMicro);
         if (remainingCap <= 0L) return;
 
@@ -1367,7 +1704,8 @@ public final class EconomyState {
                 continue;
             }
             long requested = Math.min(remainingCap, entry.getValue());
-            long spent = applyProjectSponsorshipInputs(village, project, requested, day);
+            long spent = applyProjectSponsorshipLabor(
+                    village, project, requested, day, requirePhysicalWorld);
             if (spent <= 0L) {
                 continue;
             }
@@ -1386,8 +1724,7 @@ public final class EconomyState {
             long requested = Math.min(remainingCap, available);
             long spent = applyFundInputs(village, purpose, requested, day);
             if (spent <= 0L) continue;
-            fund.spendableMicro.compute(purpose, (ignored, balance) ->
-                    balance == null || balance <= spent ? null : balance - spent);
+            debitSpendablePassiveFirst(fund, purpose, spent);
             fund.spentTodayMicro = saturatingAdd(fund.spentTodayMicro, spent);
             fund.lifetimeSpentMicro = saturatingAdd(fund.lifetimeSpentMicro, spent);
             remainingCap -= spent;
@@ -1427,13 +1764,56 @@ public final class EconomyState {
             if (project != null && !project.economicComplete) {
                 continue;
             }
-            fund.projectSponsorshipMicro.remove(entry.getKey());
             if (balance > 0L) {
                 DonationPurpose purpose = project == null
                         ? recordedSponsorshipPurpose(fund, entry.getKey())
                         : donationPurposeForProject(project);
-                fund.spendableMicro.merge(purpose, balance, EconomyState::saturatingAdd);
+                long current = fund.spendableMicro.getOrDefault(purpose, 0L);
+                long transferred = Math.min(balance, Long.MAX_VALUE - current);
+                if (transferred > 0L) {
+                    fund.spendableMicro.merge(
+                            purpose, transferred, EconomyState::saturatingAdd);
+                    fund.fastTrackSpendableMicro.merge(
+                            purpose, transferred, EconomyState::saturatingAdd);
+                    fund.fastTrackProvenanceKnown = true;
+                }
+                long retained = balance - transferred;
+                if (retained > 0L) {
+                    fund.projectSponsorshipMicro.put(entry.getKey(), retained);
+                    continue;
+                }
             }
+            fund.projectSponsorshipMicro.remove(entry.getKey());
+        }
+    }
+
+    /** Debits ordinary spending from passive proceeds before consuming player-origin capital. */
+    static void debitSpendablePassiveFirst(
+            ProsperityFund fund, DonationPurpose purpose, long amount) {
+        if (fund == null || purpose == null || amount <= 0L) {
+            return;
+        }
+        long total = Math.max(0L, fund.spendableMicro.getOrDefault(purpose, 0L));
+        long debit = Math.min(total, amount);
+        if (debit <= 0L) {
+            return;
+        }
+        long fastTrack = Math.min(
+                total,
+                Math.max(0L, fund.fastTrackSpendableMicro.getOrDefault(purpose, 0L)));
+        long passive = total - fastTrack;
+        long fastTrackDebit = Math.max(0L, debit - passive);
+        long remaining = total - debit;
+        long remainingFastTrack = fastTrack - fastTrackDebit;
+        if (remaining == 0L) {
+            fund.spendableMicro.remove(purpose);
+        } else {
+            fund.spendableMicro.put(purpose, remaining);
+        }
+        if (remainingFastTrack == 0L) {
+            fund.fastTrackSpendableMicro.remove(purpose);
+        } else {
+            fund.fastTrackSpendableMicro.put(purpose, remainingFastTrack);
         }
     }
 
@@ -1477,7 +1857,12 @@ public final class EconomyState {
         if (project == null || project.type == null) {
             return DonationPurpose.INFRASTRUCTURE;
         }
-        return switch (project.type) {
+        return donationPurposeForProjectType(project.type);
+    }
+
+    private static DonationPurpose donationPurposeForProjectType(
+            VillageProsperityEngine.ProjectType type) {
+        return switch (type) {
             case COTTAGE, HOUSE, INN -> DonationPurpose.HOUSING;
             case GRANARY -> DonationPurpose.FOOD;
             case GUARD_POST -> DonationPurpose.SECURITY;
@@ -1486,13 +1871,180 @@ public final class EconomyState {
         };
     }
 
-    static long applyProjectSponsorshipInputs(
-            VillageRecord village, VillageProject project, long requestedMicro, long day) {
-        if (project == null || project.economicComplete) {
+    /**
+     * Releases only enough compatible Fund capital to make one already-selected project
+     * affordable. This is the fast-track exception to the routine daily spending limit: it never
+     * pre-pays future projects, never touches endowment principal, and leaves block placement to
+     * the normal guarded construction queue.
+     */
+    static long releaseFundCapitalForProject(
+            VillageRecord village,
+            VillageProsperityEngine.ProjectType type,
+            double requiredDevelopment,
+            long ignoredDay) {
+        if (village == null || type == null || requiredDevelopment < 0.0) {
             return 0L;
         }
-        return applyFundInputs(
-                village, DonationPurpose.INFRASTRUCTURE, requestedMicro, day);
+        if (village.foodSupply < Math.max(2.0, village.population * 0.5)) {
+            return 0L;
+        }
+        ProsperityFund fund = village.prosperityFund;
+        DonationPurpose purpose = donationPurposeForProjectType(type);
+        long needed = capitalNeededMicro(village, type, requiredDevelopment);
+        if (needed <= 0L) {
+            return 0L;
+        }
+
+        long purposeAvailable = fastTrackAvailable(fund, purpose);
+        long generalAvailable = purpose == DonationPurpose.GENERAL
+                ? 0L
+                : fastTrackAvailable(fund, DonationPurpose.GENERAL);
+        if (saturatingAdd(purposeAvailable, generalAvailable) < needed) {
+            return 0L;
+        }
+
+        long purposeSpend = Math.min(purposeAvailable, needed);
+        long generalSpend = needed - purposeSpend;
+        debitFastTrackSpendable(fund, purpose, purposeSpend);
+        if (generalSpend > 0L) {
+            debitFastTrackSpendable(fund, DonationPurpose.GENERAL, generalSpend);
+        }
+        applyCapitalInputs(village, type, requiredDevelopment, needed);
+        fund.lifetimeSpentMicro = saturatingAdd(fund.lifetimeSpentMicro, needed);
+        return needed;
+    }
+
+    /**
+     * Atomically purchases the remaining labor for one active project from player-origin capital.
+     * Dedicated sponsorship is consumed first, followed by its matching Direct Grant purpose and
+     * then General capital. Passive payout, emergency reserves, and Endowment principal are never
+     * eligible, and an underfunded request changes nothing.
+     */
+    static long releaseFundCapitalForProjectLabor(
+            VillageRecord village, VillageProject project) {
+        if (village == null
+                || project == null
+                || project.type == null
+                || project.economicComplete
+                || village.foodSupply < Math.max(2.0, village.population * 0.5)) {
+            return 0L;
+        }
+        long needed = VillageProsperityEngine.remainingProjectLaborCostMicro(project);
+        if (needed <= 0L) {
+            return 0L;
+        }
+
+        ProsperityFund fund = village.prosperityFund;
+        DonationPurpose purpose = donationPurposeForProjectType(project.type);
+        long sponsorshipAvailable = Math.max(
+                0L, fund.projectSponsorshipMicro.getOrDefault(project.projectId, 0L));
+        long purposeAvailable = fastTrackAvailable(fund, purpose);
+        long generalAvailable = purpose == DonationPurpose.GENERAL
+                ? 0L
+                : fastTrackAvailable(fund, DonationPurpose.GENERAL);
+        long totalAvailable = saturatingAdd(
+                sponsorshipAvailable, saturatingAdd(purposeAvailable, generalAvailable));
+        if (totalAvailable < needed) {
+            return 0L;
+        }
+
+        long sponsorshipSpend = Math.min(sponsorshipAvailable, needed);
+        long remaining = needed - sponsorshipSpend;
+        long purposeSpend = Math.min(purposeAvailable, remaining);
+        long generalSpend = remaining - purposeSpend;
+        if (sponsorshipSpend > 0L) {
+            fund.projectSponsorshipMicro.compute(project.projectId, (ignored, balance) ->
+                    balance == null || balance <= sponsorshipSpend
+                            ? null
+                            : balance - sponsorshipSpend);
+        }
+        debitFastTrackSpendable(fund, purpose, purposeSpend);
+        if (generalSpend > 0L) {
+            debitFastTrackSpendable(fund, DonationPurpose.GENERAL, generalSpend);
+        }
+        fund.lifetimeSpentMicro = saturatingAdd(fund.lifetimeSpentMicro, needed);
+        return needed;
+    }
+
+    private static long fastTrackAvailable(
+            ProsperityFund fund, DonationPurpose purpose) {
+        return Math.min(
+                Math.max(0L, fund.spendableMicro.getOrDefault(purpose, 0L)),
+                Math.max(0L, fund.fastTrackSpendableMicro.getOrDefault(purpose, 0L)));
+    }
+
+    private static void debitFastTrackSpendable(
+            ProsperityFund fund, DonationPurpose purpose, long amount) {
+        if (amount <= 0L) {
+            return;
+        }
+        fund.spendableMicro.compute(purpose, (ignored, balance) ->
+                balance == null || balance <= amount ? null : balance - amount);
+        fund.fastTrackSpendableMicro.compute(purpose, (ignored, balance) ->
+                balance == null || balance <= amount ? null : balance - amount);
+    }
+
+    private static long capitalNeededMicro(
+            VillageRecord village,
+            VillageProsperityEngine.ProjectType type,
+            double requiredDevelopment) {
+        double materialNeed = Math.max(0.0, type.materialCost() - village.materialSupply) / 0.40;
+        double treasuryNeed = Math.max(0.0, type.treasuryCost() - village.treasury) / 0.35;
+        double developmentNeed = Math.max(
+                0.0, requiredDevelopment - village.developmentPoints) / 0.25;
+        double emeralds = Math.max(materialNeed, Math.max(treasuryNeed, developmentNeed));
+        if (!Double.isFinite(emeralds) || emeralds <= 0.0) {
+            return 0L;
+        }
+        double micro = emeralds * MICRO;
+        return micro >= Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(1L, (long) StrictMath.ceil(micro));
+    }
+
+    private static long applyCapitalInputs(
+            VillageRecord village,
+            VillageProsperityEngine.ProjectType type,
+            double requiredDevelopment,
+            long requestedMicro) {
+        if (requestedMicro <= 0L) {
+            return 0L;
+        }
+        // The preflight proves that the fixed conversion bundle covers every deficit. Assign the
+        // exact thresholds to avoid a floating-point remainder blocking approval, while max()
+        // preserves any input that was already above the requirement.
+        village.materialSupply = Math.max(village.materialSupply, type.materialCost());
+        village.treasury = Math.max(village.treasury, type.treasuryCost());
+        village.developmentPoints = Math.max(
+                village.developmentPoints, requiredDevelopment);
+        return requestedMicro;
+    }
+
+    static long applyProjectSponsorshipLabor(
+            VillageRecord village,
+            VillageProject project,
+            long requestedMicro,
+            long day,
+            boolean requirePhysicalWorld) {
+        if (village == null
+                || project == null
+                || project.type == null
+                || project.economicComplete
+                || requestedMicro <= 0L) {
+            return 0L;
+        }
+        long remainingCost = VillageProsperityEngine.remainingProjectLaborCostMicro(project);
+        long spent = Math.min(requestedMicro, remainingCost);
+        if (spent <= 0L) {
+            return 0L;
+        }
+        if (spent >= remainingCost) {
+            VillageProsperityEngine.completeProject(
+                    village, project, day, requirePhysicalWorld);
+            return spent;
+        }
+        double totalLaborMicro = VillageProsperityEngine.projectLaborCostMicro(project.type);
+        project.economicProgress = Math.min(
+                1.0, project.economicProgress + spent / totalLaborMicro);
+        return spent;
     }
 
     static long applyFundInputs(
@@ -1666,7 +2218,9 @@ public final class EconomyState {
                 || village.population < 0
                 || village.population > VillageProsperityEngine.MAX_ABSTRACT_POPULATION
                 || village.observedPopulation < 0
+                || village.observedHousingCapacity < 0
                 || village.housingCapacity < 0
+                || village.observedHousingCapacity > village.housingCapacity
                 || village.pendingSettlers < 0
                 || village.pendingSettlers
                         > VillageProsperityEngine.MAX_ABSTRACT_POPULATION - village.population
@@ -1687,6 +2241,7 @@ public final class EconomyState {
                 || village.lastCollapseDay > economicDay
                 || village.marketSuppressedUntilDay < 0L
                 || village.projectSerial < 0L
+                || village.visualProjectSelectionCursor < 0L
                 || village.architectureCharacter == null
                 || village.architectureDialect == null
                 || (!village.architectureCharacter.isBlank()
@@ -1743,6 +2298,10 @@ public final class EconomyState {
                     || project.type == null
                     || project.designSchema == null
                     || !VillageArchitecture.isKnownSchema(project.designSchema)
+                    || project.designTemplateId == null
+                    || project.designPaletteId == null
+                    || project.designDressingId == null
+                    || project.designPlanHash == null
                     || project.projectId <= previousProject
                     || project.approvedDay < 0L
                     || project.approvedDay > economicDay
@@ -1757,8 +2316,63 @@ public final class EconomyState {
                     || project.trailMaterializedBlocks < 0
                     || project.trailTotalBlocks < 0
                     || project.trailMaterializedBlocks > project.trailTotalBlocks
+                    || project.trailCenterSurfaceVersion < 0
+                    || project.trailCenterSurfaceVersion > TRAIL_CENTER_SURFACE_VERSION
+                    || project.trailCenterSurfaceMigrationCursor < 0
+                    || project.trailCenterSurfaceMigrationCursor
+                            > MAX_TRAIL_CENTER_SURFACE_MIGRATION_CELLS
+                    || project.trailCenterSurfaceMigrationTotalCells < 0
+                    || project.trailCenterSurfaceMigrationTotalCells
+                            > MAX_TRAIL_CENTER_SURFACE_MIGRATION_CELLS
+                    || project.trailCenterSurfaceMigrationCursor
+                            > project.trailCenterSurfaceMigrationTotalCells
+                    || (project.trailCenterSurfaceVersion == TRAIL_CENTER_SURFACE_VERSION
+                            && (project.trailCenterSurfaceMigrationCursor != 0
+                                    || project.trailCenterSurfaceMigrationTotalCells != 0))
+                    || (project.trailCenterSurfaceVersion < TRAIL_CENTER_SURFACE_VERSION
+                            && project.trailCenterSurfaceMigrationTotalCells > 0
+                            && project.trailCenterSurfaceMigrationCursor
+                                    >= project.trailCenterSurfaceMigrationTotalCells)
+                    || (!VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                            && (project.trailCenterSurfaceVersion
+                                            != TRAIL_CENTER_SURFACE_VERSION
+                                    || project.trailCenterSurfaceMigrationCursor != 0
+                                    || project.trailCenterSurfaceMigrationTotalCells != 0))
+                    || project.entranceApproachVersion < 0
+                    || project.entranceApproachVersion > ENTRANCE_APPROACH_VERSION
+                    || project.entranceApproachStepCount < 0
+                    || project.entranceApproachStepCount > MAX_ENTRANCE_APPROACH_CELLS
+                    || project.entranceApproachCursor < 0
+                    || project.entranceApproachCursor > MAX_ENTRANCE_APPROACH_CELLS
+                    || project.entranceApproachTotalCells < 0
+                    || project.entranceApproachTotalCells > MAX_ENTRANCE_APPROACH_CELLS
+                    || project.entranceApproachCursor > project.entranceApproachTotalCells
+                    || (project.entranceApproachVersion == 0
+                            && (project.entranceApproachStepCount != 0
+                                    || project.entranceApproachCursor != 0
+                                    || project.entranceApproachTotalCells != 0
+                                    || project.entranceApproachComplete))
+                    || (project.entranceApproachVersion == ENTRANCE_APPROACH_VERSION
+                            && project.entranceApproachComplete
+                                    != (project.entranceApproachCursor
+                                            == project.entranceApproachTotalCells))
+                    || (project.entranceApproachTotalCells == 0
+                            && project.entranceApproachStepCount != 0)
+                    || (!VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                            && (project.entranceApproachVersion != 0
+                                    || project.entranceApproachStepCount != 0
+                                    || project.entranceApproachCursor != 0
+                                    || project.entranceApproachTotalCells != 0
+                                    || project.entranceApproachComplete))
                     || project.retryAfterGameTick < 0L
                     || project.materializationFailures < 0
+                    || project.siteSearchCursor < 0
+                    || project.siteSearchCursor > MAX_PROJECT_SITE_SEARCH_CANDIDATES
+                    || (project.siteSearchSawUnloadedCandidate
+                            && project.siteSearchCursor == 0)
+                    || (project.originPos != 0L
+                            && (project.siteSearchCursor != 0
+                                    || project.siteSearchSawUnloadedCandidate))
                     || project.designSilhouette < 0
                     || project.designSilhouette >= VillageArchitecture.SILHOUETTE_COUNT
                     || project.designRoof < 0
@@ -1769,7 +2383,13 @@ public final class EconomyState {
                     || project.designRotation > 3
                     || project.designStage < 0
                     || project.designStage > 2
-                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                    || project.designQualityStage < -1
+                    || project.designQualityStage > project.designStage
+                    || (project.designQualityStage >= 0
+                            && (!VillageArchitecture.MODULAR_SCHEMA.equals(
+                                            project.designSchema)
+                                    || !VillageArchitecture.hasQualityRetrofit(project.type)))
+                    || (VillageArchitecture.isManagedStructureSchema(project.designSchema)
                             && village.architectureCharacter.isBlank())
                     || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
                             && project.designSignature != VillageArchitecture.signature(
@@ -1778,18 +2398,44 @@ public final class EconomyState {
                                     project.designRoof,
                                     project.designFrontage,
                                     project.designMirrored))
-                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                    || (VillageArchitecture.isManagedStructureSchema(project.designSchema)
                             && project.originPos != 0L
                             && village.architectureDialect.isBlank())
-                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                    || (VillageArchitecture.isManagedStructureSchema(project.designSchema)
                             && project.originPos != 0L
                             && !project.trailAnchorSet)
-                    || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                    || (VillageArchitecture.isManagedStructureSchema(project.designSchema)
                             && project.originPos != 0L
                             && project.trailTotalBlocks <= 0)
+                    || (VillageArchitecture.BLUEPRINT_SCHEMA.equals(project.designSchema)
+                            && (!VillageArchitecture.isKnownBlueprintSelection(
+                                            project.type,
+                                            project.designTemplateId,
+                                            project.designTemplateRevision,
+                                            project.designPaletteId,
+                                            project.designDressingId,
+                                            project.designMirrored,
+                                            project.designSignature)
+                                    || project.designPlanHashVersion
+                                            != VillageArchitecture.BLUEPRINT_PLAN_HASH_VERSION
+                                    || !VillageArchitecture.isValidBlueprintPlanHash(
+                                            project.designPlanHash)
+                                    || (project.originPos != 0L
+                                            && project.designPlanHash.isEmpty())))
+                    || (!VillageArchitecture.BLUEPRINT_SCHEMA.equals(project.designSchema)
+                            && (!project.designTemplateId.isEmpty()
+                                    || project.designTemplateRevision != 0
+                                    || !project.designPaletteId.isEmpty()
+                                    || !project.designDressingId.isEmpty()
+                                    || project.designPlanHashVersion != 0
+                                    || !project.designPlanHash.isEmpty()))
                     || (project.economicComplete && project.economicProgress < 1.0)
+                    || (!project.economicComplete
+                            && project.totalBlocks > 0
+                            && project.materializedBlocks >= project.totalBlocks)
                     || (project.materializedComplete
-                            && project.materializedBlocks < project.totalBlocks)
+                            && (!project.economicComplete
+                                    || project.materializedBlocks < project.totalBlocks))
                     || (project.trailMaterializedComplete
                             && project.trailMaterializedBlocks < project.trailTotalBlocks)
                     || (project.manualRepairRequired
@@ -1797,6 +2443,13 @@ public final class EconomyState {
                                     || !project.economicComplete
                                     || project.abstractOnly
                                     || project.originPos == 0L))
+                    || (project.relocationPending
+                            && (project.materializedComplete
+                                    || !project.economicComplete
+                                    || project.manualRepairRequired
+                                    || project.abstractOnly
+                                    || project.retiredLots.isEmpty()))
+                    || !validRetiredProjectLots(project)
                     || !validProjectBounds(project)) {
                 throw new IOException("Invalid village project in " + id);
             }
@@ -1866,6 +2519,23 @@ public final class EconomyState {
         return unpackX(project.boundsMinPos) <= unpackX(project.boundsMaxPos)
                 && unpackY(project.boundsMinPos) <= unpackY(project.boundsMaxPos)
                 && unpackZ(project.boundsMinPos) <= unpackZ(project.boundsMaxPos);
+    }
+
+    private static boolean validRetiredProjectLots(VillageProject project) {
+        if (project.retiredLots.size() > MAX_RETIRED_PROJECT_LOTS) {
+            return false;
+        }
+        Set<String> unique = new HashSet<>();
+        for (RetiredProjectLot lot : project.retiredLots) {
+            if (lot == null
+                    || unpackX(lot.boundsMinPos) > unpackX(lot.boundsMaxPos)
+                    || unpackY(lot.boundsMinPos) > unpackY(lot.boundsMaxPos)
+                    || unpackZ(lot.boundsMinPos) > unpackZ(lot.boundsMaxPos)
+                    || !unique.add(lot.boundsMinPos + ":" + lot.boundsMaxPos)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static int unpackX(long packed) {
@@ -2034,6 +2704,12 @@ public final class EconomyState {
                 || fund.lastSpendingDay > economicDay
                 || fund.spentTodayMicro < 0L
                 || fund.spendableMicro.values().stream().anyMatch(value -> value == null || value < 0L)
+                || fund.fastTrackSpendableMicro.entrySet().stream()
+                        .anyMatch(entry -> entry.getKey() == null
+                                || entry.getValue() == null
+                                || entry.getValue() < 0L
+                                || entry.getValue()
+                                        > fund.spendableMicro.getOrDefault(entry.getKey(), 0L))
                 || fund.endowmentPrincipalMicro.values().stream().anyMatch(value -> value == null || value < 0L)
                 || fund.projectSponsorshipMicro.entrySet().stream()
                         .anyMatch(entry -> entry.getKey() == null

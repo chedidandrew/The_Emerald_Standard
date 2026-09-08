@@ -1,6 +1,7 @@
 package com.chedidandrew.emeraldstandard.neoforge;
 
 import com.chedidandrew.emeraldstandard.minecraft.BankerProfessionSupport;
+import com.chedidandrew.emeraldstandard.minecraft.EmeraldHandbook;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.ai.village.poi.PoiType;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
@@ -32,6 +33,8 @@ public final class BankerProfessionNeoForge {
             "exchange_desk", () -> new BlockItem(
                     EXCHANGE_DESK.get(),
                     BankerProfessionSupport.createExchangeDeskItemProperties()));
+    public static final DeferredHolder<Item, Item> HANDBOOK = ITEMS.register(
+            "handbook", EmeraldHandbook::createItem);
     public static final DeferredHolder<PoiType, PoiType> BANKER_POI = POI_TYPES.register(
             "banker_poi", () -> BankerProfessionSupport.createBankerPoi(EXCHANGE_DESK.get()));
     public static final DeferredHolder<VillagerProfession, VillagerProfession> BANKER =
@@ -51,6 +54,9 @@ public final class BankerProfessionNeoForge {
     private static void addCreativeTabContents(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey().equals(CreativeModeTabs.FUNCTIONAL_BLOCKS)) {
             event.accept(EXCHANGE_DESK_ITEM.get());
+        }
+        if (event.getTabKey().equals(CreativeModeTabs.TOOLS_AND_UTILITIES)) {
+            event.accept(HANDBOOK.get());
         }
     }
 }

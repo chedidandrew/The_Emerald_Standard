@@ -22,6 +22,7 @@ final class DurabilityAndInvariantRegression {
         testBackupRecovery(root.resolve("backup"));
         testEmptyPrimaryUsesBackup(root.resolve("empty-primary"));
         testChecksumCorruptionUsesBackup(root.resolve("checksum"));
+        testFailedWorldSwitchIsInert(root.resolve("failed-world-switch"));
         testMutationRollback(root.resolve("rollback"));
         testBankFallbackPromotionRollback(root.resolve("bank-fallback-rollback"));
         testBankStructureUpgradeRollback(root.resolve("bank-structure-rollback"));
@@ -96,6 +97,34 @@ final class DurabilityAndInvariantRegression {
                 "Checksum did not detect a modified balance");
         require(recovered.account(PLAYER).cashMicro >= 10L * EconomyState.MICRO,
                 "Checksum recovery did not use the valid backup");
+    }
+
+    private static void testFailedWorldSwitchIsInert(Path root) throws Exception {
+        Path firstDirectory = root.resolve("first-world");
+        Path rejectedDirectory = root.resolve("rejected-world");
+        EconomyService service = new EconomyService();
+        service.startWithSeed(firstDirectory, 126L, 0L, 0L);
+        require(service.deposit(PLAYER, 10L), "World-switch baseline deposit failed");
+
+        Path rejectedSave = rejectedDirectory.resolve("the_emerald_standard.properties");
+        Files.createDirectories(rejectedDirectory);
+        Files.writeString(rejectedSave, "format=999999\nmagic=THE_EMERALD_STANDARD\n");
+        byte[] rejectedBytes = Files.readAllBytes(rejectedSave);
+        boolean rejected = false;
+        try {
+            service.startWithSeed(rejectedDirectory, 999L, 0L, 0L);
+        } catch (java.io.IOException expected) {
+            rejected = expected.getMessage().contains("newer than supported");
+        }
+        require(rejected, "A future-format world switch was not rejected");
+        require(service.snapshot() == null
+                        && !service.saveNowAt(0L, 0L)
+                        && java.util.Arrays.equals(rejectedBytes, Files.readAllBytes(rejectedSave)),
+                "Failed startup retained old-world state or rewrote the rejected world");
+        EconomyState original = EconomyState.load(
+                firstDirectory.resolve("the_emerald_standard.properties"), 999L, 0L, 0L);
+        require(original.account(PLAYER).cashMicro == 10L * EconomyState.MICRO,
+                "Failed world switch changed the previously loaded world");
     }
 
     private static void testMutationRollback(Path directory) throws Exception {

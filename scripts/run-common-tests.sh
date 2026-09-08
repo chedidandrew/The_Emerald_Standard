@@ -18,8 +18,20 @@ javac --release 21 -cp "$BUILD" -d "$BUILD" "${TEST_SOURCES[@]}"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.PersistenceRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageProsperityRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageDashboardPolicyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageArchitectureRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.BlueprintTierSelectionRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.RoofGeometryValidatorRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.WholeBuildingDetailDensityValidatorRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.WholeBuildingLightingValidatorRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.WholeBuildingPresentationValidatorRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.WholeBuildingRoleReadabilityValidatorRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.WholeBuildingValidatorRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ProjectCatalogCompatibilityRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.GalleryCameraProjectionRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.GalleryCaptureIsolationPlanRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.StructureGalleryPlanRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.StructureGalleryReviewPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.Milestone95RegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.LargeWorldStressRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.FinanceRoadmapRegressionTest
@@ -28,13 +40,37 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.debug.DebugReportFilesRegress
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.BankerScreenLayoutRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.BankerScreenScaleRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.BankerTextureUvRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.ExchangeDeskModelRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.ExchangeDeskRecipeRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.HandbookResourceRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureCosmeticLifecycleRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureDistinctivenessWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureDetailWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureIndustryCraftWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureDetailDensityWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructurePresentationWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureGeometrySafetyWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureLightingWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureRoleReadabilityWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureDoodadWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructureRoofGeometryWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankWorkstationAccessPolicyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerAmountSelectionRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerConversionRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerDeathRetryQueueRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BankerLifecycleWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.CatalogAdmissionPerformanceWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.ContainerDataPackingRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.EmeraldConfigRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.FundConfirmationFingerprintRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TerrainFoundationPlanRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TrailGroundWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.StructureGalleryWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageEntranceApproachPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageBankPlacementPolicyRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageBankStructureVersionCompatibilityWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageMaterializationPolicyRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageRuntimeStructureSafetyWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageStructureProgressionRegressionTest
 
 fabric_version="$(grep '^mod_version=' "$ROOT/fabric/gradle.properties" | cut -d= -f2-)"

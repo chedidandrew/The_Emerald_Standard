@@ -7,6 +7,7 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import java.util.List;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -29,8 +30,9 @@ public final class EmeraldCommands {
         int maxFinancialAmount = (int) EconomyService.MAX_WHOLE_EMERALD_TRANSACTION;
         int maxInventoryAmount = EconomyService.MAX_INVENTORY_ITEM_TRANSACTION;
 
-        dispatcher.register(Commands.literal("emerald")
-                .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER))
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("emerald")
+                .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)
+                        || StructureGallery.hasCommandAccess(source))
                 .then(Commands.literal("help")
                         .executes(EmeraldCommandHandlers::help))
                 .then(Commands.literal("open")
@@ -156,6 +158,10 @@ public final class EmeraldCommands {
                                                 "count",
                                                 IntegerArgumentType.integer(1, maxInventoryAmount))
                                         .executes(context -> EmeraldCommandHandlers.exchange(
-                                                context, economy))))));
+                                                context, economy)))));
+        if (StructureGallery.enabled()) {
+            root.then(StructureGallery.command());
+        }
+        dispatcher.register(root);
     }
 }

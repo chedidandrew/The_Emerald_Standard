@@ -8,18 +8,22 @@ fi
 
 LOADER="$1"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN_DIR="$ROOT/$LOADER/run"
 LOG_DIR="$ROOT/build/client-smoke"
 LOG_FILE="$LOG_DIR/$LOADER.log"
 
-rm -rf "$RUN_DIR"
-mkdir -p "$RUN_DIR" "$LOG_DIR"
+mkdir -p "$LOG_DIR"
+# Never reuse or delete the developer's ordinary loader run directory: it may contain a manual
+# test world. Each smoke launch gets an isolated game directory under disposable build output.
+RUN_DIR="$(mktemp -d "$LOG_DIR/$LOADER-run.XXXXXX")"
 
 set +e
 ALSOFT_DRIVERS="null" \
 JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.clientSmoke=true" \
     timeout 240s xvfb-run -a \
-    bash "$ROOT/$LOADER/gradlew" --no-daemon -p "$ROOT/$LOADER" runClient \
+    bash "$ROOT/$LOADER/gradlew" --no-daemon -p "$ROOT/$LOADER" \
+    -I "$ROOT/scripts/smoke-client.init.gradle" \
+    -PtesSmokeGameDir="$RUN_DIR" \
+    runClient \
     > "$LOG_FILE" 2>&1
 status=$?
 set -e
@@ -45,6 +49,12 @@ fi
 
 if ! grep -Fq "The Emerald Standard client initialized" "$LOG_FILE"; then
     echo "$LOADER client never initialized The Emerald Standard" >&2
+    cat "$LOG_FILE" >&2
+    exit 1
+fi
+
+if ! grep -Fq "Emerald Handbook page layout verified for 46 pages" "$LOG_FILE"; then
+    echo "$LOADER client did not verify every localized handbook page" >&2
     cat "$LOG_FILE" >&2
     exit 1
 fi

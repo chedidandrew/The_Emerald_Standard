@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.neoforge;
 
 import com.chedidandrew.emeraldstandard.client.BankerScreen;
 import com.chedidandrew.emeraldstandard.client.ClientSmokeSupport;
+import com.chedidandrew.emeraldstandard.client.GalleryCaptureSupport;
 import com.mojang.logging.LogUtils;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -19,5 +20,6 @@ public final class EmeraldStandardNeoForgeClient {
     public static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(EmeraldStandardNeoForge.BANKER_MENU.get(), BankerScreen::new);
         ClientSmokeSupport.initialized(LOGGER);
+        GalleryCaptureSupport.initialized(LOGGER);
     }
 }

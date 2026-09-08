@@ -1,0 +1,25 @@
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin('fabric-loom') {
+        def targetPath = project.providers.gradleProperty('tesGalleryGameDir').get()
+        project.extensions.getByName('loom').runs.named('client').configure {
+            runDirectory = project.file(targetPath)
+            vmArg '-Dthe_emerald_standard.structureGallery=true'
+            vmArg '-Dthe_emerald_standard.structureGallery.autoBuild=true'
+            programArgs '--quickPlaySingleplayer', 'TES_Blueprint_V2_Gallery'
+        }
+    }
+
+    project.pluginManager.withPlugin('net.neoforged.moddev') {
+        def targetPath = project.providers.gradleProperty('tesGalleryGameDir').get()
+        def neoForgeExtension = project.extensions.getByName('neoForge')
+        neoForgeExtension.runs.configureEach { run ->
+            if (run.name == 'client') {
+                run.gameDirectory.set(project.file(targetPath))
+                run.systemProperty('the_emerald_standard.structureGallery', 'true')
+                run.systemProperty('the_emerald_standard.structureGallery.autoBuild', 'true')
+                run.programArgument '--quickPlaySingleplayer'
+                run.programArgument 'TES_Blueprint_V2_Gallery'
+            }
+        }
+    }
+}

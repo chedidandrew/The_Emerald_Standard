@@ -15,6 +15,7 @@ public final class VillageStructureProgressionRegressionTest {
         testStableVariety();
         testMonotonicVisualStages();
         testConnectedDeterministicTrail();
+        testThreeWideShouldersCoverSegmentsAndTurns();
         System.out.println("PASS village structure progression regression tests");
     }
 
@@ -110,6 +111,55 @@ public final class VillageStructureProgressionRegressionTest {
         }
         require(VillageStructureProgression.trail(0, 0, 100, 100, 1L, 64).isEmpty(),
                 "An unbounded trail escaped its planning limit");
+    }
+
+    private static void testThreeWideShouldersCoverSegmentsAndTurns() {
+        List<VillageStructureProgression.TrailCell> route = List.of(
+                new VillageStructureProgression.TrailCell(0, 0, false),
+                new VillageStructureProgression.TrailCell(1, 0, false),
+                new VillageStructureProgression.TrailCell(1, 1, false));
+        List<VillageStructureProgression.TrailCell> shoulders =
+                VillageStructureProgression.threeWideShoulders(route);
+        require(shoulders.equals(VillageStructureProgression.threeWideShoulders(route)),
+                "Three-wide shoulder planning was not deterministic");
+
+        Set<String> primary = new HashSet<>();
+        route.forEach(cell -> primary.add(cell.x() + ":" + cell.z()));
+        Set<String> widened = new HashSet<>(primary);
+        for (VillageStructureProgression.TrailCell shoulder : shoulders) {
+            require(shoulder.shoulder()
+                            && !primary.contains(shoulder.x() + ":" + shoulder.z())
+                            && widened.add(shoulder.x() + ":" + shoulder.z()),
+                    "Three-wide planner emitted a primary or duplicate shoulder cell");
+        }
+
+        for (int index = 1; index < route.size(); index++) {
+            VillageStructureProgression.TrailCell previous = route.get(index - 1);
+            VillageStructureProgression.TrailCell current = route.get(index);
+            int dx = current.x() - previous.x();
+            int dz = current.z() - previous.z();
+            int shoulderX = -dz;
+            int shoulderZ = dx;
+            for (VillageStructureProgression.TrailCell endpoint : List.of(previous, current)) {
+                require(widened.contains(
+                                (endpoint.x() + shoulderX) + ":" + (endpoint.z() + shoulderZ))
+                                && widened.contains(
+                                        (endpoint.x() - shoulderX)
+                                                + ":"
+                                                + (endpoint.z() - shoulderZ)),
+                        "A route segment lost one of its two shoulder lanes at a turn or endpoint");
+            }
+        }
+
+        boolean rejected = false;
+        try {
+            VillageStructureProgression.threeWideShoulders(List.of(
+                    new VillageStructureProgression.TrailCell(0, 0, false),
+                    new VillageStructureProgression.TrailCell(2, 0, false)));
+        } catch (IllegalArgumentException expected) {
+            rejected = true;
+        }
+        require(rejected, "Disconnected primary cells produced an unsafe widened trail");
     }
 
     private static void require(boolean condition, String message) {

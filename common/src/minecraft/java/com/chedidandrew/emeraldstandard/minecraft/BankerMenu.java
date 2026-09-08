@@ -825,6 +825,13 @@ public final class BankerMenu extends AbstractContainerMenu {
         return RESOURCE_NAMES.get(selectedResourceIndex());
     }
 
+    /** Client-safe display stack resolved through the same mapping used by server exchange logic. */
+    public ItemStack selectedResourceStack() {
+        BankInventory.ExchangeResource resource =
+                BankInventory.exchangeResource(selectedResourceName());
+        return resource == null ? ItemStack.EMPTY : new ItemStack(resource.item());
+    }
+
     public int selectedAmountPresetIndex() {
         return clampIndex(data.get(DATA_AMOUNT_PRESET), AMOUNT_PRESETS.length);
     }

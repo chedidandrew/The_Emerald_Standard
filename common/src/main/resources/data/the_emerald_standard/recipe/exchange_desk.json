@@ -15,5 +15,6 @@
   "result": {
     "id": "the_emerald_standard:exchange_desk",
     "count": 1
-  }
+  },
+  "show_notification": true
 }

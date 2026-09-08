@@ -3,6 +3,7 @@ package com.chedidandrew.emeraldstandard.minecraft;
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.VillageArchitecture;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.debug.DebugCapturePolicy;
 import com.chedidandrew.emeraldstandard.debug.DebugReportFiles;
@@ -79,6 +80,7 @@ public final class DebugFlightRecorder {
             "village_prosperity.project_sponsorship_enabled",
             "village_prosperity.targeted_donations_enabled",
             "village_prosperity.donor_recognition_enabled",
+            "village_prosperity.fast_track_capital_enabled",
             "village_prosperity.endowment_annual_payout_bps",
             "village_prosperity.minimum_emergency_reserve_percent",
             "village_prosperity.max_monthly_treasury_spending");
@@ -776,7 +778,12 @@ public final class DebugFlightRecorder {
             return fields("present", false);
         }
         EconomyState.VillageProject active = village.projects.stream()
-                .filter(project -> !project.materializedComplete)
+                .filter(project -> !project.materializedComplete
+                        || (VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                                && (!project.entranceApproachComplete
+                                        || !project.trailMaterializedComplete
+                                        || project.trailCenterSurfaceVersion
+                                                < EconomyState.TRAIL_CENTER_SURFACE_VERSION)))
                 .findFirst()
                 .orElse(null);
         Map<String, Object> project = active == null
@@ -791,6 +798,16 @@ public final class DebugFlightRecorder {
                         "materializedComplete", active.materializedComplete,
                         "blocked", active.blocked,
                         "manualRepairRequired", active.manualRepairRequired,
+                        "designSchema", active.designSchema,
+                        "trailBlocks", active.trailMaterializedBlocks,
+                        "trailTotalBlocks", active.trailTotalBlocks,
+                        "trailComplete", active.trailMaterializedComplete,
+                        "trailCenterSurfaceVersion", active.trailCenterSurfaceVersion,
+                        "entranceApproachVersion", active.entranceApproachVersion,
+                        "entranceApproachStepCount", active.entranceApproachStepCount,
+                        "entranceApproachCursor", active.entranceApproachCursor,
+                        "entranceApproachTotalCells", active.entranceApproachTotalCells,
+                        "entranceApproachComplete", active.entranceApproachComplete,
                         "retryAfterGameTick", active.retryAfterGameTick,
                         "origin", active.originPos == 0L
                                 ? Map.of()
@@ -1175,6 +1192,9 @@ public final class DebugFlightRecorder {
                                     ? 0
                                     : state.pendingInventoryTransactions.size(),
                             "lastPersistedGameTick", state == null ? 0L : state.lastGameTicks,
+                            "currentServerGameTick", server.overworld().getGameTime(),
+                            "currentOverworldClockTick",
+                                    server.overworld().getOverworldClockTime(),
                             "pendingEconomicMillis", state == null
                                     ? 0L
                                     : state.pendingEconomicMillis,

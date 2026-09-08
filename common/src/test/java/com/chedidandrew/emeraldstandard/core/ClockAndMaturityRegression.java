@@ -14,6 +14,12 @@ final class ClockAndMaturityRegression {
         testPartialGameDay(root.resolve("partial-game"));
         testPartialWallDay(root.resolve("partial-wall"));
         testMixedClockDoesNotDoubleCount(root.resolve("mixed-clock"));
+        testWorldClockCommandJump(root.resolve("world-clock-command"));
+        testWorldClockDoesNotDoubleCount(root.resolve("world-clock-overlap"));
+        testWorldClockRollback(root.resolve("world-clock-rollback"));
+        testPausedWorldClockUsesGameTime(root.resolve("paused-world-clock"));
+        testWorldClockRestart(root.resolve("world-clock-restart"));
+        testWorldClockCrashBeforeEconomyTick(root.resolve("world-clock-crash-window"));
         testOfflineProgressionPolicy(root.resolve("offline-policy"));
         testConfiguredOfflineLimit(root.resolve("configured-catch-up"));
         testBoundedCatchUp(root.resolve("catch-up"));
@@ -110,6 +116,110 @@ final class ClockAndMaturityRegression {
         require(second.snapshot().economicDay == 2L
                         && second.snapshot().pendingEconomicMillis == 0L,
                 "Two real days did not become exactly two economic days");
+    }
+
+    private static void testWorldClockCommandJump(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.configureEconomicClock(false, 30L);
+        service.startWithSeed(directory, 526L, 0L, 100L, 5_000L);
+
+        require(service.tickAt(100L, 29_000L, 0L),
+                "Overworld-clock command jump failed");
+        require(service.snapshot().economicDay == 1L
+                        && service.snapshot().pendingEconomicMillis == 0L,
+                "A 24,000-tick Overworld-clock command did not advance one economic day");
+    }
+
+    private static void testWorldClockDoesNotDoubleCount(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.startWithSeed(directory, 527L, 0L, 0L, 0L);
+
+        require(service.tickAt(
+                        EconomyService.TICKS_PER_MINECRAFT_DAY,
+                        EconomyService.TICKS_PER_MINECRAFT_DAY,
+                        EconomyService.MILLIS_PER_MINECRAFT_DAY),
+                "Overlapping three-clock observation failed");
+        require(service.snapshot().economicDay == 1L
+                        && service.snapshot().pendingEconomicMillis == 0L,
+                "Wall, game, and Overworld clocks were counted more than once");
+    }
+
+    private static void testWorldClockRollback(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.configureEconomicClock(false, 30L);
+        service.startWithSeed(directory, 528L, 0L, 0L, 50_000L);
+
+        require(service.tickAt(0L, 10_000L, 0L),
+                "Backward Overworld-clock observation failed");
+        require(service.snapshot().economicDay == 0L
+                        && service.snapshot().pendingEconomicMillis == 0L,
+                "Backward Overworld-clock movement advanced the economy");
+
+        require(service.tickAt(0L, 34_000L, 0L),
+                "Rebased Overworld-clock observation failed");
+        require(service.snapshot().economicDay == 1L
+                        && service.snapshot().pendingEconomicMillis == 0L,
+                "Overworld clock did not resume from its rebased value");
+    }
+
+    private static void testPausedWorldClockUsesGameTime(Path directory) throws Exception {
+        EconomyService service = new EconomyService();
+        service.configureEconomicClock(false, 30L);
+        service.startWithSeed(directory, 529L, 0L, 0L, 8_000L);
+
+        require(service.tickAt(
+                        EconomyService.TICKS_PER_MINECRAFT_DAY,
+                        8_000L,
+                        0L),
+                "Paused Overworld-clock observation failed");
+        require(service.snapshot().economicDay == 1L
+                        && service.snapshot().pendingEconomicMillis == 0L,
+                "Paused Overworld clock also stopped game-time progression");
+    }
+
+    private static void testWorldClockRestart(Path directory) throws Exception {
+        EconomyService first = new EconomyService();
+        first.configureEconomicClock(false, 30L);
+        first.startWithSeed(directory, 530L, 0L, 0L, 1_000L);
+        require(first.tickAt(0L, 13_000L, 0L),
+                "First Overworld-clock half-day failed");
+        require(first.saveNowAt(0L, 13_000L, 0L),
+                "Overworld-clock half-day save failed");
+
+        EconomyService second = new EconomyService();
+        second.configureEconomicClock(false, 30L);
+        second.startWithSeed(directory, 999L, 0L, 0L, 13_000L);
+        require(second.snapshot().economicDay == 0L
+                        && second.snapshot().pendingEconomicMillis
+                                == EconomyService.MILLIS_PER_MINECRAFT_DAY / 2L,
+                "Restart replayed or discarded Overworld-clock progress");
+
+        require(second.tickAt(0L, 25_000L, 0L),
+                "Second Overworld-clock half-day failed");
+        require(second.snapshot().economicDay == 1L
+                        && second.snapshot().pendingEconomicMillis == 0L,
+                "Two Overworld-clock half-days across restart did not create one day");
+    }
+
+    private static void testWorldClockCrashBeforeEconomyTick(Path directory) throws Exception {
+        EconomyService first = new EconomyService();
+        first.configureEconomicClock(false, 30L);
+        first.startWithSeed(directory, 531L, 0L, 0L, 1_000L);
+        require(first.tickAt(0L, 13_000L, 0L),
+                "Crash-window Overworld-clock baseline failed");
+        require(first.saveNowAt(0L, 13_000L, 0L),
+                "Crash-window economy save failed");
+
+        // Minecraft durably saved another half-day command jump, but the process stopped before
+        // the economy received its next tick. Startup must compare against the persisted 13,000
+        // baseline rather than silently rebasing to the already-advanced live world clock.
+        EconomyService restarted = new EconomyService();
+        restarted.configureEconomicClock(false, 30L);
+        restarted.startWithSeed(directory, 999L, 0L, 0L, 25_000L);
+        require(restarted.snapshot().economicDay == 1L
+                        && restarted.snapshot().pendingEconomicMillis == 0L
+                        && restarted.snapshot().lastOverworldClockTicks == 25_000L,
+                "Restart lost an Overworld-clock jump saved before the economy tick");
     }
 
     private static void testOfflineProgressionPolicy(Path directory) throws Exception {

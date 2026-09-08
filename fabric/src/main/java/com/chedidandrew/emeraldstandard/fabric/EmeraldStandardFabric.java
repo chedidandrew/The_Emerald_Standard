@@ -7,15 +7,18 @@ import com.chedidandrew.emeraldstandard.minecraft.BankerIntegrationSelfTest;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
+import com.chedidandrew.emeraldstandard.minecraft.BankWorkstationAccessPolicy;
 import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.PlayerOnboarding;
+import com.chedidandrew.emeraldstandard.minecraft.StructureGallery;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
@@ -23,6 +26,7 @@ import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -58,7 +62,9 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 ECONOMY.start(
                         server.getWorldPath(LevelResource.DATA),
                         server.overworld().getSeed(),
-                        server.overworld().getGameTime());
+                        server.overworld().getGameTime(),
+                        server.overworld().getOverworldClockTime());
+                VillageBankManager.beginServerSession(server, ECONOMY);
                 LOGGER.info(
                         "The Emerald Standard economy started with {} catch-up day(s) remaining",
                         ECONOMY.catchUpDaysRemaining());
@@ -67,6 +73,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
                     BankerIntegrationSelfTest.run(server.overworld());
                     LOGGER.info("The Emerald Standard Banker integration self-test passed");
                 }
+                StructureGallery.autoBuildIfRequested(server);
             } catch (Exception exception) {
                 throw new IllegalStateException(
                         "Could not start The Emerald Standard economy", exception);
@@ -75,7 +82,13 @@ public final class EmeraldStandardFabric implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             DebugFlightRecorder.stopForShutdown(server, ECONOMY);
-            if (!ECONOMY.saveNow(server.overworld().getGameTime())) {
+            if (!VillageBankManager.flushPendingLifecycleForShutdown(server, ECONOMY)) {
+                LOGGER.error("Could not flush pending Banker lifecycle state before shutdown: {}",
+                        ECONOMY.lastError());
+            }
+            if (!ECONOMY.saveNow(
+                    server.overworld().getGameTime(),
+                    server.overworld().getOverworldClockTime())) {
                 LOGGER.error("Could not save The Emerald Standard economy: {}",
                         ECONOMY.lastError());
             }
@@ -84,7 +97,9 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (!ECONOMY.tick(server.overworld().getGameTime())) {
+            if (!ECONOMY.tick(
+                    server.overworld().getGameTime(),
+                    server.overworld().getOverworldClockTime())) {
                 LOGGER.error("Could not advance or save The Emerald Standard economy: {}",
                         ECONOMY.lastError());
             }
@@ -95,12 +110,22 @@ public final class EmeraldStandardFabric implements ModInitializer {
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (entity instanceof Villager villager) {
+                VillageBankManager.onBankerDeath(villager, ECONOMY);
                 VillageProsperityManager.onVillagerDeath(villager, damageSource, ECONOMY);
             } else if (entity instanceof ZombieVillager zombieVillager) {
+                VillageBankManager.onZombieBankerDeath(zombieVillager, ECONOMY);
                 VillageProsperityManager.onZombieVillagerDeath(
                         zombieVillager, damageSource, ECONOMY);
+            } else {
+                VillageBankManager.onConvertedBankerDeath(entity, ECONOMY);
             }
         });
+
+        ServerLivingEntityEvents.MOB_CONVERSION.register((original, converted, params) ->
+                VillageBankManager.onBankerConversion(original, converted, ECONOMY));
+
+        ServerEntityEvents.ENTITY_LOAD.register((entity, level) ->
+                VillageBankManager.onEntityLoaded(entity, ECONOMY));
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             recover(handler.player);
@@ -118,10 +143,29 @@ public final class EmeraldStandardFabric implements ModInitializer {
             }
             if (player instanceof ServerPlayer serverPlayer
                     && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-                var accessPoint = VillageBankManager.bankAccessPoint(
+                var access = VillageBankManager.bankDeskAccess(
                         serverLevel, hitResult.getBlockPos(), ECONOMY);
-                if (accessPoint != null) {
-                    BankerAccess.openAt(serverPlayer, ECONOMY, accessPoint);
+                if (access.decision()
+                        == BankWorkstationAccessPolicy.Decision.RETIRED_INERT) {
+                    serverPlayer.sendSystemMessage(Component.translatable(
+                            "message.the_emerald_standard.bank_retired_desk"));
+                    return InteractionResult.SUCCESS_SERVER;
+                }
+                if (access.decision().warnsUnsafeBank()) {
+                    serverPlayer.sendSystemMessage(Component.translatable(
+                            access.decision().opensDashboard()
+                                    ? "message.the_emerald_standard.bank_desk_personal_fallback"
+                                    : "message.the_emerald_standard.bank_unsafe"));
+                }
+                if (access.decision().opensDashboard()) {
+                    if (BankerAccess.openAt(serverPlayer, ECONOMY, access.accessPoint())) {
+                        return InteractionResult.SUCCESS_SERVER;
+                    }
+                    serverPlayer.sendSystemMessage(Component.translatable(
+                            "message.the_emerald_standard.bank_open_failed"));
+                    return InteractionResult.FAIL;
+                }
+                if (access.decision() != BankWorkstationAccessPolicy.Decision.IGNORE) {
                     return InteractionResult.SUCCESS_SERVER;
                 }
             }
@@ -132,10 +176,12 @@ public final class EmeraldStandardFabric implements ModInitializer {
             if (hand != InteractionHand.MAIN_HAND || !BankerAccess.isBanker(entity)) {
                 return InteractionResult.PASS;
             }
-            if (!level.isClientSide() && player instanceof ServerPlayer serverPlayer) {
-                BankerAccess.open(serverPlayer, ECONOMY, entity);
+            if (level.isClientSide()) {
+                return InteractionResult.SUCCESS;
             }
-            return InteractionResult.SUCCESS;
+            boolean opened = player instanceof ServerPlayer serverPlayer
+                    && BankerAccess.open(serverPlayer, ECONOMY, entity);
+            return opened ? InteractionResult.SUCCESS_SERVER : InteractionResult.FAIL;
         });
 
         CommandRegistrationCallback.EVENT.register(
