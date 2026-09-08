@@ -11,11 +11,12 @@ public final class VillageBankStructureSelfTest {
     private VillageBankStructureSelfTest() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+        VillageBankVersionSevenSelfTest.run();
         VillageBankManager.validateBankV6MaterialRefinement();
         VillageBankManager.validateHeadlessBankDialectStructureContract();
-        System.out.println("PASS Village Bank v6 structure self-test (all five dialects)");
+        System.out.println("PASS Village Bank v7 structure self-test (all five dialects)");
     }
 }

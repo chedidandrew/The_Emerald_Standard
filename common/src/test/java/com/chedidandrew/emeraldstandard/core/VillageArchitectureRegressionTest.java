@@ -54,7 +54,7 @@ public final class VillageArchitectureRegressionTest {
             for (VillageArchitecture.BlueprintDescriptor descriptor : descriptors) {
                 catalogSize++;
                 require(descriptor.type() == type
-                                && descriptor.templateRevision() == 3
+                                && descriptor.templateRevision() == 4
                                 && descriptor.width() > 0
                                 && descriptor.depth() > 0
                                 && descriptor.height() > 0
@@ -68,7 +68,15 @@ public final class VillageArchitectureRegressionTest {
         require(catalogSize == 52,
                 "Active gold-master blueprint catalog is not the frozen 52-entry set");
 
-        // Historical revision-2 envelopes remain available after new approvals switch to revision 3.
+        for (var active : VillageArchitecture.activeBlueprints()) {
+            var frozen = VillageArchitecture.requireBlueprint(active.templateId(), 3);
+            require(frozen.width() == active.width() && frozen.depth() == active.depth()
+                            && frozen.height() == active.height()
+                            && frozen.scale() == active.scale()
+                            && frozen.mirrorable() == active.mirrorable(),
+                    "Revision-three catalog identity/envelope must remain available unchanged");
+        }
+        // Historical revision-2 envelopes remain available after new approvals switch to revision 4.
         requireEnvelope("cottage_hearth_01", 2, 11, 10, 10, false);
         requireEnvelope("cottage_garden_02", 2, 13, 11, 10, true);
         requireEnvelope("house_cross_01", 2, 15, 13, 14, true);
@@ -220,7 +228,7 @@ public final class VillageArchitectureRegressionTest {
             VillageArchitecture.BlueprintScale scale,
             boolean mirrorable) {
         VillageArchitecture.BlueprintDescriptor descriptor =
-                VillageArchitecture.requireBlueprint(templateId, 3);
+                VillageArchitecture.requireBlueprint(templateId, 4);
         require(descriptor.type() == type
                         && descriptor.width() == width
                         && descriptor.depth() == depth
@@ -228,7 +236,7 @@ public final class VillageArchitectureRegressionTest {
                         && descriptor.scale() == scale
                         && descriptor.mirrorable() == mirrorable
                         && VillageArchitecture.blueprints(type).contains(descriptor),
-                templateId + "@3 lost its active role, scale, envelope, or mirror contract");
+                templateId + "@4 lost its active role, scale, envelope, or mirror contract");
         VillageArchitecture.BlueprintDescriptor historical =
                 VillageArchitecture.requireBlueprint(templateId, 2);
         require(historical.width() == width && historical.depth() == depth

@@ -16,10 +16,17 @@ public final class AuthoredVillageStructuresSelfTest {
     private AuthoredVillageStructuresSelfTest() {
     }
 
-    public static void main(String[] args) throws ReflectiveOperationException {
+    public static void main(String[] args) throws Exception {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
         registerExactDeskFixture();
+        VillageBankVersionSevenSelfTest.run();
+        AuthoredRevisionCompatibilitySelfTest.run();
+        AuthoredPaletteContrastSelfTest.run();
+        AuthoredLandscapeRefinementsSelfTest.run();
+        AuthoredStructuralContactRefinementsSelfTest.run();
+        AuthoredWorkshopContactRefinementsSelfTest.run();
+        AuthoredLandscapeRefinementsSelfTest.reportCurrentGallery();
         AuthoredDoodadSurvivalSelfTest.run();
         AuthoredApproachRefinementsSelfTest.run();
         AuthoredMarketRefinementsSelfTest.run();

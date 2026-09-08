@@ -32,6 +32,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.GalleryCameraProjectionR
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.GalleryCaptureIsolationPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.StructureGalleryPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.StructureGalleryReviewPlanRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageComparisonBiomePlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.Milestone95RegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.LargeWorldStressRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.FinanceRoadmapRegressionTest
@@ -67,6 +68,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.FundConfirmationFin
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TerrainFoundationPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TrailGroundWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.StructureGalleryWiringRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageComparisonGalleryWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageEntranceApproachPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageBankPlacementPolicyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageBankStructureVersionCompatibilityWiringRegressionTest "$ROOT"

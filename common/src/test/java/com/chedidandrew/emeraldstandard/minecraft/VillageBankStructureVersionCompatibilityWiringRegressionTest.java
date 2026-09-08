@@ -8,7 +8,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
-/** Locks frozen version-two-through-five Bank compatibility and version-six build routing. */
+/** Locks frozen version-two-through-six Bank compatibility and version-seven build routing. */
 public final class VillageBankStructureVersionCompatibilityWiringRegressionTest {
     private static final String BANK_SOURCE =
             "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/"
@@ -28,7 +28,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
         verifyVersionedPlanRouting(source);
         verifyLegacyPalettePrefixFrozen(source);
         verifyFrozenLegacyMethodBodies(source);
-        verifyVersionSixAdmissionGate(Path.of(args[0]), source);
+        verifyVersionSevenAdmissionGate(Path.of(args[0]), source);
         verifyVersionTwoMaintenanceIsNonDestructive(source);
         verifySevereDemolitionRetiresBeforeRemoteReplacement(source);
         System.out.println("PASS Village Bank structure-version compatibility wiring regression");
@@ -137,7 +137,23 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                 Map.entry("private static void appendBankV5RearLedgerElevation(",
                         "3bab29fa8876397ab7f9155aa956c8e09fba353c8f32c9ef3cd18ed769e166ee"),
                 Map.entry("private static void appendBankV5DormerAndCupola(",
-                        "cc3a3ae58bb726a5ad38fff6e5a21cf5d4c8a6eee1b5e65b5745a1f5d9b0f0f4"));
+                        "cc3a3ae58bb726a5ad38fff6e5a21cf5d4c8a6eee1b5e65b5745a1f5d9b0f0f4"),
+                Map.entry("private static List<BankPlacement> legacyBankPlanV6(",
+                        "e9815d9d69e889953cc0694810e2b59059f2ea341161bb0bc156dd295e6e7ef3"),
+                Map.entry("private static void appendBankV6Facades(",
+                        "399b6a8778557648b85d6b62df2206bb5e3e93799bddbc2fccc9fb010a28dfbe"),
+                Map.entry("private static void appendBankV6Belfry(",
+                        "b19631dc815865f792e031c783306f650bc13b27d2ae6f1c715119ac3710cd0d"),
+                Map.entry("private static void appendBankV6RecordRoom(",
+                        "d548819f5e55360079aa5838a3d2642d6cae43ead501e71c41692eb36e0104c3"),
+                Map.entry("private static BlockState bankCorniceStair(",
+                        "883e6500112bdc6db05afbd377e700b83a48c42412948a13141de542f1aa527b"),
+                Map.entry("private static void polishBankV6Materials(",
+                        "dba7a44941946e17b0a065ef42325ac4cffd4b0ec2eb53dd90240acf6529a478"),
+                Map.entry("private static Block bankV6RidgeBlock(",
+                        "f322bb18054426f7cc45c944e7314ba262effb8c554a36b7d5a3d4f1bbaed52a"),
+                Map.entry("private static BankCivicFinish bankCivicFinish(",
+                        "a8586d8e88601954cf39960ab416bcb06ac8e40dcb1d0e377d71178da04af53a"));
         for (Map.Entry<String, String> entry : fingerprints.entrySet()) {
             String body = methodBody(source, entry.getKey()).replaceAll("\\s+", "");
             String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -147,7 +163,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
         }
     }
 
-    private static void verifyVersionSixAdmissionGate(Path root, String source) throws Exception {
+    private static void verifyVersionSevenAdmissionGate(Path root, String source) throws Exception {
         String smoke = methodBody(source, "static void validateBankTemplate(ServerLevel level)");
         String production = methodBody(source, "private static void ensureBankTemplateValidated()");
         String dialects = methodBody(source, "static void validateBankDialectPaletteContract()");
@@ -161,10 +177,11 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && dialectMatrix.contains("VillageArchitecture.BiomeDialect.values()")
                         && dialectMatrix.contains("validateCurrentBankBlueprint(")
                         && exact.contains("validateBankV6Skyline(authored, palette);")
+                        && exact.contains("validateBankV7ExteriorGardens(authored, palette);")
                         && exact.contains("validateBankInteriorZoning(")
                         && exact.contains("validateBankInteriorLighting(authored, snapshotId);")
                         && lighting.contains("AuthoredLightFixtureSupportValidator.validate("),
-                "A v6 Bank dialect can bypass the shared geometry, zoning, attachment, or "
+                "A v7 Bank dialect can bypass the shared geometry, zoning, attachment, or "
                         + "night-light production admission gate");
 
         Path selfTest = root.resolve(
@@ -172,7 +189,8 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         + "VillageBankStructureSelfTest.java");
         String selfTestSource = Files.readString(selfTest);
         require(selfTestSource.contains(
-                        "VillageBankManager.validateHeadlessBankDialectStructureContract();"),
+                        "VillageBankManager.validateHeadlessBankDialectStructureContract();")
+                        && selfTestSource.contains("VillageBankVersionSevenSelfTest.run();"),
                 "The headless Bank structure verifier no longer executes the five-dialect gate");
         String fabricBuild = Files.readString(root.resolve("fabric/build.gradle"));
         require(fabricBuild.contains("tasks.register('verifyVillageBankStructure', JavaExec)")
@@ -192,8 +210,10 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                                 "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V4 = 4;")
                         && source.contains(
                                 "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V5 = 5;")
-                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 6;"),
-                "Village Bank structure-version constants drifted from the v2-v6 contract");
+                        && source.contains(
+                                "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V6 = 6;")
+                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 7;"),
+                "Village Bank structure-version constants drifted from the v2-v7 contract");
 
         String attempt = methodBody(source, "private static BankBuildAttempt attemptBankBuild(");
         require(attempt.contains("BankBuildResult build = buildBank("),
@@ -211,12 +231,15 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
         String persist = methodBody(source, "private static boolean persistBuiltBank(");
         require(persist.contains("economy.markGeneratedBankRegion(")
                         && persist.contains("BANK_STRUCTURE_VERSION"),
-                "A completed new or replacement Bank is not atomically marked as v6");
+                "A completed new or replacement Bank is not atomically marked as v7");
 
         String integrity = methodBody(
                 source, "private static BankIntegrity inspectManagedBankIntegrity(");
         require(integrity.contains("structureVersion >= BANK_STRUCTURE_VERSION")
                         && integrity.contains("? bankPlan(origin, palette)")
+                        && integrity.contains(
+                                "structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V6")
+                        && integrity.contains("? legacyBankPlanV6(origin, palette)")
                         && integrity.contains(
                                 "structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V5")
                         && integrity.contains("? legacyBankPlanV5(origin, palette)")
@@ -226,7 +249,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && integrity.contains("structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION")
                         && integrity.contains("? legacyBankPlanV3(origin, palette)")
                         && integrity.contains(": legacyBankPlanV2(origin, palette)"),
-                "Bank integrity no longer dispatches v2-v5 to frozen plans and v6 to the "
+                "Bank integrity no longer dispatches v2-v6 to frozen plans and v7 to the "
                         + "current plan");
         require(!integrity.contains("setBlock(")
                         && !integrity.contains("destroyBlock(")
@@ -262,12 +285,17 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && versionFive.contains("appendBankV5SupportedCounterPendants(")
                         && versionFive.contains("appendBankV5DormerAndCupola("),
                 "Frozen v5 construction no longer layers its bounded civic delta over frozen v4");
-        String versionSix = methodBody(source, "private static List<BankPlacement> bankPlan(");
+        String versionSix = methodBody(source, "private static List<BankPlacement> legacyBankPlanV6(");
         require(versionSix.contains("legacyBankPlanV5(origin, palette)")
                         && versionSix.contains("appendBankV6Facades(")
                         && versionSix.contains("appendBankV6Belfry(")
                         && versionSix.contains("appendBankV6RecordRoom("),
-                "Current v6 construction lost its bounded finish, belfry or record-room delta");
+                "Frozen v6 construction lost its bounded finish, belfry or record-room delta");
+        String versionSeven = methodBody(source, "private static List<BankPlacement> bankPlan(");
+        require(versionSeven.contains("bankV7Palette(legacyPalette)")
+                        && versionSeven.contains("legacyBankPlanV6(origin, palette)")
+                        && versionSeven.contains("appendBankV7ExteriorGardens("),
+                "Current v7 construction lost its isolated material/planting composition");
     }
 
     private static void verifyVersionTwoMaintenanceIsNonDestructive(String source) {

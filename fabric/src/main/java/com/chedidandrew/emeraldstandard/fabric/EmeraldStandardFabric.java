@@ -13,6 +13,7 @@ import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.PlayerOnboarding;
 import com.chedidandrew.emeraldstandard.minecraft.StructureGallery;
+import com.chedidandrew.emeraldstandard.minecraft.VillageComparisonGallery;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import net.fabricmc.api.ModInitializer;
@@ -74,6 +75,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
                     LOGGER.info("The Emerald Standard Banker integration self-test passed");
                 }
                 StructureGallery.autoBuildIfRequested(server);
+                VillageComparisonGallery.autoBuildIfRequested(server);
             } catch (Exception exception) {
                 throw new IllegalStateException(
                         "Could not start The Emerald Standard economy", exception);
@@ -106,6 +108,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
             VillageProsperityManager.tick(server, ECONOMY);
             VillageBankManager.tick(server, ECONOMY);
             DebugFlightRecorder.tick(server, ECONOMY);
+            VillageComparisonGallery.tick(server);
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {

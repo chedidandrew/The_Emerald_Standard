@@ -160,10 +160,20 @@ public final class VillageArchitecture {
                     BlueprintScale.LANDMARK)));
 
     /** New plans opt into the reviewed craft pass; revision-2 plans retain their original recipes. */
-    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+    private static final List<BlueprintDescriptor> REVISION_THREE_BLUEPRINT_CATALOG = validateActiveCatalog(
             REVISION_TWO_BLUEPRINT_CATALOG.stream()
                     .map(previous -> new BlueprintDescriptor(
                             previous.type(), previous.templateId(), 3,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
+
+    /** Complementary roofs and supported garden dressing apply to new approvals only. */
+    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_THREE_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 4,
                             previous.width(), previous.depth(), previous.height(),
                             previous.mirrorable(), previous.scale(),
                             previous.paletteIds(), previous.dressingIds()))
@@ -608,8 +618,9 @@ public final class VillageArchitecture {
     public static BlueprintDescriptor blueprint(String templateId, int templateRevision) {
         return java.util.stream.Stream.concat(
                         BLUEPRINT_CATALOG.stream(), java.util.stream.Stream.concat(
-                                REVISION_TWO_BLUEPRINT_CATALOG.stream(),
-                                RETIRED_BLUEPRINT_CATALOG.stream()))
+                                REVISION_THREE_BLUEPRINT_CATALOG.stream(),
+                                java.util.stream.Stream.concat(REVISION_TWO_BLUEPRINT_CATALOG.stream(),
+                                        RETIRED_BLUEPRINT_CATALOG.stream())))
                 .filter(descriptor -> descriptor.templateId.equals(templateId)
                         && descriptor.templateRevision == templateRevision)
                 .findFirst()

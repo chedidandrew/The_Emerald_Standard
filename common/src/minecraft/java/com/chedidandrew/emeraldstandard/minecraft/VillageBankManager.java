@@ -39,6 +39,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CrossCollisionBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.RotatedPillarBlock;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.StairBlock;
@@ -70,7 +71,8 @@ public final class VillageBankManager {
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION = 3;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V4 = 4;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V5 = 5;
-    private static final int BANK_STRUCTURE_VERSION = 6;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V6 = 6;
+    private static final int BANK_STRUCTURE_VERSION = 7;
     private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
     private static final long BANK_UPGRADE_RETRY_INTERVAL_TICKS = 2_400L;
     private static final int FALLBACK_BANK_RECOVERY_RADIUS = 192;
@@ -2362,6 +2364,8 @@ public final class VillageBankManager {
         Map<BlockPos, BlockState> authored = new HashMap<>();
         List<BankPlacement> expectedPlan = structureVersion >= BANK_STRUCTURE_VERSION
                 ? bankPlan(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V6
+                        ? legacyBankPlanV6(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V5
                         ? legacyBankPlanV5(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V4
@@ -2502,8 +2506,8 @@ public final class VillageBankManager {
         normalizeManagedBankPanes(level, origin, villageId, bankKey);
         int structureVersion = economy.generatedBankStructureVersion(bankKey);
         if (structureVersion >= LEGACY_BANK_STRUCTURE_VERSION) {
-            // Version-two through version-five Banks remain valid frozen architecture. A player's
-            // existing building is never silently reshaped; only new/replacement Banks use v6.
+            // Version-two through version-six Banks remain valid frozen architecture. A player's
+            // existing building is never silently reshaped; only new/replacement Banks use v7.
             LAST_BANK_UPGRADE_RETRY_TICK.remove(bankKey);
             return;
         }
@@ -3670,11 +3674,89 @@ public final class VillageBankManager {
     }
 
     /**
-     * Version six is a new authored composition, never an in-place upgrade. The production plot,
+     * Version seven keeps the reviewed civic geometry and adds complementary roofing and low,
+     * grounded courtyard planting. The older palette and all older version plans remain frozen.
+     */
+    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette legacyPalette) {
+        BankPalette palette = bankV7Palette(legacyPalette);
+        LinkedHashMap<BlockPos, BlockState> authored = new LinkedHashMap<>();
+        for (BankPlacement placement : legacyBankPlanV6(origin, palette)) {
+            authored.put(placement.position(), placement.state());
+        }
+        appendBankV7ExteriorGardens(authored, origin, palette);
+        return authored.entrySet().stream()
+                .map(entry -> new BankPlacement(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    /** New-only, idempotent palette projection; integrity checks for v2-v6 never call this. */
+    private static BankPalette bankV7Palette(BankPalette old) {
+        Block slab = old.roof();
+        Block deck = old.roofDeck();
+        Block stairs = old.roofStairs();
+        if (old.foundation() == Blocks.SMOOTH_SANDSTONE) {
+            // Terracotta-coloured timber roofing contrasts with the cool, pale sandstone walls.
+            slab = Blocks.ACACIA_SLAB;
+            deck = Blocks.ACACIA_PLANKS;
+            stairs = Blocks.ACACIA_STAIRS;
+        } else if (old.door() == Blocks.SPRUCE_DOOR
+                && old.facadePier() != Blocks.STRIPPED_DARK_OAK_LOG) {
+            // Slate tiles keep the Taiga's warm spruce walls readable beneath a durable roof.
+            slab = Blocks.DEEPSLATE_TILE_SLAB;
+            deck = Blocks.DEEPSLATE_TILES;
+            stairs = Blocks.DEEPSLATE_TILE_STAIRS;
+        } else if (old.door() == Blocks.ACACIA_DOOR
+                || old.facadePier() == Blocks.STRIPPED_DARK_OAK_LOG) {
+            // Savanna and Snowy already have dark stairs: match their eave/deck to that roof.
+            slab = Blocks.DARK_OAK_SLAB;
+            deck = Blocks.DARK_OAK_PLANKS;
+        }
+        return new BankPalette(old.foundation(), old.floor(), old.floorAccent(), old.wall(),
+                old.corner(), slab, deck, stairs, old.fence(), old.accent(), old.secondaryTrim(),
+                old.door(), old.stairs(), old.chimney(), old.facadePier(), old.civicPlinth(),
+                old.civicCornice(), old.civicWall(), old.ledgerAccent(), old.forecourt(),
+                old.roofCap(), old.cupolaBase());
+    }
+
+    private static void appendBankV7ExteriorGardens(
+            Map<BlockPos, BlockState> authored, BlockPos origin, BankPalette palette) {
+        boolean desert = palette.foundation() == Blocks.SMOOTH_SANDSTONE;
+        boolean conifer = palette.door() == Blocks.SPRUCE_DOOR;
+        Block foliage = conifer ? Blocks.SPRUCE_LEAVES
+                : palette.door() == Blocks.ACACIA_DOOR ? Blocks.ACACIA_LEAVES : Blocks.OAK_LEAVES;
+        Block flower = desert ? Blocks.POTTED_CACTUS
+                : conifer ? Blocks.POTTED_FERN : Blocks.POTTED_DANDELION;
+        // Four two-cell planting troughs occupy only free side corners inside the existing plot.
+        // They never overlap a window bay, pier, lamp, or the entire three-wide public approach.
+        for (int x : new int[] {-1, BANK_WIDTH}) {
+            for (int startZ : new int[] {0, BANK_DEPTH - 2}) {
+                boolean available = true;
+                for (int z = startZ; z <= startZ + 1; z++) {
+                    for (int y = 0; y <= 2; y++) {
+                        BlockState existing = authored.get(origin.offset(x, y, z));
+                        available &= existing == null || existing.isAir();
+                    }
+                }
+                if (!available) {
+                    continue;
+                }
+                for (int z = startZ; z <= startZ + 1; z++) {
+                    authored.put(origin.offset(x, 0, z), palette.foundation().defaultBlockState());
+                    BlockState planting = z == startZ ? flower.defaultBlockState()
+                            : desert ? Blocks.POTTED_DEAD_BUSH.defaultBlockState()
+                            : foliage.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true);
+                    authored.put(origin.offset(x, 1, z), planting);
+                }
+            }
+        }
+    }
+
+    /**
+     * Version six is a frozen authored composition, never an in-place upgrade. The production plot,
      * doorway, public aisle, teller anchor and two-wide record-room route are unchanged. Its
      * visual delta gives the belfry one readable cap and makes masonry frames finer at eye level.
      */
-    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette palette) {
+    private static List<BankPlacement> legacyBankPlanV6(BlockPos origin, BankPalette palette) {
         LinkedHashMap<BlockPos, BlockState> authored = new LinkedHashMap<>();
         for (BankPlacement placement : legacyBankPlanV5(origin, palette)) {
             authored.put(placement.position(), placement.state());
@@ -3927,7 +4009,7 @@ public final class VillageBankManager {
             appendBankV6Belfry(before, BlockPos.ZERO, palette, previousFinish);
             appendBankV6RecordRoom(before, BlockPos.ZERO, palette, previousFinish);
             Map<BlockPos, BlockState> after = new LinkedHashMap<>();
-            for (BankPlacement placement : bankPlan(BlockPos.ZERO, palette)) {
+            for (BankPlacement placement : legacyBankPlanV6(BlockPos.ZERO, palette)) {
                 after.put(placement.position(), placement.state());
             }
             if (!before.keySet().equals(after.keySet())) {
@@ -4318,6 +4400,11 @@ public final class VillageBankManager {
         }
     }
 
+    /** Shares the active immutable Bank identity with opt-in review manifests. */
+    static int galleryBankStructureVersion() {
+        return BANK_STRUCTURE_VERSION;
+    }
+
     /** Resolves the exact production Bank blueprint for the opt-in structure review gallery. */
     static List<StructureGalleryBlock> galleryBankBlueprint(
             BlockPos origin, VillageArchitecture.BiomeDialect dialect) {
@@ -4361,9 +4448,10 @@ public final class VillageBankManager {
      * the same geometry, access, attachment, and night-light proof for every biome dialect.
      */
     private static void validateCurrentBankBlueprint(
-            BankPalette palette,
+            BankPalette legacyPalette,
             String snapshotId,
             boolean allowUnregisteredDeskLectern) {
+        BankPalette palette = bankV7Palette(legacyPalette);
         BlockPos origin = new BlockPos(0, 64, 0);
         List<BankPlacement> plan = bankPlan(origin, palette);
         if (plan.isEmpty() || plan.size() > 1_200) {
@@ -4587,6 +4675,7 @@ public final class VillageBankManager {
             }
         }
         validateBankV6Skyline(authored, palette);
+        validateBankV7ExteriorGardens(authored, palette);
         for (int x = 0; x < BANK_WIDTH; x++) {
             if (!authored.containsKey(new BlockPos(x, 5, 0))
                     || !authored.containsKey(new BlockPos(x, 5, BANK_DEPTH - 1))) {
@@ -4642,7 +4731,7 @@ public final class VillageBankManager {
         Set<List<Block>> signatures = new HashSet<>();
         for (VillageArchitecture.BiomeDialect dialect
                 : VillageArchitecture.BiomeDialect.values()) {
-            BankPalette palette = paletteFor(dialect);
+            BankPalette palette = bankV7Palette(paletteFor(dialect));
             signatures.add(List.of(
                     palette.foundation(),
                     palette.wall(),
@@ -4662,15 +4751,15 @@ public final class VillageBankManager {
 
             validateCurrentBankBlueprint(
                     palette,
-                    "village-bank-v6/" + dialect.id() + "/night-interior",
+                    "village-bank-v7/" + dialect.id() + "/night-interior",
                     allowUnregisteredDeskLectern);
         }
         if (signatures.size() != VillageArchitecture.BiomeDialect.values().length) {
             throw new IllegalStateException(
                     "Village Bank biome dialects lost distinct trim or roof signatures");
         }
-        BankPalette snowy = paletteFor(VillageArchitecture.BiomeDialect.SNOWY);
-        BankPalette taiga = paletteFor(VillageArchitecture.BiomeDialect.TAIGA);
+        BankPalette snowy = bankV7Palette(paletteFor(VillageArchitecture.BiomeDialect.SNOWY));
+        BankPalette taiga = bankV7Palette(paletteFor(VillageArchitecture.BiomeDialect.TAIGA));
         if (snowy.secondaryTrim() == taiga.secondaryTrim()
                 || snowy.roofStairs() == taiga.roofStairs()
                 || snowy.stairs() == taiga.stairs()
@@ -4679,6 +4768,34 @@ public final class VillageBankManager {
                 || snowy.roofCap() == taiga.roofCap()) {
             throw new IllegalStateException(
                     "Snowy Village Bank is no longer visually distinct from Taiga");
+        }
+    }
+
+    /** Small real-block planters must remain grounded, persistent, and below the window reveals. */
+    private static void validateBankV7ExteriorGardens(
+            Map<BlockPos, BlockState> authored, BankPalette palette) {
+        for (int x : new int[] {-1, BANK_WIDTH}) {
+            for (int z : new int[] {0, 1, BANK_DEPTH - 2, BANK_DEPTH - 1}) {
+                BlockPos footing = new BlockPos(x, 0, z);
+                BlockState base = authored.get(footing);
+                BlockState plant = authored.get(footing.above());
+                if (base == null || !base.is(palette.foundation())
+                        || !base.isCollisionShapeFullBlock(EmptyBlockGetter.INSTANCE, footing)
+                        || plant == null
+                        || !(plant.getBlock() instanceof net.minecraft.world.level.block.FlowerPotBlock
+                                || plant.getBlock() instanceof LeavesBlock)
+                        || (plant.getBlock() instanceof LeavesBlock
+                                && !plant.getValue(LeavesBlock.PERSISTENT))
+                        || !isBankWalkableCell(authored.get(footing.above(2)))) {
+                    throw new IllegalStateException("Village Bank v7 planting lost its low, durable footing at "
+                            + footing);
+                }
+            }
+        }
+        for (BlockState state : authored.values()) {
+            if (state.is(Blocks.TARGET)) {
+                throw new IllegalStateException("A non-training Village Bank gained target decoration");
+            }
         }
     }
 

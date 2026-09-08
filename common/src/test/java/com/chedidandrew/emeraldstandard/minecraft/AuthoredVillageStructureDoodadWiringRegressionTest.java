@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Protects deterministic, role-authored yard dressing for the revision-2 gold masters.
+ * Protects deterministic, role-authored yard dressing for the active gold masters.
  *
  * <p>This is intentionally a semantic source-boundary test. Minecraft block states are not on the
  * loader-neutral test classpath, while exact block-coordinate snapshots would make harmless art
@@ -53,7 +53,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
                         + "AuthoredDoodadRefinements\\.refineCompactCottageRearBench\\s*\\(\\s*"
                         + "stageTwo\\s*,\\s*metadata\\s*,\\s*materials\\s*,\\s*templateId\\s*\\)");
         require(gatedHook.matcher(plan).find(),
-                "Compact cottage bench must only run on revision-3 stage two with its stable ID");
+                "Compact cottage bench must only run on revision-3-or-later stage two with its stable ID");
         int hook = plan.indexOf("AuthoredDoodadRefinements.refineCompactCottageRearBench(");
         require(hook > plan.indexOf("appendPresentationStageTwo(")
                         && hook < plan.indexOf("ensureCumulativeComfortableInteriorLighting(", hook),
@@ -105,20 +105,20 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
     }
 
     private static void verifyAllActiveMastersUseRoleDoodads(String source) {
-        require(Pattern.compile("(?:LATEST_)?TEMPLATE_REVISION\\s*=\\s*3\\s*;")
+        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*4\\s*;")
                         .matcher(source)
                         .find(),
-                "The active authored gold masters are not revision 3");
+                "The active authored gold masters are not revision 4");
 
         String plan = methodBody(source, "static Blueprint plan(");
         for (MasterExpectation master : expectedMasters()) {
             if (master.templateId().equals("market_lane_04")) {
                 String market = methodBody(plan, "case \"market_lane_04\" ->");
                 require(invokes(market, "marketLane", "base", "metadata", "materials")
-                                && Pattern.compile("if\\s*\\(\\s*templateRevision\\s*==\\s*3\\s*\\)\\s*\\{\\s*"
+                                && Pattern.compile("if\\s*\\(\\s*templateRevision\\s*>=\\s*3\\s*\\)\\s*\\{\\s*"
                                         + "AuthoredMarketRefinements\\.finishLane\\(base, metadata, materials\\);")
                                         .matcher(market).find(),
-                        "Market lane must retain its original production recipe and scoped revision-3 refinement");
+                        "Market lane must retain its original production recipe and inherited revision-3 refinement");
                 continue;
             }
             Pattern activeSelection = Pattern.compile(
@@ -126,7 +126,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
                             + Pattern.quote(master.masterMethod())
                             + "\\s*\\(\\s*base\\s*,\\s*metadata\\s*,\\s*materials\\s*\\)");
             require(activeSelection.matcher(plan).find(),
-                    "Active revision-2 master is no longer selected by production: "
+                    "Active revision-4 master is no longer selected by production: "
                             + master.masterMethod());
         }
 
@@ -135,7 +135,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
                 "Regression contract must cover the ten production project roles");
         require(expectedMasters().size() == ACTIVE_MASTER_TARGET,
                 "Regression contract must cover all " + ACTIVE_MASTER_TARGET
-                        + " revision-2 masters");
+                        + " revision-4 masters");
     }
 
     private static void verifyDoodadsUsePersistedStages(String source) {

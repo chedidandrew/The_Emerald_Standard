@@ -3239,7 +3239,9 @@ public final class StructureGallery {
 
     /** Read-only runtime check: decorative drops must fail review, never be hidden or respawned. */
     static boolean requiresAttachmentAudit(BlockState state) {
-        return state.is(Blocks.AZALEA) || state.is(Blocks.FLOWERING_AZALEA) || state.is(Blocks.RAIL);
+        return state.is(Blocks.AZALEA) || state.is(Blocks.FLOWERING_AZALEA) || state.is(Blocks.RAIL)
+                || state.getBlock() instanceof net.minecraft.world.level.block.FlowerPotBlock
+                || state.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock;
     }
 
     private static void validateFragileGalleryAttachments(
@@ -3262,7 +3264,10 @@ public final class StructureGallery {
 
     static void validateAttachmentState(
             int fixtureIndex, StructureGalleryBlock expected, BlockState actual, boolean survives) {
-        if (!actual.is(expected.state().getBlock()) || !survives) {
+        if (!actual.is(expected.state().getBlock()) || !survives
+                || (expected.state().getBlock() instanceof net.minecraft.world.level.block.LeavesBlock
+                        && expected.state().getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)
+                        && !actual.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT))) {
             throw new IllegalStateException("Gallery fixture " + (fixtureIndex + 1)
                     + " has a missing or unsupported authored attachment at "
                     + expected.position().toShortString() + ": expected " + expected.state()

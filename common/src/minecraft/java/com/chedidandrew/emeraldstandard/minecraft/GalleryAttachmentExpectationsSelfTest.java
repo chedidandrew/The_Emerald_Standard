@@ -76,7 +76,8 @@ final class GalleryAttachmentExpectationsSelfTest {
     }
 
     private static void verifyRuntimeRejection() {
-        for (var block : List.of(Blocks.AZALEA, Blocks.FLOWERING_AZALEA, Blocks.RAIL)) {
+        for (var block : List.of(Blocks.AZALEA, Blocks.FLOWERING_AZALEA, Blocks.RAIL,
+                Blocks.POTTED_FERN, Blocks.POTTED_CACTUS, Blocks.SPRUCE_LEAVES)) {
             var expected = new StructureGalleryBlock(BlockPos.ZERO, block.defaultBlockState());
             StructureGallery.validateAttachmentState(0, expected, expected.state(), true);
             expectFailure(() -> StructureGallery.validateAttachmentState(
@@ -86,6 +87,10 @@ final class GalleryAttachmentExpectationsSelfTest {
             expectFailure(() -> StructureGallery.validateAttachmentState(
                     0, expected, expected.state(), false), "unsupported authored attachment");
         }
+        var plantedLeaves = new StructureGalleryBlock(BlockPos.ZERO, Blocks.SPRUCE_LEAVES
+                .defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true));
+        expectFailure(() -> StructureGallery.validateAttachmentState(0, plantedLeaves,
+                Blocks.SPRUCE_LEAVES.defaultBlockState(), true), "decaying decorative shrub");
     }
 
     private static void expectFailure(Runnable action, String label) {

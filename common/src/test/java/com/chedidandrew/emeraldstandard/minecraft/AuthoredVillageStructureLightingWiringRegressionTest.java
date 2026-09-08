@@ -317,13 +317,16 @@ public final class AuthoredVillageStructureLightingWiringRegressionTest {
                 "Bank lighting bounds no longer include the complete authored projection");
 
         String current = methodBody(source, "private static List<BankPlacement> bankPlan(");
+        String versionSix = methodBody(
+                source, "private static List<BankPlacement> legacyBankPlanV6(");
         String versionFive = methodBody(
                 source, "private static List<BankPlacement> legacyBankPlanV5(");
         String versionFour = methodBody(
                 source, "private static List<BankPlacement> legacyBankPlanV4(");
         String inherited = methodBody(
                 source, "private static List<BankPlacement> legacyBankPlanV3(");
-        require(current.contains("legacyBankPlanV5(origin, palette)")
+        require(current.contains("legacyBankPlanV6(origin, palette)")
+                        && versionSix.contains("legacyBankPlanV5(origin, palette)")
                         && versionFive.contains("legacyBankPlanV4(origin, palette)")
                         && versionFour.contains("legacyBankPlanV3(origin, palette)")
                         && inherited.contains("origin.offset(centerX, 3, -1)")

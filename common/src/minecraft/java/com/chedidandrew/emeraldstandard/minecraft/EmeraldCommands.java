@@ -32,7 +32,8 @@ public final class EmeraldCommands {
 
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("emerald")
                 .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)
-                        || StructureGallery.hasCommandAccess(source))
+                        || StructureGallery.hasCommandAccess(source)
+                        || VillageComparisonGallery.hasCommandAccess(source))
                 .then(Commands.literal("help")
                         .executes(EmeraldCommandHandlers::help))
                 .then(Commands.literal("open")
@@ -161,6 +162,9 @@ public final class EmeraldCommands {
                                                 context, economy)))));
         if (StructureGallery.enabled()) {
             root.then(StructureGallery.command());
+        }
+        if (VillageComparisonGallery.enabled()) {
+            root.then(VillageComparisonGallery.command());
         }
         dispatcher.register(root);
     }

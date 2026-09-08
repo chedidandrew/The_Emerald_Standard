@@ -74,7 +74,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 3;
+    static final int LATEST_TEMPLATE_REVISION = 4;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
     private static final Map<String, Object> LIGHTING_COMPOSITION_LOCKS =
@@ -98,7 +98,7 @@ final class AuthoredVillageStructures {
             throw new IllegalArgumentException(
                     "Unknown Blueprint V2 revision " + templateRevision + " for " + templateId);
         }
-        Materials materials = palette(materials(character, dialect), paletteId);
+        Materials materials = palette(materials(character, dialect, templateRevision), paletteId);
         Builder base = new Builder(Set.of());
         base.templateRevision = templateRevision;
         Metadata metadata = new Metadata();
@@ -165,7 +165,7 @@ final class AuthoredVillageStructures {
                 case "market_crossroads_03" -> marketCrossroadsCompact(base, metadata, materials);
                 case "market_lane_04" -> {
                     marketLane(base, metadata, materials);
-                    if (templateRevision == 3) {
+                    if (templateRevision >= 3) {
                         AuthoredMarketRefinements.finishLane(base, metadata, materials);
                     }
                 }
@@ -195,6 +195,8 @@ final class AuthoredVillageStructures {
             }
             requireInteractionRoutesBeforePocketSealing(base, metadata, templateId);
             sealDisconnectedInteriorPockets(base, metadata, materials, templateId);
+            AuthoredLandscapeRefinements.refineStage(base, metadata, materials, templateId, List.of());
+            AuthoredWorkshopContactRefinements.refine(base, metadata, materials, templateId);
             ensureComfortableInteriorLighting(base, metadata, templateId);
         }
         if (metadata.type != type) {
@@ -219,6 +221,8 @@ final class AuthoredVillageStructures {
             AuthoredApproachRefinements.finish(stageOne, metadata, materials);
         }
         if (templateRevision >= 2) {
+            AuthoredLandscapeRefinements.refineStage(
+                    stageOne, metadata, materials, templateId, base.values());
             ensureCumulativeComfortableInteriorLighting(
                     stageOne,
                     metadata,
@@ -248,6 +252,12 @@ final class AuthoredVillageStructures {
                     stageTwo, metadata, materials, templateId);
         }
         if (templateRevision >= 2) {
+            List<Cell> priorDressing = new ArrayList<>(base.values());
+            priorDressing.addAll(stageOne.values());
+            AuthoredLandscapeRefinements.refineStage(
+                    stageTwo, metadata, materials, templateId, priorDressing);
+            AuthoredLandscapeRefinements.finishPlanting(
+                    stageTwo, metadata, materials, templateId, priorDressing);
             ensureCumulativeComfortableInteriorLighting(
                     stageTwo,
                     metadata,
@@ -300,7 +310,8 @@ final class AuthoredVillageStructures {
 
     private static Materials materials(
             VillageArchitecture.Character character,
-            VillageArchitecture.BiomeDialect dialect) {
+            VillageArchitecture.BiomeDialect dialect,
+            int templateRevision) {
         ModularVillageStructures.Materials base = ModularVillageStructures.materials(character, dialect);
         Block floor = switch (dialect) {
             case DESERT -> Blocks.SMOOTH_SANDSTONE;
@@ -327,15 +338,17 @@ final class AuthoredVillageStructures {
             default -> base.timber();
         };
         Block roofStairs = switch (dialect) {
+            case DESERT -> templateRevision >= 4 ? Blocks.ACACIA_STAIRS : base.roofStairs();
             case SAVANNA -> Blocks.DARK_OAK_STAIRS;
             case TAIGA -> Blocks.DEEPSLATE_TILE_STAIRS;
-            case SNOWY -> Blocks.POLISHED_DIORITE_STAIRS;
+            case SNOWY -> templateRevision >= 4 ? Blocks.DARK_OAK_STAIRS : Blocks.POLISHED_DIORITE_STAIRS;
             default -> base.roofStairs();
         };
         Block roofSlab = switch (dialect) {
+            case DESERT -> templateRevision >= 4 ? Blocks.ACACIA_SLAB : base.roofSlab();
             case SAVANNA -> Blocks.DARK_OAK_SLAB;
             case TAIGA -> Blocks.DEEPSLATE_TILE_SLAB;
-            case SNOWY -> Blocks.POLISHED_DIORITE_SLAB;
+            case SNOWY -> templateRevision >= 4 ? Blocks.DARK_OAK_SLAB : Blocks.POLISHED_DIORITE_SLAB;
             default -> base.roofSlab();
         };
         Block fence = dialect == VillageArchitecture.BiomeDialect.SNOWY
@@ -10720,7 +10733,7 @@ final class AuthoredVillageStructures {
         if (richness >= 2) {
             putDressingLamp(stage, centerX + 3, z + 3, p);
         }
-        if (stage.templateRevision == 3) {
+        if (stage.templateRevision >= 3) {
             AuthoredDoodadRefinements.ensureGardenShrubSubstrates(stage, p, centerX, z);
         }
     }

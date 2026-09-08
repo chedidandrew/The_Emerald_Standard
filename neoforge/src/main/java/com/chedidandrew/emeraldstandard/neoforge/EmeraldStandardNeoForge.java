@@ -13,6 +13,7 @@ import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.PlayerOnboarding;
 import com.chedidandrew.emeraldstandard.minecraft.StructureGallery;
+import com.chedidandrew.emeraldstandard.minecraft.VillageComparisonGallery;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import com.mojang.logging.LogUtils;
@@ -90,6 +91,7 @@ public final class EmeraldStandardNeoForge {
                 LOGGER.info("The Emerald Standard Banker integration self-test passed");
             }
             StructureGallery.autoBuildIfRequested(server);
+            VillageComparisonGallery.autoBuildIfRequested(server);
         } catch (Exception exception) {
             throw new IllegalStateException(
                     "Could not start The Emerald Standard economy", exception);
@@ -125,6 +127,7 @@ public final class EmeraldStandardNeoForge {
         VillageProsperityManager.tick(event.getServer(), ECONOMY);
         VillageBankManager.tick(event.getServer(), ECONOMY);
         DebugFlightRecorder.tick(event.getServer(), ECONOMY);
+        VillageComparisonGallery.tick(event.getServer());
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = false)

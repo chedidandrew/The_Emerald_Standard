@@ -95,12 +95,12 @@ final class AuthoredApproachRefinementsSelfTest {
         require(AuthoredApproachRefinements.finish(incomplete, metadata(3), materials)
                         == Outcome.NO_COMPLETE_STRIP && previous.equals(incomplete.values()),
                 "Incomplete three-wide strip must not acquire a partial stair transition");
-        for (int revision : new int[] {1, 2, 4}) {
+        for (int revision : new int[] {1, 2, 5}) {
             Builder frozen = strip(-4, -2, revision, Set.of());
             previous = frozen.values();
             require(AuthoredApproachRefinements.finish(frozen, metadata(revision), materials)
                             == Outcome.UNCHANGED_REVISION && previous.equals(frozen.values()),
-                    "Approach helper must not alter any revision other than 3");
+                    "Approach helper must not alter historical or unknown revisions");
         }
         System.out.println("PASS revision-3 raised approach tests (depth, bounds, three lanes, "
                 + "headroom, obstruction and frozen revisions)");
@@ -111,10 +111,10 @@ final class AuthoredApproachRefinementsSelfTest {
         List<String> skipped = new ArrayList<>();
         for (VillageProsperityEngine.ProjectType type : VillageProsperityEngine.ProjectType.values()) {
             for (VillageArchitecture.BlueprintDescriptor descriptor : VillageArchitecture.blueprints(type)) {
-                if (descriptor.templateRevision() != 3) {
+                if (descriptor.templateRevision() != AuthoredVillageStructures.LATEST_TEMPLATE_REVISION) {
                     continue;
                 }
-                var blueprint = AuthoredVillageStructures.plan(type, descriptor.templateId(), 3,
+                var blueprint = AuthoredVillageStructures.plan(type, descriptor.templateId(), descriptor.templateRevision(),
                         VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_RESTRAINED,
                         VillageArchitecture.Character.RUSTIC, VillageArchitecture.BiomeDialect.PLAINS);
                 int center = blueprint.width() / 2;
