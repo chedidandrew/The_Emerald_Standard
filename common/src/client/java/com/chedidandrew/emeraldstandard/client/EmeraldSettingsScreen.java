@@ -40,6 +40,9 @@ public final class EmeraldSettingsScreen extends Screen {
 
     @Override
     protected void init() {
+        // Returning from the nested reader must display its newly saved text size.
+        try { percent = ReaderPreferences.load(HandbookScreen.preferencesPath()); }
+        catch (java.io.IOException exception) { status = exception.getMessage(); error = true; }
         panelWidth = Math.min(680, width - 20);
         panelHeight = Math.min(550, height - 20);
         x = (width - panelWidth) / 2; y = (height - panelHeight) / 2;
@@ -53,9 +56,11 @@ public final class EmeraldSettingsScreen extends Screen {
             page = Math.max(0, Math.min(page, (keys.size() - 1) / rows));
             for (int row = 0; row < rows && page * rows + row < keys.size(); row++) {
                 String key = keys.get(page * rows + row);
-                String value = edits.getOrDefault(key, snapshot.values().get(key));
+                String original = snapshot.values().get(key);
+                String value = edits.getOrDefault(key, original);
                 int rowY = y + 93 + row * 27;
-                if (value.equals("true") || value.equals("false")) {
+                // Draft text cannot change a numeric setting into a boolean control.
+                if (original.equals("true") || original.equals("false")) {
                     Button toggle = button(Boolean.parseBoolean(value) ? "On" : "Off",
                             x + panelWidth - 94, rowY, 82, () -> {
                                 boolean next = !Boolean.parseBoolean(edits.getOrDefault(key,
