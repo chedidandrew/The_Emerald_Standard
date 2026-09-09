@@ -5,10 +5,14 @@ import com.chedidandrew.emeraldstandard.core.EconomyState;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
@@ -18,38 +22,23 @@ public final class EmeraldConfig {
     static final int DEFAULT_VILLAGE_DEVELOPMENT_RADIUS = 256;
     static final int MIN_VILLAGE_DEVELOPMENT_RADIUS = 48;
     static final int MAX_VILLAGE_DEVELOPMENT_RADIUS = 512;
-
     private static final String FILE_NAME = "the_emerald_standard-config.properties";
     private static final Set<String> KNOWN_KEYS = Set.of(
-            "village_banks.enabled",
-            "village_banks.scan_interval_ticks",
-            "village_banks.region_size",
-            "banker.restriction_radius",
-            "transactions.cooldown_ticks",
-            "onboarding.join_hint_enabled",
-            "market.events_enabled",
-            "economic_clock.offline_progression_enabled",
-            "economic_clock.max_offline_days",
-            "village_prosperity.simulation_enabled",
-            "village_prosperity.visual_progression_enabled",
-            "village_prosperity.market_integration_enabled",
-            "village_prosperity.automatic_recovery_enabled",
-            "village_prosperity.scan_interval_ticks",
-            "village_prosperity.development_radius",
-            "village_prosperity.construction_interval_ticks",
-            "village_prosperity.construction_blocks_per_tick",
-            "village_prosperity.settler_spawn_interval_ticks",
-            "village_prosperity.donations_enabled",
-            "village_prosperity.endowments_enabled",
-            "village_prosperity.project_sponsorship_enabled",
-            "village_prosperity.targeted_donations_enabled",
-            "village_prosperity.donor_recognition_enabled",
-            "village_prosperity.fast_track_capital_enabled",
-            "village_prosperity.endowment_annual_payout_bps",
-            "village_prosperity.minimum_emergency_reserve_percent",
-            "village_prosperity.max_monthly_treasury_spending");
+            "village_banks.enabled", "village_banks.scan_interval_ticks", "village_banks.region_size",
+            "banker.restriction_radius", "transactions.cooldown_ticks", "onboarding.join_hint_enabled",
+            "market.events_enabled", "economic_clock.offline_progression_enabled", "economic_clock.max_offline_days",
+            "village_prosperity.simulation_enabled", "village_prosperity.visual_progression_enabled",
+            "village_prosperity.market_integration_enabled", "village_prosperity.automatic_recovery_enabled",
+            "village_prosperity.scan_interval_ticks", "village_prosperity.development_radius",
+            "village_prosperity.construction_interval_ticks", "village_prosperity.construction_blocks_per_tick",
+            "village_prosperity.settler_spawn_interval_ticks", "village_prosperity.donations_enabled",
+            "village_prosperity.endowments_enabled", "village_prosperity.project_sponsorship_enabled",
+            "village_prosperity.targeted_donations_enabled", "village_prosperity.donor_recognition_enabled",
+            "village_prosperity.fast_track_capital_enabled", "village_prosperity.endowment_annual_payout_bps",
+            "village_prosperity.minimum_emergency_reserve_percent", "village_prosperity.max_monthly_treasury_spending");
     private static volatile EmeraldConfig current = defaults();
     private static volatile Path currentPath;
+    private static volatile EconomyService appliedEconomy;
 
     private final boolean villageBanksEnabled;
     private final int villageScanIntervalTicks;
@@ -60,7 +49,6 @@ public final class EmeraldConfig {
     private final boolean marketEventsEnabled;
     private final boolean offlineProgressionEnabled;
     private final int maximumOfflineDays;
-
     private final boolean villageProsperitySimulationEnabled;
     private final boolean villageVisualProgressionEnabled;
     private final boolean villageMarketIntegrationEnabled;
@@ -70,7 +58,6 @@ public final class EmeraldConfig {
     private final int villageConstructionIntervalTicks;
     private final int villageConstructionBlocksPerTick;
     private final int villageSettlerSpawnIntervalTicks;
-
     private final boolean prosperityFundEnabled;
     private final boolean prosperityFundEndowmentsEnabled;
     private final boolean prosperityFundProjectSponsorshipEnabled;
@@ -82,33 +69,18 @@ public final class EmeraldConfig {
     private final int prosperityFundMaximumMonthlySpending;
 
     private EmeraldConfig(
-            boolean villageBanksEnabled,
-            int villageScanIntervalTicks,
-            int villageRegionSize,
-            int bankerRestrictionRadius,
-            int transactionCooldownTicks,
-            boolean onboardingJoinHintEnabled,
-            boolean marketEventsEnabled,
-            boolean offlineProgressionEnabled,
-            int maximumOfflineDays,
-            boolean villageProsperitySimulationEnabled,
-            boolean villageVisualProgressionEnabled,
-            boolean villageMarketIntegrationEnabled,
-            boolean villageAutomaticRecoveryEnabled,
-            int villageProsperityScanIntervalTicks,
-            int villageDevelopmentRadius,
-            int villageConstructionIntervalTicks,
-            int villageConstructionBlocksPerTick,
-            int villageSettlerSpawnIntervalTicks,
-            boolean prosperityFundEnabled,
-            boolean prosperityFundEndowmentsEnabled,
-            boolean prosperityFundProjectSponsorshipEnabled,
-            boolean prosperityFundTargetedDonationsEnabled,
-            boolean prosperityFundDonorRecognitionEnabled,
-            boolean prosperityFundFastTrackCapitalEnabled,
-            int prosperityFundEndowmentAnnualPayoutBps,
-            int prosperityFundMinimumEmergencyReservePercent,
-            int prosperityFundMaximumMonthlySpending) {
+            boolean villageBanksEnabled, int villageScanIntervalTicks, int villageRegionSize,
+            int bankerRestrictionRadius, int transactionCooldownTicks, boolean onboardingJoinHintEnabled,
+            boolean marketEventsEnabled, boolean offlineProgressionEnabled, int maximumOfflineDays,
+            boolean villageProsperitySimulationEnabled, boolean villageVisualProgressionEnabled,
+            boolean villageMarketIntegrationEnabled, boolean villageAutomaticRecoveryEnabled,
+            int villageProsperityScanIntervalTicks, int villageDevelopmentRadius,
+            int villageConstructionIntervalTicks, int villageConstructionBlocksPerTick,
+            int villageSettlerSpawnIntervalTicks, boolean prosperityFundEnabled,
+            boolean prosperityFundEndowmentsEnabled, boolean prosperityFundProjectSponsorshipEnabled,
+            boolean prosperityFundTargetedDonationsEnabled, boolean prosperityFundDonorRecognitionEnabled,
+            boolean prosperityFundFastTrackCapitalEnabled, int prosperityFundEndowmentAnnualPayoutBps,
+            int prosperityFundMinimumEmergencyReservePercent, int prosperityFundMaximumMonthlySpending) {
         this.villageBanksEnabled = villageBanksEnabled;
         this.villageScanIntervalTicks = villageScanIntervalTicks;
         this.villageRegionSize = villageRegionSize;
@@ -134,27 +106,29 @@ public final class EmeraldConfig {
         this.prosperityFundDonorRecognitionEnabled = prosperityFundDonorRecognitionEnabled;
         this.prosperityFundFastTrackCapitalEnabled = prosperityFundFastTrackCapitalEnabled;
         this.prosperityFundEndowmentAnnualPayoutBps = prosperityFundEndowmentAnnualPayoutBps;
-        this.prosperityFundMinimumEmergencyReservePercent =
-                prosperityFundMinimumEmergencyReservePercent;
+        this.prosperityFundMinimumEmergencyReservePercent = prosperityFundMinimumEmergencyReservePercent;
         this.prosperityFundMaximumMonthlySpending = prosperityFundMaximumMonthlySpending;
     }
 
     public static synchronized EmeraldConfig load(Path worldDataDirectory) throws IOException {
         Path candidatePath = worldDataDirectory.resolve(FILE_NAME);
-        if (!Files.exists(candidatePath)) {
-            writeDefaults(candidatePath);
-        }
+        if (!Files.exists(candidatePath)) writeDefaults(candidatePath);
         Properties properties = new Properties();
-        try (InputStream input = Files.newInputStream(candidatePath)) {
-            properties.load(input);
-        }
+        try (InputStream input = Files.newInputStream(candidatePath)) { properties.load(input); }
+        EmeraldConfig candidate = parse(properties);
+        currentPath = candidatePath;
+        current = candidate;
+        return candidate;
+    }
+
+    /** Pure validation: never changes the active world, file, or economy. */
+    public static EmeraldConfig parse(Properties properties) throws IOException {
         Set<String> unknownKeys = new TreeSet<>(properties.stringPropertyNames());
         unknownKeys.removeAll(KNOWN_KEYS);
         if (!unknownKeys.isEmpty()) {
-            throw new IOException("Unknown configuration key(s): "
-                    + String.join(", ", unknownKeys));
+            throw new IOException("Unknown configuration key(s): " + String.join(", ", unknownKeys));
         }
-        EmeraldConfig candidate = new EmeraldConfig(
+        return new EmeraldConfig(
                 bool(properties, "village_banks.enabled", true),
                 bounded(properties, "village_banks.scan_interval_ticks", 200, 20, 12_000),
                 bounded(properties, "village_banks.region_size", 256, 128, 2_048),
@@ -163,22 +137,16 @@ public final class EmeraldConfig {
                 bool(properties, "onboarding.join_hint_enabled", true),
                 bool(properties, "market.events_enabled", true),
                 bool(properties, "economic_clock.offline_progression_enabled", true),
-                bounded(
-                        properties,
-                        "economic_clock.max_offline_days",
-                        (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS,
-                        1,
+                bounded(properties, "economic_clock.max_offline_days",
+                        (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS, 1,
                         (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS),
                 bool(properties, "village_prosperity.simulation_enabled", true),
                 bool(properties, "village_prosperity.visual_progression_enabled", true),
                 bool(properties, "village_prosperity.market_integration_enabled", true),
                 bool(properties, "village_prosperity.automatic_recovery_enabled", true),
                 bounded(properties, "village_prosperity.scan_interval_ticks", 400, 40, 24_000),
-                bounded(
-                        properties,
-                        "village_prosperity.development_radius",
-                        DEFAULT_VILLAGE_DEVELOPMENT_RADIUS,
-                        MIN_VILLAGE_DEVELOPMENT_RADIUS,
+                bounded(properties, "village_prosperity.development_radius",
+                        DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, MIN_VILLAGE_DEVELOPMENT_RADIUS,
                         MAX_VILLAGE_DEVELOPMENT_RADIUS),
                 bounded(properties, "village_prosperity.construction_interval_ticks", 10, 1, 200),
                 bounded(properties, "village_prosperity.construction_blocks_per_tick", 2, 1, 64),
@@ -192,159 +160,134 @@ public final class EmeraldConfig {
                 bounded(properties, "village_prosperity.endowment_annual_payout_bps", 400, 0, 10_000),
                 bounded(properties, "village_prosperity.minimum_emergency_reserve_percent", 20, 0, 90),
                 bounded(properties, "village_prosperity.max_monthly_treasury_spending", 24, 1, 1_000_000));
-        currentPath = candidatePath;
+    }
+
+    /** Stable ordered values for the GUI; the returned map is an independent snapshot. */
+    public Map<String, String> values() {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("village_banks.enabled", String.valueOf(villageBanksEnabled));
+        values.put("village_banks.scan_interval_ticks", String.valueOf(villageScanIntervalTicks));
+        values.put("village_banks.region_size", String.valueOf(villageRegionSize));
+        values.put("banker.restriction_radius", String.valueOf(bankerRestrictionRadius));
+        values.put("transactions.cooldown_ticks", String.valueOf(transactionCooldownTicks));
+        values.put("onboarding.join_hint_enabled", String.valueOf(onboardingJoinHintEnabled));
+        values.put("market.events_enabled", String.valueOf(marketEventsEnabled));
+        values.put("economic_clock.offline_progression_enabled", String.valueOf(offlineProgressionEnabled));
+        values.put("economic_clock.max_offline_days", String.valueOf(maximumOfflineDays));
+        values.put("village_prosperity.simulation_enabled", String.valueOf(villageProsperitySimulationEnabled));
+        values.put("village_prosperity.visual_progression_enabled", String.valueOf(villageVisualProgressionEnabled));
+        values.put("village_prosperity.market_integration_enabled", String.valueOf(villageMarketIntegrationEnabled));
+        values.put("village_prosperity.automatic_recovery_enabled", String.valueOf(villageAutomaticRecoveryEnabled));
+        values.put("village_prosperity.scan_interval_ticks", String.valueOf(villageProsperityScanIntervalTicks));
+        values.put("village_prosperity.development_radius", String.valueOf(villageDevelopmentRadius));
+        values.put("village_prosperity.construction_interval_ticks", String.valueOf(villageConstructionIntervalTicks));
+        values.put("village_prosperity.construction_blocks_per_tick", String.valueOf(villageConstructionBlocksPerTick));
+        values.put("village_prosperity.settler_spawn_interval_ticks", String.valueOf(villageSettlerSpawnIntervalTicks));
+        values.put("village_prosperity.donations_enabled", String.valueOf(prosperityFundEnabled));
+        values.put("village_prosperity.endowments_enabled", String.valueOf(prosperityFundEndowmentsEnabled));
+        values.put("village_prosperity.project_sponsorship_enabled", String.valueOf(prosperityFundProjectSponsorshipEnabled));
+        values.put("village_prosperity.targeted_donations_enabled", String.valueOf(prosperityFundTargetedDonationsEnabled));
+        values.put("village_prosperity.donor_recognition_enabled", String.valueOf(prosperityFundDonorRecognitionEnabled));
+        values.put("village_prosperity.fast_track_capital_enabled", String.valueOf(prosperityFundFastTrackCapitalEnabled));
+        values.put("village_prosperity.endowment_annual_payout_bps", String.valueOf(prosperityFundEndowmentAnnualPayoutBps));
+        values.put("village_prosperity.minimum_emergency_reserve_percent", String.valueOf(prosperityFundMinimumEmergencyReservePercent));
+        values.put("village_prosperity.max_monthly_treasury_spending", String.valueOf(prosperityFundMaximumMonthlySpending));
+        return java.util.Collections.unmodifiableMap(values);
+    }
+
+    /**
+     * Called only on the owning integrated server thread. Rejects stale GUI snapshots, external
+     * file edits, and world changes before touching disk. Validation precedes atomic replacement.
+     */
+    public static synchronized EmeraldConfig update(
+            Path worldDataDirectory, EmeraldConfig expected, Map<String, String> edits) throws IOException {
+        Path target = worldDataDirectory.resolve(FILE_NAME).toAbsolutePath().normalize();
+        if (current != expected || currentPath == null || appliedEconomy == null
+                || !currentPath.toAbsolutePath().normalize().equals(target)) {
+            throw new IOException("World or configuration changed. Reopen Settings before saving.");
+        }
+        Properties disk = new Properties();
+        try (InputStream input = Files.newInputStream(target)) { disk.load(input); }
+        if (!parse(disk).values().equals(expected.values())) {
+            throw new IOException("The config file changed outside this screen. Reload it first.");
+        }
+        Properties proposed = new Properties();
+        proposed.putAll(expected.values());
+        for (var edit : edits.entrySet()) {
+            if (!KNOWN_KEYS.contains(edit.getKey()) || edit.getValue() == null || edit.getValue().isBlank()) {
+                throw new IOException("Unknown setting or empty value: " + edit.getKey());
+            }
+            proposed.setProperty(edit.getKey(), edit.getValue());
+        }
+        EmeraldConfig candidate = parse(proposed);
+        Path temporary = Files.createTempFile(target.getParent(), FILE_NAME, ".tmp");
+        try {
+            try (OutputStream output = Files.newOutputStream(temporary)) {
+                proposed.store(output, "The Emerald Standard world settings; edited in-game.");
+            }
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) { channel.force(true); }
+            // Fail safely if atomic replacement is unavailable; never claim a partial save worked.
+            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally { Files.deleteIfExists(temporary); }
+        candidate.applyTo(appliedEconomy);
         current = candidate;
         return candidate;
     }
 
     public static synchronized EmeraldConfig reload() throws IOException {
-        if (currentPath == null) {
-            throw new IOException("The Emerald Standard configuration has not been initialized");
-        }
+        if (currentPath == null) throw new IOException("The Emerald Standard configuration has not been initialized");
         return load(currentPath.getParent());
     }
-
-    public static EmeraldConfig current() {
-        return current;
-    }
-
+    public static EmeraldConfig current() { return current; }
     public static String location() {
         Path path = currentPath;
         return path == null ? "not initialized" : path.toAbsolutePath().normalize().toString();
     }
+    public boolean villageBanksEnabled() { return villageBanksEnabled; }
+    public int villageScanIntervalTicks() { return villageScanIntervalTicks; }
+    public int villageRegionSize() { return villageRegionSize; }
+    public int bankerRestrictionRadius() { return bankerRestrictionRadius; }
+    public int transactionCooldownTicks() { return transactionCooldownTicks; }
+    public boolean onboardingJoinHintEnabled() { return onboardingJoinHintEnabled; }
+    public boolean marketEventsEnabled() { return marketEventsEnabled; }
+    public boolean offlineProgressionEnabled() { return offlineProgressionEnabled; }
+    public int maximumOfflineDays() { return maximumOfflineDays; }
+    public boolean villageProsperitySimulationEnabled() { return villageProsperitySimulationEnabled; }
+    public boolean villageVisualProgressionEnabled() { return villageVisualProgressionEnabled; }
+    public boolean villageMarketIntegrationEnabled() { return villageMarketIntegrationEnabled; }
+    public boolean villageAutomaticRecoveryEnabled() { return villageAutomaticRecoveryEnabled; }
+    public int villageProsperityScanIntervalTicks() { return villageProsperityScanIntervalTicks; }
+    public int villageDevelopmentRadius() { return villageDevelopmentRadius; }
+    public int villageConstructionIntervalTicks() { return villageConstructionIntervalTicks; }
+    public int villageConstructionBlocksPerTick() { return villageConstructionBlocksPerTick; }
+    public int villageSettlerSpawnIntervalTicks() { return villageSettlerSpawnIntervalTicks; }
+    public boolean prosperityFundEnabled() { return prosperityFundEnabled; }
+    public boolean prosperityFundEndowmentsEnabled() { return prosperityFundEndowmentsEnabled; }
+    public boolean prosperityFundProjectSponsorshipEnabled() { return prosperityFundProjectSponsorshipEnabled; }
+    public boolean prosperityFundTargetedDonationsEnabled() { return prosperityFundTargetedDonationsEnabled; }
+    public boolean prosperityFundDonorRecognitionEnabled() { return prosperityFundDonorRecognitionEnabled; }
+    public double prosperityFundEndowmentAnnualPayoutRate() { return prosperityFundEndowmentAnnualPayoutBps / 10_000.0; }
+    public double prosperityFundEmergencyReserveFraction() { return prosperityFundMinimumEmergencyReservePercent / 100.0; }
+    public int prosperityFundMaximumMonthlySpending() { return prosperityFundMaximumMonthlySpending; }
+    public boolean prosperityFundFastTrackCapitalEnabled() { return prosperityFundFastTrackCapitalEnabled; }
 
-    public boolean villageBanksEnabled() {
-        return villageBanksEnabled;
-    }
-
-    public int villageScanIntervalTicks() {
-        return villageScanIntervalTicks;
-    }
-
-    public int villageRegionSize() {
-        return villageRegionSize;
-    }
-
-    public int bankerRestrictionRadius() {
-        return bankerRestrictionRadius;
-    }
-
-    public int transactionCooldownTicks() {
-        return transactionCooldownTicks;
-    }
-
-    public boolean onboardingJoinHintEnabled() {
-        return onboardingJoinHintEnabled;
-    }
-
-    public boolean marketEventsEnabled() {
-        return marketEventsEnabled;
-    }
-
-    public boolean offlineProgressionEnabled() {
-        return offlineProgressionEnabled;
-    }
-
-    public int maximumOfflineDays() {
-        return maximumOfflineDays;
-    }
-
-    public boolean villageProsperitySimulationEnabled() {
-        return villageProsperitySimulationEnabled;
-    }
-
-    public boolean villageVisualProgressionEnabled() {
-        return villageVisualProgressionEnabled;
-    }
-
-    public boolean villageMarketIntegrationEnabled() {
-        return villageMarketIntegrationEnabled;
-    }
-
-    public boolean villageAutomaticRecoveryEnabled() {
-        return villageAutomaticRecoveryEnabled;
-    }
-
-    public int villageProsperityScanIntervalTicks() {
-        return villageProsperityScanIntervalTicks;
-    }
-
-    public int villageDevelopmentRadius() {
-        return villageDevelopmentRadius;
-    }
-
-    public int villageConstructionIntervalTicks() {
-        return villageConstructionIntervalTicks;
-    }
-
-    public int villageConstructionBlocksPerTick() {
-        return villageConstructionBlocksPerTick;
-    }
-
-    public int villageSettlerSpawnIntervalTicks() {
-        return villageSettlerSpawnIntervalTicks;
-    }
-
-    public boolean prosperityFundEnabled() {
-        return prosperityFundEnabled;
-    }
-
-    public boolean prosperityFundEndowmentsEnabled() {
-        return prosperityFundEndowmentsEnabled;
-    }
-
-    public boolean prosperityFundProjectSponsorshipEnabled() {
-        return prosperityFundProjectSponsorshipEnabled;
-    }
-
-    public boolean prosperityFundTargetedDonationsEnabled() {
-        return prosperityFundTargetedDonationsEnabled;
-    }
-
-    public boolean prosperityFundDonorRecognitionEnabled() {
-        return prosperityFundDonorRecognitionEnabled;
-    }
-
-    public double prosperityFundEndowmentAnnualPayoutRate() {
-        return prosperityFundEndowmentAnnualPayoutBps / 10_000.0;
-    }
-
-    public double prosperityFundEmergencyReserveFraction() {
-        return prosperityFundMinimumEmergencyReservePercent / 100.0;
-    }
-
-    public int prosperityFundMaximumMonthlySpending() {
-        return prosperityFundMaximumMonthlySpending;
-    }
-
-    public boolean prosperityFundFastTrackCapitalEnabled() {
-        return prosperityFundFastTrackCapitalEnabled;
-    }
-
-    /** Applies every simulation option atomically to the shared economy service. */
+    /** Applies every simulation option on the owning server thread. */
     public void applyTo(EconomyService economy) {
+        appliedEconomy = java.util.Objects.requireNonNull(economy, "economy");
         economy.configureMarketEvents(marketEventsEnabled);
         economy.configureEconomicClock(offlineProgressionEnabled, maximumOfflineDays);
-        economy.configureVillageProsperity(
-                villageProsperitySimulationEnabled,
-                villageVisualProgressionEnabled,
-                villageMarketIntegrationEnabled,
-                villageAutomaticRecoveryEnabled);
-        long dailyCapMicro = Math.max(
-                1L,
-                Math.round(prosperityFundMaximumMonthlySpending
-                        * (double) EconomyState.MICRO / 30.0));
+        economy.configureVillageProsperity(villageProsperitySimulationEnabled, villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled, villageAutomaticRecoveryEnabled);
+        long dailyCapMicro = Math.max(1L, Math.round(prosperityFundMaximumMonthlySpending
+                * (double) EconomyState.MICRO / 30.0));
         economy.configureProsperityFund(new EconomyService.ProsperityFundPolicy(
                 prosperityFundEnabled && villageProsperitySimulationEnabled,
-                prosperityFundEndowmentAnnualPayoutRate(),
-                prosperityFundEmergencyReserveFraction(),
-                dailyCapMicro,
-                prosperityFundFastTrackCapitalEnabled));
+                prosperityFundEndowmentAnnualPayoutRate(), prosperityFundEmergencyReserveFraction(),
+                dailyCapMicro, prosperityFundFastTrackCapitalEnabled));
     }
 
     public String summary() {
-        return String.format(
-                Locale.ROOT,
+        return String.format(Locale.ROOT,
                 "village banks=%s, bank scan=%d ticks, bank region=%d blocks, banker radius=%d, "
                         + "transaction cooldown=%d ticks, first-join hint=%s, market events=%s, "
                         + "offline progression=%s, max offline=%d days, prosperity simulation=%s, visual progression=%s, "
@@ -354,149 +297,52 @@ public final class EmeraldConfig {
                         + "project sponsorship=%s, targeted donations=%s, donor recognition=%s, "
                         + "fast-track capital=%s, endowment payout=%.2f%%, emergency reserve=%d%%, "
                         + "routine monthly spending cap=%d",
-                villageBanksEnabled,
-                villageScanIntervalTicks,
-                villageRegionSize,
-                bankerRestrictionRadius,
-                transactionCooldownTicks,
-                onboardingJoinHintEnabled,
-                marketEventsEnabled,
-                offlineProgressionEnabled,
-                maximumOfflineDays,
-                villageProsperitySimulationEnabled,
-                villageVisualProgressionEnabled,
-                villageMarketIntegrationEnabled,
-                villageAutomaticRecoveryEnabled,
-                villageProsperityScanIntervalTicks,
-                villageDevelopmentRadius,
-                villageConstructionBlocksPerTick,
-                villageConstructionIntervalTicks,
-                villageSettlerSpawnIntervalTicks,
-                prosperityFundEnabled,
-                prosperityFundEndowmentsEnabled,
-                prosperityFundProjectSponsorshipEnabled,
-                prosperityFundTargetedDonationsEnabled,
-                prosperityFundDonorRecognitionEnabled,
-                prosperityFundFastTrackCapitalEnabled,
-                prosperityFundEndowmentAnnualPayoutBps / 100.0,
-                prosperityFundMinimumEmergencyReservePercent,
+                villageBanksEnabled, villageScanIntervalTicks, villageRegionSize, bankerRestrictionRadius,
+                transactionCooldownTicks, onboardingJoinHintEnabled, marketEventsEnabled, offlineProgressionEnabled,
+                maximumOfflineDays, villageProsperitySimulationEnabled, villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled, villageAutomaticRecoveryEnabled, villageProsperityScanIntervalTicks,
+                villageDevelopmentRadius, villageConstructionBlocksPerTick, villageConstructionIntervalTicks,
+                villageSettlerSpawnIntervalTicks, prosperityFundEnabled, prosperityFundEndowmentsEnabled,
+                prosperityFundProjectSponsorshipEnabled, prosperityFundTargetedDonationsEnabled,
+                prosperityFundDonorRecognitionEnabled, prosperityFundFastTrackCapitalEnabled,
+                prosperityFundEndowmentAnnualPayoutBps / 100.0, prosperityFundMinimumEmergencyReservePercent,
                 prosperityFundMaximumMonthlySpending);
     }
 
     private static EmeraldConfig defaults() {
-        return new EmeraldConfig(
-                true,
-                200,
-                256,
-                5,
-                5,
-                true,
-                true,
-                true,
-                (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS,
-                true,
-                true,
-                true,
-                true,
-                400,
-                DEFAULT_VILLAGE_DEVELOPMENT_RADIUS,
-                10,
-                2,
-                1_200,
-                true,
-                true,
-                true,
-                true,
-                true,
-                true,
-                400,
-                20,
-                24);
+        return new EmeraldConfig(true, 200, 256, 5, 5, true, true, true,
+                (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS, true, true, true, true, 400,
+                DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, 10, 2, 1_200,
+                true, true, true, true, true, true, 400, 20, 24);
     }
-
     private static void writeDefaults(Path path) throws IOException {
         Files.createDirectories(path.getParent());
         Properties properties = new Properties();
-        properties.setProperty("village_banks.enabled", "true");
-        properties.setProperty("village_banks.scan_interval_ticks", "200");
-        properties.setProperty("village_banks.region_size", "256");
-        properties.setProperty("banker.restriction_radius", "5");
-        properties.setProperty("transactions.cooldown_ticks", "5");
-        properties.setProperty("onboarding.join_hint_enabled", "true");
-        properties.setProperty("market.events_enabled", "true");
-        properties.setProperty("economic_clock.offline_progression_enabled", "true");
-        properties.setProperty(
-                "economic_clock.max_offline_days",
-                Long.toString(EconomyService.MAX_TRUSTED_CATCH_UP_DAYS));
-        properties.setProperty("village_prosperity.simulation_enabled", "true");
-        properties.setProperty("village_prosperity.visual_progression_enabled", "true");
-        properties.setProperty("village_prosperity.market_integration_enabled", "true");
-        properties.setProperty("village_prosperity.automatic_recovery_enabled", "true");
-        properties.setProperty("village_prosperity.scan_interval_ticks", "400");
-        properties.setProperty(
-                "village_prosperity.development_radius",
-                Integer.toString(DEFAULT_VILLAGE_DEVELOPMENT_RADIUS));
-        properties.setProperty("village_prosperity.construction_interval_ticks", "10");
-        properties.setProperty("village_prosperity.construction_blocks_per_tick", "2");
-        properties.setProperty("village_prosperity.settler_spawn_interval_ticks", "1200");
-        properties.setProperty("village_prosperity.donations_enabled", "true");
-        properties.setProperty("village_prosperity.endowments_enabled", "true");
-        properties.setProperty("village_prosperity.project_sponsorship_enabled", "true");
-        properties.setProperty("village_prosperity.targeted_donations_enabled", "true");
-        properties.setProperty("village_prosperity.donor_recognition_enabled", "true");
-        properties.setProperty("village_prosperity.fast_track_capital_enabled", "true");
-        properties.setProperty("village_prosperity.endowment_annual_payout_bps", "400");
-        properties.setProperty("village_prosperity.minimum_emergency_reserve_percent", "20");
-        properties.setProperty("village_prosperity.max_monthly_treasury_spending", "24");
+        properties.putAll(defaults().values());
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try (OutputStream output = Files.newOutputStream(temporary)) {
-            properties.store(
-                    output,
-                    "The Emerald Standard world configuration. See docs/CONFIGURATION.md for bounds.");
+            properties.store(output, "The Emerald Standard world configuration. See docs/CONFIGURATION.md for bounds.");
         }
         try {
-            Files.move(
-                    temporary,
-                    path,
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
+            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
             Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            Files.deleteIfExists(temporary);
-        }
+        } finally { Files.deleteIfExists(temporary); }
     }
-
-    private static boolean bool(
-            Properties properties, String key, boolean fallback) throws IOException {
+    private static boolean bool(Properties properties, String key, boolean fallback) throws IOException {
         String raw = properties.getProperty(key);
-        if (raw == null || raw.isBlank()) {
-            return fallback;
-        }
-        if (raw.trim().equalsIgnoreCase("true")) {
-            return true;
-        }
-        if (raw.trim().equalsIgnoreCase("false")) {
-            return false;
-        }
+        if (raw == null || raw.isBlank()) return fallback;
+        if (raw.trim().equalsIgnoreCase("true")) return true;
+        if (raw.trim().equalsIgnoreCase("false")) return false;
         throw new IOException("Configuration " + key + " must be true or false");
     }
-
-    private static int bounded(
-            Properties properties,
-            String key,
-            int fallback,
-            int minimum,
-            int maximum) throws IOException {
+    private static int bounded(Properties properties, String key, int fallback, int minimum, int maximum) throws IOException {
         String raw = properties.getProperty(key);
-        if (raw == null || raw.isBlank()) {
-            return fallback;
-        }
+        if (raw == null || raw.isBlank()) return fallback;
         try {
             int value = Integer.parseInt(raw.trim());
             if (value < minimum || value > maximum) {
-                throw new IOException(
-                        "Configuration " + key + " must be between " + minimum + " and " + maximum);
+                throw new IOException("Configuration " + key + " must be between " + minimum + " and " + maximum);
             }
             return value;
         } catch (NumberFormatException exception) {
