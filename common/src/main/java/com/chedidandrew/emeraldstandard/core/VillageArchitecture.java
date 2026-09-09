@@ -170,10 +170,60 @@ public final class VillageArchitecture {
                     .toList());
 
     /** Complementary roofs and supported garden dressing apply to new approvals only. */
-    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+    private static final List<BlueprintDescriptor> REVISION_FOUR_BLUEPRINT_CATALOG = validateActiveCatalog(
             REVISION_THREE_BLUEPRINT_CATALOG.stream()
                     .map(previous -> new BlueprintDescriptor(
                             previous.type(), previous.templateId(), 4,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
+
+    /** Short, locally roof-bearing chimney pots; shipped revisions remain reproducible. */
+    private static final List<BlueprintDescriptor> REVISION_FIVE_BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_FOUR_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 5,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
+
+    /** Three-block clearance beneath low domestic ceiling ties. */
+    private static final List<BlueprintDescriptor> REVISION_SIX_BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_FIVE_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 6,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
+
+    /** Composed courtyard-forge roof and twin-pot chimney. */
+    private static final List<BlueprintDescriptor> REVISION_SEVEN_BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_SIX_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 7,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
+
+    /** Slim tips also cover short and single-cap utility chimneys. */
+    private static final List<BlueprintDescriptor> REVISION_EIGHT_BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_SEVEN_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 8,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
+
+    /** Low-profile courtyard smithy roofs with a continuous projecting eave. */
+    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_EIGHT_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 9,
                             previous.width(), previous.depth(), previous.height(),
                             previous.mirrorable(), previous.scale(),
                             previous.paletteIds(), previous.dressingIds()))
@@ -616,11 +666,11 @@ public final class VillageArchitecture {
     }
 
     public static BlueprintDescriptor blueprint(String templateId, int templateRevision) {
-        return java.util.stream.Stream.concat(
-                        BLUEPRINT_CATALOG.stream(), java.util.stream.Stream.concat(
-                                REVISION_THREE_BLUEPRINT_CATALOG.stream(),
-                                java.util.stream.Stream.concat(REVISION_TWO_BLUEPRINT_CATALOG.stream(),
-                                        RETIRED_BLUEPRINT_CATALOG.stream())))
+        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
+                        REVISION_SEVEN_BLUEPRINT_CATALOG, REVISION_SIX_BLUEPRINT_CATALOG,
+                        REVISION_FIVE_BLUEPRINT_CATALOG, REVISION_FOUR_BLUEPRINT_CATALOG,
+                        REVISION_THREE_BLUEPRINT_CATALOG, REVISION_TWO_BLUEPRINT_CATALOG,
+                        RETIRED_BLUEPRINT_CATALOG).flatMap(List::stream)
                 .filter(descriptor -> descriptor.templateId.equals(templateId)
                         && descriptor.templateRevision == templateRevision)
                 .findFirst()

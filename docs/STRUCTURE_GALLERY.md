@@ -1,8 +1,8 @@
 # Structure Gallery
 
-For the latest complementary palettes and planting next to real vanilla templates, use the separate [Village Comparison Gallery](VILLAGE_COMPARISON_GALLERY.md). Existing review saves are retained as history, not remodeled. The active production catalog is authored revision 4 / Bank 7, with regular gallery content revision 12. Carol's last completed numerical review remains the historical content-11 evidence below; its scores do not certify these new changes.
+For the latest complementary palettes and planting next to real vanilla templates, use the separate [Village Comparison Gallery](VILLAGE_COMPARISON_GALLERY.md). Existing review saves are retained as history, not remodeled. The active production catalog is authored revision 9 / Bank 8, with regular gallery content revision 17. Carol's last completed numerical review remains the historical content-11 evidence below; its scores do not certify these new changes.
 
-The Structure Gallery is a developer-only review world that places every selected building immediately. It is intended for fast visual inspection and screenshots; it does not simulate village growth. The main matrix always follows the active catalog, which is currently 52 revision-4 masters spanning small, medium, large, and landmark scales; retired revision-1, revision-2, and revision-3 plans remain available to saved gameplay projects but are intentionally not mixed into the active review matrix.
+The Structure Gallery is a developer-only review world that places every selected building immediately. It is intended for fast visual inspection and screenshots; it does not simulate village growth. The main matrix always follows the active catalog, which is currently 52 revision-9 masters spanning small, medium, large, and landmark scales; retired revision-1, revision-2, revision-3, revision-4, revision-5, revision-6, revision-7, and revision-8 plans remain available to saved gameplay projects but are intentionally not mixed into the active review matrix.
 
 ## Safety and isolation
 
@@ -88,8 +88,8 @@ The command index is one-based: valid structure numbers are `1` through `276`.
 
 | Index | Section | Coverage |
 | ---: | --- | --- |
-| 1–260 | Gold-master matrix | Fifty-two complete active revision-4 blueprints rendered at full visual stage with prosperous production dressing, once in each of the five biome dialects. No floorplan, roof, frontage, or interior is recombined. |
-| 261–271 | Controlled Blueprint lab | The revision-4 `house_cross_01` Plains House compared one axis at a time across stages, semantic palettes, dressing kits, approved mirroring, and all four rotations. |
+| 1–260 | Gold-master matrix | Fifty-two complete active revision-9 blueprints rendered at full visual stage with prosperous production dressing, once in each of the five biome dialects. No floorplan, roof, frontage, or interior is recombined. |
+| 261–271 | Controlled Blueprint lab | The revision-9 `house_cross_01` Plains House compared one axis at a time across stages, semantic palettes, dressing kits, approved mirroring, and all four rotations. |
 | 272–276 | Banks | One production Bank palette for each biome dialect. |
 
 The main matrix is paged in catalog order, with at most 12 designs per page and one row for each of `Plains`, `Desert`, `Savanna`, `Taiga`, and `Snowy`. Pages one through five contain masters 1–12 (indices 1–60), 13–24 (indices 61–120), 25–36 (indices 121–180), 37–48 (indices 181–240), and 49–52 (indices 241–260), respectively. Every matrix entry uses stage 2 and the prosperous dressing kit so its richest production-authored architecture, yard, and role props are visible. The controlled lab remains the place to compare restrained and intermediate states. Each design should read as its own building before palette differences are considered:

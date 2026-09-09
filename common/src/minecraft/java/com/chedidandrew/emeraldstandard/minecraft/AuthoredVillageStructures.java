@@ -74,7 +74,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 4;
+    static final int LATEST_TEMPLATE_REVISION = 9;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
     private static final Map<String, Object> LIGHTING_COMPOSITION_LOCKS =
@@ -197,7 +197,12 @@ final class AuthoredVillageStructures {
             sealDisconnectedInteriorPockets(base, metadata, materials, templateId);
             AuthoredLandscapeRefinements.refineStage(base, metadata, materials, templateId, List.of());
             AuthoredWorkshopContactRefinements.refine(base, metadata, materials, templateId);
+            AuthoredChimneyRefinements.refine(base, metadata, materials);
             ensureComfortableInteriorLighting(base, metadata, templateId);
+            AuthoredCeilingClearanceRefinements.refine(base, metadata, materials);
+            if (templateId.equals("smithy_courtyard_01")) {
+                AuthoredSmithyRoofRefinements.refine(base, metadata, materials);
+            }
         }
         if (metadata.type != type) {
             throw new IllegalArgumentException(
@@ -425,6 +430,8 @@ final class AuthoredVillageStructures {
         addSaltboxRoof(b, m, p, 0, 8, 0, 7, 3);
         addShedRoof(b, m, p, footprint, 7, 10, 4, 9, 4, Direction.NORTH);
         addIntegratedChimney(b, m, p, 9, 7);
+        // This sculpted domestic hearth is a deliberate landmark, not a plain utility stack.
+        m.integratedChimneys.remove(new BlockPos(9, 0, 7));
         // The oversized stepped masonry breast is the visual and functional heart of this
         // cottage. It is deliberately wider at the floor than at the flue, like a real hearth.
         for (int y = 1; y <= 2; y++) {
@@ -3427,7 +3434,12 @@ final class AuthoredVillageStructures {
                 }
             }
             for (int y = 11; y <= 17; y++) {
-                b.force(Phase.ROOF, centerX, y, 16, p.chimney.defaultBlockState());
+                // Keep the bloomery's broad shoulders, but taper the upper half of each
+                // otherwise plain one-column flue. Frozen projects retain their old masonry.
+                Block flue = m.templateRevision >= 8 && y >= 14
+                        ? (p.chimney == Blocks.CUT_SANDSTONE ? Blocks.SANDSTONE_WALL : Blocks.BRICK_WALL)
+                        : p.chimney;
+                b.force(Phase.ROOF, centerX, y, 16, flue.defaultBlockState());
             }
         }
         addFoundryCastingVentilator(b, p);
@@ -9307,6 +9319,7 @@ final class AuthoredVillageStructures {
 
     private static void addIntegratedChimney(
             Builder b, Metadata m, Materials p, int x, int z) {
+        m.integratedChimneys.add(new BlockPos(x, 0, z));
         b.force(Phase.FOUNDATION, x, 0, z, p.foundation.defaultBlockState());
         for (int y = 1; y <= Math.min(m.roofPeak + 1, m.height); y++) {
             b.force(y <= m.wallHeight ? Phase.FRAME : Phase.ROOF,
@@ -12971,6 +12984,7 @@ final class AuthoredVillageStructures {
         final Set<BlockPos> reservedAir = new HashSet<>();
         final Set<BlockPos> interiorSamples = new HashSet<>();
         final List<VerticalAccess> verticalAccess = new ArrayList<>();
+        final Set<BlockPos> integratedChimneys = new HashSet<>();
 
         private void begin(
                 VillageProsperityEngine.ProjectType type,

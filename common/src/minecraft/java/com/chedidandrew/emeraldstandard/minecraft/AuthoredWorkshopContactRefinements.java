@@ -19,7 +19,7 @@ final class AuthoredWorkshopContactRefinements {
     private AuthoredWorkshopContactRefinements() { }
 
     static void refine(Builder base, Metadata metadata, Materials p, String templateId) {
-        if (base.templateRevision != 4 || metadata.templateRevision != 4) return;
+        if (base.templateRevision < 4 || metadata.templateRevision < 4) return;
         List<Joint> joints = new ArrayList<>();
         if (templateId.equals("warehouse_basilica_05")) {
             // Nave piers already reach the ground at these three bays. Short transverse ties

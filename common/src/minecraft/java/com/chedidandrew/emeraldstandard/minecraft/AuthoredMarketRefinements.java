@@ -25,7 +25,7 @@ final class AuthoredMarketRefinements {
      * purlins connect the existing transverse frames; their small knees remain above head height.
      */
     static void finishLane(Builder base, Metadata metadata, Materials materials) {
-        if (base.templateRevision < 3 || base.templateRevision > 4
+        if (base.templateRevision < 3 || base.templateRevision > 9
                 || metadata.templateRevision != base.templateRevision) {
             return;
         }

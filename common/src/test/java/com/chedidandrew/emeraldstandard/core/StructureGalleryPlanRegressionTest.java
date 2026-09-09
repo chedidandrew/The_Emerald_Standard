@@ -326,7 +326,7 @@ public final class StructureGalleryPlanRegressionTest {
                             && entry.dialect() == VillageArchitecture.BiomeDialect.PLAINS
                             && entry.character() == VillageArchitecture.Character.MERCANTILE
                             && entry.templateId().equals("house_cross_01")
-                            && entry.templateRevision() == 4,
+                            && entry.templateRevision() == 9,
                     "Controlled lab changed its coherent reference blueprint");
             require(VillageArchitecture.isKnownBlueprintSelection(
                             entry.type(),

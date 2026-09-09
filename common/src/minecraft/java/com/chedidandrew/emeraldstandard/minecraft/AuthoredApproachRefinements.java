@@ -29,7 +29,7 @@ final class AuthoredApproachRefinements {
      * terrain-replacement permission or repair behavior is introduced.</p>
      */
     static Outcome finish(Builder stage, Metadata metadata, Materials materials) {
-        if (stage.templateRevision < 3 || stage.templateRevision > 4
+        if (stage.templateRevision < 3 || stage.templateRevision > 9
                 || metadata.templateRevision != stage.templateRevision) {
             return Outcome.UNCHANGED_REVISION;
         }

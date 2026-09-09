@@ -4,9 +4,38 @@ All notable changes to The Emerald Standard are documented here.
 
 ## Unreleased (target: 0.4.0-beta.3)
 
+### Low-profile smithy roof and continuous eaves
+
+- Authored revision 9 follows the user's roof reference for `smithy_courtyard_01`: flatter, broad slab-capped workshop roofs with a continuous projecting half-slab border around the joined wings and courtyard returns. Plains uses Dark Oak Slabs; other dialects retain their complementary roof palettes.
+- Preserve the chimney collector and slim pots, interior clearance, workstations, lights and yard dressing. Other masters and saved revisions 1–8 remain unchanged. Bank version 8 is unchanged; gallery content 17 uses a separate smithy-eaves review profile.
+- Two small front-post sconces light the additional floor row sheltered by the new overhang; the original light sources stay in place.
+- Where later-stage rear paving lies beneath the new eave, the existing lighting pass adds a small rear-wall sconce without moving or removing furnishings.
+
+### Complete single-column chimney treatment
+
+- Authored revision 8 finishes the short and single-capped utility stacks missed by the earlier minimum-height rule. The exposed upper half uses Brick Walls (Sandstone Walls in Desert palettes), retaining lower masonry and supported caps.
+- The foundry's one-column upper flues receive the same taper without changing their broad furnace shoulders. The reviewed sculpted hearth cottage is preserved. Eight additional masters change across five dialects; furnishings, light sources and unrelated architecture remain identical to revision 7.
+- Bank version 8 changes only the two upper brick chimney courses in Plains, Savanna and Taiga Banks. Non-brick Bank stacks and all other cells are unchanged. Existing authored revisions 1–7 and Bank versions 2–7 retain their historical plans.
+- Gallery content 16 uses a new isolated chimney-completion review profile. Existing worlds are not retroactively remodeled.
+
+### Courtyard smithy roof composition
+
+- Authored revision 7 replaces the courtyard smithy's flat canopy silhouette with two pitched workshop wings, inset timber gable framing and a lower connecting rear roof. A masonry collector supports two shorter wall-block chimney pots instead of the tall brick panel.
+- This is a fixed roof-only composition for `smithy_courtyard_01`, retaining the open court, workstations, lights and yard dressing. Other masters and saved revisions 1–6 remain unchanged. Gallery content 15 uses an isolated smithy-review profile.
+
+### Interior ceiling clearance
+
+- Authored revision 6 raises low domestic ceiling ties from the third to the fourth course above the floor, leaving three clear blocks beneath affected sections. Four masters change: the compact hall house and hearth, glasshouse, and bay cottages. Higher interiors, including the split-wing house, remain unchanged.
+- Furnishings, existing lights, gardens, and chimneys are preserved. Revisions 1–5 remain reproducible for saved projects. Gallery content revision 14 uses a fresh ceiling-review profile; existing worlds are not remodeled.
+
+### Slimmer chimney silhouettes
+
+- New authored revision-5 plans shorten eligible plain utility stacks to their local roofline, with a full masonry collar and two slim brick-wall courses (sandstone walls in Desert palettes).
+- Preserve sculpted hearth chimneys, contrasting caps, industrial crowns, all existing player worlds, and the exact placement streams of published revision-3 and revision-4 plans. The new regular gallery content revision is 13; use a fresh isolated review profile instead of rebuilding older saves.
+
 ### Complementary palettes and village comparison
 
-- New construction uses authored revision 4 and Bank version 7. Snowy roofs contrast dark timber against pale walls; desert roofs use warm acacia against sandstone. All earlier authored revisions and Bank versions remain reproducible; existing buildings and player changes are not remodeled.
+- The complementary-palette pass introduced authored revision 4 and Bank version 7. Snowy roofs contrast dark timber against pale walls; desert roofs use warm acacia against sandstone. All earlier authored revisions and Bank versions remain reproducible; existing buildings and player changes are not remodeled.
 - Replaced generic target-block merchandise and cargo with role-appropriate materials. Targets are limited to a single deliberate outdoor training fixture per guard building.
 - Corrected partial-block support gaps in authored furniture and added biome-specific potted plants and persistent shrubs on preflighted supports, without blocking doorways or working lanes.
 - Added an opt-in, separate village comparison world: all 52 current masters plus the Bank in every village dialect, paired with actual bundled vanilla structures, plus five small vanilla context courts. This is a curated exhibition, not a claim of natural village generation or new Carol ratings.

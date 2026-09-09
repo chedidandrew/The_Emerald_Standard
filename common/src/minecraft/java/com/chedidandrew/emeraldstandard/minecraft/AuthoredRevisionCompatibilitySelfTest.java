@@ -10,11 +10,16 @@ final class AuthoredRevisionCompatibilitySelfTest {
     private AuthoredRevisionCompatibilitySelfTest() { }
 
     static void run() throws Exception {
+        verify(3, "22b5cab0b0b815cfbdada2f25c5b63507b163eb92523679e3c76b1986b06ce08");
+        verify(4, "a68624190c575d891bd7156130d3e6389c2f691075b1c62cea01ae5dceee04cc");
+    }
+
+    private static void verify(int revision, String expected) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         for (var descriptor : VillageArchitecture.activeBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var plan = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(),
-                        3, VillageArchitecture.PALETTE_BALANCED,
+                        revision, VillageArchitecture.PALETTE_BALANCED,
                         VillageArchitecture.DRESSING_PROSPEROUS,
                         VillageArchitecture.Character.RUSTIC, dialect);
                 digest.update((descriptor.templateId() + "/" + dialect + "\n")
@@ -28,10 +33,9 @@ final class AuthoredRevisionCompatibilitySelfTest {
             }
         }
         String actual = HexFormat.of().formatHex(digest.digest());
-        String expected = "22b5cab0b0b815cfbdada2f25c5b63507b163eb92523679e3c76b1986b06ce08";
         if (!expected.equals(actual)) {
-            throw new IllegalStateException("Frozen revision-three placements changed: " + actual);
+            throw new IllegalStateException("Frozen revision-" + revision + " placements changed: " + actual);
         }
-        System.out.println("PASS frozen revision-three placements (52 masters x five dialects)");
+        System.out.println("PASS frozen revision-" + revision + " placements (52 masters x five dialects)");
     }
 }

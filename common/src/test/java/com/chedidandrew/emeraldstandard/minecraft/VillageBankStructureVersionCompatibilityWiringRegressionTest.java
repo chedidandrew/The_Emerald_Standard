@@ -212,8 +212,8 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                                 "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V5 = 5;")
                         && source.contains(
                                 "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V6 = 6;")
-                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 7;"),
-                "Village Bank structure-version constants drifted from the v2-v7 contract");
+                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 8;"),
+                "Village Bank structure-version constants drifted from the v2-v8 contract");
 
         String attempt = methodBody(source, "private static BankBuildAttempt attemptBankBuild(");
         require(attempt.contains("BankBuildResult build = buildBank("),
@@ -231,10 +231,13 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
         String persist = methodBody(source, "private static boolean persistBuiltBank(");
         require(persist.contains("economy.markGeneratedBankRegion(")
                         && persist.contains("BANK_STRUCTURE_VERSION"),
-                "A completed new or replacement Bank is not atomically marked as v7");
+                "A completed new or replacement Bank is not atomically marked as v8");
 
         String integrity = methodBody(
                 source, "private static BankIntegrity inspectManagedBankIntegrity(");
+        require(integrity.contains("structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V7")
+                        && integrity.contains("? legacyBankPlanV7(origin, palette)"),
+                "Existing v7 Banks must retain their frozen plan");
         require(integrity.contains("structureVersion >= BANK_STRUCTURE_VERSION")
                         && integrity.contains("? bankPlan(origin, palette)")
                         && integrity.contains(
@@ -291,11 +294,15 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && versionSix.contains("appendBankV6Belfry(")
                         && versionSix.contains("appendBankV6RecordRoom("),
                 "Frozen v6 construction lost its bounded finish, belfry or record-room delta");
-        String versionSeven = methodBody(source, "private static List<BankPlacement> bankPlan(");
+        String versionSeven = methodBody(source, "private static List<BankPlacement> legacyBankPlanV7(");
         require(versionSeven.contains("bankV7Palette(legacyPalette)")
                         && versionSeven.contains("legacyBankPlanV6(origin, palette)")
                         && versionSeven.contains("appendBankV7ExteriorGardens("),
-                "Current v7 construction lost its isolated material/planting composition");
+                "Frozen v7 construction lost its isolated material/planting composition");
+        String versionEight = methodBody(source, "private static List<BankPlacement> bankPlan(");
+        require(versionEight.contains("legacyBankPlanV7(origin, legacyPalette)")
+                        && versionEight.contains("Blocks.BRICK_WALL.defaultBlockState()"),
+                "Current v8 Bank chimney pass must layer over the frozen v7 plan");
     }
 
     private static void verifyVersionTwoMaintenanceIsNonDestructive(String source) {

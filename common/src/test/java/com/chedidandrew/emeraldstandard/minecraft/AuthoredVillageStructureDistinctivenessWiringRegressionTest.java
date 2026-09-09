@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  *
  * <p>The production catalog depends on Minecraft block states and cannot be loaded by the common
  * test classpath. These checks make sure its catalog admission path still exports one palette-free
- * structural silhouette per active revision-4 master to the executable neutral validator.</p>
+ * structural silhouette per active revision-7 master to the executable neutral validator.</p>
  */
 public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
     private static final int ACTIVE_MASTER_TARGET = 52;
@@ -17,7 +17,7 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
             "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/"
                     + "AuthoredVillageStructures.java";
     private static final Pattern ACTIVE_REVISION = Pattern.compile(
-            "LATEST_TEMPLATE_REVISION\\s*=\\s*4\\s*;");
+            "LATEST_TEMPLATE_REVISION\\s*=\\s*9\\s*;");
     private static final Pattern SNAPSHOT_COLLECTION = Pattern.compile(
             "List\\s*<\\s*(?:WholeBuildingDistinctivenessValidator\\s*\\.\\s*)?"
                     + "StructuralSnapshot\\s*>\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*"
@@ -54,7 +54,7 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
             String descriptorValidation,
             String snapshotCollection) {
         require(ACTIVE_REVISION.matcher(source).find(),
-                "The active authored gold masters are not revision 4");
+                "The active authored gold masters are not revision 7");
         require(catalog.contains(
                         "descriptor.templateRevision() == LATEST_TEMPLATE_REVISION")
                         && catalog.contains("activeDescriptors.add(descriptor)"),

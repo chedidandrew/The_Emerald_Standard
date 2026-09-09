@@ -1,7 +1,12 @@
 # Mod / vanilla village comparison gallery
 
+The newest local review profile is documented in [Low-profile smithy review](SMITHY_EAVES_REVIEW.md), with authored revision 9, Bank version 8 and gallery content 17. Earlier profiles are historical evidence and are not rebuilt with the new catalog.
+
 This is a **separate, opt-in, curated comparison world**, not natural village generation and not
 an aesthetic rerating of assets whose five-review limit is closed.
+
+For the newer, separate chimney silhouette profile, see [Chimney review](CHIMNEY_REVIEW.md).
+The older palette screenshots below remain historical revision-4 evidence.
 
 See the [8 September qualitative screenshot review](reviews/PALETTE_LANDSCAPE_COMPARISON_2026-09-08.md)
 for the final 60-image sample, visual findings and remaining limitations.

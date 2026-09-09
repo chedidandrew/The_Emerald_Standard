@@ -66,7 +66,22 @@ final class VillageBankVersionSevenSelfTest {
             require(palette.equals(method("bankV7Palette", palette.getClass()).invoke(null, palette)),
                     "V7 palette projection is not idempotent: " + dialect);
             Map<BlockPos, BlockState> before = cells(plan("legacyBankPlanV6", oldPalette));
-            Map<BlockPos, BlockState> after = cells(plan("bankPlan", oldPalette));
+            Map<BlockPos, BlockState> after = cells(plan("legacyBankPlanV7", oldPalette));
+            Map<BlockPos, BlockState> latest = cells(plan("bankPlan", oldPalette));
+            require(after.keySet().equals(latest.keySet()), "Bank v8 changed its footprint");
+            int slimCourses = 0;
+            for (var entry : after.entrySet()) {
+                BlockPos pos = entry.getKey();
+                BlockState next = latest.get(pos);
+                boolean brickTip = pos.getX() == 2 && pos.getZ() == 7
+                        && pos.getY() >= 9 && pos.getY() <= 10 && entry.getValue().is(Blocks.BRICKS);
+                require(brickTip ? next.is(Blocks.BRICK_WALL) : entry.getValue().equals(next),
+                        "Bank v8 chimney-only contract failed: " + dialect + '/' + pos);
+                if (brickTip) slimCourses++;
+            }
+            require(slimCourses == (dialect == BiomeDialect.DESERT || dialect == BiomeDialect.SNOWY ? 0 : 2),
+                    "Bank brick chimney upper-half coverage changed: " + dialect);
+            System.out.println("PASS Bank v8 " + dialect + ": " + slimCourses + " slim chimney courses; all other cells unchanged");
             require(after.size() == before.size() + 16, "Four small planters did not fit: " + dialect);
             require(after.get(new BlockPos(-1, 5, -1)).is(switch (dialect) {
                 case DESERT -> Blocks.ACACIA_STAIRS;

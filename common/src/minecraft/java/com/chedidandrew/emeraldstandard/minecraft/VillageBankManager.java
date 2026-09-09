@@ -72,7 +72,8 @@ public final class VillageBankManager {
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V4 = 4;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V5 = 5;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V6 = 6;
-    private static final int BANK_STRUCTURE_VERSION = 7;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V7 = 7;
+    private static final int BANK_STRUCTURE_VERSION = 8;
     private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
     private static final long BANK_UPGRADE_RETRY_INTERVAL_TICKS = 2_400L;
     private static final int FALLBACK_BANK_RECOVERY_RADIUS = 192;
@@ -2364,6 +2365,8 @@ public final class VillageBankManager {
         Map<BlockPos, BlockState> authored = new HashMap<>();
         List<BankPlacement> expectedPlan = structureVersion >= BANK_STRUCTURE_VERSION
                 ? bankPlan(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V7
+                        ? legacyBankPlanV7(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V6
                         ? legacyBankPlanV6(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V5
@@ -3677,7 +3680,7 @@ public final class VillageBankManager {
      * Version seven keeps the reviewed civic geometry and adds complementary roofing and low,
      * grounded courtyard planting. The older palette and all older version plans remain frozen.
      */
-    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette legacyPalette) {
+    private static List<BankPlacement> legacyBankPlanV7(BlockPos origin, BankPalette legacyPalette) {
         BankPalette palette = bankV7Palette(legacyPalette);
         LinkedHashMap<BlockPos, BlockState> authored = new LinkedHashMap<>();
         for (BankPlacement placement : legacyBankPlanV6(origin, palette)) {
@@ -3687,6 +3690,19 @@ public final class VillageBankManager {
         return authored.entrySet().stream()
                 .map(entry -> new BankPlacement(entry.getKey(), entry.getValue()))
                 .toList();
+    }
+
+    /** Only the two exposed upper brick courses change; the full roof mount and smoke cap stay. */
+    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette legacyPalette) {
+        return legacyBankPlanV7(origin, legacyPalette).stream().map(placement -> {
+            BlockPos relative = placement.position().subtract(origin);
+            if (relative.getX() == 2 && relative.getZ() == BANK_DEPTH - 4
+                    && relative.getY() >= 9 && relative.getY() <= 10
+                    && placement.state().is(Blocks.BRICKS)) {
+                return new BankPlacement(placement.position(), Blocks.BRICK_WALL.defaultBlockState());
+            }
+            return placement;
+        }).toList();
     }
 
     /** New-only, idempotent palette projection; integrity checks for v2-v6 never call this. */

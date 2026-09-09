@@ -20,8 +20,15 @@ public final class AuthoredVillageStructuresSelfTest {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
         registerExactDeskFixture();
+        if (args.length == 1 && args[0].equals("smithy")) {
+            AuthoredSmithyRoofSelfTest.run();
+            return;
+        }
         VillageBankVersionSevenSelfTest.run();
         AuthoredRevisionCompatibilitySelfTest.run();
+        AuthoredChimneyRefinementsSelfTest.run();
+        AuthoredCeilingClearanceSelfTest.run();
+        AuthoredSmithyRoofSelfTest.run();
         AuthoredPaletteContrastSelfTest.run();
         AuthoredLandscapeRefinementsSelfTest.run();
         AuthoredStructuralContactRefinementsSelfTest.run();

@@ -105,10 +105,10 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
     }
 
     private static void verifyAllActiveMastersUseRoleDoodads(String source) {
-        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*4\\s*;")
+        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*9\\s*;")
                         .matcher(source)
                         .find(),
-                "The active authored gold masters are not revision 4");
+                "The active authored gold masters are not revision 7");
 
         String plan = methodBody(source, "static Blueprint plan(");
         for (MasterExpectation master : expectedMasters()) {
@@ -126,7 +126,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
                             + Pattern.quote(master.masterMethod())
                             + "\\s*\\(\\s*base\\s*,\\s*metadata\\s*,\\s*materials\\s*\\)");
             require(activeSelection.matcher(plan).find(),
-                    "Active revision-4 master is no longer selected by production: "
+                    "Active revision-7 master is no longer selected by production: "
                             + master.masterMethod());
         }
 
@@ -135,7 +135,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
                 "Regression contract must cover the ten production project roles");
         require(expectedMasters().size() == ACTIVE_MASTER_TARGET,
                 "Regression contract must cover all " + ACTIVE_MASTER_TARGET
-                        + " revision-4 masters");
+                        + " revision-7 masters");
     }
 
     private static void verifyDoodadsUsePersistedStages(String source) {

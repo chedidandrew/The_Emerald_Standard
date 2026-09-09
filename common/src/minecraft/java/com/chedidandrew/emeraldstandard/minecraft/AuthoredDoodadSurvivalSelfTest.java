@@ -93,11 +93,11 @@ final class AuthoredDoodadSurvivalSelfTest {
                 Blocks.STRIPPED_OAK_LOG, Blocks.SPRUCE_STAIRS, Blocks.SPRUCE_SLAB,
                 Blocks.OAK_FENCE, Blocks.CHISELED_STONE_BRICKS, Blocks.OAK_DOOR,
                 Blocks.STONE_BRICK_STAIRS, Blocks.BRICKS);
-        for (int revision : new int[] {1, 2, 3, 4, 5}) {
+        for (int revision : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}) {
             Builder stage = garden(revision, Set.of());
             List<Cell> before = stage.values();
             AuthoredDoodadRefinements.ensureGardenShrubSubstrates(stage, p, 5, 9);
-            if (revision != 3 && revision != 4) {
+            if (revision < 3 || revision > 9) {
                 require(before.equals(stage.values()), "Soil refinement changed frozen revision " + revision);
                 continue;
             }
