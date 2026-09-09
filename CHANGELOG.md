@@ -1,5 +1,9 @@
 # Changelog
 
+## Beta.4 handbook and configuration validation
+
+- Repair the Linux client-smoke desktop environment with an explicit Adwaita cursor theme and Xcursor dependency. Add a real GLFW cursor probe; retain strict rejection of cursor and other unexpected client errors. See the beta.4 final-validation review for the original failure evidence and verification status.
+
 All notable changes to The Emerald Standard are documented here.
 
 ## Unreleased (target: 0.4.0-beta.3)

@@ -38,6 +38,15 @@ public final class ClientSmokeSupport {
                 }
                 if (!ready) throw new IllegalStateException("Client resources/language never became ready");
                 onClient(minecraft, () -> {
+                    // Probe the platform, not the mod UI: Minecraft initializes these standard
+                    // shapes (including NOT_ALLOWED) when its ordinary widgets first render.
+                    for (int shape : new int[] {0x36001, 0x36002, 0x36003, 0x36004,
+                            0x36005, 0x36006, 0x36009, 0x3600A}) {
+                        long cursor = org.lwjgl.glfw.GLFW.glfwCreateStandardCursor(shape);
+                        if (cursor == 0) throw new IllegalStateException("Standard cursor unavailable: " + shape);
+                        org.lwjgl.glfw.GLFW.glfwDestroyCursor(cursor);
+                    }
+                    logger.info("The Emerald Standard standard cursor platform probe passed");
                     verifyHandbookPagesFit(minecraft);
                     if (!(BuiltInRegistries.ITEM.getValue(EmeraldHandbook.HANDBOOK_ID) instanceof HandbookReaderItem))
                         throw new IllegalStateException("Custom handbook item was not registered");
