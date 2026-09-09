@@ -56,6 +56,10 @@ public final class HandbookChapters {
             text = text.replace("\n\n", "\u0000").replace('\n', ' ')
                     .replace("\u0000", "\n\n");
         }
+        if (section.equals("first_steps")) {
+            text = text.replaceAll("\\s+(?=\\d\\s)", "\n\n")
+                    .replaceAll("(^|\n)(\\d) ", "$1$2. ");
+        }
         return Component.literal(text);
     }
     public static boolean matches(Chapter chapter, String query) {

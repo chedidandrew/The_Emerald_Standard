@@ -3,7 +3,6 @@ package com.chedidandrew.emeraldstandard.client;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -123,7 +122,7 @@ public final class HandbookScreen extends Screen {
         int wrapWidth = Math.max(24, (int) (layout.bodyWidth() / textScale()));
         for (String section : HandbookChapters.ALL.get(chapter).sections()) {
             lines.addAll(font.split(HandbookChapters.title(section).copy()
-                    .withStyle(ChatFormatting.DARK_GREEN, ChatFormatting.BOLD), wrapWidth));
+                    .withStyle(style -> style.withBold(true).withColor(0x244C38)), wrapWidth));
             lines.add(FormattedCharSequence.EMPTY);
             lines.addAll(font.split(HandbookChapters.body(section), wrapWidth));
             lines.add(FormattedCharSequence.EMPTY);

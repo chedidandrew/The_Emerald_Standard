@@ -6,7 +6,7 @@ public record HandbookLayout(int x, int y, int width, int height, int sidebar) {
         int width = Math.min(900, Math.max(1, screenWidth - 20));
         int height = Math.min(620, Math.max(1, screenHeight - 20));
         return new HandbookLayout((screenWidth - width) / 2, (screenHeight - height) / 2,
-                width, height, Math.min(172, Math.max(102, width / 4)));
+                width, height, Math.min(172, Math.max(120, width / 3)));
     }
     public int bodyX() { return x + sidebar + 14; }
     public int bodyY() { return y + 61; }
