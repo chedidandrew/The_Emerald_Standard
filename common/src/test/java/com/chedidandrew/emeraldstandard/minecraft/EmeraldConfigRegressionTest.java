@@ -20,6 +20,7 @@ public final class EmeraldConfigRegressionTest {
                         && EmeraldConfig.current().offlineProgressionEnabled()
                         && EmeraldConfig.current().maximumOfflineDays()
                                 == EconomyService.MAX_TRUSTED_CATCH_UP_DAYS
+                        && EmeraldConfig.current().prosperityFundFastTrackCapitalEnabled()
                         && EmeraldConfig.current().villageDevelopmentRadius()
                                 == EmeraldConfig.DEFAULT_VILLAGE_DEVELOPMENT_RADIUS,
                 "Pre-load configuration defaults did not preserve legacy behavior");
@@ -29,6 +30,7 @@ public final class EmeraldConfigRegressionTest {
                         && defaults.offlineProgressionEnabled()
                         && defaults.maximumOfflineDays()
                                 == EconomyService.MAX_TRUSTED_CATCH_UP_DAYS
+                        && defaults.prosperityFundFastTrackCapitalEnabled()
                         && defaults.villageDevelopmentRadius()
                                 == EmeraldConfig.DEFAULT_VILLAGE_DEVELOPMENT_RADIUS,
                 "New world did not receive protected market and clock defaults");
@@ -38,6 +40,8 @@ public final class EmeraldConfigRegressionTest {
         require(properties.containsKey("market.events_enabled")
                         && properties.containsKey("economic_clock.offline_progression_enabled")
                         && properties.containsKey("economic_clock.max_offline_days")
+                        && "true".equals(properties.getProperty(
+                                "village_prosperity.fast_track_capital_enabled"))
                         && Integer.toString(EmeraldConfig.DEFAULT_VILLAGE_DEVELOPMENT_RADIUS)
                                 .equals(properties.getProperty(
                                         "village_prosperity.development_radius")),
@@ -47,19 +51,28 @@ public final class EmeraldConfigRegressionTest {
         properties.remove("economic_clock.offline_progression_enabled");
         properties.remove("economic_clock.max_offline_days");
         properties.remove("village_prosperity.development_radius");
+        properties.remove("village_prosperity.fast_track_capital_enabled");
         write(path, properties);
         EmeraldConfig legacy = EmeraldConfig.load(directory);
         require(legacy.marketEventsEnabled()
                         && legacy.offlineProgressionEnabled()
                         && legacy.maximumOfflineDays()
                                 == EconomyService.MAX_TRUSTED_CATCH_UP_DAYS
+                        && legacy.prosperityFundFastTrackCapitalEnabled()
                         && legacy.villageDevelopmentRadius()
                                 == EmeraldConfig.DEFAULT_VILLAGE_DEVELOPMENT_RADIUS,
                 "Existing configuration without new keys did not retain legacy behavior");
+        EconomyService legacyService = new EconomyService();
+        legacy.applyTo(legacyService);
+        require(legacyService.prosperityFundPolicy().fastTrackCapitalEnabled()
+                        && legacyService.prosperityFundPolicy().dailySpendingCapMicro()
+                                == 800_000L,
+                "Legacy 24-E monthly setting did not retain its exact routine cap");
 
         properties.setProperty("market.events_enabled", "false");
         properties.setProperty("economic_clock.offline_progression_enabled", "false");
         properties.setProperty("economic_clock.max_offline_days", "3");
+        properties.setProperty("village_prosperity.fast_track_capital_enabled", "false");
         properties.setProperty(
                 "village_prosperity.development_radius",
                 Integer.toString(EmeraldConfig.MIN_VILLAGE_DEVELOPMENT_RADIUS));
@@ -67,6 +80,7 @@ public final class EmeraldConfigRegressionTest {
         EmeraldConfig minimumRadius = EmeraldConfig.load(directory);
         require(!minimumRadius.marketEventsEnabled()
                         && !minimumRadius.offlineProgressionEnabled()
+                        && !minimumRadius.prosperityFundFastTrackCapitalEnabled()
                         && minimumRadius.maximumOfflineDays() == 3
                         && minimumRadius.villageDevelopmentRadius()
                                 == EmeraldConfig.MIN_VILLAGE_DEVELOPMENT_RADIUS,
@@ -86,10 +100,13 @@ public final class EmeraldConfigRegressionTest {
                         && !service.offlineProgressionEnabled()
                         && service.maximumOfflineDays() == 3L,
                 "World configuration was not applied to the economy service");
+        require(!service.prosperityFundPolicy().fastTrackCapitalEnabled(),
+                "Fast-track capital setting was not applied to the economy service");
         require(configured.summary().contains("market events=false")
                         && configured.summary().contains("offline progression=false")
                         && configured.summary().contains("max offline=3 days")
                         && configured.summary().contains("prosperity simulation=true")
+                        && configured.summary().contains("fast-track capital=false")
                         && configured.summary().contains("development radius=512"),
                 "Configuration summary misreported market, clock, or adjacent settings");
 

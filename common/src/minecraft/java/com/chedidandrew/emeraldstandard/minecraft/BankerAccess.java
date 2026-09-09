@@ -3,6 +3,7 @@ package com.chedidandrew.emeraldstandard.minecraft;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -15,7 +16,9 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
 
@@ -24,6 +27,10 @@ public final class BankerAccess {
     public static final String BANKER_TAG = "the_emerald_standard_banker";
     public static final String FIRST_BANKER_VISIT_TAG = "the_emerald_standard_first_banker_visit";
     private static final String BANK_REGION_TAG_PREFIX = "the_emerald_standard_bank_";
+    private static final String BANKER_CONVERSION_TAG_PREFIX =
+            "the_emerald_standard_banker_converted_from_";
+    private static final String BANKER_CONVERSION_SOURCE_TAG_PREFIX =
+            "the_emerald_standard_banker_conversion_source_";
 
     private BankerAccess() {
     }
@@ -64,6 +71,140 @@ public final class BankerAccess {
             return false;
         }
         return entity.entityTags().stream().noneMatch(tag -> tag.startsWith(BANK_REGION_TAG_PREFIX));
+    }
+
+    /**
+     * Marks the entity created by a vanilla conversion with its exact canonical predecessor.
+     * The durable format-17 transaction is authority; this tag corroborates loaded-entity recovery.
+     */
+    static boolean markBankerConversion(
+            Entity converted,
+            long regionKey,
+            UUID previousBankerId,
+            UUID immediateSourceId) {
+        for (String tag : List.copyOf(converted.entityTags())) {
+            if (tag.equals(BANKER_TAG)
+                    || tag.startsWith(BANK_REGION_TAG_PREFIX)
+                    || tag.startsWith(BANKER_CONVERSION_TAG_PREFIX)
+                    || tag.startsWith(BANKER_CONVERSION_SOURCE_TAG_PREFIX)) {
+                converted.removeTag(tag);
+            }
+        }
+        boolean regionAdded = converted.addTag(regionTag(regionKey));
+        String lineage = conversionTag(previousBankerId, immediateSourceId);
+        boolean lineageAdded = converted.addTag(lineage);
+        if ((!regionAdded && !converted.entityTags().contains(regionTag(regionKey)))
+                || (!lineageAdded && !converted.entityTags().contains(lineage))) {
+            clearBankerLineage(converted);
+            return false;
+        }
+        if (converted instanceof Mob mob) {
+            mob.setPersistenceRequired();
+        }
+        return true;
+    }
+
+    static boolean isBankerConversionFrom(
+            Entity entity, long regionKey, UUID previousBankerId) {
+        return isBankerForRegion(entity, regionKey)
+                && previousBankerId.equals(bankerConversionPredecessor(entity));
+    }
+
+    static UUID bankerConversionPredecessor(Entity entity) {
+        if (!hasManagedBankerTag(entity)) {
+            return null;
+        }
+        for (String tag : entity.entityTags()) {
+            if (!tag.startsWith(BANKER_CONVERSION_TAG_PREFIX)) {
+                continue;
+            }
+            try {
+                String encoded = tag.substring(BANKER_CONVERSION_TAG_PREFIX.length());
+                int separator = encoded.indexOf('_');
+                return UUID.fromString(separator < 0
+                        ? encoded
+                        : encoded.substring(0, separator));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore malformed third-party or manually edited tags.
+            }
+        }
+        return null;
+    }
+
+    static UUID bankerConversionSource(Entity entity) {
+        if (!hasManagedBankerTag(entity)) {
+            return null;
+        }
+        for (String tag : entity.entityTags()) {
+            if (tag.startsWith(BANKER_CONVERSION_TAG_PREFIX)) {
+                String encoded = tag.substring(BANKER_CONVERSION_TAG_PREFIX.length());
+                int separator = encoded.indexOf('_');
+                if (separator >= 0) {
+                    try {
+                        return UUID.fromString(encoded.substring(separator + 1));
+                    } catch (IllegalArgumentException ignored) {
+                        // Try the temporary two-tag development format below.
+                    }
+                }
+            } else if (tag.startsWith(BANKER_CONVERSION_SOURCE_TAG_PREFIX)) {
+                try {
+                    return UUID.fromString(
+                            tag.substring(BANKER_CONVERSION_SOURCE_TAG_PREFIX.length()));
+                } catch (IllegalArgumentException ignored) {
+                    // Ignore malformed third-party or manually edited tags.
+                }
+            }
+        }
+        return null;
+    }
+
+    static boolean isBankerConversionSource(Entity entity, UUID immediateSourceId) {
+        return immediateSourceId.equals(bankerConversionSource(entity));
+    }
+
+    static void clearBankerConversionMarker(Entity entity, UUID previousBankerId) {
+        for (String tag : List.copyOf(entity.entityTags())) {
+            if (tag.startsWith(BANKER_CONVERSION_TAG_PREFIX)
+                    || tag.startsWith(BANKER_CONVERSION_SOURCE_TAG_PREFIX)) {
+                entity.removeTag(tag);
+            }
+        }
+        entity.addTag(BANKER_TAG);
+    }
+
+    static void clearBankerLineage(Entity entity) {
+        entity.removeTag(BANKER_TAG);
+        for (String tag : List.copyOf(entity.entityTags())) {
+            if (tag.startsWith(BANK_REGION_TAG_PREFIX)
+                    || tag.startsWith(BANKER_CONVERSION_TAG_PREFIX)
+                    || tag.startsWith(BANKER_CONVERSION_SOURCE_TAG_PREFIX)) {
+                entity.removeTag(tag);
+            }
+        }
+    }
+
+    /**
+     * Removes inherited Banker authority when the economy could not durably prepare a conversion.
+     * The outcome may still be inserted by vanilla, so profession data must be neutralized as
+     * well as scoreboard tags or a later cure could create a second interactive Banker.
+     */
+    static void neutralizeFailedBankerConversion(Entity entity) {
+        clearBankerLineage(entity);
+        var unemployed = BuiltInRegistries.VILLAGER_PROFESSION.get(VillagerProfession.NONE);
+        if (unemployed.isEmpty()) {
+            return;
+        }
+        if (entity instanceof Villager villager) {
+            releasePreviousJobSite(villager);
+            villager.setVillagerData(
+                    villager.getVillagerData().withProfession(unemployed.orElseThrow()));
+            villager.setVillagerXp(0);
+            villager.setVillagerDataFinalized(false);
+        } else if (entity instanceof ZombieVillager zombie) {
+            zombie.setVillagerData(
+                    zombie.getVillagerData().withProfession(unemployed.orElseThrow()));
+            zombie.setVillagerXp(0);
+        }
     }
 
     /**
@@ -117,13 +258,28 @@ public final class BankerAccess {
             return false;
         }
 
-        villager.addTag(BANKER_TAG);
+        List<String> previousScopeTags = new java.util.ArrayList<>();
         for (String tag : List.copyOf(villager.entityTags())) {
-            if (tag.startsWith(BANK_REGION_TAG_PREFIX)) {
+            if (tag.equals(BANKER_TAG) || tag.startsWith(BANK_REGION_TAG_PREFIX)) {
+                previousScopeTags.add(tag);
                 villager.removeTag(tag);
             }
         }
-        villager.addTag(regionTag(regionKey));
+        String scopedRegionTag = regionTag(regionKey);
+        boolean bankerAdded = villager.addTag(BANKER_TAG);
+        boolean regionAdded = villager.addTag(scopedRegionTag);
+        if ((!bankerAdded && !villager.entityTags().contains(BANKER_TAG))
+                || (!regionAdded && !villager.entityTags().contains(scopedRegionTag))) {
+            // Scoreboard tags are capped by vanilla. Never install a profession/name after a
+            // partial identity write: that would create an interactive, unscoped Banker. Restore
+            // the prior TES scope best-effort after removing the two attempted tags.
+            villager.removeTag(BANKER_TAG);
+            villager.removeTag(scopedRegionTag);
+            for (String previousTag : previousScopeTags) {
+                villager.addTag(previousTag);
+            }
+            return false;
+        }
         villager.setCustomName(Component.translatable("entity.the_emerald_standard.banker"));
         villager.setCustomNameVisible(true);
         villager.setPersistenceRequired();
@@ -217,7 +373,13 @@ public final class BankerAccess {
     }
 
     private static boolean hasManagedBankerTag(Entity entity) {
-        return entity instanceof Villager && entity.entityTags().contains(BANKER_TAG);
+        // Converted Zombie Villagers must retain lineage without becoming interactive Bankers.
+        // isBanker itself remains Villager-gated.
+        return entity != null
+                && (entity.entityTags().contains(BANKER_TAG)
+                        || entity.entityTags().stream()
+                                .anyMatch(tag -> tag.startsWith(
+                                        BANKER_CONVERSION_TAG_PREFIX)));
     }
 
     /**
@@ -273,14 +435,55 @@ public final class BankerAccess {
 
     public static boolean open(
             ServerPlayer player, EconomyService economy, Entity banker) {
+        if (banker != null
+                && economy.pendingGeneratedBankerConversionByTarget(
+                        banker.getUUID()) != null) {
+            player.sendSystemMessage(Component.translatable(
+                    "message.the_emerald_standard.bank_unsafe"));
+            return false;
+        }
         // Old managed Bankers may have been reset before a village-gated maintenance scan ran.
         // Direct server-side interaction is a bounded, deterministic migration opportunity.
         repairManagedBankerForInteraction(banker);
-        return openAt(
+        Long regionKey = bankRegionKey(banker);
+        if (regionKey != null
+                && (!(banker.level() instanceof ServerLevel bankerLevel)
+                        || bankerLevel != bankerLevel.getServer().overworld())) {
+            // Generated Banks are Overworld-only. This also contains a rolled-back duplicate UUID
+            // in another dimension without guessing which copy should own the Bank.
+            player.sendSystemMessage(Component.translatable(
+                    "message.the_emerald_standard.bank_unsafe"));
+            return false;
+        }
+        if (regionKey != null) {
+            java.util.UUID canonical = economy.generatedBankerId(regionKey);
+            if (canonical != null
+                    && (banker == null || !canonical.equals(banker.getUUID()))) {
+                // Legacy duplicate entities remain untouched, but only the durable canonical
+                // Banker may operate the region's account desk.
+                player.sendSystemMessage(Component.translatable(
+                        "message.the_emerald_standard.bank_unsafe"));
+                return false;
+            }
+        }
+        if (regionKey != null
+                && player.level() instanceof ServerLevel level
+                && !VillageBankManager.isManagedBankOperational(
+                        level, economy, regionKey, banker.blockPosition())) {
+            player.sendSystemMessage(Component.translatable(
+                    "message.the_emerald_standard.bank_unsafe"));
+            return false;
+        }
+        boolean opened = openAt(
                 player,
                 economy,
                 banker == null ? null : banker.blockPosition(),
-                bankRegionKey(banker));
+                regionKey);
+        if (!opened) {
+            player.sendSystemMessage(Component.translatable(
+                    "message.the_emerald_standard.bank_open_failed"));
+        }
+        return opened;
     }
 
     public static boolean openAt(
@@ -363,5 +566,9 @@ public final class BankerAccess {
 
     private static String regionTag(long regionKey) {
         return BANK_REGION_TAG_PREFIX + Long.toUnsignedString(regionKey, 36);
+    }
+
+    private static String conversionTag(UUID previousBankerId, UUID immediateSourceId) {
+        return BANKER_CONVERSION_TAG_PREFIX + previousBankerId + "_" + immediateSourceId;
     }
 }

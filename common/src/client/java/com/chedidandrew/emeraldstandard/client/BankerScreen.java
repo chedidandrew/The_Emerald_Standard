@@ -3,6 +3,7 @@ package com.chedidandrew.emeraldstandard.client;
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.VillageDashboardPolicy;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.minecraft.BankerAmountSelection;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
@@ -18,13 +19,17 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /** A compact, casual-player-first bank and exchange dashboard. */
 public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private static final int WIDTH = BankerScreenLayout.WIDTH;
     private static final int HEIGHT = BankerScreenLayout.HEIGHT;
     private static final int TAB_ACTIVITY = 6;
+    private static final int TAB_NEWS = 7;
     private static final int BANK_VIEW_TRANSFERS = 0;
     private static final int BANK_VIEW_CDS = 1;
     private static final int BANK_VIEW_LOANS = 2;
@@ -78,13 +83,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         int x = leftPos + BankerScreenLayout.TAB_X;
         int y = topPos + BankerScreenLayout.TAB_Y;
         Component[] tabs = {
-                tr("tab.home"),
-                tr("tab.market"),
-                tr("tab.bank"),
-                tr("tab.trade"),
-                tr("tab.village"),
-                tr("tab.fund"),
-                tr("tab.activity")
+                tr("tab.home_short"),
+                tr("tab.market_short"),
+                tr("tab.bank_short"),
+                tr("tab.trade_short"),
+                tr("tab.village_short"),
+                tr("tab.fund_short"),
+                tr("tab.activity_short"),
+                tr("tab.news_short")
         };
         Component[] tabTooltips = {
                 tr("tab.overview"),
@@ -93,7 +99,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 tr("tab.exchange"),
                 tr("tab.village"),
                 tr("tab.fund"),
-                tr("activity.title")
+                tr("activity.title"),
+                tr("news.title")
         };
         for (int index = 0; index < tabs.length; index++) {
             int selectedTab = index;
@@ -127,6 +134,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case BankerMenu.TAB_VILLAGE -> addVillageButtons();
             case BankerMenu.TAB_FUND -> addFundButtons();
             case TAB_ACTIVITY -> addActivityButtons();
+            case TAB_NEWS -> {
+            }
             default -> {
             }
         }
@@ -1015,10 +1024,31 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     BankerScreenLayout.BANKING_BALANCE_PANEL_HEIGHT,
                     0xFF456B5A);
         } else if (tab == BankerMenu.TAB_EXCHANGE) {
-            graphics.outline(x + 52, y + 62, 216, 47, 0xFF456B5A);
+            graphics.outline(
+                    x + BankerScreenLayout.EXCHANGE_PANEL_X,
+                    y + BankerScreenLayout.EXCHANGE_PANEL_Y,
+                    BankerScreenLayout.EXCHANGE_PANEL_WIDTH,
+                    BankerScreenLayout.EXCHANGE_PANEL_HEIGHT,
+                    0xFF456B5A);
+            ItemStack resourceStack = menu.selectedResourceStack();
+            if (!resourceStack.isEmpty()) {
+                graphics.item(
+                        resourceStack,
+                        x + BankerScreenLayout.EXCHANGE_RESOURCE_ICON_X,
+                        y + BankerScreenLayout.EXCHANGE_ICON_Y);
+            }
+            graphics.item(
+                    new ItemStack(Items.EMERALD),
+                    x + BankerScreenLayout.EXCHANGE_EMERALD_ICON_X,
+                    y + BankerScreenLayout.EXCHANGE_ICON_Y);
             drawChart(graphics, menu.commodityHistoryPointsCenti(),
                     menu.commodityHistorySpanDays(),
-                    x + 52, y + 116, 216, 45, logicalMouseX, logicalMouseY);
+                    x + BankerScreenLayout.EXCHANGE_CHART_X,
+                    y + BankerScreenLayout.EXCHANGE_CHART_Y,
+                    BankerScreenLayout.EXCHANGE_CHART_WIDTH,
+                    BankerScreenLayout.EXCHANGE_CHART_HEIGHT,
+                    logicalMouseX,
+                    logicalMouseY);
         } else if (tab == BankerMenu.TAB_VILLAGE) {
             graphics.outline(
                     x + BankerScreenLayout.VILLAGE_LEFT_PANEL_X,
@@ -1037,6 +1067,35 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         } else if (tab == TAB_ACTIVITY) {
             graphics.outline(x + 10, y + 54, 298, 121, 0xFF456B5A);
             drawActivityScrollbar(graphics, x, y);
+        } else if (tab == TAB_NEWS) {
+            graphics.outline(
+                    x + BankerScreenLayout.NEWS_PANEL_X,
+                    y + BankerScreenLayout.NEWS_PANEL_Y,
+                    BankerScreenLayout.NEWS_PANEL_WIDTH,
+                    BankerScreenLayout.NEWS_PANEL_HEIGHT,
+                    0xFF456B5A);
+            graphics.fill(
+                    x + BankerScreenLayout.NEWS_VISUAL_X,
+                    y + BankerScreenLayout.NEWS_VISUAL_Y,
+                    x + BankerScreenLayout.NEWS_VISUAL_X
+                            + BankerScreenLayout.NEWS_VISUAL_SIZE,
+                    y + BankerScreenLayout.NEWS_VISUAL_Y
+                            + BankerScreenLayout.NEWS_VISUAL_SIZE,
+                    PANEL_DARK);
+            graphics.outline(
+                    x + BankerScreenLayout.NEWS_VISUAL_X,
+                    y + BankerScreenLayout.NEWS_VISUAL_Y,
+                    BankerScreenLayout.NEWS_VISUAL_SIZE,
+                    BankerScreenLayout.NEWS_VISUAL_SIZE,
+                    0xFF456B5A);
+            drawNewsIcon(graphics, x, y);
+            graphics.fill(
+                    x + BankerScreenLayout.NEWS_GUIDANCE_X,
+                    y + BankerScreenLayout.NEWS_DIVIDER_Y,
+                    x + BankerScreenLayout.NEWS_GUIDANCE_X
+                            + BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                    y + BankerScreenLayout.NEWS_DIVIDER_Y + 1,
+                    0xFF456B5A);
         }
         addContextTooltip(graphics, logicalMouseX, logicalMouseY, x, y);
         } finally {
@@ -1101,6 +1160,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case BankerMenu.TAB_VILLAGE -> drawVillageLabels(graphics);
             case BankerMenu.TAB_FUND -> drawFundLabels(graphics);
             case TAB_ACTIVITY -> drawActivityLabels(graphics);
+            case TAB_NEWS -> drawNewsLabels(graphics);
             default -> {
             }
         }
@@ -1301,17 +1361,25 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private void drawExchangeLabels(GuiGraphicsExtractor graphics) {
         Component resource = tr("resource." + menu.selectedResourceName());
-        drawNativeCenteredText(graphics, resource, 160, 69, GOLD);
-        drawNativeCenteredText(graphics,
+        drawNativeCenteredTextWithin(
+                graphics,
+                resource,
+                160,
+                69,
+                BankerScreenLayout.EXCHANGE_TEXT_WIDTH,
+                GOLD);
+        drawNativeCenteredTextWithin(graphics,
                 tr("exchange.owned", menu.selectedResourceCount()),
                 160,
                 83,
+                BankerScreenLayout.EXCHANGE_TEXT_WIDTH,
                 TEXT);
-        drawNativeCenteredText(graphics,
+        drawNativeCenteredTextWithin(graphics,
                 tr("exchange.quote", String.format(Locale.ROOT, "%.2f",
                         menu.selectedResourceUnitQuote())),
                 160,
                 96,
+                BankerScreenLayout.EXCHANGE_TEXT_WIDTH,
                 MUTED);
     }
 
@@ -1457,6 +1525,314 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 BankerScreenLayout.VILLAGE_RIGHT_TEXT_WIDTH,
                 MUTED,
                 false);
+    }
+
+    private void drawNewsLabels(GuiGraphicsExtractor graphics) {
+        VillageDashboardPolicy.Snapshot snapshot = villageDashboardSnapshot();
+        VillageDashboardPolicy.Assessment assessment =
+                VillageDashboardPolicy.assess(snapshot);
+        int guidanceLineStep = BankerScreenLayout.newsGuidanceLineStep(interfaceScale);
+        int safetyY = BankerScreenLayout.newsSafetyY(interfaceScale);
+        drawTextWithin(
+                graphics,
+                newsHeadline(snapshot, assessment.bulletin()),
+                BankerScreenLayout.NEWS_HEADLINE_X,
+                BankerScreenLayout.NEWS_HEADLINE_Y,
+                BankerScreenLayout.NEWS_TEXT_WIDTH,
+                newsColor(assessment.tone()),
+                false);
+        drawWrappedText(
+                graphics,
+                newsArticle(snapshot, assessment.bulletin()),
+                BankerScreenLayout.NEWS_HEADLINE_X,
+                BankerScreenLayout.NEWS_ARTICLE_Y,
+                BankerScreenLayout.NEWS_TEXT_WIDTH,
+                BankerScreenLayout.NEWS_ARTICLE_LINE_STEP,
+                BankerScreenLayout.NEWS_ARTICLE_MAX_LINES,
+                TEXT);
+        drawWrappedText(
+                graphics,
+                prosperityGuidance(snapshot, assessment.prosperityGuidance()),
+                BankerScreenLayout.NEWS_GUIDANCE_X,
+                BankerScreenLayout.NEWS_PROSPERITY_Y,
+                BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                guidanceLineStep,
+                BankerScreenLayout.NEWS_GUIDANCE_MAX_LINES,
+                assessment.prosperityGuidance()
+                                == VillageDashboardPolicy.ProsperityGuidance
+                                        .MAINTAIN_FOUNDATIONS
+                        ? POSITIVE : GOLD);
+        drawWrappedText(
+                graphics,
+                safetyGuidance(snapshot, assessment.safetyGuidance()),
+                BankerScreenLayout.NEWS_GUIDANCE_X,
+                safetyY,
+                BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                guidanceLineStep,
+                BankerScreenLayout.NEWS_GUIDANCE_MAX_LINES,
+                assessment.safetyGuidance()
+                                == VillageDashboardPolicy.SafetyGuidance.MAINTAIN_SECURITY
+                        ? POSITIVE
+                        : assessment.safetyGuidance()
+                                        == VillageDashboardPolicy.SafetyGuidance.RECENT_INCIDENT
+                                ? NEGATIVE : GOLD);
+    }
+
+    private void drawNewsIcon(
+            GuiGraphicsExtractor graphics, int screenX, int screenY) {
+        VillageDashboardPolicy.Snapshot snapshot = villageDashboardSnapshot();
+        VillageDashboardPolicy.BulletinKind kind =
+                VillageDashboardPolicy.assess(snapshot).bulletin();
+        ItemStack icon = newsIcon(snapshot, kind);
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(
+                screenX + BankerScreenLayout.NEWS_ICON_X,
+                screenY + BankerScreenLayout.NEWS_ICON_Y);
+        graphics.pose().scale(
+                BankerScreenLayout.NEWS_ICON_SCALE,
+                BankerScreenLayout.NEWS_ICON_SCALE);
+        graphics.item(icon, 0, 0);
+        graphics.pose().popMatrix();
+    }
+
+    private VillageDashboardPolicy.Snapshot villageDashboardSnapshot() {
+        return new VillageDashboardPolicy.Snapshot(
+                menu.hasVillage(),
+                menu.villageLifecycle(),
+                menu.villagePopulation(),
+                menu.villageHousing(),
+                menu.villageTier(),
+                menu.villageProsperity(),
+                menu.villageSafety(),
+                menu.villageFood(),
+                menu.villageMaterials(),
+                menu.villageTreasury(),
+                villageProjectType(menu.villageProjectTypeOrdinal()),
+                menu.villageProjectProgress(),
+                menu.fundableProjectTypeOrdinal() >= 0,
+                menu.villageProjectBacklog(),
+                menu.villageRestorationFund(),
+                menu.villageIncidentCause(),
+                menu.villageIncidentAge(),
+                menu.villageAgricultureOutput(),
+                menu.villageMiningOutput(),
+                menu.villageTradeOutput(),
+                menu.villageSimulationEnabled(),
+                menu.villageVisualProgressionEnabled(),
+                menu.fundAvailable(),
+                menu.fundTargetedDonationsEnabled(),
+                menu.fundProjectSponsorshipEnabled());
+    }
+
+    private Component newsHeadline(
+            VillageDashboardPolicy.Snapshot snapshot,
+            VillageDashboardPolicy.BulletinKind kind) {
+        return switch (kind) {
+            case NO_VILLAGE -> tr("news.local.no_village.headline");
+            case SIMULATION_PAUSED -> tr("news.local.simulation_paused.headline");
+            case RESTORATION -> tr("news.local.restoration.headline");
+            case RECOVERY -> tr("news.local.recovery.headline");
+            case INCIDENT -> tr(
+                    "news.local.incident.headline",
+                    incidentLabel(snapshot.incidentCause()));
+            case HARDSHIP -> tr("news.local.hardship.headline");
+            case SECURITY -> tr("news.local.security.headline");
+            case FOOD -> tr("news.local.food.headline");
+            case HOUSING -> tr("news.local.housing.headline");
+            case PROJECT -> tr(
+                    "news.local.project.headline",
+                    projectLabel(snapshot.projectType()));
+            case DEVELOPMENT_PAUSED -> tr("news.local.development_paused.headline");
+            case PROSPERITY -> tr("news.local.prosperity.headline");
+            case STEADY -> tr("news.local.steady.headline");
+        };
+    }
+
+    private Component newsArticle(
+            VillageDashboardPolicy.Snapshot snapshot,
+            VillageDashboardPolicy.BulletinKind kind) {
+        return switch (kind) {
+            case NO_VILLAGE -> tr("news.local.no_village.article");
+            case SIMULATION_PAUSED -> tr("news.local.simulation_paused.article");
+            case RESTORATION -> tr(
+                    "news.local.restoration.article",
+                    lifecycleLabel(snapshot.lifecycle()),
+                    decimal(snapshot.restorationFund()),
+                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
+            case RECOVERY -> tr(
+                    "news.local.recovery.article",
+                    snapshot.population(),
+                    snapshot.housing(),
+                    decimal(snapshot.prosperity()),
+                    decimal(snapshot.safety()));
+            case INCIDENT -> tr(
+                    "news.local.incident.article",
+                    incidentAgeLabel(snapshot.incidentAgeDays()),
+                    decimal(snapshot.safety()),
+                    lifecycleLabel(snapshot.lifecycle()));
+            case HARDSHIP -> tr(
+                    "news.local.hardship.article",
+                    snapshot.population(),
+                    decimal(snapshot.prosperity()),
+                    decimal(snapshot.safety()));
+            case SECURITY -> tr(
+                    "news.local.security.article",
+                    decimal(snapshot.safety()),
+                    snapshot.population());
+            case FOOD -> tr(
+                    "news.local.food.article",
+                    decimal(snapshot.food()),
+                    decimal(snapshot.population()
+                            * VillageDashboardPolicy.GROWTH_FOOD_PER_RESIDENT),
+                    snapshot.population());
+            case HOUSING -> tr(
+                    "news.local.housing.article",
+                    snapshot.population(),
+                    snapshot.housing());
+            case PROJECT -> tr(
+                    snapshot.projectPlanning()
+                            ? "news.local.project.article_planning"
+                            : "news.local.project.article_building",
+                    projectLabel(snapshot.projectType()),
+                    decimal(snapshot.projectProgressPercent()),
+                    snapshot.projectBacklog());
+            case DEVELOPMENT_PAUSED -> tr(
+                    snapshot.projectPlanning()
+                            ? "news.local.development_paused.article_planning"
+                            : "news.local.development_paused.article_building",
+                    projectLabel(snapshot.projectType()),
+                    decimal(snapshot.projectProgressPercent()));
+            case PROSPERITY -> tr(
+                    "news.local.prosperity.article",
+                    snapshot.developmentTier(),
+                    decimal(snapshot.prosperity()),
+                    decimal(snapshot.agricultureOutput()),
+                    decimal(snapshot.miningOutput()),
+                    decimal(snapshot.tradeOutput()));
+            case STEADY -> tr(
+                    "news.local.steady.article",
+                    decimal(snapshot.prosperity()),
+                    decimal(snapshot.safety()),
+                    snapshot.population(),
+                    snapshot.housing());
+        };
+    }
+
+    private Component prosperityGuidance(
+            VillageDashboardPolicy.Snapshot snapshot,
+            VillageDashboardPolicy.ProsperityGuidance guidance) {
+        return switch (guidance) {
+            case FIND_VILLAGE -> tr("news.tip.prosperity.find_village");
+            case SIMULATION_DISABLED -> tr("news.tip.prosperity.simulation_disabled");
+            case RESTORE_WITH_FUND -> tr(
+                    "news.tip.prosperity.restore",
+                    decimal(snapshot.restorationFund()),
+                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
+            case RESTORE_UNAVAILABLE -> tr("news.tip.prosperity.restore_unavailable");
+            case TARGET_FOOD -> tr("news.tip.prosperity.food_targeted");
+            case FOOD_UNTARGETED -> tr("news.tip.prosperity.food_untargeted");
+            case TARGET_HOUSING -> tr("news.tip.prosperity.housing_targeted");
+            case HOUSING_UNTARGETED -> tr("news.tip.prosperity.housing_untargeted");
+            case SAFETY_BLOCKS_GROWTH -> tr(
+                    "news.tip.prosperity.safety",
+                    decimal(VillageDashboardPolicy.GROWTH_SAFETY_THRESHOLD));
+            case SPONSOR_PROJECT -> tr(
+                    "news.tip.prosperity.sponsor",
+                    projectLabel(snapshot.projectType()));
+            case SUPPORT_FOUNDATIONS -> tr("news.tip.prosperity.foundations");
+            case SUPPORT_FOUNDATIONS_UNTARGETED ->
+                    tr("news.tip.prosperity.foundations_untargeted");
+            case MAINTAIN_FOUNDATIONS -> tr(
+                    "news.tip.prosperity.maintain",
+                    decimal(VillageDashboardPolicy.GROWTH_SAFETY_THRESHOLD));
+        };
+    }
+
+    private Component safetyGuidance(
+            VillageDashboardPolicy.Snapshot snapshot,
+            VillageDashboardPolicy.SafetyGuidance guidance) {
+        return switch (guidance) {
+            case FIND_VILLAGE -> tr("news.tip.safety.find_village");
+            case SIMULATION_DISABLED -> tr("news.tip.safety.simulation_disabled");
+            case PROTECT_RECOVERY -> tr("news.tip.safety.recovery");
+            case RECENT_INCIDENT -> tr(
+                    "news.tip.safety.incident",
+                    incidentAgeLabel(snapshot.incidentAgeDays()));
+            case TARGET_SECURITY -> tr("news.tip.safety.security_targeted");
+            case SECURITY_UNTARGETED -> tr("news.tip.safety.security_untargeted");
+            case MAINTAIN_SECURITY -> tr("news.tip.safety.maintain");
+        };
+    }
+
+    private static ItemStack newsIcon(
+            VillageDashboardPolicy.Snapshot snapshot,
+            VillageDashboardPolicy.BulletinKind kind) {
+        return switch (kind) {
+            case NO_VILLAGE -> new ItemStack(Items.MAP);
+            case SIMULATION_PAUSED -> new ItemStack(Items.CLOCK);
+            case RESTORATION -> new ItemStack(Items.GOLDEN_APPLE);
+            case RECOVERY, STEADY -> new ItemStack(Items.BELL);
+            case INCIDENT -> new ItemStack(Items.IRON_SWORD);
+            case HARDSHIP -> new ItemStack(Items.CRACKED_STONE_BRICKS);
+            case SECURITY -> new ItemStack(Items.SHIELD);
+            case FOOD -> new ItemStack(Items.BREAD);
+            case HOUSING -> new ItemStack(Items.BED.red());
+            case PROJECT -> projectIcon(snapshot.projectType());
+            case DEVELOPMENT_PAUSED -> new ItemStack(Items.BARRIER);
+            case PROSPERITY -> new ItemStack(Items.EMERALD);
+        };
+    }
+
+    private static ItemStack projectIcon(VillageProsperityEngine.ProjectType type) {
+        if (type == null) {
+            return new ItemStack(Items.SCAFFOLDING);
+        }
+        return new ItemStack(switch (type) {
+            case COTTAGE, HOUSE, INN -> Items.OAK_DOOR;
+            case WAREHOUSE -> Items.CHEST;
+            case MINE_ENTRANCE -> Items.IRON_PICKAXE;
+            case MARKET_SQUARE -> Items.EMERALD;
+            case SMITHY -> Items.ANVIL;
+            case GRANARY -> Items.HAY_BLOCK;
+            case GUARD_POST -> Items.SHIELD;
+            case EXCHANGE_HALL -> Items.EMERALD_BLOCK;
+        });
+    }
+
+    private static int newsColor(VillageDashboardPolicy.Tone tone) {
+        return switch (tone) {
+            case MUTED -> MUTED;
+            case CAUTION -> GOLD;
+            case DANGER -> NEGATIVE;
+            case POSITIVE -> POSITIVE;
+        };
+    }
+
+    private static VillageProsperityEngine.ProjectType villageProjectType(int ordinal) {
+        return ordinal < 0 || ordinal >= VillageProsperityEngine.ProjectType.values().length
+                ? null : VillageProsperityEngine.ProjectType.values()[ordinal];
+    }
+
+    private static Component projectLabel(VillageProsperityEngine.ProjectType type) {
+        return type == null
+                ? tr("village.project.none")
+                : tr("village.project." + type.name().toLowerCase(Locale.ROOT));
+    }
+
+    private static Component lifecycleLabel(VillageProsperityEngine.Lifecycle lifecycle) {
+        return tr("village.lifecycle." + lifecycle.name().toLowerCase(Locale.ROOT));
+    }
+
+    private static Component incidentLabel(VillageProsperityEngine.IncidentCause cause) {
+        return tr("village.incident." + cause.name().toLowerCase(Locale.ROOT));
+    }
+
+    private static Component incidentAgeLabel(int days) {
+        return days == 0 ? tr("village.news.today") : tr("village.news.days_ago", days);
+    }
+
+    private static String decimal(double value) {
+        return String.format(Locale.ROOT, "%.1f", value);
     }
 
     private void drawActivityLabels(GuiGraphicsExtractor graphics) {
@@ -1912,10 +2288,10 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             }
             case BankerMenu.TAB_EXCHANGE -> tooltipWhenHovered(
                     graphics, mouseX, mouseY,
-                    screenX + 52,
-                    screenY + 62,
-                    216,
-                    47,
+                    screenX + BankerScreenLayout.EXCHANGE_PANEL_X,
+                    screenY + BankerScreenLayout.EXCHANGE_PANEL_Y,
+                    BankerScreenLayout.EXCHANGE_PANEL_WIDTH,
+                    BankerScreenLayout.EXCHANGE_PANEL_HEIGHT,
                         exchangePreview());
             case BankerMenu.TAB_VILLAGE -> {
                 if (!menu.hasVillage()) {
@@ -2051,6 +2427,47 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                             BankerScreenLayout.ACTIVITY_FILTER_HEIGHT,
                             tr("tooltip.activity_retention"));
                 }
+            }
+            case TAB_NEWS -> {
+                VillageDashboardPolicy.Snapshot snapshot = villageDashboardSnapshot();
+                VillageDashboardPolicy.Assessment assessment =
+                        VillageDashboardPolicy.assess(snapshot);
+                int guidanceHeight =
+                        BankerScreenLayout.newsGuidanceBlockHeight(interfaceScale);
+                int safetyY = BankerScreenLayout.newsSafetyY(interfaceScale);
+                tooltipWhenHovered(
+                        graphics,
+                        mouseX,
+                        mouseY,
+                        screenX + BankerScreenLayout.NEWS_VISUAL_X,
+                        screenY + BankerScreenLayout.NEWS_VISUAL_Y,
+                        BankerScreenLayout.NEWS_PANEL_WIDTH
+                                - (BankerScreenLayout.NEWS_VISUAL_X
+                                        - BankerScreenLayout.NEWS_PANEL_X) * 2,
+                        BankerScreenLayout.NEWS_DIVIDER_Y
+                                - BankerScreenLayout.NEWS_VISUAL_Y,
+                        Component.empty()
+                                .append(newsHeadline(snapshot, assessment.bulletin()))
+                                .append(Component.literal("\n"))
+                                .append(newsArticle(snapshot, assessment.bulletin())));
+                tooltipWhenHovered(
+                        graphics,
+                        mouseX,
+                        mouseY,
+                        screenX + BankerScreenLayout.NEWS_GUIDANCE_X,
+                        screenY + BankerScreenLayout.NEWS_PROSPERITY_Y,
+                        BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                        guidanceHeight,
+                        prosperityGuidance(snapshot, assessment.prosperityGuidance()));
+                tooltipWhenHovered(
+                        graphics,
+                        mouseX,
+                        mouseY,
+                        screenX + BankerScreenLayout.NEWS_GUIDANCE_X,
+                        screenY + safetyY,
+                        BankerScreenLayout.NEWS_GUIDANCE_WIDTH,
+                        guidanceHeight,
+                        safetyGuidance(snapshot, assessment.safetyGuidance()));
             }
             default -> {
             }
@@ -2366,6 +2783,29 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 shadow);
     }
 
+    private void drawWrappedText(
+            GuiGraphicsExtractor graphics,
+            Component text,
+            int x,
+            int y,
+            int maximumWidth,
+            int lineStep,
+            int maximumLines,
+            int color) {
+        List<FormattedCharSequence> lines = font.split(
+                text, BankerScreenScale.scaled(maximumWidth, interfaceScale));
+        int count = Math.min(Math.max(0, maximumLines), lines.size());
+        for (int index = 0; index < count; index++) {
+            drawNativeText(
+                    graphics,
+                    lines.get(index),
+                    x,
+                    y + index * lineStep,
+                    color,
+                    false);
+        }
+    }
+
     /**
      * Keeps custom labels at Minecraft's native font size while their anchors and
      * available space follow the responsive dashboard transform. Vanilla widgets
@@ -2375,6 +2815,26 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private void drawNativeText(
             GuiGraphicsExtractor graphics,
             Component text,
+            int x,
+            int y,
+            int color,
+            boolean shadow) {
+        if (Math.abs(interfaceScale - 1.0F) < 0.001F) {
+            graphics.text(font, text, x, y, color, shadow);
+            return;
+        }
+        float inverseScale = 1.0F / interfaceScale;
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(x, y);
+        graphics.pose().scale(inverseScale, inverseScale);
+        graphics.pose().translate(-x, -y);
+        graphics.text(font, text, x, y, color, shadow);
+        graphics.pose().popMatrix();
+    }
+
+    private void drawNativeText(
+            GuiGraphicsExtractor graphics,
+            FormattedCharSequence text,
             int x,
             int y,
             int color,
@@ -2409,6 +2869,19 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         graphics.pose().translate(-centerX, -y);
         graphics.centeredText(font, text, centerX, y, color);
         graphics.pose().popMatrix();
+    }
+
+    private void drawNativeCenteredTextWithin(
+            GuiGraphicsExtractor graphics,
+            Component text,
+            int centerX,
+            int y,
+            int maximumWidth,
+            int color) {
+        Component fitted = fit(
+                text,
+                BankerScreenScale.scaled(maximumWidth, interfaceScale));
+        drawNativeCenteredText(graphics, fitted, centerX, y, color);
     }
 
     private Component fit(Component text, int maximumWidth) {

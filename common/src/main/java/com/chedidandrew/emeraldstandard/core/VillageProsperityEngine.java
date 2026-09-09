@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.core;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -14,10 +15,16 @@ public final class VillageProsperityEngine {
     public static final int RESIDENT_HISTORY_LIMIT = 128;
     public static final int MARKET_SHADOW_FORMULA_VERSION = 1;
     public static final double RESTORATION_EMERALD_TARGET = 25.0;
+    public static final int INCIDENT_RECOVERY_DAYS = 7;
+    public static final double GROWTH_FOOD_PER_RESIDENT = 10.0;
+    public static final double GROWTH_SAFETY_THRESHOLD = 45.0;
+    public static final double SECURITY_PROJECT_THRESHOLD = 42.0;
 
     private static final long GROWTH_SALT = 0x47524F575448L;
     private static final long PROJECT_SALT = 0x50524F4A454354L;
     private static final long LOCAL_SHOCK_SALT = 0x4C4F43414C53484FL;
+    private static final int HOUSING_CENSUS_HORIZONTAL_RADIUS = 24;
+    private static final int HOUSING_CENSUS_VERTICAL_RADIUS = 6;
 
     public enum Lifecycle {
         ACTIVE,
@@ -264,7 +271,7 @@ public final class VillageProsperityEngine {
                 + Math.min(8.0, village.developmentTier * 1.6);
         village.prosperity = approach(village.prosperity, targetProsperity, 0.08);
 
-        if (day - village.lastIncidentDay > 7L) {
+        if (day - village.lastIncidentDay > INCIDENT_RECOVERY_DAYS) {
             village.safety = clamp(village.safety + 0.035 + 0.005 * village.securityOutput,
                     0.0, 100.0);
         }
@@ -272,7 +279,7 @@ public final class VillageProsperityEngine {
         updateLifecycle(village, day);
         advanceProjects(village, worldSeed, day, productivity, requirePhysicalWorld);
         maybeGrowPopulation(village, worldSeed, day, requirePhysicalWorld);
-        maybeApproveProject(village, worldSeed, day);
+        maybeApproveProject(village, worldSeed, day, requirePhysicalWorld);
         updateDevelopmentTier(village);
     }
 
@@ -304,7 +311,7 @@ public final class VillageProsperityEngine {
             village.population = 2;
             village.pendingSettlers = 0;
         }
-        village.housingCapacity = Math.max(village.housingCapacity, 4);
+        observeHousingCapacity(village, Math.max(village.observedHousingCapacity, 4));
         village.foodSupply = Math.max(village.foodSupply, 60.0);
         village.materialSupply = Math.max(village.materialSupply, 20.0);
         village.safety = Math.max(village.safety, 42.0);
@@ -329,7 +336,7 @@ public final class VillageProsperityEngine {
         if ((village.lifecycle == Lifecycle.DEVASTATED
                         || village.lifecycle == Lifecycle.THREATENED)
                 && population <= 2
-                && sinceIncident > 7L
+                && sinceIncident > INCIDENT_RECOVERY_DAYS
                 && village.safety >= 35.0
                 && village.prosperity >= 20.0) {
             // A settlement with living survivors must have a path back. RECOVERING enables
@@ -338,7 +345,7 @@ public final class VillageProsperityEngine {
             village.lifecycle = Lifecycle.RECOVERING;
             return;
         }
-        if (sinceIncident <= 7L || village.safety < 30.0) {
+        if (sinceIncident <= INCIDENT_RECOVERY_DAYS || village.safety < 30.0) {
             village.lifecycle = Lifecycle.THREATENED;
         } else if (village.prosperity < 25.0 || population <= 2) {
             village.lifecycle = Lifecycle.DEVASTATED;
@@ -359,8 +366,9 @@ public final class VillageProsperityEngine {
         int effectiveHousing = effectiveHousingCapacity(village);
         if (committedPopulation >= MAX_ABSTRACT_POPULATION
                 || committedPopulation >= effectiveHousing
-                || village.foodSupply < committedPopulation * 10.0
-                || village.safety < 45.0) {
+                || village.foodSupply
+                        < committedPopulation * GROWTH_FOOD_PER_RESIDENT
+                || village.safety < GROWTH_SAFETY_THRESHOLD) {
             return;
         }
         double baseChance = 0.0014
@@ -397,7 +405,22 @@ public final class VillageProsperityEngine {
         double workforce = Math.max(1.0, economicPopulation(village) * 0.15 * productivity);
         double randomFactor = 0.85 + 0.30 * unit(
                 worldSeed, village.villageId, day, PROJECT_SALT ^ active.projectId);
-        double denominator = switch (active.type) {
+        double denominator = projectLaborUnits(active.type);
+        double developmentSpend = Math.min(village.developmentPoints, 0.75);
+        village.developmentPoints -= developmentSpend;
+        active.economicProgress = clamp(
+                active.economicProgress
+                        + workforce * randomFactor / denominator
+                        + developmentSpend / denominator,
+                0.0,
+                1.0);
+        if (active.economicProgress >= 1.0) {
+            completeProject(village, active, day, requirePhysicalWorld);
+        }
+    }
+
+    private static double projectLaborUnits(ProjectType type) {
+        return switch (type) {
             case COTTAGE -> 120.0;
             case HOUSE -> 165.0;
             case INN -> 235.0;
@@ -409,29 +432,171 @@ public final class VillageProsperityEngine {
             case GUARD_POST -> 185.0;
             case EXCHANGE_HALL -> 285.0;
         };
-        double developmentSpend = Math.min(village.developmentPoints, 0.75);
-        village.developmentPoints -= developmentSpend;
-        active.economicProgress = clamp(
-                active.economicProgress
-                        + workforce * randomFactor / denominator
-                        + developmentSpend / denominator,
-                0.0,
-                1.0);
-        if (active.economicProgress >= 1.0) {
-            active.economicComplete = true;
-            active.completedDay = day;
-            village.housingCapacity += active.type.housingGain();
-            // abstractOnly controls only whether this record enters a visual construction queue.
-            // Economic completion is authoritative even while that queue waits on loaded chunks.
-            active.abstractOnly = !requirePhysicalWorld;
-        }
     }
 
     private static void maybeApproveProject(
+            EconomyState.VillageRecord village,
+            long worldSeed,
+            long day,
+            boolean requirePhysicalWorld) {
+        ProjectPlan plan = nextProjectPlan(village, worldSeed, day);
+        if (plan == null
+                || village.materialSupply < plan.type().materialCost()
+                || village.treasury < plan.type().treasuryCost()
+                || village.developmentPoints < plan.requiredDevelopment()) {
+            return;
+        }
+        ProjectType desired = plan.type();
+        village.materialSupply -= desired.materialCost();
+        village.treasury -= desired.treasuryCost();
+        village.developmentPoints -= plan.requiredDevelopment();
+        EconomyState.VillageProject project = new EconomyState.VillageProject();
+        project.projectId = ++village.projectSerial;
+        project.type = desired;
+        project.approvedDay = day;
+        project.totalBlocks = desired.nominalBlocks();
+        project.abstractOnly = !requirePhysicalWorld;
+        VillageArchitecture.Character character;
+        if (village.architectureCharacter.isBlank()) {
+            character = VillageArchitecture.character(village.villageId);
+            village.architectureCharacter = character.id();
+        } else {
+            character = VillageArchitecture.Character.fromId(village.architectureCharacter);
+        }
+        List<VillageArchitecture.ExistingBlueprint> existingBlueprints = village.projects.stream()
+                .filter(existing -> VillageArchitecture.BLUEPRINT_SCHEMA.equals(
+                        existing.designSchema))
+                .map(existing -> new VillageArchitecture.ExistingBlueprint(
+                        existing.projectId,
+                        existing.type,
+                        existing.designTemplateId,
+                        existing.designTemplateRevision,
+                        existing.designPaletteId,
+                        existing.designDressingId,
+                        existing.designMirrored,
+                        existing.designSignature))
+                .toList();
+        VillageArchitecture.BlueprintSelection selection = VillageArchitecture.chooseBlueprint(
+                village.villageId,
+                project.projectId,
+                desired,
+                character,
+                village.developmentTier,
+                existingBlueprints);
+        project.designSchema = VillageArchitecture.BLUEPRINT_SCHEMA;
+        project.designSeed = selection.seed();
+        project.designTemplateId = selection.templateId();
+        project.designTemplateRevision = selection.templateRevision();
+        project.designPaletteId = selection.paletteId();
+        project.designDressingId = selection.dressingId();
+        project.designMirrored = selection.mirrored();
+        project.designSignature = selection.signature();
+        project.designPlanHashVersion = VillageArchitecture.BLUEPRINT_PLAN_HASH_VERSION;
+        village.projects.add(project);
+    }
+
+    /**
+     * Uses village-owned capital to close only the exact input gap for the next valid project,
+     * then retries approval in the same economic day. Ordinary Fund spending remains rate-limited.
+     */
+    static long fastTrackNextProjectFromFund(
+            EconomyState.VillageRecord village, long worldSeed, long day) {
+        return fastTrackNextProjectFromFund(village, worldSeed, day, false);
+    }
+
+    static long fastTrackNextProjectFromFund(
+            EconomyState.VillageRecord village,
+            long worldSeed,
+            long day,
+            boolean requirePhysicalWorld) {
+        if (village == null
+                || village.villageId == null
+                || village.population <= 0
+                || village.lifecycle == Lifecycle.EXTINCT
+                || village.lifecycle == Lifecycle.ABANDONED) {
+            return 0L;
+        }
+        ProjectPlan plan = nextProjectPlan(village, worldSeed, day);
+        if (plan == null) {
+            return 0L;
+        }
+        long spent = EconomyState.releaseFundCapitalForProject(
+                village, plan.type(), plan.requiredDevelopment(), day);
+        if (spent > 0L) {
+            maybeApproveProject(village, worldSeed, day, requirePhysicalWorld);
+        }
+        return spent;
+    }
+
+    /** Uses eligible player capital to finish exactly one active project's remaining labor. */
+    static long fastTrackActiveProjectLaborFromFund(
+            EconomyState.VillageRecord village, long day, boolean requirePhysicalWorld) {
+        if (village == null
+                || village.villageId == null
+                || village.population <= 0
+                || village.lifecycle == Lifecycle.EXTINCT
+                || village.lifecycle == Lifecycle.ABANDONED) {
+            return 0L;
+        }
+        EconomyState.VillageProject active = village.projects.stream()
+                .filter(project -> !project.economicComplete)
+                .findFirst()
+                .orElse(null);
+        long spent = EconomyState.releaseFundCapitalForProjectLabor(village, active);
+        if (spent > 0L) {
+            completeProject(village, active, day, requirePhysicalWorld);
+        }
+        return spent;
+    }
+
+    /** Total player-capital cost of replacing a project's full organic labor phase. */
+    static long projectLaborCostMicro(ProjectType type) {
+        if (type == null) {
+            return 0L;
+        }
+        double micro = projectLaborUnits(type) * EconomyState.MICRO;
+        return micro >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) StrictMath.ceil(micro);
+    }
+
+    /** Exact remaining labor cost, rounded upward so atomic funding cannot underfill progress. */
+    static long remainingProjectLaborCostMicro(EconomyState.VillageProject project) {
+        if (project == null || project.type == null || project.economicComplete) {
+            return 0L;
+        }
+        double remaining = 1.0 - clamp(project.economicProgress, 0.0, 1.0);
+        if (remaining <= 0.0) {
+            return 0L;
+        }
+        double micro = projectLaborCostMicro(project.type) * remaining;
+        return micro >= Long.MAX_VALUE
+                ? Long.MAX_VALUE
+                : Math.max(1L, (long) StrictMath.ceil(micro));
+    }
+
+    /** Grants project benefits exactly once while preserving the physical construction backlog. */
+    static void completeProject(
+            EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,
+            long day,
+            boolean requirePhysicalWorld) {
+        if (village == null || project == null || project.economicComplete) {
+            return;
+        }
+        project.economicProgress = 1.0;
+        project.economicComplete = true;
+        project.completedDay = day;
+        village.housingCapacity = (int) Math.min(
+                Integer.MAX_VALUE,
+                (long) village.housingCapacity + Math.max(0, project.type.housingGain()));
+        // Economic completion is authoritative while the guarded block queue catches up.
+        project.abstractOnly = !requirePhysicalWorld;
+    }
+
+    private static ProjectPlan nextProjectPlan(
             EconomyState.VillageRecord village, long worldSeed, long day) {
         if (village.projects.size() >= MAX_PROJECTS_PER_VILLAGE
                 || village.projects.stream().anyMatch(project -> !project.economicComplete)) {
-            return;
+            return null;
         }
 
         ProjectType desired = null;
@@ -451,7 +616,8 @@ public final class VillageProsperityEngine {
 
         // Local need wins over prestige. A village under pressure builds what solves its
         // current problem instead of following one fixed structure sequence.
-        if ((village.lifecycle == Lifecycle.THREATENED || village.safety < 42.0)
+        if ((village.lifecycle == Lifecycle.THREATENED
+                        || village.safety < SECURITY_PROJECT_THRESHOLD)
                 && !hasGuardPost && committedPopulation >= 4) {
             desired = ProjectType.GUARD_POST;
         } else if (foodDays < 18.0 && !hasGranary && committedPopulation >= 5) {
@@ -493,22 +659,13 @@ public final class VillageProsperityEngine {
         };
         if (desired == null
                 || (isUniqueProject(desired) && hasProject(village, desired))
-                || village.materialSupply < desired.materialCost()
-                || village.treasury < desired.treasuryCost()
-                || village.developmentPoints < requiredDevelopment
                 || village.projectSerial == Long.MAX_VALUE) {
-            return;
+            return null;
         }
-        village.materialSupply -= desired.materialCost();
-        village.treasury -= desired.treasuryCost();
-        village.developmentPoints -= requiredDevelopment;
-        EconomyState.VillageProject project = new EconomyState.VillageProject();
-        project.projectId = ++village.projectSerial;
-        project.type = desired;
-        project.approvedDay = day;
-        project.totalBlocks = desired.nominalBlocks();
-        village.projects.add(project);
+        return new ProjectPlan(desired, requiredDevelopment);
     }
+
+    private record ProjectPlan(ProjectType type, double requiredDevelopment) {}
 
     private static void updateDevelopmentTier(EconomyState.VillageRecord village) {
         int completed = (int) village.projects.stream()
@@ -566,7 +723,7 @@ public final class VillageProsperityEngine {
                 1_000_000.0);
         double productivity = clamp(0.45 + village.safety / 180.0, 0.45, 1.0);
         advanceProjects(village, worldSeed, day, productivity, true);
-        maybeApproveProject(village, worldSeed, day);
+        maybeApproveProject(village, worldSeed, day, true);
         updateDevelopmentTier(village);
     }
 
@@ -956,9 +1113,10 @@ public final class VillageProsperityEngine {
     }
 
     /**
-     * Returns the economically available housing capacity. Completed queued construction is
-     * usable by the abstract simulation while its chunks are unloaded. Only a known damaged
-     * structure awaiting manual repair has its completed housing benefit suspended.
+     * Returns economically available housing without letting a suspended project consume housing
+     * seen by the latest authoritative census. The persisted aggregate contains each completed
+     * project gain once; the census value is a floor rather than another additive contribution,
+     * because it may already include beds inside a materialized TES building.
      */
     public static int effectiveHousingCapacity(EconomyState.VillageRecord village) {
         if (village == null) {
@@ -967,32 +1125,179 @@ public final class VillageProsperityEngine {
         long unavailable = village.projects.stream()
                 .filter(project -> project != null
                         && project.economicComplete
-                        && project.manualRepairRequired)
-                .mapToLong(project -> Math.max(0, project.type.housingGain()))
+                        && (project.manualRepairRequired || project.relocationPending))
+                .mapToLong(project -> project.type == null
+                        ? 0L
+                        : Math.max(0, project.type.housingGain()))
                 .sum();
-        long effective = Math.max(0L, (long) village.housingCapacity - unavailable);
+        long projectAdjusted = Math.max(0L, (long) village.housingCapacity - unavailable);
+        long effective = Math.max(village.observedHousingCapacity, projectAdjusted);
         return (int) Math.min(Integer.MAX_VALUE, effective);
+    }
+
+    /**
+     * Converts a raw bed census into a conservative non-TES housing floor. Authored residences are
+     * estimated from persisted project provenance, including unsafe and retired sites whose beds
+     * may still exist inside the census bounds. The previous floor is retained when that estimate
+     * is larger than the raw census, so an approximation can never erase already-established
+     * external housing. {@code initialBaselineFloor} is for first discovery only; established
+     * censuses must pass zero because population may already be occupying TES-provided capacity.
+     */
+    static void observeHousingCensus(
+            EconomyState.VillageRecord village,
+            int rawBedCount,
+            int initialBaselineFloor) {
+        if (village == null) {
+            return;
+        }
+        long authoredBeds = authoredHousingBedsInCensus(village);
+        long nonAuthoredBeds = Math.max(0L, (long) Math.max(0, rawBedCount) - authoredBeds);
+        int observedBase = (int) Math.min(
+                Integer.MAX_VALUE,
+                Math.max(Math.max(0, initialBaselineFloor), nonAuthoredBeds));
+        observeHousingCapacity(
+                village, Math.max(village.observedHousingCapacity, observedBase));
+    }
+
+    /** Records an already-classified non-project housing floor. */
+    static void observeHousingCapacity(
+            EconomyState.VillageRecord village, int observedCapacity) {
+        if (village == null) {
+            return;
+        }
+        village.observedHousingCapacity = Math.max(0, observedCapacity);
+        long aggregateFloor = (long) village.observedHousingCapacity
+                + completedProjectHousingCapacity(village);
+        village.housingCapacity = Math.max(
+                village.housingCapacity,
+                (int) Math.min(Integer.MAX_VALUE, aggregateFloor));
+    }
+
+    /** Derives a conservative format-13 census floor while retaining an older save's total. */
+    static int migrateLegacyObservedHousingCapacity(EconomyState.VillageRecord village) {
+        if (village == null) {
+            return 0;
+        }
+        long completedProjectHousing = completedProjectHousingCapacity(village);
+        long observedFloor = Math.max(
+                0L, (long) village.housingCapacity - completedProjectHousing);
+        return (int) Math.min(Integer.MAX_VALUE, observedFloor);
+    }
+
+    private static long completedProjectHousingCapacity(
+            EconomyState.VillageRecord village) {
+        long capacity = 0L;
+        for (EconomyState.VillageProject project : village.projects) {
+            if (project == null
+                    || project.type == null
+                    || !project.economicComplete) {
+                continue;
+            }
+            capacity += Math.max(0, project.type.housingGain());
+        }
+        return capacity;
+    }
+
+    private static long authoredHousingBedsInCensus(
+            EconomyState.VillageRecord village) {
+        long authoredBeds = 0L;
+        for (EconomyState.VillageProject project : village.projects) {
+            if (project == null
+                    || project.type == null
+                    || !project.economicComplete
+                    || project.abstractOnly
+                    || project.type.housingGain() <= 0) {
+                continue;
+            }
+            int authoredSites = 0;
+            for (EconomyState.RetiredProjectLot lot : project.retiredLots) {
+                if (lot != null && siteIntersectsHousingCensus(
+                        village.centerPos,
+                        lot.boundsMinPos,
+                        lot.boundsMaxPos,
+                        0L)) {
+                    authoredSites++;
+                }
+            }
+            if (project.originPos != 0L
+                    && (project.materializedBlocks > 0
+                            || project.materializedComplete
+                            || project.manualRepairRequired)
+                    && siteIntersectsHousingCensus(
+                            village.centerPos,
+                            project.boundsMinPos,
+                            project.boundsMaxPos,
+                            project.originPos)) {
+                authoredSites++;
+            }
+            if (authoredSites <= 0) {
+                continue;
+            }
+            int bedsPerSite = VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                    ? Math.max(1, project.type.housingGain() / 2)
+                    : project.type.housingGain();
+            authoredBeds += (long) bedsPerSite * authoredSites;
+        }
+        return authoredBeds;
+    }
+
+    private static boolean siteIntersectsHousingCensus(
+            long censusCenter,
+            long boundsMin,
+            long boundsMax,
+            long fallbackOrigin) {
+        long minimum = boundsMin;
+        long maximum = boundsMax;
+        if (minimum == 0L && maximum == 0L) {
+            if (fallbackOrigin == 0L) {
+                return false;
+            }
+            minimum = fallbackOrigin;
+            maximum = fallbackOrigin;
+        }
+        long centerX = unpackX(censusCenter);
+        long centerY = unpackY(censusCenter);
+        long centerZ = unpackZ(censusCenter);
+        return unpackX(maximum) >= centerX - HOUSING_CENSUS_HORIZONTAL_RADIUS
+                && unpackX(minimum) <= centerX + HOUSING_CENSUS_HORIZONTAL_RADIUS
+                && unpackY(maximum) >= centerY - HOUSING_CENSUS_VERTICAL_RADIUS
+                && unpackY(minimum) <= centerY + HOUSING_CENSUS_VERTICAL_RADIUS
+                && unpackZ(maximum) >= centerZ - HOUSING_CENSUS_HORIZONTAL_RADIUS
+                && unpackZ(minimum) <= centerZ + HOUSING_CENSUS_HORIZONTAL_RADIUS;
+    }
+
+    private static int unpackX(long packed) {
+        return (int) (packed >> 38);
+    }
+
+    private static int unpackY(long packed) {
+        return (int) (packed << 52 >> 52);
+    }
+
+    private static int unpackZ(long packed) {
+        return (int) (packed << 26 >> 38);
     }
 
     /** A project affects housing, production, upkeep, tiers, and markets only when operational. */
     public static boolean isProjectOperational(EconomyState.VillageProject project) {
         return project != null
                 && project.economicComplete
-                && !project.manualRepairRequired;
+                && !project.manualRepairRequired
+                && !project.relocationPending;
     }
 
     /**
-     * Migrates completed backlog records when the world switches modes. This flag controls visual
-     * queuing only; economic authority follows completion independently of chunk availability.
-     * Manual-repair records always retain their physical identity.
+     * Migrates unfinished records when the world switches modes. This flag controls visual queuing
+     * only; economic authority follows completion independently of chunk availability.
+     * Manual-repair and relocation records always retain their physical identity.
      */
     private static void normalizeProjectAuthority(
             EconomyState.VillageRecord village, boolean requirePhysicalWorld) {
         for (EconomyState.VillageProject project : village.projects) {
             if (project != null
-                    && project.economicComplete
                     && !project.materializedComplete
-                    && !project.manualRepairRequired) {
+                    && !project.manualRepairRequired
+                    && !project.relocationPending) {
                 project.abstractOnly = !requirePhysicalWorld;
             }
         }

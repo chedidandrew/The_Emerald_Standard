@@ -1,0 +1,40 @@
+// Dedicated comparison profile. Never enables the old gallery's auto-build or capture paths.
+gradle.beforeProject { project ->
+    def targetPath = project.providers.gradleProperty('tesComparisonGameDir')
+            .orElse('run/comparison-26.2').get()
+    def capture = project.providers.gradleProperty('tesComparisonCapture').orElse('false').get()
+    def capturePairs = project.providers.gradleProperty('tesComparisonCapturePairs')
+            .orElse('1,12,52,53,54,65,105,106,107,118,158,159,160,171,211,212,213,224,264,265').get()
+    def captureStop = project.providers.gradleProperty('tesComparisonStopWhenComplete').orElse('false').get()
+    project.pluginManager.withPlugin('fabric-loom') {
+        project.extensions.getByName('loom').runs.named('client').configure {
+            runDirectory = project.file(targetPath)
+            vmArg '-Dthe_emerald_standard.structureGallery=true'
+            vmArg '-Dthe_emerald_standard.structureGallery.autoBuild=false'
+            vmArg '-Dthe_emerald_standard.structureGallery.capture=false'
+            vmArg '-Dthe_emerald_standard.villageComparison=true'
+            vmArg '-Dthe_emerald_standard.villageComparison.autoBuild=true'
+            vmArg "-Dthe_emerald_standard.villageComparison.capture=${capture}"
+            vmArg "-Dthe_emerald_standard.villageComparison.capture.pairs=${capturePairs}"
+            vmArg "-Dthe_emerald_standard.villageComparison.capture.stopWhenComplete=${captureStop}"
+            programArgs '--quickPlaySingleplayer', 'TES_Village_Comparison'
+        }
+    }
+    project.pluginManager.withPlugin('net.neoforged.moddev') {
+        project.extensions.getByName('neoForge').runs.configureEach { run ->
+            if (run.name == 'client') {
+                run.gameDirectory.set(project.file(targetPath))
+                run.systemProperty('the_emerald_standard.structureGallery', 'true')
+                run.systemProperty('the_emerald_standard.structureGallery.autoBuild', 'false')
+                run.systemProperty('the_emerald_standard.structureGallery.capture', 'false')
+                run.systemProperty('the_emerald_standard.villageComparison', 'true')
+                run.systemProperty('the_emerald_standard.villageComparison.autoBuild', 'true')
+                run.systemProperty('the_emerald_standard.villageComparison.capture', capture)
+                run.systemProperty('the_emerald_standard.villageComparison.capture.pairs', capturePairs)
+                run.systemProperty('the_emerald_standard.villageComparison.capture.stopWhenComplete', captureStop)
+                run.programArgument '--quickPlaySingleplayer'
+                run.programArgument 'TES_Village_Comparison'
+            }
+        }
+    }
+}

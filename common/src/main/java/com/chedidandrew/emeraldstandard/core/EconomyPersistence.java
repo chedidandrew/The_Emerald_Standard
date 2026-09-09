@@ -31,16 +31,22 @@ final class EconomyPersistence {
     private EconomyPersistence() {
     }
 
-    static EconomyState load(Path path, long fallbackSeed, long now, long ticks)
+    static EconomyState load(
+            Path path,
+            long fallbackSeed,
+            long now,
+            long ticks,
+            long overworldClockTicks)
             throws IOException {
         Path backup = backupPath(path);
         if (!Files.exists(path)) {
             return Files.exists(backup)
-                    ? read(backup, fallbackSeed, now, ticks)
-                    : EconomyState.fresh(fallbackSeed, now, ticks);
+                    ? read(backup, fallbackSeed, now, ticks, overworldClockTicks)
+                    : EconomyState.fresh(
+                            fallbackSeed, now, ticks, overworldClockTicks);
         }
         try {
-            return read(path, fallbackSeed, now, ticks);
+            return read(path, fallbackSeed, now, ticks, overworldClockTicks);
         } catch (UnsupportedFutureFormatException futureFormat) {
             throw futureFormat;
         } catch (IOException primaryFailure) {
@@ -48,7 +54,7 @@ final class EconomyPersistence {
                 throw primaryFailure;
             }
             try {
-                return read(backup, fallbackSeed, now, ticks);
+                return read(backup, fallbackSeed, now, ticks, overworldClockTicks);
             } catch (UnsupportedFutureFormatException futureFormat) {
                 primaryFailure.addSuppressed(futureFormat);
                 throw primaryFailure;
@@ -110,7 +116,12 @@ final class EconomyPersistence {
             boolean knownValid = state.isKnownPersistedFile(path)
                     && state.matchesKnownPersistedFile(path, rawFingerprint(path));
             if (!knownValid) {
-                read(path, state.seed, state.lastWallClockMs, state.lastGameTicks);
+                read(
+                        path,
+                        state.seed,
+                        state.lastWallClockMs,
+                        state.lastGameTicks,
+                        state.lastOverworldClockTicks);
             }
             Files.copy(path, backupPath(path), StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ignored) {
@@ -137,6 +148,9 @@ final class EconomyPersistence {
         properties.setProperty("day", Long.toString(state.economicDay));
         properties.setProperty("wall", Long.toString(state.lastWallClockMs));
         properties.setProperty("ticks", Long.toString(state.lastGameTicks));
+        properties.setProperty(
+                "overworld.clock_ticks",
+                Long.toString(state.lastOverworldClockTicks));
         properties.setProperty("pending.economic_ms", Long.toString(state.pendingEconomicMillis));
         properties.setProperty("regime", state.regime.name());
         properties.setProperty("event", state.lastMarketEvent.name());
@@ -157,10 +171,43 @@ final class EconomyPersistence {
                 properties.setProperty(
                         "bank.anchor." + Long.toUnsignedString(region, 16),
                         Long.toString(anchor)));
+        state.bankStructureVersions.forEach((region, version) ->
+                properties.setProperty(
+                        "bank.structure_version." + Long.toUnsignedString(region, 16),
+                        Integer.toString(version)));
+        state.retiredBankAnchors.forEach((region, anchors) ->
+                properties.setProperty(
+                        "bank.retired_anchors." + Long.toUnsignedString(region, 16),
+                        encodeLongList(anchors)));
+        state.fallbackBankRegions.forEach(region ->
+                properties.setProperty(
+                        "bank.fallback." + Long.toUnsignedString(region, 16), "true"));
         state.bankRegionVillageIds.forEach((region, villageId) ->
                 properties.setProperty(
                         "bank.village." + Long.toUnsignedString(region, 16),
                         villageId.toString()));
+        state.bankRegionBankerIds.forEach((region, bankerId) ->
+                properties.setProperty(
+                        "bank.banker." + Long.toUnsignedString(region, 16),
+                        bankerId.toString()));
+        state.bankRegionBankerAnchors.forEach((region, anchor) ->
+                properties.setProperty(
+                        "bank.banker_anchor." + Long.toUnsignedString(region, 16),
+                        Long.toString(anchor)));
+        state.pendingBankerDeaths.forEach((region, bankerId) ->
+                properties.setProperty(
+                        "bank.banker_death." + Long.toUnsignedString(region, 16),
+                        bankerId.toString()));
+        state.pendingBankerConversions.forEach((region, conversion) ->
+                properties.setProperty(
+                        "bank.banker_conversion." + Long.toUnsignedString(region, 16),
+                        conversion.rootCanonicalId
+                                + "|" + conversion.immediateSourceId
+                                + "|" + conversion.targetId
+                                + "|" + conversion.targetDimension
+                                + "|" + conversion.targetPos
+                                + "|" + conversion.phase
+                                + "|" + conversion.disposition));
         state.villages.forEach((villageId, village) ->
                 writeVillage(properties, villageId, village));
         state.villageMarketShadows.forEach((villageId, shadow) ->
@@ -204,6 +251,9 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "incident_cause", village.lastIncidentCause.name());
         properties.setProperty(prefix + "population", Integer.toString(village.population));
         properties.setProperty(prefix + "observed_population", Integer.toString(village.observedPopulation));
+        properties.setProperty(
+                prefix + "observed_housing",
+                Integer.toString(village.observedHousingCapacity));
         properties.setProperty(prefix + "housing", Integer.toString(village.housingCapacity));
         properties.setProperty(prefix + "pending_settlers", Integer.toString(village.pendingSettlers));
         properties.setProperty(prefix + "tier", Integer.toString(village.developmentTier));
@@ -227,6 +277,11 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "development_points", Double.toString(village.developmentPoints));
         properties.setProperty(prefix + "restoration_funded", Boolean.toString(village.restorationFunded));
         properties.setProperty(prefix + "project_serial", Long.toString(village.projectSerial));
+        properties.setProperty(
+                prefix + "visual_project_selection_cursor",
+                Long.toString(village.visualProjectSelectionCursor));
+        properties.setProperty(prefix + "architecture.character", village.architectureCharacter);
+        properties.setProperty(prefix + "architecture.dialect", village.architectureDialect);
         writeProsperityFund(properties, prefix + "fund.", village.prosperityFund);
 
         village.residents.forEach((residentId, resident) -> {
@@ -248,12 +303,83 @@ final class EconomyPersistence {
             properties.setProperty(projectPrefix + "bounds_max", Long.toString(project.boundsMaxPos));
             properties.setProperty(projectPrefix + "retry_after_tick", Long.toString(project.retryAfterGameTick));
             properties.setProperty(projectPrefix + "materialization_failures", Integer.toString(project.materializationFailures));
+            properties.setProperty(
+                    projectPrefix + "site_search_cursor",
+                    Integer.toString(project.siteSearchCursor));
+            properties.setProperty(
+                    projectPrefix + "site_search_saw_unloaded",
+                    Boolean.toString(project.siteSearchSawUnloadedCandidate));
             properties.setProperty(projectPrefix + "blocks", Integer.toString(project.materializedBlocks));
             properties.setProperty(projectPrefix + "total_blocks", Integer.toString(project.totalBlocks));
             properties.setProperty(projectPrefix + "materialized_complete", Boolean.toString(project.materializedComplete));
             properties.setProperty(projectPrefix + "blocked", Boolean.toString(project.blocked));
             properties.setProperty(projectPrefix + "manual_repair_required", Boolean.toString(project.manualRepairRequired));
+            properties.setProperty(projectPrefix + "relocation_pending", Boolean.toString(project.relocationPending));
+            if (!project.retiredLots.isEmpty()) {
+                properties.setProperty(
+                        projectPrefix + "retired_bounds",
+                        encodeRetiredProjectLots(project.retiredLots));
+            }
             properties.setProperty(projectPrefix + "abstract_only", Boolean.toString(project.abstractOnly));
+            properties.setProperty(projectPrefix + "design.schema", project.designSchema);
+            properties.setProperty(projectPrefix + "design.seed", Long.toString(project.designSeed));
+            properties.setProperty(projectPrefix + "design.silhouette", Integer.toString(project.designSilhouette));
+            properties.setProperty(projectPrefix + "design.roof", Integer.toString(project.designRoof));
+            properties.setProperty(projectPrefix + "design.frontage", Integer.toString(project.designFrontage));
+            properties.setProperty(projectPrefix + "design.mirrored", Boolean.toString(project.designMirrored));
+            properties.setProperty(projectPrefix + "design.rotation", Integer.toString(project.designRotation));
+            properties.setProperty(projectPrefix + "design.signature", Long.toString(project.designSignature));
+            properties.setProperty(projectPrefix + "design.stage", Integer.toString(project.designStage));
+            properties.setProperty(
+                    projectPrefix + "design.quality_stage",
+                    Integer.toString(project.designQualityStage));
+            properties.setProperty(
+                    projectPrefix + "design.template_id",
+                    project.designTemplateId);
+            properties.setProperty(
+                    projectPrefix + "design.template_revision",
+                    Integer.toString(project.designTemplateRevision));
+            properties.setProperty(
+                    projectPrefix + "design.palette_id",
+                    project.designPaletteId);
+            properties.setProperty(
+                    projectPrefix + "design.dressing_id",
+                    project.designDressingId);
+            properties.setProperty(
+                    projectPrefix + "design.plan_hash_version",
+                    Integer.toString(project.designPlanHashVersion));
+            properties.setProperty(
+                    projectPrefix + "design.plan_hash",
+                    project.designPlanHash);
+            properties.setProperty(projectPrefix + "trail.anchor_set", Boolean.toString(project.trailAnchorSet));
+            properties.setProperty(projectPrefix + "trail.anchor", Long.toString(project.trailAnchorPos));
+            properties.setProperty(projectPrefix + "trail.blocks", Integer.toString(project.trailMaterializedBlocks));
+            properties.setProperty(projectPrefix + "trail.total_blocks", Integer.toString(project.trailTotalBlocks));
+            properties.setProperty(projectPrefix + "trail.complete", Boolean.toString(project.trailMaterializedComplete));
+            properties.setProperty(
+                    projectPrefix + "trail.center_surface_version",
+                    Integer.toString(project.trailCenterSurfaceVersion));
+            properties.setProperty(
+                    projectPrefix + "trail.center_surface_cursor",
+                    Integer.toString(project.trailCenterSurfaceMigrationCursor));
+            properties.setProperty(
+                    projectPrefix + "trail.center_surface_total_cells",
+                    Integer.toString(project.trailCenterSurfaceMigrationTotalCells));
+            properties.setProperty(
+                    projectPrefix + "entrance.approach_version",
+                    Integer.toString(project.entranceApproachVersion));
+            properties.setProperty(
+                    projectPrefix + "entrance.approach_step_count",
+                    Integer.toString(project.entranceApproachStepCount));
+            properties.setProperty(
+                    projectPrefix + "entrance.approach_cursor",
+                    Integer.toString(project.entranceApproachCursor));
+            properties.setProperty(
+                    projectPrefix + "entrance.approach_total_cells",
+                    Integer.toString(project.entranceApproachTotalCells));
+            properties.setProperty(
+                    projectPrefix + "entrance.approach_complete",
+                    Boolean.toString(project.entranceApproachComplete));
         }
         for (int index = 0; index < village.incidents.size(); index++) {
             EconomyState.VillageIncident incident = village.incidents.get(index);
@@ -375,8 +501,13 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "lifetime_spent", Long.toString(fund.lifetimeSpentMicro));
         properties.setProperty(prefix + "last_spending_day", Long.toString(fund.lastSpendingDay));
         properties.setProperty(prefix + "spent_today", Long.toString(fund.spentTodayMicro));
+        properties.setProperty(prefix + "fast_track_known", "true");
         fund.spendableMicro.forEach((purpose, amount) ->
                 properties.setProperty(prefix + "spendable." + purpose.name(), Long.toString(amount)));
+        fund.fastTrackSpendableMicro.forEach((purpose, amount) ->
+                properties.setProperty(
+                        prefix + "fast_track_spendable." + purpose.name(),
+                        Long.toString(amount)));
         fund.endowmentPrincipalMicro.forEach((purpose, amount) ->
                 properties.setProperty(prefix + "endowment." + purpose.name(), Long.toString(amount)));
         fund.projectSponsorshipMicro.forEach((projectId, amount) ->
@@ -426,7 +557,12 @@ final class EconomyPersistence {
                 prefix + "created_wall", Long.toString(transaction.createdWallClockMs));
     }
 
-    private static EconomyState read(Path path, long fallbackSeed, long now, long ticks)
+    private static EconomyState read(
+            Path path,
+            long fallbackSeed,
+            long now,
+            long ticks,
+            long overworldClockTicks)
             throws IOException {
         Properties properties = new Properties();
         MessageDigest persistedDigest = newSha256Digest();
@@ -465,12 +601,22 @@ final class EconomyPersistence {
                 state.economicDay = requiredLong(properties, "day");
                 state.lastWallClockMs = requiredLong(properties, "wall");
                 state.lastGameTicks = requiredLong(properties, "ticks");
+                // Early format-17 development saves did not yet carry this baseline. Initialize
+                // those and all older formats from the live world clock to avoid replaying an
+                // unknowable historical jump; every subsequent observation is persisted.
+                state.lastOverworldClockTicks = format >= 17
+                        ? longValue(
+                                properties,
+                                "overworld.clock_ticks",
+                                Math.max(0L, overworldClockTicks))
+                        : Math.max(0L, overworldClockTicks);
                 state.regime = EconomyEngine.Regime.valueOf(requireValue(properties, "regime"));
             } else {
                 state.seed = longValue(properties, "seed", fallbackSeed);
                 state.economicDay = longValue(properties, "day", 0L);
                 state.lastWallClockMs = longValue(properties, "wall", now);
                 state.lastGameTicks = longValue(properties, "ticks", ticks);
+                state.lastOverworldClockTicks = Math.max(0L, overworldClockTicks);
                 state.regime = EconomyEngine.Regime.valueOf(
                         properties.getProperty("regime", EconomyEngine.Regime.EXPANSION.name()));
             }
@@ -528,12 +674,32 @@ final class EconomyPersistence {
             if (format >= 5) {
                 loadGeneratedBankAnchors(state, properties);
             }
+            if (format >= 11) {
+                loadFallbackBankRegions(state, properties);
+            }
+            if (format >= 12) {
+                loadBankStructureVersions(state, properties);
+            }
+            if (format >= 13) {
+                loadRetiredBankAnchors(state, properties);
+                loadBankerEntityIds(state, properties);
+                loadBankerAssignedAnchors(state, properties);
+            }
+            if (format >= 17) {
+                // Format-16 death observations preceded Minecraft's entity-removal save barrier.
+                // Importing one could resurrect the old entity remotely while also authorizing a
+                // replacement, so migration deliberately keeps the canonical UUID fail-closed.
+                loadPendingBankerDeaths(state, properties);
+            }
+            if (format >= 17) {
+                loadPendingBankerConversions(state, properties);
+            }
             if (format >= 6) {
-                loadVillages(state, properties);
+                loadVillages(state, properties, format);
                 loadBankVillageAssociations(state, properties);
             }
             if (format >= 7) {
-                loadVillageMarketShadows(state, properties);
+                loadVillageMarketShadows(state, properties, format);
             }
 
             if (format >= 2) {
@@ -561,7 +727,8 @@ final class EconomyPersistence {
         }
     }
 
-    private static void loadVillages(EconomyState state, Properties properties)
+    private static void loadVillages(
+            EconomyState state, Properties properties, int format)
             throws IOException {
         Map<UUID, Map<Long, EconomyState.VillageProject>> projects = new TreeMap<>();
         Map<UUID, Map<Integer, EconomyState.VillageIncident>> incidents = new TreeMap<>();
@@ -581,7 +748,7 @@ final class EconomyPersistence {
             if (field.startsWith("resident.")) {
                 applyResidentField(village, field, value);
             } else if (field.startsWith("project.")) {
-                applyProjectField(projects, villageId, field, value);
+                applyProjectField(projects, villageId, field, value, format);
             } else if (field.startsWith("incident.")) {
                 applyIncidentField(incidents, villageId, field, value);
             } else {
@@ -600,10 +767,16 @@ final class EconomyPersistence {
                 village.incidents.addAll(entry.getValue().values());
             }
         }
+        state.villages.values().forEach(village -> {
+            normalizeArchitecture(village, format);
+            normalizeTrailCenterSurfaceMigration(village, format);
+            normalizeHousingAccounting(village, format);
+            normalizeProsperityFund(village.prosperityFund);
+        });
     }
 
     private static void loadVillageMarketShadows(
-            EconomyState state, Properties properties) throws IOException {
+            EconomyState state, Properties properties, int format) throws IOException {
         String prefix = "market.shadow.";
         Map<UUID, Map<Long, EconomyState.VillageProject>> projects = new TreeMap<>();
         Map<UUID, Map<Integer, EconomyState.VillageIncident>> incidents = new TreeMap<>();
@@ -629,7 +802,7 @@ final class EconomyPersistence {
                 if (villageField.startsWith("resident.")) {
                     applyResidentField(shadow.counterfactualVillage, villageField, value);
                 } else if (villageField.startsWith("project.")) {
-                    applyProjectField(projects, villageId, villageField, value);
+                    applyProjectField(projects, villageId, villageField, value, format);
                 } else if (villageField.startsWith("incident.")) {
                     applyIncidentField(incidents, villageId, villageField, value);
                 } else {
@@ -650,6 +823,120 @@ final class EconomyPersistence {
             if (shadow != null && shadow.counterfactualVillage != null) {
                 shadow.counterfactualVillage.incidents.addAll(entry.getValue().values());
             }
+        }
+        state.villageMarketShadows.values().stream()
+                .map(shadow -> shadow.counterfactualVillage)
+                .filter(java.util.Objects::nonNull)
+                .forEach(village -> {
+                    normalizeArchitecture(village, format);
+                    normalizeTrailCenterSurfaceMigration(village, format);
+                    normalizeHousingAccounting(village, format);
+                    normalizeProsperityFund(village.prosperityFund);
+                });
+    }
+
+    private static void normalizeProsperityFund(EconomyState.ProsperityFund fund) {
+        if (fund == null || fund.fastTrackProvenanceKnown) {
+            return;
+        }
+        fund.fastTrackSpendableMicro.clear();
+        long unavailable = fund.lifetimeSpentMicro > Long.MAX_VALUE - fund.emergencyReserveMicro
+                ? Long.MAX_VALUE
+                : fund.lifetimeSpentMicro + fund.emergencyReserveMicro;
+        for (EconomyState.DonationPurpose purpose : EconomyState.DonationPurpose.values()) {
+            long retainedDirectGrant = 0L;
+            for (EconomyState.FundContribution contribution : fund.contributions) {
+                if (contribution != null
+                        && contribution.type == EconomyState.ProsperityFundType.DIRECT_GRANT
+                        && contribution.purpose == purpose
+                        && contribution.amountMicro > 0L) {
+                    retainedDirectGrant = retainedDirectGrant
+                                    > Long.MAX_VALUE - contribution.amountMicro
+                            ? Long.MAX_VALUE
+                            : retainedDirectGrant + contribution.amountMicro;
+                }
+            }
+            long attributable = retainedDirectGrant <= unavailable
+                    ? 0L
+                    : retainedDirectGrant - unavailable;
+            long current = Math.max(0L, fund.spendableMicro.getOrDefault(purpose, 0L));
+            long reconstructed = Math.min(current, attributable);
+            if (reconstructed > 0L) {
+                fund.fastTrackSpendableMicro.put(purpose, reconstructed);
+            }
+        }
+        fund.fastTrackProvenanceKnown = true;
+    }
+
+    private static void normalizeHousingAccounting(
+            EconomyState.VillageRecord village, int format) {
+        if (village == null || format >= 13) {
+            return;
+        }
+        village.observedHousingCapacity =
+                VillageProsperityEngine.migrateLegacyObservedHousingCapacity(village);
+    }
+
+    private static void normalizeArchitecture(
+            EconomyState.VillageRecord village, int format) {
+        if (village == null) {
+            return;
+        }
+        if (format < 18) {
+            // Existing legacy-v1 and modular-v1 projects keep their complete historical recipe
+            // and construction cursor. Blueprint metadata belongs only to approvals made by the
+            // new format and must never be inferred for an in-progress structure.
+            for (EconomyState.VillageProject project : village.projects) {
+                project.designTemplateId = "";
+                project.designTemplateRevision = 0;
+                project.designPaletteId = "";
+                project.designDressingId = "";
+                project.designPlanHashVersion = 0;
+                project.designPlanHash = "";
+            }
+        }
+        if (format >= 10) {
+            return;
+        }
+        village.architectureCharacter = "";
+        village.architectureDialect = "";
+        for (EconomyState.VillageProject project : village.projects) {
+            project.designSchema = VillageArchitecture.LEGACY_SCHEMA;
+            project.designSeed = 0L;
+            project.designSilhouette = 0;
+            project.designRoof = 0;
+            project.designFrontage = 0;
+            project.designMirrored = false;
+            project.designRotation = 0;
+            project.designSignature = 0L;
+            project.designStage = 0;
+            project.designQualityStage = -1;
+            project.trailAnchorSet = false;
+            project.trailAnchorPos = 0L;
+            project.trailMaterializedBlocks = 0;
+            project.trailTotalBlocks = 0;
+            project.trailMaterializedComplete = false;
+        }
+    }
+
+    /** Format 13 and earlier had no independent cursor and therefore migrate eligible roads once. */
+    private static void normalizeTrailCenterSurfaceMigration(
+            EconomyState.VillageRecord village, int format) {
+        if (village == null || format >= 14) {
+            return;
+        }
+        for (EconomyState.VillageProject project : village.projects) {
+            boolean eligiblePhysicalRoad =
+                    VillageArchitecture.MODULAR_SCHEMA.equals(project.designSchema)
+                            && !project.abstractOnly
+                            && project.originPos != 0L
+                            && project.trailAnchorSet
+                            && project.trailTotalBlocks > 0;
+            project.trailCenterSurfaceVersion = eligiblePhysicalRoad
+                    ? 0
+                    : EconomyState.TRAIL_CENTER_SURFACE_VERSION;
+            project.trailCenterSurfaceMigrationCursor = 0;
+            project.trailCenterSurfaceMigrationTotalCells = 0;
         }
     }
 
@@ -703,6 +990,8 @@ final class EconomyPersistence {
                     VillageProsperityEngine.IncidentCause.valueOf(value);
             case "population" -> village.population = Integer.parseInt(value);
             case "observed_population" -> village.observedPopulation = Integer.parseInt(value);
+            case "observed_housing" ->
+                    village.observedHousingCapacity = Integer.parseInt(value);
             case "housing" -> village.housingCapacity = Integer.parseInt(value);
             case "pending_settlers" -> village.pendingSettlers = Integer.parseInt(value);
             case "tier" -> village.developmentTier = Integer.parseInt(value);
@@ -726,6 +1015,10 @@ final class EconomyPersistence {
             case "development_points" -> village.developmentPoints = Double.parseDouble(value);
             case "restoration_funded" -> village.restorationFunded = Boolean.parseBoolean(value);
             case "project_serial" -> village.projectSerial = Long.parseLong(value);
+            case "visual_project_selection_cursor" ->
+                    village.visualProjectSelectionCursor = Long.parseLong(value);
+            case "architecture.character" -> village.architectureCharacter = value;
+            case "architecture.dialect" -> village.architectureDialect = value;
             default -> {
                 // Ignore unknown fields from this supported format.
             }
@@ -740,11 +1033,18 @@ final class EconomyPersistence {
             case "lifetime_spent" -> fund.lifetimeSpentMicro = Long.parseLong(value);
             case "last_spending_day" -> fund.lastSpendingDay = Long.parseLong(value);
             case "spent_today" -> fund.spentTodayMicro = Long.parseLong(value);
+            case "fast_track_known" ->
+                    fund.fastTrackProvenanceKnown |= Boolean.parseBoolean(value);
             default -> {
                 if (field.startsWith("spendable.")) {
                     EconomyState.DonationPurpose purpose = EconomyState.DonationPurpose.valueOf(
                             field.substring("spendable.".length()));
                     fund.spendableMicro.put(purpose, Long.parseLong(value));
+                } else if (field.startsWith("fast_track_spendable.")) {
+                    EconomyState.DonationPurpose purpose = EconomyState.DonationPurpose.valueOf(
+                            field.substring("fast_track_spendable.".length()));
+                    fund.fastTrackSpendableMicro.put(purpose, Long.parseLong(value));
+                    fund.fastTrackProvenanceKnown = true;
                 } else if (field.startsWith("endowment.")) {
                     EconomyState.DonationPurpose purpose = EconomyState.DonationPurpose.valueOf(
                             field.substring("endowment.".length()));
@@ -820,7 +1120,8 @@ final class EconomyPersistence {
             Map<UUID, Map<Long, EconomyState.VillageProject>> all,
             UUID villageId,
             String field,
-            String value) {
+            String value,
+            int format) throws IOException {
         String remainder = field.substring("project.".length());
         int idEnd = remainder.indexOf('.');
         if (idEnd < 0) {
@@ -846,12 +1147,111 @@ final class EconomyPersistence {
             case "bounds_max" -> project.boundsMaxPos = Long.parseLong(value);
             case "retry_after_tick" -> project.retryAfterGameTick = Long.parseLong(value);
             case "materialization_failures" -> project.materializationFailures = Integer.parseInt(value);
+            case "site_search_cursor" -> project.siteSearchCursor = Integer.parseInt(value);
+            case "site_search_saw_unloaded" ->
+                    project.siteSearchSawUnloadedCandidate = Boolean.parseBoolean(value);
             case "blocks" -> project.materializedBlocks = Integer.parseInt(value);
             case "total_blocks" -> project.totalBlocks = Integer.parseInt(value);
             case "materialized_complete" -> project.materializedComplete = Boolean.parseBoolean(value);
             case "blocked" -> project.blocked = Boolean.parseBoolean(value);
             case "manual_repair_required" -> project.manualRepairRequired = Boolean.parseBoolean(value);
+            case "relocation_pending" -> {
+                if (format >= 13) {
+                    project.relocationPending = Boolean.parseBoolean(value);
+                }
+            }
+            case "retired_bounds" -> {
+                if (format >= 13) {
+                    project.retiredLots.clear();
+                    project.retiredLots.addAll(decodeRetiredProjectLots(value));
+                }
+            }
             case "abstract_only" -> project.abstractOnly = Boolean.parseBoolean(value);
+            case "design.schema" -> project.designSchema = value;
+            case "design.seed" -> project.designSeed = Long.parseLong(value);
+            case "design.silhouette" -> project.designSilhouette = Integer.parseInt(value);
+            case "design.roof" -> project.designRoof = Integer.parseInt(value);
+            case "design.frontage" -> project.designFrontage = Integer.parseInt(value);
+            case "design.mirrored" -> project.designMirrored = Boolean.parseBoolean(value);
+            case "design.rotation" -> project.designRotation = Integer.parseInt(value);
+            case "design.signature" -> project.designSignature = Long.parseLong(value);
+            case "design.stage" -> project.designStage = Integer.parseInt(value);
+            case "design.quality_stage" -> project.designQualityStage = Integer.parseInt(value);
+            case "design.template_id" -> {
+                if (format >= 18) {
+                    project.designTemplateId = value;
+                }
+            }
+            case "design.template_revision" -> {
+                if (format >= 18) {
+                    project.designTemplateRevision = Integer.parseInt(value);
+                }
+            }
+            case "design.palette_id" -> {
+                if (format >= 18) {
+                    project.designPaletteId = value;
+                }
+            }
+            case "design.dressing_id" -> {
+                if (format >= 18) {
+                    project.designDressingId = value;
+                }
+            }
+            case "design.plan_hash_version" -> {
+                if (format >= 18) {
+                    project.designPlanHashVersion = Integer.parseInt(value);
+                }
+            }
+            case "design.plan_hash" -> {
+                if (format >= 18) {
+                    project.designPlanHash = value;
+                }
+            }
+            case "trail.anchor_set" -> project.trailAnchorSet = Boolean.parseBoolean(value);
+            case "trail.anchor" -> project.trailAnchorPos = Long.parseLong(value);
+            case "trail.blocks" -> project.trailMaterializedBlocks = Integer.parseInt(value);
+            case "trail.total_blocks" -> project.trailTotalBlocks = Integer.parseInt(value);
+            case "trail.complete" -> project.trailMaterializedComplete = Boolean.parseBoolean(value);
+            case "trail.center_surface_version" -> {
+                if (format >= 14) {
+                    project.trailCenterSurfaceVersion = Integer.parseInt(value);
+                }
+            }
+            case "trail.center_surface_cursor" -> {
+                if (format >= 14) {
+                    project.trailCenterSurfaceMigrationCursor = Integer.parseInt(value);
+                }
+            }
+            case "trail.center_surface_total_cells" -> {
+                if (format >= 14) {
+                    project.trailCenterSurfaceMigrationTotalCells = Integer.parseInt(value);
+                }
+            }
+            case "entrance.approach_version" -> {
+                if (format >= 15) {
+                    project.entranceApproachVersion = Integer.parseInt(value);
+                }
+            }
+            case "entrance.approach_step_count" -> {
+                if (format >= 15) {
+                    project.entranceApproachStepCount = Integer.parseInt(value);
+                }
+            }
+            case "entrance.approach_cursor" -> {
+                if (format >= 15) {
+                    project.entranceApproachCursor = Integer.parseInt(value);
+                }
+            }
+            case "entrance.approach_total_cells" -> {
+                if (format >= 15) {
+                    project.entranceApproachTotalCells = Integer.parseInt(value);
+                }
+            }
+            case "entrance.approach_complete" -> {
+                if (format >= 15) {
+                    project.entranceApproachComplete = Boolean.parseBoolean(value);
+                }
+            }
             default -> {
             }
         }
@@ -1262,6 +1662,73 @@ final class EconomyPersistence {
         return values;
     }
 
+    private static String encodeLongList(List<Long> values) {
+        StringBuilder builder = new StringBuilder(values.size() * 14);
+        for (int index = 0; index < values.size(); index++) {
+            if (index > 0) {
+                builder.append(',');
+            }
+            builder.append(values.get(index));
+        }
+        return builder.toString();
+    }
+
+    private static List<Long> decodeLongList(String encoded, int maximum, String description)
+            throws IOException {
+        String[] pieces = encoded.split(",", -1);
+        if (pieces.length == 0 || pieces.length > maximum) {
+            throw new IOException(description + " history length is invalid");
+        }
+        List<Long> values = new ArrayList<>(pieces.length);
+        for (String piece : pieces) {
+            if (piece.isBlank()) {
+                throw new IOException(description + " history contains a blank value");
+            }
+            try {
+                values.add(Long.parseLong(piece));
+            } catch (NumberFormatException exception) {
+                throw new IOException(description + " history contains an invalid value", exception);
+            }
+        }
+        return values;
+    }
+
+    private static String encodeRetiredProjectLots(
+            List<EconomyState.RetiredProjectLot> lots) {
+        StringBuilder builder = new StringBuilder(lots.size() * 30);
+        for (int index = 0; index < lots.size(); index++) {
+            if (index > 0) {
+                builder.append(';');
+            }
+            EconomyState.RetiredProjectLot lot = lots.get(index);
+            builder.append(lot.boundsMinPos).append(':').append(lot.boundsMaxPos);
+        }
+        return builder.toString();
+    }
+
+    private static List<EconomyState.RetiredProjectLot> decodeRetiredProjectLots(String encoded)
+            throws IOException {
+        String[] pieces = encoded.split(";", -1);
+        if (pieces.length == 0 || pieces.length > EconomyState.MAX_RETIRED_PROJECT_LOTS) {
+            throw new IOException("Retired project-lot history length is invalid");
+        }
+        List<EconomyState.RetiredProjectLot> lots = new ArrayList<>(pieces.length);
+        for (String piece : pieces) {
+            String[] bounds = piece.split(":", -1);
+            if (bounds.length != 2 || bounds[0].isBlank() || bounds[1].isBlank()) {
+                throw new IOException("Retired project-lot history contains invalid bounds");
+            }
+            try {
+                lots.add(new EconomyState.RetiredProjectLot(
+                        Long.parseLong(bounds[0]), Long.parseLong(bounds[1])));
+            } catch (NumberFormatException exception) {
+                throw new IOException(
+                        "Retired project-lot history contains invalid bounds", exception);
+            }
+        }
+        return lots;
+    }
+
     private static void loadGeneratedBankRegions(
             EconomyState state, Properties properties) throws IOException {
         String prefix = "bank.region.";
@@ -1298,6 +1765,201 @@ final class EconomyPersistence {
                 state.generatedBankAnchors.put(region, anchor);
             } catch (NumberFormatException exception) {
                 throw new IOException("Invalid bank anchor " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadFallbackBankRegions(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.fallback.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix) || !Boolean.parseBoolean(properties.getProperty(key))) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                if (!state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)) {
+                    throw new IOException("Fallback bank has no matching region anchor " + encoded);
+                }
+                state.fallbackBankRegions.add(region);
+            } catch (NumberFormatException exception) {
+                throw new IOException("Invalid fallback bank key " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadBankStructureVersions(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.structure_version.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                int version = Integer.parseInt(properties.getProperty(key));
+                if (version <= 0
+                        || !state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)
+                        || state.fallbackBankRegions.contains(region)) {
+                    throw new IOException(
+                            "Bank structure version has no matching generated structure "
+                                    + encoded);
+                }
+                state.bankStructureVersions.put(region, version);
+            } catch (NumberFormatException exception) {
+                throw new IOException("Invalid bank structure version " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadRetiredBankAnchors(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.retired_anchors.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                List<Long> anchors = decodeLongList(
+                        properties.getProperty(key),
+                        EconomyState.MAX_RETIRED_BANK_ANCHORS_PER_REGION,
+                        "Retired Bank anchor");
+                if (!state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)
+                        || !state.bankStructureVersions.containsKey(region)
+                        || state.fallbackBankRegions.contains(region)) {
+                    throw new IOException(
+                            "Retired Bank anchor has no current authored Bank " + encoded);
+                }
+                state.retiredBankAnchors.put(region, anchors);
+            } catch (NumberFormatException exception) {
+                throw new IOException("Invalid retired Bank anchor " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadBankerEntityIds(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.banker.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                UUID bankerId = UUID.fromString(properties.getProperty(key));
+                if (!state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)
+                        || state.bankRegionBankerIds.containsValue(bankerId)) {
+                    throw new IOException(
+                            "Canonical Banker has no unique generated region " + encoded);
+                }
+                state.bankRegionBankerIds.put(region, bankerId);
+            } catch (IllegalArgumentException exception) {
+                throw new IOException("Invalid canonical Banker " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadBankerAssignedAnchors(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.banker_anchor.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                long anchor = Long.parseLong(properties.getProperty(key));
+                if (!state.bankRegionBankerIds.containsKey(region)
+                        || !state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)) {
+                    throw new IOException(
+                            "Canonical Banker anchor has no matching identity " + encoded);
+                }
+                state.bankRegionBankerAnchors.put(region, anchor);
+            } catch (NumberFormatException exception) {
+                throw new IOException(
+                        "Invalid canonical Banker anchor " + encoded, exception);
+            }
+        }
+
+        // Early format-13 development builds persisted the canonical UUID before the assigned
+        // anchor was added. Prefer the newest retired anchor so a Banker still standing at the
+        // abandoned Bank can converge to the current site; otherwise the current anchor is safe.
+        for (Long region : state.bankRegionBankerIds.keySet()) {
+            if (state.bankRegionBankerAnchors.containsKey(region)) {
+                continue;
+            }
+            List<Long> retired = state.retiredBankAnchors.get(region);
+            Long inferred = retired == null || retired.isEmpty()
+                    ? state.generatedBankAnchors.get(region)
+                    : retired.get(retired.size() - 1);
+            state.bankRegionBankerAnchors.put(region, inferred);
+        }
+    }
+
+    private static void loadPendingBankerDeaths(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.banker_death.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encoded = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encoded, 16);
+                UUID bankerId = UUID.fromString(properties.getProperty(key));
+                if (!bankerId.equals(state.bankRegionBankerIds.get(region))
+                        || !state.bankRegionBankerAnchors.containsKey(region)
+                        || !state.generatedBankRegions.contains(region)
+                        || !state.generatedBankAnchors.containsKey(region)) {
+                    throw new IOException(
+                            "Pending Banker death has no matching canonical identity " + encoded);
+                }
+                state.pendingBankerDeaths.put(region, bankerId);
+            } catch (IllegalArgumentException exception) {
+                throw new IOException("Invalid pending Banker death " + encoded, exception);
+            }
+        }
+    }
+
+    private static void loadPendingBankerConversions(
+            EconomyState state, Properties properties) throws IOException {
+        String prefix = "bank.banker_conversion.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String encodedRegion = key.substring(prefix.length());
+            try {
+                long region = Long.parseUnsignedLong(encodedRegion, 16);
+                String[] fields = requireValue(properties, key).split("\\|", -1);
+                if (fields.length != 7) {
+                    throw new IllegalArgumentException("wrong field count");
+                }
+                EconomyState.PendingBankerConversion conversion =
+                        new EconomyState.PendingBankerConversion();
+                conversion.rootCanonicalId = UUID.fromString(fields[0]);
+                conversion.immediateSourceId = UUID.fromString(fields[1]);
+                conversion.targetId = UUID.fromString(fields[2]);
+                conversion.targetDimension = fields[3];
+                conversion.targetPos = Long.parseLong(fields[4]);
+                conversion.phase = EconomyState.BankerConversionPhase.valueOf(fields[5]);
+                conversion.disposition =
+                        EconomyState.BankerConversionDisposition.valueOf(fields[6]);
+                state.pendingBankerConversions.put(region, conversion);
+            } catch (IllegalArgumentException exception) {
+                throw new IOException(
+                        "Invalid pending Banker conversion " + encodedRegion, exception);
             }
         }
     }

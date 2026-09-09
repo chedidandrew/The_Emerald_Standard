@@ -2,51 +2,44 @@ plugins {
     id 'net.fabricmc.fabric-loom' version "${loom_version}"
     id 'maven-publish'
 }
-
 def artifactVersion = mod_version.toString()
 def artifactBaseName = archives_base_name.toString()
-
 version = artifactVersion
 group = maven_group
-
-base {
-    archivesName = artifactBaseName
-}
-
+base { archivesName = artifactBaseName }
 repositories {
     mavenCentral()
+    maven { name = 'Terraformers'; url = 'https://maven.terraformersmc.com/releases/' }
+    maven { name = 'Nucleoid'; url = 'https://maven.nucleoid.xyz/' }
 }
-
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    compileOnly("com.terraformersmc:modmenu:${project.modmenu_version}") { transitive = false }
+    if (System.getenv('TES_TEST_MODMENU') == 'present') {
+        runtimeOnly("com.terraformersmc:modmenu:${project.modmenu_version}") { transitive = false }
+        runtimeOnly 'eu.pb4:placeholder-api:3.1.0-beta.1+26.2'
+    }
 }
-
 sourceSets.main.java.srcDir('../common/src/main/java')
 sourceSets.main.java.srcDir('../common/src/minecraft/java')
 sourceSets.main.java.srcDir('../common/src/client/java')
 sourceSets.main.resources.srcDir('../common/src/main/resources')
-
 processResources {
     inputs.property 'version', artifactVersion
-    filesMatching('fabric.mod.json') {
-        expand 'version': artifactVersion
-    }
+    filesMatching('fabric.mod.json') { expand 'version': artifactVersion }
 }
-
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
     options.encoding = 'UTF-8'
     options.compilerArgs.add('-Xlint:deprecation')
 }
-
 java {
     withSourcesJar()
     sourceCompatibility = JavaVersion.VERSION_25
     targetCompatibility = JavaVersion.VERSION_25
 }
-
 tasks.register('verifyBankerMenuPacket', JavaExec) {
     group = 'verification'
     description = 'Round-trips Banker values through the real Minecraft menu packet codec.'
@@ -54,18 +47,35 @@ tasks.register('verifyBankerMenuPacket', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BankerMenuPacketCodecSelfTest'
 }
-
+tasks.register('verifyVillageBankStructure', JavaExec) {
+    group = 'verification'
+    description = 'Runs the exact production Bank admission gate for every current biome dialect.'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.VillageBankStructureSelfTest'
+}
+tasks.register('verifyAuthoredVillageStructures', JavaExec) {
+    group = 'verification'
+    description = 'Runs the complete production authored-catalog geometry, access and lighting gate.'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.AuthoredVillageStructuresSelfTest'
+    maxHeapSize = '3g'
+    jvmArgs '-XX:ActiveProcessorCount=4', '-Djava.util.concurrent.ForkJoinPool.common.parallelism=3'
+}
+tasks.register('verifyReaderSettings', JavaExec) {
+    group = 'verification'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ReaderSettingsSelfTest'
+}
 tasks.named('check') {
     dependsOn tasks.named('verifyBankerMenuPacket')
+    dependsOn tasks.named('verifyVillageBankStructure')
+    dependsOn tasks.named('verifyAuthoredVillageStructures')
+    dependsOn tasks.named('verifyReaderSettings')
 }
-
 jar {
-    manifest {
-        attributes(
-                'Implementation-Title': 'The Emerald Standard',
-                'Implementation-Version': artifactVersion)
-    }
-    from('../LICENSE') {
-        rename { "${it}_${artifactBaseName}" }
-    }
+    manifest { attributes('Implementation-Title': 'The Emerald Standard', 'Implementation-Version': artifactVersion) }
+    from('../LICENSE') { rename { "${it}_${artifactBaseName}" } }
 }

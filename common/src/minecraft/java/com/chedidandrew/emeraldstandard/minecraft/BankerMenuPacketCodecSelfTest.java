@@ -3,11 +3,17 @@ package com.chedidandrew.emeraldstandard.minecraft;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket;
 import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 /** Real Minecraft packet-codec check shared by loader builds and server smoke tests. */
 public final class BankerMenuPacketCodecSelfTest {
@@ -97,6 +103,28 @@ public final class BankerMenuPacketCodecSelfTest {
         verifyActivitySubtypeMapping();
         verifyActivityFiltering();
         verifyExactAmountButtonPacket();
+    }
+
+    /** Requires live registries and is therefore called by the in-server integration smoke. */
+    public static void verifyExchangeResourceVisualMapping() {
+        Set<String> canonicalNames = new HashSet<>();
+        Map<Item, String> canonicalItems = new IdentityHashMap<>();
+        for (String name : BankerMenu.RESOURCE_NAMES) {
+            require(name != null && !name.isBlank() && canonicalNames.add(name),
+                    "Duplicate or empty canonical exchange resource name: " + name);
+
+            BankInventory.ExchangeResource resource = BankInventory.exchangeResource(name);
+            require(resource != null,
+                    "Canonical exchange resource does not resolve: " + name);
+            ItemStack visual = new ItemStack(resource.item());
+            require(!visual.isEmpty(),
+                    "Canonical exchange resource has no displayable item: " + name);
+
+            String existingName = canonicalItems.put(resource.item(), name);
+            require(existingName == null,
+                    "Canonical exchange resources share an undocumented item: "
+                            + existingName + " and " + name);
+        }
     }
 
     private static void verifyActivityPagingBounds() {

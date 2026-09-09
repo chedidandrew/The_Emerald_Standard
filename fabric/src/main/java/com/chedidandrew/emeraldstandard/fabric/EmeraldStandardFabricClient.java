@@ -1,9 +1,14 @@
 package com.chedidandrew.emeraldstandard.fabric;
 
 import com.chedidandrew.emeraldstandard.client.BankerScreen;
+import com.chedidandrew.emeraldstandard.client.HandbookScreen;
+import com.chedidandrew.emeraldstandard.minecraft.HandbookReaderItem;
 import com.chedidandrew.emeraldstandard.client.ClientSmokeSupport;
+import com.chedidandrew.emeraldstandard.client.GalleryCaptureSupport;
+import com.chedidandrew.emeraldstandard.client.VillageComparisonCaptureSupport;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import net.fabricmc.api.ClientModInitializer;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.MenuScreens;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +18,9 @@ public final class EmeraldStandardFabricClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         MenuScreens.register(BankerMenus.type(), BankerScreen::new);
+        HandbookReaderItem.registerReader(() -> Minecraft.getInstance().gui.setScreen(new HandbookScreen(null)));
         ClientSmokeSupport.initialized(LOGGER);
+        GalleryCaptureSupport.initialized(LOGGER);
+        VillageComparisonCaptureSupport.initialized(LOGGER);
     }
 }

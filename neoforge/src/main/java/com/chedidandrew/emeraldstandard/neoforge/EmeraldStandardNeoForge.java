@@ -7,14 +7,18 @@ import com.chedidandrew.emeraldstandard.minecraft.BankerIntegrationSelfTest;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenus;
 import com.chedidandrew.emeraldstandard.minecraft.BankTransactionCoordinator;
+import com.chedidandrew.emeraldstandard.minecraft.BankWorkstationAccessPolicy;
 import com.chedidandrew.emeraldstandard.minecraft.BankingOperations;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldCommands;
 import com.chedidandrew.emeraldstandard.minecraft.EmeraldConfig;
 import com.chedidandrew.emeraldstandard.minecraft.PlayerOnboarding;
+import com.chedidandrew.emeraldstandard.minecraft.StructureGallery;
+import com.chedidandrew.emeraldstandard.minecraft.VillageComparisonGallery;
 import com.chedidandrew.emeraldstandard.minecraft.VillageBankManager;
 import com.chedidandrew.emeraldstandard.minecraft.VillageProsperityManager;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -24,6 +28,7 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -31,6 +36,8 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingConversionEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -66,12 +73,15 @@ public final class EmeraldStandardNeoForge {
         try {
             var server = event.getServer();
             VillageProsperityManager.resetRuntimeState();
+            VillageBankManager.resetRuntimeState();
             EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
             config.applyTo(ECONOMY);
             ECONOMY.start(
                     server.getWorldPath(LevelResource.DATA),
                     server.overworld().getSeed(),
-                    server.overworld().getGameTime());
+                    server.overworld().getGameTime(),
+                    server.overworld().getOverworldClockTime());
+            VillageBankManager.beginServerSession(server, ECONOMY);
             LOGGER.info(
                     "The Emerald Standard economy started with {} catch-up day(s) remaining",
                     ECONOMY.catchUpDaysRemaining());
@@ -80,6 +90,8 @@ public final class EmeraldStandardNeoForge {
                 BankerIntegrationSelfTest.run(server.overworld());
                 LOGGER.info("The Emerald Standard Banker integration self-test passed");
             }
+            StructureGallery.autoBuildIfRequested(server);
+            VillageComparisonGallery.autoBuildIfRequested(server);
         } catch (Exception exception) {
             throw new IllegalStateException(
                     "Could not start The Emerald Standard economy", exception);
@@ -90,32 +102,63 @@ public final class EmeraldStandardNeoForge {
     public void onServerStopping(ServerStoppingEvent event) {
         var server = event.getServer();
         DebugFlightRecorder.stopForShutdown(server, ECONOMY);
-        if (!ECONOMY.saveNow(server.overworld().getGameTime())) {
+        if (!VillageBankManager.flushPendingLifecycleForShutdown(server, ECONOMY)) {
+            LOGGER.error("Could not flush pending Banker lifecycle state before shutdown: {}",
+                    ECONOMY.lastError());
+        }
+        if (!ECONOMY.saveNow(
+                server.overworld().getGameTime(),
+                server.overworld().getOverworldClockTime())) {
             LOGGER.error("Could not save The Emerald Standard economy: {}",
                     ECONOMY.lastError());
         }
         VillageProsperityManager.resetRuntimeState();
+        VillageBankManager.resetRuntimeState();
     }
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
-        if (!ECONOMY.tick(event.getServer().overworld().getGameTime())) {
+        if (!ECONOMY.tick(
+                event.getServer().overworld().getGameTime(),
+                event.getServer().overworld().getOverworldClockTime())) {
             LOGGER.error("Could not advance or save The Emerald Standard economy: {}",
                     ECONOMY.lastError());
         }
         VillageProsperityManager.tick(event.getServer(), ECONOMY);
         VillageBankManager.tick(event.getServer(), ECONOMY);
         DebugFlightRecorder.tick(event.getServer(), ECONOMY);
+        VillageComparisonGallery.tick(event.getServer());
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = false)
     public void onLivingDeath(LivingDeathEvent event) {
+        if (event.isCanceled()) {
+            return;
+        }
         if (event.getEntity() instanceof Villager villager) {
+            VillageBankManager.onBankerDeath(villager, ECONOMY);
             VillageProsperityManager.onVillagerDeath(villager, event.getSource(), ECONOMY);
         } else if (event.getEntity() instanceof ZombieVillager zombieVillager) {
+            VillageBankManager.onZombieBankerDeath(zombieVillager, ECONOMY);
             VillageProsperityManager.onZombieVillagerDeath(
                     zombieVillager, event.getSource(), ECONOMY);
+        } else {
+            VillageBankManager.onConvertedBankerDeath(event.getEntity(), ECONOMY);
         }
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onLivingConversion(LivingConversionEvent.Post event) {
+        VillageBankManager.onBankerConversion(
+                event.getEntity(), event.getOutcome(), ECONOMY);
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = false)
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (event.isCanceled() || !(event.getLevel() instanceof ServerLevel)) {
+            return;
+        }
+        VillageBankManager.onEntityLoaded(event.getEntity(), ECONOMY);
     }
 
     @SubscribeEvent
@@ -142,14 +185,34 @@ public final class EmeraldStandardNeoForge {
                 || !(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        var accessPoint = VillageBankManager.bankAccessPoint(
+        var access = VillageBankManager.bankDeskAccess(
                 (ServerLevel) player.level(), event.getPos(), ECONOMY);
-        if (accessPoint == null) {
+        if (access.decision() == BankWorkstationAccessPolicy.Decision.IGNORE) {
             return;
         }
-        BankerAccess.openAt(player, ECONOMY, accessPoint);
+        if (access.decision() == BankWorkstationAccessPolicy.Decision.RETIRED_INERT) {
+            player.sendSystemMessage(Component.translatable(
+                    "message.the_emerald_standard.bank_retired_desk"));
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
+            return;
+        }
+        if (access.decision().warnsUnsafeBank()) {
+            player.sendSystemMessage(Component.translatable(
+                    access.decision().opensDashboard()
+                            ? "message.the_emerald_standard.bank_desk_personal_fallback"
+                            : "message.the_emerald_standard.bank_unsafe"));
+        }
+        boolean opened = access.decision().opensDashboard()
+                && BankerAccess.openAt(player, ECONOMY, access.accessPoint());
+        if (access.decision().opensDashboard() && !opened) {
+            player.sendSystemMessage(Component.translatable(
+                    "message.the_emerald_standard.bank_open_failed"));
+        }
         event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
+        event.setCancellationResult(opened || !access.decision().opensDashboard()
+                ? InteractionResult.SUCCESS_SERVER
+                : InteractionResult.FAIL);
     }
 
     @SubscribeEvent
@@ -158,12 +221,16 @@ public final class EmeraldStandardNeoForge {
                 || !BankerAccess.isBanker(event.getTarget())) {
             return;
         }
-        if (!event.getEntity().level().isClientSide()
-                && event.getEntity() instanceof ServerPlayer player) {
-            BankerAccess.open(player, ECONOMY, event.getTarget());
+        if (event.getEntity().level().isClientSide()) {
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
+            return;
         }
+        boolean opened = event.getEntity() instanceof ServerPlayer player
+                && BankerAccess.open(player, ECONOMY, event.getTarget());
         event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.SUCCESS);
+        event.setCancellationResult(
+                opened ? InteractionResult.SUCCESS_SERVER : InteractionResult.FAIL);
     }
 
     @SubscribeEvent

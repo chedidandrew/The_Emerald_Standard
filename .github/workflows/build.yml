@@ -20,6 +20,8 @@ jobs:
           java-version: '25'
       - name: Compile and test the loader-neutral economy
         run: bash scripts/run-common-tests.sh
+      - name: Verify strict client smoke failure detection
+        run: bash scripts/test-client-smoke-log.sh
 
   loader-builds:
     name: Build ${{ matrix.loader }}
@@ -75,14 +77,23 @@ jobs:
           if-no-files-found: warn
 
   client-bootstrap-smoke:
-    name: Launch ${{ matrix.loader }} client
+    name: Launch ${{ matrix.loader }} client (Mod Menu ${{ matrix.modmenu }})
     needs: loader-builds
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        loader: [fabric, neoforge]
+        include:
+          - loader: fabric
+            modmenu: absent
+          - loader: fabric
+            modmenu: present
+          - loader: neoforge
+            modmenu: absent
+    env:
+      TES_TEST_MODMENU: ${{ matrix.modmenu }}
+      XCURSOR_THEME: Adwaita
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -93,12 +104,15 @@ jobs:
       - name: Install virtual display dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb libgl1
+          sudo apt-get install -y --no-install-recommends xvfb libgl1 libxcursor1 adwaita-icon-theme
+          test -r /usr/share/icons/Adwaita/cursors/not-allowed
       - name: Launch Minecraft client and verify screen registration
         run: bash scripts/smoke-client.sh "${{ matrix.loader }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: client-smoke-log-${{ matrix.loader }}-${{ github.sha }}
-          path: build/client-smoke/${{ matrix.loader }}.log
+          name: client-smoke-log-${{ matrix.loader }}-${{ matrix.modmenu }}-${{ github.sha }}
+          path: |
+            build/client-smoke/${{ matrix.loader }}.log
+            build/client-smoke/**/screenshots/tes-reader-ci/*.png
           if-no-files-found: warn

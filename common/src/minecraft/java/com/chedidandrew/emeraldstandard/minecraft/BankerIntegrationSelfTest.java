@@ -1,16 +1,26 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
+import io.netty.buffer.Unpooled;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.stream.Stream;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.ObjectContents;
+import net.minecraft.network.chat.contents.objects.AtlasSprite;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.PoiTypeTags;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -23,8 +33,15 @@ import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.WrittenBookItem;
+import net.minecraft.world.item.component.WrittenBookContent;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.CraftingRecipe;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CrossCollisionBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -38,6 +55,7 @@ public final class BankerIntegrationSelfTest {
 
     public static void run(ServerLevel level) {
         BankerMenuPacketCodecSelfTest.verify();
+        BankerMenuPacketCodecSelfTest.verifyExchangeResourceVisualMapping();
         verifyInventoryPersistenceGuard();
         require(BankerProfessionSupport.exchangeDeskOrLectern() != Blocks.LECTERN,
                 "The Exchange Desk block was not registered before server startup");
@@ -62,6 +80,7 @@ public final class BankerIntegrationSelfTest {
                 "The Exchange Desk was absent from the Functional Blocks creative tab");
         require(CreativeModeTabs.searchTab().contains(exchangeDeskStack),
                 "The Exchange Desk was absent from creative inventory search");
+        verifyHandbook(level);
         require(BankerProfessionSupport.isBankWorkstation(
                         BankerProfessionSupport.exchangeDeskOrLectern().defaultBlockState())
                         && BankerProfessionSupport.isBankWorkstation(
@@ -114,6 +133,7 @@ public final class BankerIntegrationSelfTest {
                                 unemployed.getVillagerData().profession()),
                 "Vanilla immediately reset a managed Banker's profession");
         verifyManagedBankerWorkstation(level);
+        verifyGeneratedPaneConnections(level);
 
         Villager unlockedProfession = create(level);
         unlockedProfession.setVillagerData(
@@ -230,6 +250,15 @@ public final class BankerIntegrationSelfTest {
                                 .setValue(LanternBlock.HANGING, true),
                         Blocks.LANTERN.defaultBlockState()),
                 "Rollback ownership rejected a neighbor-updated state of the planned block");
+        BlockState plannedPane = Blocks.STAINED_GLASS_PANE.green().defaultBlockState();
+        BlockState connectedPane = plannedPane
+                .setValue(CrossCollisionBlock.EAST, true)
+                .setValue(CrossCollisionBlock.WEST, true);
+        require(VillageBankManager.isOwnedBankPlacement(connectedPane, plannedPane),
+                "Rollback ownership rejected a connected state of an authored Bank pane");
+        require(!VillageBankManager.isOwnedBankPlacement(
+                        Blocks.STAINED_GLASS_PANE.blue().defaultBlockState(), plannedPane),
+                "Rollback ownership accepted a differently colored replacement pane");
         require(!VillageBankManager.isOwnedBankPlacement(
                         Blocks.TORCH.defaultBlockState(),
                         Blocks.LANTERN.defaultBlockState()),
@@ -251,6 +280,108 @@ public final class BankerIntegrationSelfTest {
         unlockedProfession.discard();
         interactionMigrated.discard();
         unscopedLibrarian.discard();
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void verifyHandbook(ServerLevel level) {
+        var handbookItem = BuiltInRegistries.ITEM.get(EmeraldHandbook.HANDBOOK_ITEM_KEY)
+                .orElseThrow(() -> new IllegalStateException(
+                        "The starter handbook item was not registered before server startup"))
+                .value();
+        require(handbookItem instanceof WrittenBookItem,
+                "The starter handbook was not registered as an openable written book");
+
+        ItemStack handbook = new ItemStack(handbookItem);
+        require(handbook.getMaxStackSize() == 1,
+                "The starter handbook should not stack and obscure authored copies");
+        require(EmeraldHandbook.isHandbook(handbook),
+                "The registered starter handbook could not recognize its own stack");
+        WrittenBookContent content = handbook.get(DataComponents.WRITTEN_BOOK_CONTENT);
+        require(content != null,
+                "The starter handbook item lost its authored written-book content");
+        require("The Emerald Standard".equals(content.title().raw())
+                        && "Village Bankers' Guild".equals(content.author())
+                        && content.generation() == 0
+                        && content.resolved(),
+                "The starter handbook title, author, generation, or resolution state drifted");
+        require(content.pages().size() == EmeraldHandbook.PAGE_COUNT,
+                "The starter handbook did not contain the complete learning reference");
+
+        boolean hasAtlasVisual = content.getPages(false).stream()
+                .flatMap(BankerIntegrationSelfTest::componentTree)
+                .anyMatch(component -> component.getContents() instanceof ObjectContents object
+                        && object.contents() instanceof AtlasSprite);
+        require(hasAtlasVisual,
+                "The starter handbook lost its inline item/block illustrations");
+        boolean hasPageNavigation = content.getPages(false).stream()
+                .flatMap(BankerIntegrationSelfTest::componentTree)
+                .anyMatch(component -> component.getStyle().getClickEvent()
+                        instanceof ClickEvent.ChangePage);
+        require(hasPageNavigation,
+                "The starter handbook lost its clickable contents/navigation links");
+
+        require(BuiltInRegistries.CREATIVE_MODE_TAB
+                        .get(CreativeModeTabs.TOOLS_AND_UTILITIES)
+                        .orElseThrow()
+                        .value()
+                        .contains(handbook),
+                "The starter handbook was absent from Tools & Utilities");
+        require(CreativeModeTabs.searchTab().contains(handbook),
+                "The starter handbook was absent from creative inventory search");
+
+        RegistryFriendlyByteBuf buffer = RegistryFriendlyByteBuf
+                .decorator(level.registryAccess())
+                .apply(Unpooled.buffer());
+        try {
+            ItemStack.STREAM_CODEC.encode(buffer, handbook);
+            ItemStack decoded = ItemStack.STREAM_CODEC.decode(buffer);
+            WrittenBookContent decodedContent =
+                    decoded.get(DataComponents.WRITTEN_BOOK_CONTENT);
+            require(EmeraldHandbook.isHandbook(decoded)
+                            && decodedContent != null
+                            && decodedContent.pages().size() == EmeraldHandbook.PAGE_COUNT,
+                    "The starter handbook did not survive the server-to-client item codec");
+            require(decodedContent.getPages(false).stream()
+                            .flatMap(BankerIntegrationSelfTest::componentTree)
+                            .anyMatch(component -> component.getContents()
+                                    instanceof ObjectContents object
+                                    && object.contents() instanceof AtlasSprite),
+                    "The handbook codec round-trip discarded its illustrations");
+            require(decodedContent.getPages(false).stream()
+                            .flatMap(BankerIntegrationSelfTest::componentTree)
+                            .anyMatch(component -> component.getStyle().getClickEvent()
+                                    instanceof ClickEvent.ChangePage),
+                    "The handbook codec round-trip discarded its page links");
+        } finally {
+            buffer.release();
+        }
+
+        ResourceKey<Recipe<?>> handbookRecipeKey = ResourceKey.create(
+                Registries.RECIPE, EmeraldHandbook.HANDBOOK_ID);
+        Recipe<?> recipe = level.getServer().getRecipeManager()
+                .byKey(handbookRecipeKey)
+                .orElseThrow(() -> new IllegalStateException(
+                        "The replacement handbook recipe was not loaded"))
+                .value();
+        require(recipe instanceof CraftingRecipe,
+                "The replacement handbook recipe was not a crafting recipe");
+        CraftingRecipe craftingRecipe = (CraftingRecipe) recipe;
+        CraftingInput input = CraftingInput.of(2, 1, List.of(
+                new ItemStack(Items.BOOK),
+                new ItemStack(Items.EMERALD)));
+        require(craftingRecipe.matches(input, level),
+                "A Book plus Emerald did not match the replacement handbook recipe");
+        ItemStack crafted = craftingRecipe.assemble(input);
+        require(EmeraldHandbook.isHandbook(crafted)
+                        && crafted.get(DataComponents.WRITTEN_BOOK_CONTENT) != null,
+                "The replacement recipe did not assemble a fully authored handbook");
+    }
+
+    private static Stream<Component> componentTree(Component component) {
+        return Stream.concat(
+                Stream.of(component),
+                component.getSiblings().stream()
+                        .flatMap(BankerIntegrationSelfTest::componentTree));
     }
 
     private static void verifyInventoryPersistenceGuard() {
@@ -321,6 +452,7 @@ public final class BankerIntegrationSelfTest {
         return villager;
     }
 
+    @SuppressWarnings("deprecation")
     private static void verifyExchangeDeskGeometry(ServerLevel level) {
         Block exchangeDesk = BankerProfessionSupport.exchangeDeskOrLectern();
         require(exchangeDesk instanceof ExchangeDeskBlock,
@@ -332,15 +464,20 @@ public final class BankerIntegrationSelfTest {
         require(exchangeDesk.getStateDefinition().getPossibleStates().size() == 4,
                 "The Exchange Desk did not expose exactly four horizontal facings");
 
-        VoxelShape selection = north.getShape(level, BlockPos.ZERO);
-        VoxelShape collision = north.getCollisionShape(level, BlockPos.ZERO);
-        require(selection.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT
-                        && collision.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT,
-                "The Exchange Desk selection or collision shape exceeded its 13.5/16 model height");
         for (Direction facing : new Direction[] {
                 Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST
         }) {
-            require(PoiTypes.hasPoi(north.setValue(HorizontalDirectionalBlock.FACING, facing)),
+            BlockState deskState = north.setValue(HorizontalDirectionalBlock.FACING, facing);
+            VoxelShape selection = deskState.getShape(level, BlockPos.ZERO);
+            VoxelShape collision = deskState.getCollisionShape(level, BlockPos.ZERO);
+            require(selection.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT
+                            && collision.max(Direction.Axis.Y) == ExchangeDeskBlock.MODEL_HEIGHT,
+                    "The Exchange Desk selection or collision shape exceeded its 13.5/16 "
+                            + "model height while facing " + facing);
+            require(Block.shouldRenderFace(
+                            Blocks.OAK_PLANKS.defaultBlockState(), deskState, Direction.UP),
+                    "An Exchange Desk culled the supporting floor while facing " + facing);
+            require(PoiTypes.hasPoi(deskState),
                     "An Exchange Desk facing was not mapped to the Banker POI: " + facing);
         }
     }
@@ -383,6 +520,128 @@ public final class BankerIntegrationSelfTest {
             }
             level.setBlockAndUpdate(deskPosition, previous);
         }
+    }
+
+    private static void verifyGeneratedPaneConnections(ServerLevel level) {
+        BlockPos panePosition = findEmptyPaneFixturePosition(
+                level, level.getRespawnData().pos());
+        BlockPos westPosition = panePosition.west();
+        BlockPos eastPosition = panePosition.east();
+        BlockState previousPane = level.getBlockState(panePosition);
+        BlockState previousWest = level.getBlockState(westPosition);
+        BlockState previousEast = level.getBlockState(eastPosition);
+        try {
+            require(level.setBlockAndUpdate(
+                            westPosition, Blocks.OAK_PLANKS.defaultBlockState())
+                            && level.setBlockAndUpdate(
+                                    eastPosition, Blocks.OAK_PLANKS.defaultBlockState()),
+                    "The Bank pane fixture could not place its lateral wall blocks");
+            BlockState disconnectedPane = Blocks.STAINED_GLASS_PANE.green()
+                    .defaultBlockState();
+            require(level.setBlock(
+                            panePosition,
+                            disconnectedPane,
+                            Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE),
+                    "The Bank pane fixture could not place its disconnected pane");
+            require(VillageBankManager.normalizeBankPaneState(
+                            level, panePosition, null, 0x50414E45L),
+                    "The generated Bank pane normalization was rejected");
+
+            BlockState connectedPane = level.getBlockState(panePosition);
+            require(connectedPane.is(Blocks.STAINED_GLASS_PANE.green())
+                            && connectedPane.getValue(CrossCollisionBlock.EAST)
+                            && connectedPane.getValue(CrossCollisionBlock.WEST)
+                            && !connectedPane.getValue(CrossCollisionBlock.NORTH)
+                            && !connectedPane.getValue(CrossCollisionBlock.SOUTH),
+                    "Generated Bank pane normalization did not connect exactly to both walls");
+
+            BlockState modularPane = Blocks.GLASS_PANE.defaultBlockState();
+            require(level.setBlock(
+                            panePosition,
+                            modularPane,
+                            Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE),
+                    "The modular pane fixture could not place its disconnected pane");
+            require(VillageProsperityManager.normalizeModularConnectionState(
+                            level,
+                            panePosition,
+                            modularPane,
+                            null,
+                            0x4D4F44554C41524CL),
+                    "The modular structure pane normalization was rejected");
+            BlockState connectedModularPane = level.getBlockState(panePosition);
+            require(connectedModularPane.is(Blocks.GLASS_PANE)
+                            && connectedModularPane.getValue(CrossCollisionBlock.EAST)
+                            && connectedModularPane.getValue(CrossCollisionBlock.WEST)
+                            && !connectedModularPane.getValue(CrossCollisionBlock.NORTH)
+                            && !connectedModularPane.getValue(CrossCollisionBlock.SOUTH),
+                    "Modular structure glass did not connect exactly to both wall blocks");
+
+            require(level.setBlockAndUpdate(panePosition, Blocks.AIR.defaultBlockState())
+                            && !VillageProsperityManager.normalizeModularConnectionState(
+                                    level,
+                                    panePosition,
+                                    modularPane,
+                                    null,
+                                    0x4D4F44554C41524CL)
+                            && level.getBlockState(panePosition).isAir(),
+                    "Modular pane maintenance recreated a removed/player-changed window");
+
+            BlockState disconnectedBars = Blocks.IRON_BARS.defaultBlockState();
+            require(level.setBlock(
+                            panePosition,
+                            disconnectedBars,
+                            Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)
+                            && VillageProsperityManager.normalizeModularConnectionState(
+                                    level,
+                                    panePosition,
+                                    disconnectedBars,
+                                    null,
+                                    0x5241494C494E4753L),
+                    "The modular lookout-rail normalization was rejected");
+            BlockState connectedBars = level.getBlockState(panePosition);
+            require(connectedBars.is(Blocks.IRON_BARS)
+                            && connectedBars.getValue(CrossCollisionBlock.EAST)
+                            && connectedBars.getValue(CrossCollisionBlock.WEST)
+                            && !connectedBars.getValue(CrossCollisionBlock.NORTH)
+                            && !connectedBars.getValue(CrossCollisionBlock.SOUTH),
+                    "Modular lookout bars did not connect exactly to both wall blocks");
+        } finally {
+            level.setBlockAndUpdate(panePosition, previousPane);
+            level.setBlockAndUpdate(westPosition, previousWest);
+            level.setBlockAndUpdate(eastPosition, previousEast);
+        }
+    }
+
+    private static BlockPos findEmptyPaneFixturePosition(ServerLevel level, BlockPos spawn) {
+        for (int radius = 0; radius <= 8; radius++) {
+            for (int xOffset = -radius; xOffset <= radius; xOffset++) {
+                for (int zOffset = -radius; zOffset <= radius; zOffset++) {
+                    if (radius > 0
+                            && Math.abs(xOffset) != radius
+                            && Math.abs(zOffset) != radius) {
+                        continue;
+                    }
+                    int x = spawn.getX() + xOffset;
+                    int z = spawn.getZ() + zOffset;
+                    int surfaceY = level.getHeight(
+                            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                    int firstCandidate = Math.max(
+                            level.getMinY(), Math.min(level.getMaxY(), surfaceY + 1));
+                    for (int y = firstCandidate; y <= level.getMaxY(); y++) {
+                        BlockPos candidate = new BlockPos(x, y, z);
+                        if (level.getBlockState(candidate).isAir()
+                                && level.getBlockState(candidate.west()).isAir()
+                                && level.getBlockState(candidate.east()).isAir()
+                                && level.getBlockState(candidate.north()).isAir()
+                                && level.getBlockState(candidate.south()).isAir()) {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Could not find empty loaded space for the Bank pane fixture");
     }
 
     private static BlockPos findEmptyFixturePosition(ServerLevel level, BlockPos spawn) {
