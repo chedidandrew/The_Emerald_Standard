@@ -28,7 +28,13 @@ public final class EmeraldStandardNeoForgeClient {
                         (container, parent) -> new EmeraldSettingsScreen(parent));
         event.register(EmeraldStandardNeoForge.BANKER_MENU.get(), BankerScreen::new);
         HandbookReaderItem.registerReader(() -> Minecraft.getInstance().gui.setScreen(new HandbookScreen(null)));
-        ClientSmokeSupport.initialized(LOGGER);
+        ClientSmokeSupport.initialized(LOGGER, () -> {
+            var container = ModList.get().getModContainerById(EmeraldStandardNeoForge.MOD_ID).orElseThrow();
+            var factory = container.getCustomExtension(IConfigScreenFactory.class).orElseThrow();
+            if (!(factory.createScreen(container, null) instanceof EmeraldSettingsScreen))
+                throw new IllegalStateException("Wrong NeoForge config screen");
+            LOGGER.info("The Emerald Standard NeoForge configuration factory verified");
+        });
         GalleryCaptureSupport.initialized(LOGGER);
         VillageComparisonCaptureSupport.initialized(LOGGER);
     }

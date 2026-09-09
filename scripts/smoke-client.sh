@@ -15,61 +15,26 @@ mkdir -p "$LOG_DIR"
 # Never reuse or delete the developer's ordinary loader run directory: it may contain a manual
 # test world. Each smoke launch gets an isolated game directory under disposable build output.
 RUN_DIR="$(mktemp -d "$LOG_DIR/$LOADER-run.XXXXXX")"
+: > "$LOG_FILE"
 
+status=0
+# Two independent processes sharing only this disposable profile verify restart persistence.
+for restart in false true; do
 set +e
 ALSOFT_DRIVERS="null" \
-JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.clientSmoke=true" \
+JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.clientSmoke=true -Dthe_emerald_standard.clientSmokeRestart=$restart" \
     timeout 240s xvfb-run -a \
     bash "$ROOT/$LOADER/gradlew" --no-daemon -p "$ROOT/$LOADER" \
     -I "$ROOT/scripts/smoke-client.init.gradle" \
     -PtesSmokeGameDir="$RUN_DIR" \
     runClient \
-    > "$LOG_FILE" 2>&1
+    >> "$LOG_FILE" 2>&1
 status=$?
 set -e
+if [[ $status -ne 0 ]]; then break; fi
+done
 
-# Minecraft logs two recoverable errors on some headless Linux runners when narrator or audio
-# devices are unavailable. They do not prevent the client, resources, or mod screen registry from
-# initializing. Any other ERROR/FATAL entry remains a hard failure.
-unexpected_errors="$(
-    grep -E '\[[^]]+/(ERROR|FATAL)\]' "$LOG_FILE" \
-        | grep -Ev 'Error while loading the narrator|Error starting SoundSystem\. Turning off sounds & music' \
-        || true
-)"
-
-if [[ -n "$unexpected_errors" ]] \
-        || grep -Eq 'Exception in thread|A fatal error has been detected|ReportedException|Could not execute entrypoint|ModLoadingException|Mixin apply failed|NoClassDefFoundError|ClassNotFoundException|Crash report saved to' "$LOG_FILE"; then
-    echo "$LOADER client logged an unexpected fatal startup error" >&2
-    if [[ -n "$unexpected_errors" ]]; then
-        printf '%s\n' "$unexpected_errors" >&2
-    fi
-    cat "$LOG_FILE" >&2
-    exit 1
-fi
-
-if ! grep -Fq "The Emerald Standard client initialized" "$LOG_FILE"; then
-    echo "$LOADER client never initialized The Emerald Standard" >&2
-    cat "$LOG_FILE" >&2
-    exit 1
-fi
-
-if ! grep -Fq "Emerald Handbook page layout verified for 46 pages" "$LOG_FILE"; then
-    echo "$LOADER client did not verify every localized handbook page" >&2
-    cat "$LOG_FILE" >&2
-    exit 1
-fi
-
-if ! grep -Fq "Stopping!" "$LOG_FILE"; then
-    echo "$LOADER client did not reach the controlled smoke-test shutdown" >&2
-    cat "$LOG_FILE" >&2
-    exit 1
-fi
-
-if [[ $status -ne 0 ]]; then
-    echo "$LOADER client did not exit cleanly after the smoke marker (status $status)" >&2
-    cat "$LOG_FILE" >&2
-    exit 1
-fi
+bash "$ROOT/scripts/verify-client-smoke-log.sh" "$LOADER" "$LOG_FILE" "$status"
 
 echo "PASS $LOADER client bootstrap smoke test"
 tail -n 100 "$LOG_FILE"

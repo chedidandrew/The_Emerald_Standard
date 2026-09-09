@@ -38,6 +38,27 @@ public final class ReaderSettingsSelfTest {
             EmeraldConfig original = EmeraldConfig.load(world);
             original.applyTo(new EconomyService());
             check(original.values().size() == 27, "incomplete settings snapshot");
+            // Exercise each editor key, not just representative settings. Invalid mixed drafts
+            // must leave the complete active snapshot and exact original file bytes unchanged.
+            for (var entry : original.values().entrySet()) {
+                String key = entry.getKey();
+                boolean toggle = entry.getValue().equals("true") || entry.getValue().equals("false");
+                for (String invalid : toggle ? new String[] {"", " ", "maybe", "1"}
+                        : new String[] {"", " ", "text", "1.5", "-1", "2147483648", "2147483647"}) {
+                    byte[] unchanged = Files.readAllBytes(world.resolve("the_emerald_standard-config.properties"));
+                    Map<String, String> draft = new java.util.LinkedHashMap<>();
+                    draft.put("onboarding.join_hint_enabled", "false");
+                    draft.put(key, invalid);
+                    expectFailure(() -> EmeraldConfig.update(world, original, draft));
+                    check(EmeraldConfig.current() == original, "invalid " + key + " changed runtime");
+                    check(Arrays.equals(unchanged, Files.readAllBytes(world.resolve(
+                            "the_emerald_standard-config.properties"))), "invalid " + key + " changed disk");
+                }
+                Properties valid = new Properties(); valid.putAll(original.values());
+                valid.setProperty(key, toggle ? "false" : entry.getValue());
+                check(EmeraldConfig.parse(valid).values().get(key).equals(valid.getProperty(key)),
+                        "valid key rejected: " + key);
+            }
             Properties props = new Properties(); props.putAll(original.values());
             check(EmeraldConfig.parse(props).values().equals(original.values()), "snapshot drift");
             Path file = world.resolve("the_emerald_standard-config.properties");
@@ -61,6 +82,18 @@ public final class ReaderSettingsSelfTest {
             byte[] external = Files.readAllBytes(file);
             expectFailure(() -> EmeraldConfig.update(world, latest, Map.of("market.events_enabled", "false")));
             check(Arrays.equals(external, Files.readAllBytes(file)), "external edit overwritten");
+            Path allKeysWorld = dir.resolve("all-keys/data");
+            EmeraldConfig active = EmeraldConfig.load(allKeysWorld);
+            active.applyTo(new EconomyService());
+            for (String key : active.values().keySet()) {
+                String old = active.values().get(key);
+                String next = old.equals("true") ? "false" : old.equals("false") ? "true"
+                        : Integer.toString(Integer.parseInt(old) + (key.equals("economic_clock.max_offline_days") ? -1 : 1));
+                EmeraldConfig updated = EmeraldConfig.update(allKeysWorld, active, Map.of(key, next));
+                check(updated.values().get(key).equals(next), "valid write failed: " + key);
+                active = EmeraldConfig.load(allKeysWorld);
+                check(active.values().equals(updated.values()), "reload lost setting: " + key);
+            }
             System.out.println("PASS reader geometry, client preferences, atomic world edits and stale-world rejection");
         } finally {
             try (var paths = Files.walk(dir)) {

@@ -1,10 +1,12 @@
 # The Emerald Standard
 
-[![Build, test, and launch](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml/badge.svg)](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml)
+[![Default branch build, test, and launch](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/chedidandrew/The_Emerald_Standard/actions/workflows/build.yml?query=branch%3Amain)
+
+The badge reports **main only**. Development candidates require their own exact-commit workflow results.
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current source status: **unreleased `0.4.0-beta.3` development candidate**. The latest public download remains the older [`0.4.0-beta.2` prerelease](https://github.com/chedidandrew/The_Emerald_Standard/releases/tag/v0.4.0-beta.2), which does not contain the Unreleased beta.3 features documented below. Automated and hands-on evidence for beta.3 must be recorded against its exact candidate commit; the manual matrix is still `Not run`. Normal gameplay is centered on Banker villagers, Village Banks, the graphical bank dashboard, and the optional Village Prosperity System. Commands are reserved for administrators and diagnostics.
+> Current source status: **unreleased `0.4.0-beta.4` development candidate**, not a stable release. The latest published download remains the older [`0.4.0-beta.2` prerelease](https://github.com/chedidandrew/The_Emerald_Standard/releases/tag/v0.4.0-beta.2); it does not include the later architecture, handbook reader, or in-game settings work. CI artifacts are experimental exact-commit builds, not published releases. See the [beta.4 verification record](docs/reviews/2026-09-09-beta4-final-validation.md) for observed checks and remaining limits; the broader human gameplay matrix is not certified. Normal gameplay centers on Banker villagers, Village Banks, the graphical dashboard and optional Village Prosperity. Commands are for administrators and diagnostics.
 
 ## Core rule
 
@@ -13,14 +15,16 @@ Players provide emerald capital to the villager economy. **Players can never bor
 ## Quick start
 
 1. Back up the world before installing or upgrading this beta.
-2. To test this source candidate, build or obtain exactly one `0.4.0-beta.3` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
+2. To test this source candidate, build or obtain exactly one `0.4.0-beta.4` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
 3. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
 4. Right-click the Banker or an Exchange Desk to open the eight-page dashboard.
 5. On **Account**, choose an amount and deposit physical emeralds into bank cash. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk.
 
 With `onboarding.join_hint_enabled=true`, each player receives one **Starter Handbook** in each world alongside the one-time first-join discovery hint. The handbook is placed in the player's inventory without opening itself, so joining is never interrupted. Delivery is recorded only after the inventory accepts the book; if the inventory is full, nothing is dropped and the mod retries on that player's next join.
 
-The handbook uses colored headings, compact diagrams and recipe layouts, hover explanations, and clickable contents and navigation links. It covers the first deposit, every dashboard page, safe and risky products, commodity exchange, Village Prosperity and safety, the Fund, physical construction, economic time, operator debugging, transaction recovery, troubleshooting, crafting, and a finance glossary. A lost copy can be replaced with the shapeless **Book + Emerald** handbook recipe; obtaining either ingredient reveals that recipe. The first successful Banker visit still awards the advancement **The Emerald Standard** and gives a short deposit and risk explanation. Normal play and discovery remain command-free.
+Using the handbook opens a wide, responsive **16-chapter reader** with topic search, scrolling, Previous/Next navigation and keyboard controls. A-/A+ sets local reader text from **80% to 120%**, default **90%**, without changing Minecraft GUI scale. Existing handbook items still work; lecterns keep the original 46-page vanilla rendering, and other written books are unaffected. It covers deposits, dashboard pages, investments, commodities, Village Prosperity, safety, construction, recovery and a finance glossary. A lost copy can be replaced with the shapeless **Book + Emerald** recipe. The first successful Banker visit still awards **The Emerald Standard** and a deposit/risk explanation.
+
+Open **Handbook > Settings** on either loader. Fabric also offers **Mods > The Emerald Standard > Configure** when optional **Mod Menu** is installed (tested with 20.0.1); Mod Menu is neither required nor bundled. NeoForge exposes its normal mod-list configuration action. Reader size works from the main menu. All 27 existing world settings are editable only for the currently open owning single-player world: Apply validates the complete draft and rejects stale/external conflicts; Done discards unapplied world edits. Remote-server settings remain administrator-owned. Disabling starter-book delivery affects future eligible deliveries, never books or delivery markers already saved. See [handbook and settings](docs/HANDBOOK_AND_SETTINGS.md) and [configuration](docs/CONFIGURATION.md).
 
 ## Banking and investing
 

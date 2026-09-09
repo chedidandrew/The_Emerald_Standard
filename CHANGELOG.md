@@ -2,6 +2,10 @@
 
 ## Beta.4 handbook and configuration validation
 
+- Retain the new responsive 16-chapter handbook, search/navigation, 80–120% local text preference (90% default), original item/lectern compatibility, optional Fabric Mod Menu and NeoForge Settings integrations, and validated editor for all 27 world settings. Economy format remains 18; existing beta.3/beta.4 saves and one-time book delivery state are preserved.
+- Extend real-client tests through chapter/search/scroll controls, both Settings-return paths, text-size bounds and two-process restart persistence. Verify actual loader config registrations and optional Mod Menu absence. Expand invalid-draft and valid-write/reload coverage to every world configuration key.
+- Correct README source status to beta.4 and explicitly label its badge as main-only; development artifacts remain distinct from published prereleases.
+
 - Repair the Linux client-smoke desktop environment with an explicit Adwaita cursor theme and Xcursor dependency. Add a real GLFW cursor probe; retain strict rejection of cursor and other unexpected client errors. See the beta.4 final-validation review for the original failure evidence and verification status.
 
 All notable changes to The Emerald Standard are documented here.

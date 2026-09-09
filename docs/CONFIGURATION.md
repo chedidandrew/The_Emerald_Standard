@@ -6,6 +6,12 @@ Edit the file while the server is stopped, or edit it and run `/emerald config r
 
 ## Settings
 
+In beta.4, **Handbook > Settings** edits these same 27 keys in an open owning single-player
+world. Fabric's optional Mod Menu Configure action and NeoForge's config action open the same
+screen. Apply validates the whole draft before atomic replacement; Done discards unapplied
+world edits. Remote clients and title-screen sessions cannot edit world files. Reader text size
+is a separate client-local preference and saves immediately. See [reader/config validation](reviews/2026-09-09-beta4-final-validation.md).
+
 | Key | Default | Accepted values | Effect |
 | --- | ---: | --- | --- |
 | `village_banks.enabled` | `true` | `true`, `false` | Enables discovery-based Village Bank generation and Banker maintenance. Existing player accounts remain available. |

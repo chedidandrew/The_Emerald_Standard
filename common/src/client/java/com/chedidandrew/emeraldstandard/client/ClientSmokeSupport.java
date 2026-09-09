@@ -22,6 +22,10 @@ public final class ClientSmokeSupport {
     private ClientSmokeSupport() { }
 
     public static void initialized(Logger logger) {
+        initialized(logger, () -> { });
+    }
+
+    public static void initialized(Logger logger, Runnable loaderConfigurationCheck) {
         logger.info("The Emerald Standard client initialized");
         if (!Boolean.getBoolean(SMOKE_PROPERTY)) return;
         Thread smoke = new Thread(() -> {
@@ -38,6 +42,7 @@ public final class ClientSmokeSupport {
                 }
                 if (!ready) throw new IllegalStateException("Client resources/language never became ready");
                 onClient(minecraft, () -> {
+                    loaderConfigurationCheck.run();
                     // Probe the platform, not the mod UI: Minecraft initializes these standard
                     // shapes (including NOT_ALLOWED) when its ordinary widgets first render.
                     for (int shape : new int[] {0x36001, 0x36002, 0x36003, 0x36004,
@@ -61,25 +66,62 @@ public final class ClientSmokeSupport {
                     return null;
                 });
                 Thread.sleep(1000);
+                onClient(minecraft, () -> {
+                    try { ReaderClientChecks.verify(minecraft); }
+                    catch (Exception exception) { throw new IllegalStateException(exception); }
+                    logger.info("The Emerald Standard reader navigation and persistence checks passed");
+                    return null;
+                });
+                Thread.sleep(300);
                 capture(minecraft, "handbook.png");
+                onClient(minecraft, () -> {
+                    ReaderClientChecks.press(minecraft.gui.screen(), "A-"); return null;
+                });
+                Thread.sleep(250);
+                capture(minecraft, "handbook-80.png");
+                onClient(minecraft, () -> {
+                    for (int i = 0; i < 4; i++) ReaderClientChecks.press(minecraft.gui.screen(), "A+");
+                    return null;
+                });
+                Thread.sleep(250);
+                capture(minecraft, "handbook-120.png");
+                onClient(minecraft, () -> {
+                    minecraft.gui.screen().setFocused(null);
+                    minecraft.gui.screen().keyPressed(new net.minecraft.client.input.KeyEvent(
+                            org.lwjgl.glfw.GLFW.GLFW_KEY_END, 0, 0));
+                    return null;
+                });
+                Thread.sleep(250);
+                capture(minecraft, "handbook-120-bottom.png");
+                ReaderPreferences.save(HandbookScreen.preferencesPath(), 90);
                 onClient(minecraft, () -> { minecraft.gui.setScreen(new EmeraldSettingsScreen(null)); return null; });
                 Thread.sleep(700);
                 capture(minecraft, "settings.png");
                 if ("present".equals(System.getenv("TES_TEST_MODMENU"))) {
                     onClient(minecraft, () -> {
                         try {
-                            Class<?> entry = Class.forName("com.chedidandrew.emeraldstandard.fabric.EmeraldModMenu");
-                            Object factory = entry.getMethod("getModConfigScreenFactory").invoke(entry.getConstructor().newInstance());
-                            Object screen = Class.forName("com.terraformersmc.modmenu.api.ConfigScreenFactory")
-                                    .getMethod("create", Screen.class).invoke(factory, new Object[] {null});
+                            Class<?> menu = Class.forName("com.terraformersmc.modmenu.ModMenu");
+                            if (!Boolean.TRUE.equals(menu.getMethod("hasConfigScreen", String.class)
+                                    .invoke(null, "the_emerald_standard")))
+                                throw new IllegalStateException("Mod Menu Configure action is unavailable");
+                            Object screen = menu.getMethod("getConfigScreen", String.class, Screen.class)
+                                    .invoke(null, "the_emerald_standard", null);
                             if (!(screen instanceof EmeraldSettingsScreen)) throw new IllegalStateException("Wrong Mod Menu screen");
                             minecraft.gui.setScreen((Screen) screen);
                             logger.info("The Emerald Standard Mod Menu configuration factory verified");
                         } catch (ReflectiveOperationException exception) { throw new IllegalStateException(exception); }
                         return null;
                     });
+                } else {
+                    try {
+                        Class.forName("com.terraformersmc.modmenu.ModMenu");
+                        throw new IllegalStateException("Absent-Mod-Menu smoke unexpectedly contains Mod Menu");
+                    } catch (ClassNotFoundException expected) {
+                        logger.info("The Emerald Standard optional Mod Menu absence verified");
+                    }
                 }
                 logger.info("The Emerald Standard reader and settings screen smoke checks passed");
+                ReaderPreferences.save(HandbookScreen.preferencesPath(), 110);
                 onClient(minecraft, () -> { minecraft.stop(); return null; });
             } catch (Exception exception) {
                 logger.error("The Emerald Standard reader/config smoke failed", exception);

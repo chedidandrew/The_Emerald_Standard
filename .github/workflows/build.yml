@@ -20,6 +20,8 @@ jobs:
           java-version: '25'
       - name: Compile and test the loader-neutral economy
         run: bash scripts/run-common-tests.sh
+      - name: Verify strict client smoke failure detection
+        run: bash scripts/test-client-smoke-log.sh
 
   loader-builds:
     name: Build ${{ matrix.loader }}

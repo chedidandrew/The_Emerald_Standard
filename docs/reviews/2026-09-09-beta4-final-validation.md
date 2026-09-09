@@ -34,5 +34,62 @@ the environment repair works; any remaining cursor error is still fatal to the t
 
 ## Verification record
 
-Validation is in progress. No final candidate or merge is certified by this document yet.
+Cursor-fix commit `851668781663cced76362882a33063e8338c6cf6` passed **all eight jobs** in
+[run 34317794478](https://github.com/chedidandrew/The_Emerald_Standard/actions/runs/34317794478).
+Both Fabric variants pass the new eight-shape probe with no cursor error. This confirms the
+desktop-environment repair; narrator unavailability retains its pre-existing narrow handling.
+There is no new X11/GLFW allowlist. A separate strict-log regression injects cursor errors,
+other errors, crashes, missing markers, missing restart evidence and nonzero process exits;
+every such fixture must fail. The original error detection is extracted into a reusable checker,
+not removed or weakened.
+
+The subsequent candidate strengthens real-client checks through all chapters, search, wheel/key
+scrolling, text-size bounds, both directions of nested Settings navigation and preference reload.
+The smoke harness launches two independent JVMs using the same isolated profile and requires
+success from both. Fabric queries Mod Menu's actual registered Configure lookup, not a freshly
+constructed entrypoint; NeoForge queries the installed config extension. Absence variants verify
+Mod Menu is not present. Every world key has invalid mixed-draft rejection and valid write/reload
+coverage. The README now identifies beta.4 source builds and labels the badge as main-only.
+
+Local Windows Java 25 clients at 1280x800 exercised the reader without Mod Menu and then
+restarted with Mod Menu 20.0.1. Navigation, search, every chapter's scroll end, 80/120% bounds,
+Settings-return refresh, reopened preferences and the registered Configure lookup passed.
+Default, 80%, 120%, scrolled-bottom and Settings screenshots were inspected: no clipping,
+overlapping controls or excessively bright headings were seen. No further visual redesign was
+needed beyond the prior contrast/spacing fixes. These are automated real-client interactions
+and screenshot inspection, not a human gameplay session.
+
+The exact strengthened candidate and eventual merge still require full CI verification.
 Minecraft remains 26.2, Java 25, both loaders 0.4.0-beta.4 and economy format 18.
+
+## Scope, compatibility and remaining checks
+
+Package checks require the new reader, settings, preferences and handbook item classes, plus
+the Fabric config entrypoint. Fabric metadata must keep Mod Menu optional and must not bundle it.
+Local common regressions and strict-log failure fixtures pass. The unchanged handbook subclass
+retains the item ID and WrittenBookItem lectern path; only that item's held-use callback opens
+the reader. Ordinary written books are not replaced. Onboarding's toggle only guards future
+delivery attempts; it neither removes existing books nor clears delivery tags.
+
+Config source inspection confirms integrated-server identity checks, server-thread application,
+whole-draft validation and atomic replacement before runtime application. All 27 keys are tested
+with real temporary files, including invalid mixed drafts and valid write/reload. No active world
+is written from the title screen. Remote multiplayer has no integrated-server editor authority.
+Done closes the screen without applying its draft. These ownership and discard paths were
+reviewed in source; an in-world GUI edit/rejoin and live remote multiplayer session were not run.
+
+No manual Exchange Desk/deposit/withdraw/rejoin sequence, old-world lectern interaction, or
+onboarding delivery session was performed in this pass. The automated real-client checks are
+title-screen tests, not a replacement for those gameplay checks. Existing saves and the user's
+structure-review worlds were not modified. The main-only September 8 repository review is
+preserved, including its inventory-recovery isolation concern and synchronous-save performance
+risk; this focused handbook/configuration pass does not claim to resolve them. This remains an
+unreleased beta, not a stable-release certification.
+
+## Merge gate
+
+Preserve main's documentation by merging its history into the development candidate. Require
+all eight jobs on that exact candidate, then use a normal PR merge commit (no squash/rebase).
+The resulting main commit must independently pass all eight jobs. The PR and task handoff
+record the final immutable commit/run links, avoiding a documentation-only post-validation
+change. Do not publish a release, create a stable tag, or delete the development branch.

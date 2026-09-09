@@ -76,6 +76,10 @@ required=(
     'com/chedidandrew/emeraldstandard/minecraft/FundConfirmationFingerprint.class'
     'com/chedidandrew/emeraldstandard/minecraft/BankerProfessionSupport.class'
     'com/chedidandrew/emeraldstandard/minecraft/EmeraldHandbook.class'
+    'com/chedidandrew/emeraldstandard/minecraft/HandbookReaderItem.class'
+    'com/chedidandrew/emeraldstandard/client/HandbookScreen.class'
+    'com/chedidandrew/emeraldstandard/client/EmeraldSettingsScreen.class'
+    'com/chedidandrew/emeraldstandard/client/ReaderPreferences.class'
     'com/chedidandrew/emeraldstandard/minecraft/ExchangeDeskBlock.class'
     'com/chedidandrew/emeraldstandard/minecraft/PlayerOnboarding.class'
     'com/chedidandrew/emeraldstandard/client/BankerScreen.class'
@@ -104,6 +108,7 @@ if [[ "$LOADER" == "fabric" ]]; then
         'fabric.mod.json'
         'com/chedidandrew/emeraldstandard/fabric/EmeraldStandardFabric.class'
         'com/chedidandrew/emeraldstandard/fabric/EmeraldStandardFabricClient.class'
+        'com/chedidandrew/emeraldstandard/fabric/EmeraldModMenu.class'
         'com/chedidandrew/emeraldstandard/fabric/BankerProfessionFabric.class'
     )
 else
@@ -274,8 +279,12 @@ fi
 
 if [[ "$LOADER" == "fabric" ]]; then
     if ! unzip -p "$jar_file" fabric.mod.json \
-            | "${PYTHON_COMMAND[@]}" -c 'import json,sys; d=json.load(sys.stdin); expected=sys.argv[1]; assert d["id"] == "the_emerald_standard" and d["version"] == expected' "$VERSION"; then
-        echo "$jar_file contains incorrect Fabric mod identity or version" >&2
+            | "${PYTHON_COMMAND[@]}" -c 'import json,sys; d=json.load(sys.stdin); expected=sys.argv[1]; assert d["id"] == "the_emerald_standard" and d["version"] == expected; assert d["entrypoints"]["modmenu"] == ["com.chedidandrew.emeraldstandard.fabric.EmeraldModMenu"]; assert "modmenu" not in d.get("depends", {}); assert not any("modmenu" in j["file"].lower() for j in d.get("jars", []))' "$VERSION"; then
+        echo "$jar_file contains incorrect Fabric identity, version, or optional Mod Menu metadata" >&2
+        exit 1
+    fi
+    if grep -Eq '^com/terraformersmc/modmenu/|[Mm]od[Mm]enu.*\.jar$' <<<"$listing"; then
+        echo "$jar_file must not bundle optional Mod Menu" >&2
         exit 1
     fi
 else

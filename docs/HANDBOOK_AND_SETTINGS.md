@@ -33,6 +33,10 @@ The new surrounding interface labels are English in this patch; the guide's exis
 
 ## Validation record
 
+For the subsequent Windows real-client checks, complete X11 cursor diagnosis, strengthened
+two-process UI tests and exact-commit CI results, see the [final validation record](reviews/2026-09-09-beta4-final-validation.md).
+The prototype results below are historical, not the final candidate's certification.
+
 The new pure geometry/preferences/configuration suite passed in the review container against the implementation prototype. This checks default and persisted text size, bounds, all 27 settings, valid writes, invalid-value rejection without disk/runtime mutation, stale snapshots, wrong-world paths, and external-file conflicts. This is not a claim of a local Minecraft launch.
 
 The committed build must pass its own common tests, both loader builds and package checks, both dedicated servers, and all three client variants before a verified JAR handoff. Client screenshots are generated only under the explicit CI smoke property in isolated temporary game directories. Hands-on multiplayer testing and the existing manual matrix remain unclaimed.

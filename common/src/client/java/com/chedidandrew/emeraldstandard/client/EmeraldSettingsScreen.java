@@ -96,6 +96,7 @@ public final class EmeraldSettingsScreen extends Screen {
         return server != null && Minecraft.getInstance().getSingleplayerServer() == server
                 && snapshot != null;
     }
+    int textPercent() { return percent; }
     private void setPercent(int requested) {
         try {
             ReaderPreferences.save(HandbookScreen.preferencesPath(), requested);

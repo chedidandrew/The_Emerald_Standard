@@ -1,5 +1,21 @@
 # Testing and publication gate
 
+## Beta.4 reader/configuration candidate
+
+The [final-validation record](reviews/2026-09-09-beta4-final-validation.md) distinguishes prior
+failed Fabric cursor jobs from subsequent exact-commit evidence. Client smoke launches now run
+two independent processes in the same disposable profile. Real widgets exercise all 16 chapters,
+search, scrolling, keyboard navigation, 80/90/120% sizing, Settings returns and restart persistence.
+Fabric checks the actual Mod Menu registry when installed and its absence otherwise. NeoForge
+checks its registered config extension. Real-font screenshots include default, minimum, maximum
+and scrolled reader views. The strict log gate remains active; missing success markers also fail.
+The file-level regression rejects invalid drafts for every world key and verifies every key's
+valid write and reload, in addition to stale-world and external-file conflict tests.
+
+Run `build check` for each loader and the full common suite. CI must pass all eight jobs on the
+exact final development candidate, then again on the normal merge commit before declaring the
+merge verified. This is beta testing, not stable-release certification or a human gameplay claim.
+
 The chimney regression compares all 52 masters in five dialects against revision 4, admits only
 chimney-material replacements/removals, preserves dressing stages and the sculpted hearth,
 and checks local-roof sizing, supported wall tips, capped-stack preservation, reserved-cell

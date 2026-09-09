@@ -135,6 +135,13 @@ public final class HandbookScreen extends Screen {
     private int maxScroll() { return HandbookLayout.maximumScroll(lines.size(), visibleLines()); }
     private void moveScroll(int delta) { scroll = Math.max(0, Math.min(maxScroll(), scroll + delta)); }
 
+    // Read-only observations for the opt-in real-client regression, not alternative UI logic.
+    int selectedChapter() { return chapter; }
+    int scrollPosition() { return scroll; }
+    int scrollLimit() { return maxScroll(); }
+    int textPercent() { return percent; }
+    int matchingChapters() { return matches.size(); }
+
     @Override
     public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
         g.fill(0, 0, width, height, 0xE0101814);
