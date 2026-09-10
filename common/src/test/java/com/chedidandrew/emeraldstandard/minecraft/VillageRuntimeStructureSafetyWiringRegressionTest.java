@@ -42,9 +42,13 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
         String origin = methodBody(source, "private static ProjectSiteSearch safeOrigin(");
         require(origin.contains("authoritativeGroundContact")
                         && origin.contains("areaColumnsLoaded(")
-                        && origin.contains("isNaturalProjectGround(")
-                        && origin.contains("TerrainFoundationPlan.supportsTerrainRange("),
-                "Site preflight no longer proves every transformed ground column loaded, natural, and bridgeable");
+                        && origin.contains("survey.surface(")
+                        && origin.contains("survey.available(")
+                        && origin.contains("TerrainFoundationPlan.levelledFloor("),
+                "Site preflight no longer proves loaded natural ground and bounded cut/fill for each transformed column");
+        require(search.contains("orientationAttempt < (isManagedProject(project) ? 4 : 1)")
+                        && search.contains("prepareProjectSitePlan("),
+                "New-site search lost orientation fallback or frozen clearing intent");
     }
 
     private static void verifyRuntimeSemanticAccess(String source) {
@@ -114,9 +118,8 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
 
     private static void verifyLiveSiteSearch(String source) {
         String search = methodBody(source, "private static ProjectSiteSearch findProjectOrigin(");
-        require(search.contains("projectSiteOffsets(project.materializationFailures)")
-                        || (search.contains("projectSiteOffsets(")
-                                && search.contains("project.materializationFailures")),
+        require(search.contains("VillageNeighborhoodPlan.offsets(")
+                                && search.contains("project.materializationFailures, village.villageId"),
                 "Repeated failures cannot expand the deterministic site frontier");
         String materialization = methodBody(
                 source, "private static MaterializationBudget materializeDevelopment(");
@@ -125,9 +128,12 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
                                 "deferVillageProjectMaterialization(")
                         && materialization.contains("gameTime, true"),
                 "An unloaded low-view-distance frontier can still hot-loop and starve later work");
-        require(materialization.contains("claimNextDueVillageVisualProject(")
-                        && materialization.contains("selectedProjectId"),
-                "Due projects are no longer claimed through the persisted per-village rotation");
+        require(materialization.contains("for (Long selectedProjectId : dueProjects)")
+                        && materialization.contains("remainingBlockBudget = 1;")
+                        && materialization.contains("retryAfterGameTick <= Math.max(0L, gameTime)"),
+                "Each due project must receive one independent placement allowance");
+        require(search.contains("bestSite") && search.contains("entranceApproach.stepCount == 0"),
+                "Site selection must prefer level approaches");
         require(search.contains("project.siteSearchCursor")
                         && search.contains("project.siteSearchSawUnloadedCandidate")
                         && search.contains("checkpointProjectSiteSearch("),

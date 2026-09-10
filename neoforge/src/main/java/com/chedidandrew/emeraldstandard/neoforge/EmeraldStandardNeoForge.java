@@ -76,6 +76,8 @@ public final class EmeraldStandardNeoForge {
             VillageBankManager.resetRuntimeState();
             EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
             config.applyTo(ECONOMY);
+            ECONOMY.setPeacefulVillageGrowth(server.getWorldData().getDifficulty()
+                    == net.minecraft.world.Difficulty.PEACEFUL);
             ECONOMY.start(
                     server.getWorldPath(LevelResource.DATA),
                     server.overworld().getSeed(),
@@ -118,6 +120,8 @@ public final class EmeraldStandardNeoForge {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        ECONOMY.setPeacefulVillageGrowth(event.getServer().getWorldData().getDifficulty()
+                == net.minecraft.world.Difficulty.PEACEFUL);
         if (!ECONOMY.tick(
                 event.getServer().overworld().getGameTime(),
                 event.getServer().overworld().getOverworldClockTime())) {

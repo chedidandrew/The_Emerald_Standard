@@ -5,6 +5,7 @@ import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.PortfolioAnalytics;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
+import com.chedidandrew.emeraldstandard.core.VillageExpansion;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,6 +60,10 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int ACTION_EXCHANGE = 111;
     public static final int ACTION_RECOVER = 112;
     public static final int ACTION_SUPPORT_VILLAGE = 113;
+    public static final int ACTION_EXPANSION_AUTOMATIC = 114;
+    public static final int ACTION_EXPANSION_APPROVAL = 115;
+    public static final int ACTION_EXPANSION_PAUSE = 116;
+    public static final int ACTION_EXPANSION_APPROVE_ONCE = 117;
 
     public static final int[] AMOUNT_PRESETS = {1, 5, 10, 32, 64, -1};
     public static final int FUND_TYPE_COUNT = 3;
@@ -286,7 +291,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_ACTIVITY_OFFSET = DATA_ACTIVITY_PAGE_COUNT + 1;
     private static final int DATA_ACTIVITY_TOTAL_COUNT = DATA_ACTIVITY_PAGE_COUNT + 2;
     private static final int DATA_ACTIVITY_FILTER = DATA_ACTIVITY_TOTAL_COUNT + 1;
-    public static final int DATA_COUNT = DATA_ACTIVITY_FILTER + 1;
+    private static final int DATA_EXPANSION = DATA_ACTIVITY_FILTER + 1;
+    public static final int DATA_COUNT = DATA_EXPANSION + 10;
 
     private final Inventory inventory;
     private final EconomyService economy;
@@ -397,6 +403,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int villageRestorationCenti;
     private int villageSimulationEnabled;
     private int villageVisualEnabled;
+    private final int[] expansionData = new int[10];
     private int villageIncidentCause;
     private int villageIncidentAge;
     private int villageAgricultureCenti;
@@ -454,6 +461,20 @@ public final class BankerMenu extends AbstractContainerMenu {
 
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
+        if (buttonId >= ACTION_EXPANSION_AUTOMATIC && buttonId <= ACTION_EXPANSION_APPROVE_ONCE) {
+            if (player.level().isClientSide()) return true;
+            if (serverPlayer == null || economy == null || player != serverPlayer || !stillValid(player)
+                    || villageId == null || !expansionManager() || economy.isCatchingUp()) return false;
+            boolean changed = buttonId == ACTION_EXPANSION_APPROVE_ONCE
+                    ? economy.approveVillageExpansion(villageId)
+                    : economy.setVillageExpansionMode(villageId,
+                            VillageExpansion.Mode.values()[buttonId - ACTION_EXPANSION_AUTOMATIC]);
+            if (!changed) serverPlayer.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "Expansion setting was not saved. " + economy.lastError()));
+            refreshServerSnapshot();
+            broadcastChanges();
+            return changed;
+        }
         if (buttonId == BUTTON_ACTIVITY_NEWER
                 || buttonId == BUTTON_ACTIVITY_OLDER
                 || buttonId == BUTTON_ACTIVITY_FILTER) {
@@ -998,6 +1019,26 @@ public final class BankerMenu extends AbstractContainerMenu {
     public boolean hasVillage() {
         return data.get(DATA_VILLAGE_PRESENT) != 0;
     }
+
+    private boolean expansionManager() {
+        return serverPlayer != null && (serverPlayer.permissions().hasPermission(
+                net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)
+                || serverPlayer.level().getServer().isSingleplayerOwner(serverPlayer.nameAndId()));
+    }
+    public VillageExpansion.Mode expansionMode() {
+        return VillageExpansion.Mode.values()[clampIndex(data.get(DATA_EXPANSION), VillageExpansion.Mode.values().length)];
+    }
+    public VillageExpansion.Reason expansionReason() {
+        return VillageExpansion.Reason.values()[clampIndex(data.get(DATA_EXPANSION + 1), VillageExpansion.Reason.values().length)];
+    }
+    public int cityDistricts() { return data.get(DATA_EXPANSION + 2); }
+    public double cityDailyUpkeep() { return data.get(DATA_EXPANSION + 3) / 100.0; }
+    public int villageLightingCoverage() { return data.get(DATA_EXPANSION + 4); }
+    public boolean mayManageExpansion() { return data.get(DATA_EXPANSION + 5) != 0; }
+    public int expansionHealthyDays() { return data.get(DATA_EXPANSION + 6); }
+    public double villageFoodSourceBonusPercent() { return data.get(DATA_EXPANSION + 7) / 100.0; }
+    public double villageCropUnits() { return data.get(DATA_EXPANSION + 8) / 100.0; }
+    public double villageLivestockUnits() { return data.get(DATA_EXPANSION + 9) / 100.0; }
 
     public com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.Lifecycle villageLifecycle() {
         int ordinal = clampIndex(
@@ -1828,6 +1869,20 @@ public final class BankerMenu extends AbstractContainerMenu {
         } else {
             EconomyState.VillageRecord village = villageSnapshot.village();
             villageId = village.villageId;
+            var expansion = economy.expansionStatus(villageId);
+            if (expansion != null) {
+                expansionData[0] = expansion.mode().ordinal();
+                expansionData[1] = expansion.reason().ordinal();
+                expansionData[2] = expansion.districts();
+                expansionData[3] = centiInt(expansion.dailyCityOverhead());
+                expansionData[4] = village.lightingCoveragePercent;
+                expansionData[5] = expansionManager() ? 1 : 0;
+                var city = economy.villageSnapshot(expansion.rootId());
+                expansionData[6] = city == null ? 0 : city.village().expansionHealthyDays;
+                expansionData[7] = centiInt(100.0 * com.chedidandrew.emeraldstandard.core.VillageFoodSupply.bonus(village, day));
+                expansionData[8] = centiInt(village.observedCropUnits);
+                expansionData[9] = centiInt(village.observedLivestockUnits);
+            }
             EconomyService.VillageFundSnapshot fund = economy.villageFundSnapshot(villageId);
             fundSpendableCenti = microCenti(fund.spendableTotalMicro());
             fundEndowmentCenti = microCenti(fund.endowmentPrincipalMicro());
@@ -1890,6 +1945,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     private void clearVillageSnapshot() {
+        java.util.Arrays.fill(expansionData, 0);
         villageId = null;
         villagePresent = 0;
         villageLifecycle = 0;
@@ -1921,6 +1977,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     private int dataValue(int index) {
+        if (index >= DATA_EXPANSION && index < DATA_COUNT) return expansionData[index - DATA_EXPANSION];
         if (index == DATA_DAY) return (int) Math.min(Integer.MAX_VALUE, day);
         if (index == DATA_REGIME) return regimeOrdinal;
         if (index == DATA_SELECTED_ASSET) return selectedAssetIndex;

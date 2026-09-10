@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 18;
+    public static final int FORMAT_VERSION = 24;
     /** Five in-game years, shared by market, commodity, and personal history views. */
     public static final int HISTORY_DAYS = 1_825;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -84,6 +84,7 @@ public final class EconomyState {
      * tuple commits, rolls back to its immediate source, or retires as a confirmed death.</p>
      */
     public final Map<Long, PendingBankerConversion> pendingBankerConversions = new HashMap<>();
+    public final Map<Long, BankConstruction> pendingBankConstructions = new HashMap<>();
     /** Persistent abstract village economies and development backlogs. */
     public final Map<UUID, VillageRecord> villages = new LinkedHashMap<>();
     /** Pre-incident market contributions held while player-damaged villages recover. */
@@ -640,6 +641,12 @@ public final class EconomyState {
         /** Versioned canonical placement hash; blank until the physical plan is first frozen. */
         public int designPlanHashVersion;
         public String designPlanHash = "";
+        /** Old projects are never retroactively cleared. New reservations opt in explicitly. */
+        public boolean sitePreparationComplete = true;
+        public int sitePreparationCursor;
+        public SitePreparationPlan sitePreparationPlan;
+        /** Write-ahead evidence: old saves conservatively count as already started. */
+        public boolean constructionStarted = true;
         /** Frozen route endpoint so mutable village metadata cannot reorder the saved plan. */
         public boolean trailAnchorSet;
         public long trailAnchorPos;
@@ -703,6 +710,10 @@ public final class EconomyState {
             copy.designDressingId = designDressingId;
             copy.designPlanHashVersion = designPlanHashVersion;
             copy.designPlanHash = designPlanHash;
+            copy.sitePreparationComplete = sitePreparationComplete;
+            copy.sitePreparationCursor = sitePreparationCursor;
+            copy.sitePreparationPlan = sitePreparationPlan;
+            copy.constructionStarted = constructionStarted;
             copy.trailAnchorSet = trailAnchorSet;
             copy.trailAnchorPos = trailAnchorPos;
             copy.trailMaterializedBlocks = trailMaterializedBlocks;
@@ -824,6 +835,24 @@ public final class EconomyState {
         public long projectSerial;
         /** Persistent ordinal used to rotate fairly across currently due visual projects. */
         public long visualProjectSelectionCursor;
+        public UUID cityId;
+        public VillageExpansion.Mode expansionMode = VillageExpansion.Mode.AUTOMATIC;
+        public boolean expansionApproved;
+        public boolean districtFounding;
+        public int expansionHealthyDays;
+        public long lastExpansionDay;
+        public long expansionSerial;
+        public long expansionSiteCursor;
+        /** Derived, non-authoritative census. */
+        public int cityDistrictCount = 1;
+        public boolean expansionWaitingForHome;
+        public boolean cityUpkeepDeficit;
+        public int expansionUpkeepShortfalls;
+        public int lightingCoveragePercent;
+        public long lastLightingDay;
+        public double observedCropUnits;
+        public double observedLivestockUnits;
+        public long lastFoodSourcesDay;
         /** Shared authored language; biome dialect is locked when the first managed lot is reserved. */
         public String architectureCharacter = "";
         public String architectureDialect = "";
@@ -942,6 +971,23 @@ public final class EconomyState {
             copy.restorationFunded = restorationFunded;
             copy.projectSerial = projectSerial;
             copy.visualProjectSelectionCursor = visualProjectSelectionCursor;
+            copy.cityId = cityId;
+            copy.expansionMode = expansionMode;
+            copy.expansionApproved = expansionApproved;
+            copy.districtFounding = districtFounding;
+            copy.expansionHealthyDays = expansionHealthyDays;
+            copy.lastExpansionDay = lastExpansionDay;
+            copy.expansionSerial = expansionSerial;
+            copy.expansionSiteCursor = expansionSiteCursor;
+            copy.cityDistrictCount = cityDistrictCount;
+            copy.expansionWaitingForHome = expansionWaitingForHome;
+            copy.cityUpkeepDeficit = cityUpkeepDeficit;
+            copy.expansionUpkeepShortfalls = expansionUpkeepShortfalls;
+            copy.lightingCoveragePercent = lightingCoveragePercent;
+            copy.lastLightingDay = lastLightingDay;
+            copy.observedCropUnits = observedCropUnits;
+            copy.observedLivestockUnits = observedLivestockUnits;
+            copy.lastFoodSourcesDay = lastFoodSourcesDay;
             copy.architectureCharacter = architectureCharacter;
             copy.architectureDialect = architectureDialect;
             ProsperityFund fundCopy = prosperityFund.copy();
@@ -1013,6 +1059,7 @@ public final class EconomyState {
 
     public EconomyState copy() {
         EconomyState copy = new EconomyState();
+        copy.pendingBankConstructions.putAll(pendingBankConstructions);
         copy.seed = seed;
         copy.economicDay = economicDay;
         copy.lastWallClockMs = lastWallClockMs;
@@ -1177,25 +1224,43 @@ public final class EconomyState {
             long dailyFundSpendingCapMicro,
             boolean fastTrackCapitalEnabled,
             boolean marketEventsEnabled) {
+        advanceOneDay(villageProsperitySimulationEnabled, villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled, villageAutomaticRecoveryEnabled, prosperityFundEnabled,
+                endowmentAnnualPayoutRate, emergencyReserveFraction, dailyFundSpendingCapMicro,
+                fastTrackCapitalEnabled, marketEventsEnabled, false);
+    }
+
+    public void advanceOneDay(
+            boolean villageProsperitySimulationEnabled, boolean villageVisualProgressionEnabled,
+            boolean villageMarketIntegrationEnabled, boolean villageAutomaticRecoveryEnabled,
+            boolean prosperityFundEnabled, double endowmentAnnualPayoutRate,
+            double emergencyReserveFraction, long dailyFundSpendingCapMicro,
+            boolean fastTrackCapitalEnabled, boolean marketEventsEnabled, boolean peacefulVillageGrowth) {
         if (economicDay == Long.MAX_VALUE) {
             throw new IllegalStateException("Economic day range is exhausted");
         }
         economicDay++;
         if (villageProsperitySimulationEnabled) {
+            VillageExpansion.prepareDay(this);
             for (VillageRecord village : villages.values()) {
                 VillageProsperityEngine.advanceOneDay(
                         village,
                         seed,
                         economicDay,
                         villageAutomaticRecoveryEnabled,
-                        villageVisualProgressionEnabled);
+                        villageVisualProgressionEnabled,
+                        peacefulVillageGrowth);
             }
+            VillageExpansion.shareSupplies(this, peacefulVillageGrowth);
+            for (VillageRecord village : villages.values()) VillageExpansion.finishDay(village, peacefulVillageGrowth);
+            VillageExpansion.prepareDay(this);
             for (VillageMarketShadow shadow : villageMarketShadows.values()) {
                 VillageProsperityEngine.advanceMarketShadow(
                         shadow,
                         seed,
                         economicDay,
-                        villageAutomaticRecoveryEnabled);
+                        villageAutomaticRecoveryEnabled,
+                        peacefulVillageGrowth);
             }
         }
         releaseRecoveredMarketShadows();
@@ -1353,6 +1418,10 @@ public final class EconomyState {
     }
 
     public void validate() throws IOException {
+        for (var plan : pendingBankConstructions.values()) {
+            if (plan == null || (plan.villageId() != null && !villages.containsKey(plan.villageId())))
+                throw new IOException("Invalid pending Bank owner");
+        }
         if (regime == null
                 || lastMarketEvent == null
                 || economicDay < 0L
@@ -1499,6 +1568,17 @@ public final class EconomyState {
         }
         for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
             validateVillage(entry.getKey(), entry.getValue(), economicDay);
+            VillageRecord v = entry.getValue();
+            if (v.cityId != null) {
+                VillageRecord root = villages.get(v.cityId);
+                if (root == null || root.cityId != null || !root.dimensionKey.equals(v.dimensionKey))
+                    throw new IOException("Invalid district parent");
+            }
+            if (v.expansionUpkeepShortfalls < 0 || v.expansionUpkeepShortfalls > 30)
+                throw new IOException("Invalid district upkeep history");
+            if (v.lightingCoveragePercent < 0 || v.lightingCoveragePercent > 100
+                    || v.lastLightingDay < 0 || v.lastLightingDay > economicDay)
+                throw new IOException("Invalid lighting observation");
         }
         for (Map.Entry<UUID, VillageMarketShadow> entry : villageMarketShadows.entrySet()) {
             validateMarketShadow(entry.getKey(), entry.getValue(), economicDay);
@@ -2242,6 +2322,16 @@ public final class EconomyState {
                 || village.marketSuppressedUntilDay < 0L
                 || village.projectSerial < 0L
                 || village.visualProjectSelectionCursor < 0L
+                || village.expansionMode == null
+                || village.expansionHealthyDays < 0 || village.expansionHealthyDays > 30
+                || village.lastExpansionDay < 0 || village.lastExpansionDay > economicDay
+                || village.expansionSerial < 0 || village.expansionSiteCursor < 0
+                || village.villageId.equals(village.cityId)
+                || !Double.isFinite(village.observedCropUnits) || village.observedCropUnits < 0
+                || village.observedCropUnits > 1_000_000
+                || !Double.isFinite(village.observedLivestockUnits) || village.observedLivestockUnits < 0
+                || village.observedLivestockUnits > 1_000_000
+                || village.lastFoodSourcesDay < 0 || village.lastFoodSourcesDay > economicDay
                 || village.architectureCharacter == null
                 || village.architectureDialect == null
                 || (!village.architectureCharacter.isBlank()
@@ -2302,6 +2392,7 @@ public final class EconomyState {
                     || project.designPaletteId == null
                     || project.designDressingId == null
                     || project.designPlanHash == null
+                    || project.sitePreparationCursor < 0 || project.sitePreparationCursor > 1_000_000
                     || project.projectId <= previousProject
                     || project.approvedDay < 0L
                     || project.approvedDay > economicDay

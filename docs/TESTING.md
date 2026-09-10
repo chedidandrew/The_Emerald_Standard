@@ -1,5 +1,53 @@
 # Testing and publication gate
 
+## Beta.5 Peaceful growth and loot candidate
+
+The district-coverage/construction follow-up adds `BankConstructionRegressionTest` for frozen
+plan persistence, duplicate rejection, restart recovery and atomic marker/queue completion.
+Both server smoke paths invoke `BankConstructionSelfTest`: a complete authored Bank built one
+cell per pulse, restart partway through, concurrent-site allowances and preservation of an
+obstructing player chest. Food runtime fixtures also cover distant developed plots and farms
+above the former vertical limit. See [construction behavior](PROGRESSIVE_CONSTRUCTION.md).
+
+Manual review should time two funded nearby sites at 20 TPS, restart a partially built Bank,
+and compare new entrances on flat and gently sloping terrain. Existing worlds are not modified
+by automated tests. Human pacing/appearance review remains separate from automated verification.
+
+The food-source follow-up adds `VillageFoodSupplyRegressionTest` to the common suite:
+agriculture/reserve output, Peaceful stacking, monotonic diminishing returns, harvesting/removal,
+stale observation expiry, validation, copies and format-20 persistence/format-19 migration.
+Both isolated server smoke paths invoke `VillageFoodEnvironmentSelfTest` with real wheat and
+farm animals: mature versus replanted fields, overlapping district ownership, babies, excluded
+pets, death, out-of-range animals and emptied fields/pens. The packaged gate requires the core
+food helper and production scanner. See [food-source behavior](VILLAGE_FOOD_SOURCES.md).
+
+For a manual follow-up, grow crops and breed livestock within the documented district range,
+then inspect **Banker > Village > City expansion** after a census and completed scan. Harvest
+and remove animals; confirm the bonus falls and later recovers as replanted crops mature.
+Compare actual reserve gains over an economic day, not just the displayed percentage. Repeat
+after reload and with simulation disabled. Human pacing/UI checks remain separate from the
+automated disposable-server fixtures; no existing saves are modified by those fixtures.
+
+The common `VillageProsperityRegressionTest` includes eight paired 1,200-day Peaceful/baseline
+simulations, full-prosperity/tier-5 outcomes, housing/project/population bounds, physical settler
+queuing, a switch back to normal and matching market-shadow behavior. See
+[feature behavior and limits](PEACEFUL_GROWTH_AND_LOOT.md).
+
+Both dedicated-server smoke paths invoke `VillageStructureLootSelfTest` inside their disposable
+worlds. It uses Minecraft's real loot registry and CHEST context to roll 100 seeds for each of the
+ten tables, rejecting missing tables, unexpected items, enchanted gear or excessive quantities.
+Native chest and barrel NBT tests cover pending table/seed persistence, one-shot first access,
+saved contents, empty-after-looting reload and preservation of pre-existing inventory/table state.
+The packaged-JAR gate requires every table and the shared assignment helper on both loaders.
+
+For a human gameplay check, compare healthy settlements on Peaceful and Normal over the same
+economic interval; verify disabled simulation remains disabled and switching difficulty changes
+future rates without deleting gains. Inspect new home, smithy, granary, mine, guard and Bank storage,
+take the loot, save/reload and confirm no refill. Existing empty chests should stay empty. Physical
+construction must still wait for loaded, unprotected, unobstructed cells and valid settler homes.
+No beta.4 CI result certifies this newer candidate; rerun the exact-commit publication gate before
+publishing. The automated checks are not a completed human playtest or stable-release claim.
+
 ## Beta.4 reader/configuration candidate
 
 The [final-validation record](reviews/2026-09-09-beta4-final-validation.md) distinguishes prior
@@ -292,6 +340,13 @@ Inspect Village Banks and all ten prosperity project types in all vanilla villag
 
 ## Publication gate
 
+City-expansion regression coverage is in `VillageExpansionRegressionTest` and the opt-in
+`VillageExpansionSelfTest`. Before release, also playtest a loaded town through a new district's
+complete build, actual settler census, restart, resource shortage and recovery. Inspect the
+Banker City expansion panel and owner/operator permissions at supported GUI scales. Verify
+torches and a shallow crater do not block a new lot while an adjacent workshop/house does.
+Automated policy tests are not a substitute for this extended gameplay and UI review.
+
 Any 0.4 beta prerelease publisher must require a successful `main`-push `build.yml` run for the exact source commit, download rather than rebuild that run's exact Fabric and NeoForge binary/source artifacts, verify the complete public filename set and bytes, and record artifact IDs, workflow digests, and release-asset SHA-256 checksums.
 
 Each loader artifact now includes a CI-generated `SHA256SUMS`. Use `scripts/prepare-release-assets.sh` from the exact clean source commit to verify both downloaded artifacts and produce one combined checksum file and release manifest. The complete step-by-step gate is in [RELEASING.md](RELEASING.md).
@@ -307,6 +362,36 @@ smoke marker.
 `build/client-smoke`. The ordinary loader `run` directory—and any manual test world stored there—is
 never reused, cleared, or modified by the automated client smoke test.
 
+
+## Terrain-development follow-up
+
+The beta.5 server fixtures now exercise natural tree/branch and bush clearing, a six-block
+stone slope, water/cliff rejection, loaded-only surveys, a forced alternative entrance orientation,
+frozen project clearing with restart and newly placed storage, and a full Bank built into a
+wooded four-block rise. The common suite checks median cut/fill bounds, frozen preparation
+persistence and unchanged legacy support geometry. See [terrain development](TERRAIN_DEVELOPMENT.md).
+
+Terrain finishing adds 100 seeded road profiles (bounded earthwork, connected grades, endpoint
+heights and flat valley landings). The server fixture progressively applies a sloping road across
+a crater, checks stair/support states after a serialized-plan restart, tests storage/claim vetoes,
+and verifies grounded three-course retaining borders. Each smoke world additionally reports
+read-only route acceptance on its actual seed-generated terrain. These counts measure only the
+sampled routes, not overall village placement success or a visual/pathfinding certification.
+
+Before publishing, also inspect copied survival worlds in forests and hills: check cleared
+canopies, doors/paths, foundations, neighboring player builds, and long-running construction
+after leaving/reloading chunks. Automated fixtures do not certify every terrain or claim mod.
+
+## Background life and walking regressions
+
+The background-life follow-up adds `VillageBackgroundRegressionTest`,
+`VillageConstructionActivitySelfTest` and `VillageWalkingSelfTest`. Walking checks direct a real
+villager through representative completed cottage/Bank access routes and a graded neighboring
+street, running native AI/navigation/physics and recording bounded route retries. They do not
+teleport between destinations, and the disposable fixture clock is restored afterward. These
+checks do not certify every template or autonomous daily routine. Activity checks cover saved
+entity tags, exact cleanup, safe supported display props and optional pocket-space planning.
+See [background village life](BACKGROUND_VILLAGE_LIFE.md).
 
 ## One-command diagnostic capture
 

@@ -60,6 +60,8 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 VillageBankManager.resetRuntimeState();
                 EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
                 config.applyTo(ECONOMY);
+                ECONOMY.setPeacefulVillageGrowth(server.getWorldData().getDifficulty()
+                        == net.minecraft.world.Difficulty.PEACEFUL);
                 ECONOMY.start(
                         server.getWorldPath(LevelResource.DATA),
                         server.overworld().getSeed(),
@@ -99,6 +101,8 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            ECONOMY.setPeacefulVillageGrowth(server.getWorldData().getDifficulty()
+                    == net.minecraft.world.Difficulty.PEACEFUL);
             if (!ECONOMY.tick(
                     server.overworld().getGameTime(),
                     server.overworld().getOverworldClockTime())) {

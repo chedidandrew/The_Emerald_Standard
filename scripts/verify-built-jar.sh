@@ -51,6 +51,22 @@ required=(
     'com/chedidandrew/emeraldstandard/minecraft/VillageEntranceApproachPlan.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageMaterializationPolicy.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageStructureProgression.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageStructureLoot.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageSitePreparation.class'
+    'com/chedidandrew/emeraldstandard/core/VillageExpansion.class'
+    'com/chedidandrew/emeraldstandard/core/VillageFoodSupply.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageFoodEnvironment.class'
+    'com/chedidandrew/emeraldstandard/core/BankConstruction.class'
+    'com/chedidandrew/emeraldstandard/core/SitePreparationPlan.class'
+    'com/chedidandrew/emeraldstandard/core/VillageUpkeepAdvice.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageNeighborhoodPlan.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageConstructionActivity.class'
+    'com/chedidandrew/emeraldstandard/minecraft/ConstructionDiagnostics.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageWalkingSelfTest.class'
+    'com/chedidandrew/emeraldstandard/minecraft/TerrainRoadPlan.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageTerrainFinishing.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageSitePreparation$Survey.class'
+    'com/chedidandrew/emeraldstandard/minecraft/BankConstructionSelfTest.class'
     'com/chedidandrew/emeraldstandard/core/StructureGalleryPlan.class'
     'com/chedidandrew/emeraldstandard/core/VillageComparisonBiomePlan.class'
     'com/chedidandrew/emeraldstandard/minecraft/AuthoredChimneyRefinements.class'
@@ -103,6 +119,9 @@ required=(
     'data/the_emerald_standard/advancement/recipes/misc/handbook.json'
     'data/the_emerald_standard/advancement/first_banker.json'
 )
+for role in residence inn warehouse mine market smithy granary guard_post exchange_hall bank; do
+    required+=("data/the_emerald_standard/loot_table/chests/village/$role.json")
+done
 if [[ "$LOADER" == "fabric" ]]; then
     required+=(
         'fabric.mod.json'

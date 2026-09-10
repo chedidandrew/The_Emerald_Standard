@@ -47,6 +47,8 @@ public final class VillageProsperityRegressionTest {
         testSimulationOnlyProjectsRemainFunctional();
         testPendingSettlersCountExactlyOnce();
         testUniqueProjectsNeverDuplicate();
+        testPeacefulGrowth();
+        testPeacefulServiceLifecycle();
         System.out.println("PASS VillageProsperityRegressionTest");
     }
 
@@ -77,6 +79,93 @@ public final class VillageProsperityRegressionTest {
         require(VillageArchitecture.isKnownCharacter(village.architectureCharacter),
                 "A developing village did not lock its shared architectural character");
         require(village.developmentTier >= 1, "Village never advanced beyond hamlet tier");
+    }
+
+    private static void testPeacefulGrowth() {
+        for (int seed = 1; seed <= 8; seed++) {
+            EconomyState state = EconomyState.fresh(seed, 0L, 0L);
+            var normal = village(state, 6, 8);
+            normal.villageId = new UUID(17L, seed);
+            var peaceful = normal.copy();
+            var legacy = normal.copy();
+            for (int day = 1; day <= 1_200; day++) {
+                VillageProsperityEngine.advanceOneDay(normal, seed, day, true, false, false);
+                VillageProsperityEngine.advanceOneDay(legacy, seed, day, true, false);
+                VillageProsperityEngine.advanceOneDay(peaceful, seed, day, true, false, true);
+                require(normal.prosperity == legacy.prosperity && normal.population == legacy.population
+                                && normal.materialSupply == legacy.materialSupply
+                                && normal.developmentPoints == legacy.developmentPoints
+                                && normal.projects.size() == legacy.projects.size(),
+                        "Non-Peaceful behavior changed");
+                require(peaceful.population <= 64 && peaceful.population <= peaceful.housingCapacity
+                                && peaceful.projects.size() <= 12 && peaceful.prosperity <= 100.0,
+                        "Peaceful bypassed bounds/housing");
+            }
+            require(peaceful.developmentTier == 5 && peaceful.prosperity == 100.0,
+                    "Peaceful did not reach full prosperity/tier five: seed=" + seed
+                            + " tier=" + peaceful.developmentTier + " prosperity=" + peaceful.prosperity
+                            + " population=" + peaceful.population);
+            require(peaceful.population > normal.population && peaceful.projects.size() >= normal.projects.size(),
+                    "Peaceful progression was not materially easier");
+            System.out.println("Peaceful seed=" + seed + " population=" + peaceful.population
+                    + " projects=" + peaceful.projects.size() + " normal_population=" + normal.population);
+        }
+        EconomyState state = EconomyState.fresh(88L, 0L, 0L);
+        var physical = village(state, 6, 8);
+        physical.villageId = new UUID(42L, 8L);
+        for (int day = 1; day <= 500; day++)
+            VillageProsperityEngine.advanceOneDay(physical, 88L, day, true, true, true);
+        require(physical.population == 6 && physical.pendingSettlers > 0
+                        && physical.population + physical.pendingSettlers <= physical.housingCapacity,
+                "Peaceful bypassed the physical settler queue/census");
+        // A removed boost must immediately use normal progression, not leave sticky multipliers.
+        var switched = physical.copy();
+        var expected = physical.copy();
+        VillageProsperityEngine.advanceOneDay(switched, 88L, 501, true, true, false);
+        VillageProsperityEngine.advanceOneDay(expected, 88L, 501, true, true);
+        require(switched.foodSupply == expected.foodSupply && switched.prosperity == expected.prosperity,
+                "Difficulty switch retained the boost");
+        var shadow = new EconomyState.VillageMarketShadow();
+        shadow.present = true;
+        shadow.counterfactualVillage = physical.copy();
+        var shadowExpected = physical.copy();
+        VillageProsperityEngine.advanceMarketShadow(shadow, 88L, 501, true, true);
+        VillageProsperityEngine.advanceOneDay(shadowExpected, 88L, 501, true, false, true);
+        require(shadow.counterfactualVillage.prosperity == shadowExpected.prosperity
+                        && shadow.counterfactualVillage.foodSupply == shadowExpected.foodSupply,
+                "Counterfactual village used a different difficulty");
+    }
+
+    private static void testPeacefulServiceLifecycle() throws Exception {
+        Path root = Files.createTempDirectory("emerald-peaceful-growth-");
+        try {
+            EconomyState initial = EconomyState.fresh(88L, 0L, 0L);
+            var original = village(initial, 6, 8);
+            var expected = original.copy();
+            initial.save(root.resolve("the_emerald_standard.properties"));
+            EconomyService service = new EconomyService();
+            service.configureVillageProsperity(true, false, true, true);
+            service.setPeacefulVillageGrowth(true);
+            // A saved forward Overworld-clock jump exercises startup catch-up with the runtime profile.
+            service.startWithSeed(root, 88L, 0L, 0L, 24_000L);
+            VillageProsperityEngine.advanceOneDay(expected, 88L, 1L, true, false, true);
+            var actual = service.snapshot().villages.get(original.villageId);
+            require(service.snapshot().economicDay == 1L && actual.prosperity == expected.prosperity
+                            && actual.foodSupply == expected.foodSupply,
+                    "Peaceful profile did not reach startup catch-up through EconomyService/EconomyState");
+            service.setPeacefulVillageGrowth(false);
+            require(service.tickAt(24_000L, 48_000L, 0L), "Difficulty-switch tick failed");
+            VillageProsperityEngine.advanceOneDay(expected, 88L, 2L, true, false, false);
+            actual = service.snapshot().villages.get(original.villageId);
+            require(actual.prosperity == expected.prosperity && actual.foodSupply == expected.foodSupply,
+                    "Service difficulty switch did not restore normal rates");
+            service.setPeacefulVillageGrowth(true);
+            service.configureVillageProsperity(false, false, true, true);
+            require(service.tickAt(48_000L, 72_000L, 0L), "Disabled-simulation tick failed");
+            actual = service.snapshot().villages.get(original.villageId);
+            require(actual.lastSimulatedDay == 2L && actual.foodSupply == expected.foodSupply,
+                    "Peaceful re-enabled a disabled village simulation");
+        } finally { deleteTree(root); }
     }
 
     private static void testIndependentToggleBehavior() {
@@ -811,6 +900,17 @@ public final class VillageProsperityRegressionTest {
             require(service.reserveVillageProjectSite(
                             village.villageId, 1L, origin, boundsMin, boundsMax, 180),
                     "Could not reserve bounded project site");
+            require(!service.villageSnapshot(village.villageId).village().projects.getFirst().constructionStarted,
+                    "fresh reservation must remain eligible for safe relocation before writes");
+            require(service.deferVillageProjectMaterialization(village.villageId, 1L, 1L, false)
+                            && service.villageSnapshot(village.villageId).village().projects.getFirst().originPos == 0,
+                    "untouched site may be reconsidered in background");
+            require(service.reserveVillageProjectSite(village.villageId, 1L, origin, boundsMin, boundsMax, 180),
+                    "fresh retry reservation");
+            require(service.markVillageConstructionStarted(village.villageId, 1L), "durable before-first-write marker");
+            require(service.deferVillageProjectMaterialization(village.villageId, 1L, 2L, false)
+                            && service.villageSnapshot(village.villageId).village().projects.getFirst().originPos == origin,
+                    "zero cursor after terrain write cannot authorize relocation");
             require(service.updateVillageProjectMaterialization(
                             village.villageId, 1L, 3, false, false),
                     "Could not record deterministic template prefix");
@@ -859,7 +959,7 @@ public final class VillageProsperityRegressionTest {
             require(loaded.boundsMinPos == boundsMin
                             && loaded.boundsMaxPos == boundsMax
                             && loaded.retryAfterGameTick == deferred.retryAfterGameTick
-                            && loaded.materializationFailures == 1,
+                            && loaded.materializationFailures == 1 && loaded.constructionStarted,
                     "Project bounds/backoff did not survive restart");
             require(reloaded.villageSnapshot(village.villageId).village()
                             .nextVisualProject(loaded.retryAfterGameTick) != null,

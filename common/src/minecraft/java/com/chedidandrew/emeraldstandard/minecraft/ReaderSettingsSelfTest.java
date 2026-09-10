@@ -61,6 +61,11 @@ public final class ReaderSettingsSelfTest {
             }
             Properties props = new Properties(); props.putAll(original.values());
             check(EmeraldConfig.parse(props).values().equals(original.values()), "snapshot drift");
+            props.setProperty("village_prosperity.construction_blocks_per_tick", "8");
+            props.setProperty("village_prosperity.construction_interval_ticks", "40");
+            var migrated = EmeraldConfig.parse(props);
+            check(migrated.villageConstructionBlocksPerTick() == 1
+                    && migrated.villageConstructionIntervalTicks() == 10, "legacy speed must normalize without load failure");
             Path file = world.resolve("the_emerald_standard-config.properties");
             byte[] before = Files.readAllBytes(file);
             expectFailure(() -> EmeraldConfig.update(world, original,
@@ -86,6 +91,7 @@ public final class ReaderSettingsSelfTest {
             EmeraldConfig active = EmeraldConfig.load(allKeysWorld);
             active.applyTo(new EconomyService());
             for (String key : active.values().keySet()) {
+                if (EmeraldConfig.isFixedConstructionKey(key)) continue; // Displayed read-only.
                 String old = active.values().get(key);
                 String next = old.equals("true") ? "false" : old.equals("false") ? "true"
                         : Integer.toString(Integer.parseInt(old) + (key.equals("economic_clock.max_offline_days") ? -1 : 1));

@@ -140,10 +140,12 @@ final class EconomyPersistence {
         }
     }
 
-    private static Properties toProperties(EconomyState state) {
+    private static Properties toProperties(EconomyState state) throws IOException {
         Properties properties = new Properties();
         properties.setProperty("magic", MAGIC);
         properties.setProperty("format", Integer.toString(EconomyState.FORMAT_VERSION));
+        for (var entry : state.pendingBankConstructions.entrySet())
+            properties.setProperty("bank_build." + entry.getKey(), entry.getValue().encode());
         properties.setProperty("seed", Long.toString(state.seed));
         properties.setProperty("day", Long.toString(state.economicDay));
         properties.setProperty("wall", Long.toString(state.lastWallClockMs));
@@ -277,6 +279,20 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "development_points", Double.toString(village.developmentPoints));
         properties.setProperty(prefix + "restoration_funded", Boolean.toString(village.restorationFunded));
         properties.setProperty(prefix + "project_serial", Long.toString(village.projectSerial));
+        if (village.cityId != null) properties.setProperty(prefix + "city_id", village.cityId.toString());
+        properties.setProperty(prefix + "expansion_mode", village.expansionMode.name());
+        properties.setProperty(prefix + "expansion_approved", Boolean.toString(village.expansionApproved));
+        properties.setProperty(prefix + "district_founding", Boolean.toString(village.districtFounding));
+        properties.setProperty(prefix + "expansion_healthy_days", Integer.toString(village.expansionHealthyDays));
+        properties.setProperty(prefix + "last_expansion_day", Long.toString(village.lastExpansionDay));
+        properties.setProperty(prefix + "expansion_serial", Long.toString(village.expansionSerial));
+        properties.setProperty(prefix + "expansion_site_cursor", Long.toString(village.expansionSiteCursor));
+        properties.setProperty(prefix + "expansion_upkeep_shortfalls", Integer.toString(village.expansionUpkeepShortfalls));
+        properties.setProperty(prefix + "lighting_coverage_percent", Integer.toString(village.lightingCoveragePercent));
+        properties.setProperty(prefix + "last_lighting_day", Long.toString(village.lastLightingDay));
+        properties.setProperty(prefix + "food_sources.crops", Double.toString(village.observedCropUnits));
+        properties.setProperty(prefix + "food_sources.livestock", Double.toString(village.observedLivestockUnits));
+        properties.setProperty(prefix + "food_sources.day", Long.toString(village.lastFoodSourcesDay));
         properties.setProperty(
                 prefix + "visual_project_selection_cursor",
                 Long.toString(village.visualProjectSelectionCursor));
@@ -351,6 +367,11 @@ final class EconomyPersistence {
             properties.setProperty(
                     projectPrefix + "design.plan_hash",
                     project.designPlanHash);
+            properties.setProperty(projectPrefix + "site_preparation_complete", Boolean.toString(project.sitePreparationComplete));
+            properties.setProperty(projectPrefix + "site_preparation_cursor", Integer.toString(project.sitePreparationCursor));
+            properties.setProperty(projectPrefix + "construction_started", Boolean.toString(project.constructionStarted));
+            if (project.sitePreparationPlan != null)
+                properties.setProperty(projectPrefix + "site_preparation_plan", project.sitePreparationPlan.encode());
             properties.setProperty(projectPrefix + "trail.anchor_set", Boolean.toString(project.trailAnchorSet));
             properties.setProperty(projectPrefix + "trail.anchor", Long.toString(project.trailAnchorPos));
             properties.setProperty(projectPrefix + "trail.blocks", Integer.toString(project.trailMaterializedBlocks));
@@ -701,6 +722,13 @@ final class EconomyPersistence {
             if (format >= 7) {
                 loadVillageMarketShadows(state, properties, format);
             }
+            if (format >= 21) {
+                for (String key : properties.stringPropertyNames()) {
+                    if (key.startsWith("bank_build."))
+                        state.pendingBankConstructions.put(Long.parseLong(key.substring(11)),
+                                BankConstruction.decode(properties.getProperty(key)));
+                }
+            }
 
             if (format >= 2) {
                 loadCurrentAccounts(state, properties);
@@ -1015,6 +1043,20 @@ final class EconomyPersistence {
             case "development_points" -> village.developmentPoints = Double.parseDouble(value);
             case "restoration_funded" -> village.restorationFunded = Boolean.parseBoolean(value);
             case "project_serial" -> village.projectSerial = Long.parseLong(value);
+            case "city_id" -> village.cityId = UUID.fromString(value);
+            case "expansion_mode" -> village.expansionMode = VillageExpansion.Mode.valueOf(value);
+            case "expansion_approved" -> village.expansionApproved = Boolean.parseBoolean(value);
+            case "district_founding" -> village.districtFounding = Boolean.parseBoolean(value);
+            case "expansion_healthy_days" -> village.expansionHealthyDays = Integer.parseInt(value);
+            case "last_expansion_day" -> village.lastExpansionDay = Long.parseLong(value);
+            case "expansion_serial" -> village.expansionSerial = Long.parseLong(value);
+            case "expansion_site_cursor" -> village.expansionSiteCursor = Long.parseLong(value);
+            case "expansion_upkeep_shortfalls" -> village.expansionUpkeepShortfalls = Integer.parseInt(value);
+            case "lighting_coverage_percent" -> village.lightingCoveragePercent = Integer.parseInt(value);
+            case "last_lighting_day" -> village.lastLightingDay = Long.parseLong(value);
+            case "food_sources.crops" -> village.observedCropUnits = Double.parseDouble(value);
+            case "food_sources.livestock" -> village.observedLivestockUnits = Double.parseDouble(value);
+            case "food_sources.day" -> village.lastFoodSourcesDay = Long.parseLong(value);
             case "visual_project_selection_cursor" ->
                     village.visualProjectSelectionCursor = Long.parseLong(value);
             case "architecture.character" -> village.architectureCharacter = value;
@@ -1148,6 +1190,10 @@ final class EconomyPersistence {
             case "retry_after_tick" -> project.retryAfterGameTick = Long.parseLong(value);
             case "materialization_failures" -> project.materializationFailures = Integer.parseInt(value);
             case "site_search_cursor" -> project.siteSearchCursor = Integer.parseInt(value);
+            case "site_preparation_complete" -> project.sitePreparationComplete = Boolean.parseBoolean(value);
+            case "site_preparation_cursor" -> project.sitePreparationCursor = Integer.parseInt(value);
+            case "construction_started" -> project.constructionStarted = Boolean.parseBoolean(value);
+            case "site_preparation_plan" -> project.sitePreparationPlan = SitePreparationPlan.decode(value);
             case "site_search_saw_unloaded" ->
                     project.siteSearchSawUnloadedCandidate = Boolean.parseBoolean(value);
             case "blocks" -> project.materializedBlocks = Integer.parseInt(value);

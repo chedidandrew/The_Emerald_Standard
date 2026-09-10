@@ -46,6 +46,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private int tab = BankerMenu.TAB_OVERVIEW;
     private int bankView = BANK_VIEW_TRANSFERS;
+    private boolean expansionDetails;
     private int seenStatusRevision;
     private int seenInteractiveState;
     private int statusDisplayTicks;
@@ -463,7 +464,26 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void addVillageButtons() {
-        // Contributions use a separate Fund page and a server-owned exact draft.
+        if (!menu.hasVillage()) return;
+        addRenderableWidget(Button.builder(tr(expansionDetails ? "expansion.back" : "expansion.title"),
+                button -> { expansionDetails = !expansionDetails; rebuildWidgets(); })
+                .bounds(leftPos + 12, topPos + 174, 140, 12).build());
+        if (!expansionDetails) return;
+        for (int i = 0; i < 3; i++) {
+            int mode = i;
+            Button choice = Button.builder(tr("expansion.mode." +
+                    com.chedidandrew.emeraldstandard.core.VillageExpansion.Mode.values()[i].name().toLowerCase(Locale.ROOT)),
+                    button -> selectAndRefresh(BankerMenu.ACTION_EXPANSION_AUTOMATIC + mode))
+                    .bounds(leftPos + 12 + i * 100, topPos + 142, 96, 18).build();
+            choice.active = menu.mayManageExpansion() && menu.expansionMode().ordinal() != i && transactionsAvailable();
+            addRenderableWidget(choice);
+        }
+        Button approve = Button.builder(tr("expansion.approve"), button ->
+                selectAndRefresh(BankerMenu.ACTION_EXPANSION_APPROVE_ONCE))
+                .bounds(leftPos + 166, topPos + 174, 142, 12).build();
+        approve.active = menu.mayManageExpansion() && menu.expansionMode() ==
+                com.chedidandrew.emeraldstandard.core.VillageExpansion.Mode.APPROVAL && transactionsAvailable();
+        addRenderableWidget(approve);
     }
 
     private void addFundButtons() {
@@ -885,6 +905,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         result = 31 * result + menu.activityPageCount();
         result = 31 * result + menu.activityTotalCount();
         result = 31 * result + menu.activityFilterIndex();
+        result = 31 * result + menu.expansionMode().ordinal();
+        result = 31 * result + (menu.mayManageExpansion() ? 1 : 0);
         return result;
     }
 
@@ -1384,6 +1406,28 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void drawVillageLabels(GuiGraphicsExtractor graphics) {
+        if (expansionDetails && menu.hasVillage()) {
+            drawTextWithin(graphics, tr("expansion.city", menu.cityDistricts()), 18, 59, 284, GOLD, false);
+            drawTextWithin(graphics, tr("expansion.mode." + menu.expansionMode().name().toLowerCase(Locale.ROOT)),
+                    18, 75, 284, TEXT, false);
+            drawTextWithin(graphics, tr("expansion.reason." + menu.expansionReason().name().toLowerCase(Locale.ROOT)),
+                    18, 89, 284, TEXT, false);
+            drawTextWithin(graphics, tr("expansion.upkeep", String.format(Locale.ROOT, "%.2f", menu.cityDailyUpkeep())),
+                    18, 103, 284, TEXT, false);
+            drawTextWithin(graphics, tr("expansion.lighting", menu.villageLightingCoverage()),
+                    18, 117, 284, TEXT, false);
+            drawTextWithin(graphics, tr("expansion.food_sources",
+                    String.format(Locale.ROOT, "%.1f", menu.villageFoodSourceBonusPercent()),
+                    String.format(Locale.ROOT, "%.1f", menu.villageCropUnits()),
+                    String.format(Locale.ROOT, "%.1f", menu.villageLivestockUnits())), 18, 130, 284, TEXT, false);
+            String advice = com.chedidandrew.emeraldstandard.core.VillageUpkeepAdvice.choose(
+                    menu.expansionReason(), menu.villagePopulation(), menu.villageHousing(), menu.villageFood(),
+                    menu.villageSafety(), menu.villageLightingCoverage()).name().toLowerCase(Locale.ROOT);
+            drawTextWithin(graphics, tr("expansion.advice." + advice), 18, 145, 284, GOLD, false);
+            drawTextWithin(graphics, tr(menu.mayManageExpansion() ? "expansion.funding" : "expansion.permissions"),
+                    18, 163, 284, MUTED, false);
+            return;
+        }
         if (!menu.hasVillage()) {
             drawNativeCenteredText(graphics, tr("village.none"), 160, 92, MUTED);
             drawNativeCenteredText(graphics, tr("village.find_bank"), 160, 110, MUTED);

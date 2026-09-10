@@ -57,6 +57,7 @@ public final class EconomyService {
     private boolean villageVisualProgressionEnabled = true;
     private boolean villageMarketIntegrationEnabled = true;
     private boolean villageAutomaticRecoveryEnabled = true;
+    private boolean peacefulVillageGrowth;
     private boolean marketEventsEnabled = true;
     private boolean offlineProgressionEnabled = true;
     private long maximumOfflineDays = MAX_TRUSTED_CATCH_UP_DAYS;
@@ -110,6 +111,11 @@ public final class EconomyService {
 
     public synchronized boolean villageProsperitySimulationEnabled() {
         return villageProsperitySimulationEnabled;
+    }
+
+    /** Set from the authoritative world difficulty before startup catch-up and every server tick. */
+    public synchronized void setPeacefulVillageGrowth(boolean peaceful) {
+        peacefulVillageGrowth = peaceful;
     }
 
     public synchronized boolean villageVisualProgressionEnabled() {
@@ -274,6 +280,7 @@ public final class EconomyService {
                 state.lastOverworldClockTicks = Math.max(0L, overworldClockTicks);
             }
             lastOverworldClockTicks = state.lastOverworldClockTicks;
+            VillageExpansion.prepareDay(state);
             villageSpatialIndex.rebuild(state.villages);
             observeProgress(
                     now,
@@ -1333,6 +1340,27 @@ public final class EconomyService {
         return persistBankRegionMarker(regionKey, packedAnchor, true, villageId, null);
     }
 
+    public synchronized Map<Long, BankConstruction> pendingBankConstructionsSnapshot() {
+        return state == null ? Map.of() : Map.copyOf(state.pendingBankConstructions);
+    }
+
+    public synchronized boolean reserveBankConstruction(long key, BankConstruction plan) {
+        if (state == null || path == null || isCatchingUp() || plan == null) return false;
+        if (state.pendingBankConstructions.containsKey(key)) return false;
+        if (plan.villageId() != null && (state.existingVillage(plan.villageId()) == null
+                || state.pendingBankConstructions.values().stream()
+                        .anyMatch(p -> plan.villageId().equals(p.villageId())))) return false;
+        EconomyState before = state.copy(); boolean dirtyBefore = dirty;
+        try {
+            state.pendingBankConstructions.put(key, plan);
+            saveState(); dirty = false; resetSaveSchedule(state.lastWallClockMs); lastError = "";
+            return true;
+        } catch (IOException | RuntimeException ex) {
+            state = before; dirty = dirtyBefore; lastError = message(ex);
+            scheduleSaveRetry(state.lastWallClockMs); return false;
+        }
+    }
+
     private boolean persistBankRegionMarker(
             long regionKey,
             Long packedAnchor,
@@ -1398,6 +1426,12 @@ public final class EconomyService {
                     village.bankAnchorPos = packedAnchor;
                     changed = true;
                 }
+            }
+            if (!fallback && structureVersion != null) {
+                BankConstruction pending = state.pendingBankConstructions.get(regionKey);
+                if (pending != null && Objects.equals(pending.villageId(), villageId)
+                        && Objects.equals(packedAnchor, pending.bankerAnchor()) && structureVersion == pending.version())
+                    changed |= state.pendingBankConstructions.remove(regionKey) != null;
             }
             if (!changed) {
                 return true;
@@ -1532,6 +1566,140 @@ public final class EconomyService {
             lastError = message(exception);
             scheduleSaveRetry(state.lastWallClockMs);
             return null;
+        }
+    }
+
+    public record ExpansionStatus(UUID rootId, VillageExpansion.Mode mode, VillageExpansion.Reason reason,
+            int districts, double dailyCityOverhead, long siteCursor, long serial) { }
+
+    public synchronized void observeVillageLighting(UUID villageId, int covered, int total) {
+        if (total < 8 || covered < 0 || covered > total || isCatchingUp()) return;
+        mutateVillage(villageId, false, v -> {
+            v.lightingCoveragePercent = (int) (100L * covered / total);
+            v.lastLightingDay = state.economicDay;
+            return true;
+        });
+    }
+
+    private EconomyState.VillageRecord expansionRoot(UUID villageId) {
+        if (state == null || villageId == null) return null;
+        var village = state.villages.get(villageId);
+        return village == null ? null : state.villages.get(VillageExpansion.rootId(village));
+    }
+
+    /** Loaded-world observations replace the old count, including a genuinely emptied field/pen. */
+    public synchronized boolean observeVillageFoodSources(UUID villageId, double crops, double livestock) {
+        if (!Double.isFinite(crops) || !Double.isFinite(livestock) || crops < 0 || livestock < 0
+                || crops > 1_000_000 || livestock > 1_000_000 || isCatchingUp()) return false;
+        boolean observed = mutateVillage(villageId, false,
+                village -> { VillageFoodSupply.observe(village, crops, livestock, state.economicDay); return true; });
+        if (observed) {
+            // The casualty-isolation counterfactual experiences the same physical environment.
+            var shadow = state.villageMarketShadows.get(villageId);
+            if (shadow != null && shadow.counterfactualVillage != null)
+                VillageFoodSupply.observe(shadow.counterfactualVillage, crops, livestock, state.economicDay);
+        }
+        return observed;
+    }
+
+    public synchronized ExpansionStatus expansionStatus(UUID villageId) {
+        var root = expansionRoot(villageId);
+        if (root == null) return null;
+        return new ExpansionStatus(root.villageId, root.expansionMode,
+                !villageProsperitySimulationEnabled || !villageVisualProgressionEnabled ? VillageExpansion.Reason.DISABLED
+                        : isCatchingUp() ? VillageExpansion.Reason.CATCHING_UP
+                        : VillageExpansion.reason(root, state.economicDay, peacefulVillageGrowth), root.cityDistrictCount,
+                VillageExpansion.overhead(root, peacefulVillageGrowth) * root.cityDistrictCount,
+                root.expansionSiteCursor, root.expansionSerial);
+    }
+
+    /** Authorization is enforced at the server-side player/command boundary. */
+    public synchronized boolean setVillageExpansionMode(UUID villageId, VillageExpansion.Mode mode) {
+        var root = expansionRoot(villageId);
+        if (root == null || mode == null || isCatchingUp()) return false;
+        boolean changed = mutateVillage(root.villageId, true, v -> {
+            v.expansionMode = mode;
+            v.expansionApproved = false;
+            return true;
+        });
+        VillageExpansion.prepareDay(state);
+        return changed;
+    }
+
+    public synchronized boolean approveVillageExpansion(UUID villageId) {
+        var root = expansionRoot(villageId);
+        if (root == null || root.expansionMode != VillageExpansion.Mode.APPROVAL || isCatchingUp()) return false;
+        return mutateVillage(root.villageId, true, v -> { v.expansionApproved = true; return true; });
+    }
+
+    public synchronized EconomyState.VillageRecord draftVillageDistrict(UUID villageId, long center) {
+        var status = expansionStatus(villageId);
+        if (status == null || status.reason() != VillageExpansion.Reason.READY || isCatchingUp()
+                || !villageProsperitySimulationEnabled || !villageVisualProgressionEnabled) return null;
+        return VillageExpansion.draft(expansionRoot(villageId), center, state.seed, state.economicDay, true);
+    }
+
+    public synchronized void advanceDistrictSiteSearch(UUID villageId) {
+        var root = expansionRoot(villageId);
+        if (root != null) mutateVillage(root.villageId, false, v -> {
+            v.expansionSiteCursor = v.expansionSiteCursor == Long.MAX_VALUE ? 0 : v.expansionSiteCursor + 1;
+            return true;
+        });
+    }
+
+    public synchronized boolean recordSitePreparation(UUID villageId, long projectId, int cursor, boolean complete) {
+        return mutateVillage(villageId, complete, v -> {
+            var p = findProject(v, projectId);
+            if (p == null || p.sitePreparationComplete || cursor < p.sitePreparationCursor || cursor > 1_000_000) return false;
+            p.sitePreparationCursor = cursor;
+            p.sitePreparationComplete = complete;
+            return true;
+        });
+    }
+
+    /** Commits the municipal debit AND fully preflighted starter lot in a single durable save. */
+    public synchronized boolean commitVillageDistrict(UUID villageId, long expectedSerial,
+            EconomyState.VillageRecord planned) {
+        var status = expansionStatus(villageId);
+        var root = expansionRoot(villageId);
+        if (status == null || status.reason() != VillageExpansion.Reason.READY || isCatchingUp()
+                || !villageProsperitySimulationEnabled || !villageVisualProgressionEnabled
+                || planned == null || root.expansionSerial != expectedSerial
+                || !root.villageId.equals(planned.cityId) || state.villages.containsKey(planned.villageId)
+                || !root.dimensionKey.equals(planned.dimensionKey) || planned.projects.size() != 1
+                || planned.projects.getFirst().originPos == 0L || planned.projects.getFirst().designPlanHash.isEmpty())
+            return false;
+        var expected = VillageExpansion.draft(root, planned.centerPos, state.seed, state.economicDay, true);
+        if (!expected.villageId.equals(planned.villageId) || planned.population != 0
+                || planned.pendingSettlers != 4 || !planned.districtFounding
+                || planned.foodSupply != expected.foodSupply || planned.materialSupply != expected.materialSupply
+                || planned.treasury != expected.treasury || planned.projects.getFirst().type != expected.projects.getFirst().type)
+            return false;
+        var before = root.copy();
+        boolean dirtyBefore = dirty;
+        try {
+            root.foodSupply -= VillageExpansion.CHARTER_FOOD;
+            root.materialSupply -= VillageExpansion.CHARTER_MATERIALS;
+            root.treasury -= VillageExpansion.CHARTER_TREASURY;
+            root.lastExpansionDay = state.economicDay;
+            root.expansionSerial++;
+            root.expansionApproved = false;
+            state.villages.put(planned.villageId, planned.copy());
+            VillageExpansion.prepareDay(state);
+            dirty = true;
+            saveState();
+            dirty = false;
+            resetSaveSchedule(state.lastWallClockMs);
+            lastError = "";
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            state.villages.remove(planned.villageId);
+            state.villages.put(before.villageId, before);
+            VillageExpansion.prepareDay(state);
+            dirty = dirtyBefore;
+            lastError = message(exception);
+            scheduleSaveRetry(state.lastWallClockMs);
+            return false;
         }
     }
 
@@ -2551,6 +2719,17 @@ public final class EconomyService {
             int entranceApproachStepCount,
             int entranceApproachTotalCells,
             String designPlanHash) {
+        return reserveVillageProjectSite(villageId, projectId, originPos, boundsMinPos, boundsMaxPos,
+                totalBlocks, architectureDialect, designRotation, designStage, trailAnchorPos,
+                trailTotalBlocks, entranceApproachStepCount, entranceApproachTotalCells, designPlanHash, null);
+    }
+
+    /** The immutable clearance plan and building reservation are durable before removing anything. */
+    public synchronized boolean reserveVillageProjectSite(
+            UUID villageId, long projectId, long originPos, long boundsMinPos, long boundsMaxPos,
+            int totalBlocks, String architectureDialect, int designRotation, int designStage,
+            long trailAnchorPos, int trailTotalBlocks, int entranceApproachStepCount,
+            int entranceApproachTotalCells, String designPlanHash, SitePreparationPlan preparation) {
         if (!validEntranceApproachPlan(
                 entranceApproachStepCount, entranceApproachTotalCells)) {
             return false;
@@ -2622,6 +2801,10 @@ public final class EconomyService {
                 project.designPlanHash = designPlanHash;
             }
             project.originPos = originPos;
+            project.sitePreparationComplete = false;
+            project.sitePreparationCursor = 0;
+            project.sitePreparationPlan = preparation;
+            project.constructionStarted = false;
             project.boundsMinPos = boundsMinPos;
             project.boundsMaxPos = boundsMaxPos;
             project.totalBlocks = totalBlocks;
@@ -2648,6 +2831,9 @@ public final class EconomyService {
             project.originPos = 0L;
             project.boundsMinPos = 0L;
             project.boundsMaxPos = 0L;
+            project.sitePreparationPlan = null;
+            project.sitePreparationCursor = 0;
+            project.sitePreparationComplete = true;
             project.totalBlocks = project.type.nominalBlocks();
             if (VillageArchitecture.isManagedStructureSchema(project.designSchema)) {
                 project.designStage = 0;
@@ -2684,6 +2870,16 @@ public final class EconomyService {
                 villageId, projectId, currentGameTick, false);
     }
 
+    /** Persist before the first world write; zero cursors alone never authorize relocation. */
+    public synchronized boolean markVillageConstructionStarted(UUID villageId, long projectId) {
+        return mutateVillage(villageId, true, village -> {
+            var project = findProject(village, projectId);
+            if (project == null || project.originPos == 0L || project.materializedComplete) return false;
+            project.constructionStarted = true;
+            return true;
+        });
+    }
+
     /**
      * Defers materialization and optionally retains an unverified reservation. Retention is used
      * when a chunk is unloaded: clearing a persisted origin in that case could orphan blocks that
@@ -2712,7 +2908,10 @@ public final class EconomyService {
                     Math.max(Math.max(0L, currentGameTick), project.retryAfterGameTick),
                     retryDelay);
             project.blocked = false;
-            if (project.materializedBlocks == 0 && !retainReservation) {
+            if (project.materializedBlocks == 0 && !project.constructionStarted && !retainReservation) {
+                project.sitePreparationPlan = null;
+                project.sitePreparationCursor = 0;
+                project.sitePreparationComplete = true;
                 project.originPos = 0L;
                 project.boundsMinPos = 0L;
                 project.boundsMaxPos = 0L;
@@ -3354,6 +3553,9 @@ public final class EconomyService {
             project.boundsMinPos = 0L;
             project.boundsMaxPos = 0L;
             project.materializedBlocks = 0;
+            project.sitePreparationPlan = null;
+            project.sitePreparationCursor = 0;
+            project.sitePreparationComplete = true;
             project.totalBlocks = project.type.nominalBlocks();
             project.materializedComplete = false;
             project.blocked = false;
@@ -4579,7 +4781,8 @@ public final class EconomyService {
                     prosperityFundPolicy.emergencyReserveFraction(),
                     prosperityFundPolicy.dailySpendingCapMicro(),
                     prosperityFundPolicy.fastTrackCapitalEnabled(),
-                    marketEventsEnabled);
+                    marketEventsEnabled,
+                    peacefulVillageGrowth);
         }
     }
 

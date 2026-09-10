@@ -67,7 +67,7 @@ final class VillageBankVersionSevenSelfTest {
                     "V7 palette projection is not idempotent: " + dialect);
             Map<BlockPos, BlockState> before = cells(plan("legacyBankPlanV6", oldPalette));
             Map<BlockPos, BlockState> after = cells(plan("legacyBankPlanV7", oldPalette));
-            Map<BlockPos, BlockState> latest = cells(plan("bankPlan", oldPalette));
+            Map<BlockPos, BlockState> latest = cells(plan("legacyBankPlanV8", oldPalette));
             require(after.keySet().equals(latest.keySet()), "Bank v8 changed its footprint");
             int slimCourses = 0;
             for (var entry : after.entrySet()) {
@@ -82,6 +82,16 @@ final class VillageBankVersionSevenSelfTest {
             require(slimCourses == (dialect == BiomeDialect.DESERT || dialect == BiomeDialect.SNOWY ? 0 : 2),
                     "Bank brick chimney upper-half coverage changed: " + dialect);
             System.out.println("PASS Bank v8 " + dialect + ": " + slimCourses + " slim chimney courses; all other cells unchanged");
+            Map<BlockPos, BlockState> versionNine = cells(plan("bankPlan", oldPalette));
+            Map<BlockPos, BlockState> expectedNine = new LinkedHashMap<>(latest);
+            for (int x = 5; x <= 7; x++) {
+                BlockState removed = expectedNine.remove(new BlockPos(x, 1, 1));
+                require(removed != null && removed.is(Blocks.CARPET.green()),
+                        "Bank v8 original doorway carpet missing: " + dialect);
+            }
+            require(versionNine.equals(expectedNine),
+                    "Bank v9 must change only the three doorway carpet cells: " + dialect);
+            System.out.println("PASS Bank v9 " + dialect + ": three doorway carpets set back; every other cell unchanged");
             require(after.size() == before.size() + 16, "Four small planters did not fit: " + dialect);
             require(after.get(new BlockPos(-1, 5, -1)).is(switch (dialect) {
                 case DESERT -> Blocks.ACACIA_STAIRS;

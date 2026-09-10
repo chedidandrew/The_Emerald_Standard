@@ -73,9 +73,12 @@ public final class EmeraldSettingsScreen extends Screen {
                 } else {
                     EditBox input = new EditBox(font, x + panelWidth - 94, rowY, 82, 20,
                             Component.literal(label(key)));
-                    input.setMaxLength(12); input.setValue(value); input.setEditable(!saving);
+                    boolean fixedPace = EmeraldConfig.isFixedConstructionKey(key);
+                    input.setMaxLength(12); input.setValue(value); input.setEditable(!saving && !fixedPace);
                     input.setResponder(v -> edits.put(key, v));
-                    input.setTooltip(Tooltip.create(Component.literal(key + "; enter a whole number.")));
+                    input.setTooltip(Tooltip.create(Component.literal(fixedPace
+                            ? "Fixed construction pace: 2 blocks per second per site at 20 TPS."
+                            : key + "; enter a whole number.")));
                     addRenderableWidget(input);
                 }
             }

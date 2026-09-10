@@ -2,7 +2,7 @@
 
 The Village Prosperity System connects The Emerald Standard's global market to persistent local Minecraft settlements while preserving the mod's lightweight identity.
 
-The key architectural rule is simple: **offline progression changes data, not chunks or entities**. Once discovered, a village's economy advances regardless of player distance and through trusted offline catch-up on the next server start. Physical village growth materializes gradually only when a player in the same dimension is within the configured horizontal X/Z activation radius and the relevant chunks are already loaded. The recommended default is 256 blocks, configurable from 48 through 512; Y separation does not affect eligibility, no more than 16 villages are considered per construction pass, and the mod never force-loads chunks. Prosperity observation and materialization are dimension-aware; the separate Village Bank structure remains Overworld-only in the 0.4 beta.
+The key architectural rule is simple: **offline progression changes data, not chunks or entities**. Once discovered, a village's economy advances regardless of player distance and through trusted offline catch-up on the next server start. Physical village growth materializes gradually only when a player in the same dimension is within the configured horizontal X/Z activation radius and the relevant chunks are already loaded. The recommended default is 256 blocks, configurable from 48 through 512; Y separation does not affect eligibility, every eligible site has an independent construction allowance, and the mod never force-loads chunks. Prosperity observation and materialization are dimension-aware; the separate Village Bank structure remains Overworld-only in the 0.4 beta.
 
 ## Configuration
 
@@ -30,7 +30,7 @@ The simulation settings are independent.
 - `market_integration_enabled`: allows eligible villages to contribute their capped fundamental factor to assets and commodities.
 - `automatic_recovery_enabled`: allows recoverable extinct villages to enter the recovery process after their cooldown.
 
-`development_radius` controls only same-dimension horizontal activation for physical work on known settlements. It accepts 48–512 blocks, ignores vertical distance, and does not limit their data-only economic simulation, load chunks, or expand villager AI. At most 16 eligible villages enter any one construction pass. Entity and construction-theatre searches retain their local 48-block cap, while a spawned settler's assigned home radius is separately capped at 32 blocks. Keep the recommended 256 default unless the server already loads village chunks farther away; a larger activation radius is not a view-distance or force-loading setting.
+`development_radius` controls only same-dimension horizontal activation for physical work on known settlements. It accepts 48–512 blocks, ignores vertical distance, and does not limit their data-only economic simulation, load chunks, or expand villager AI. Each eligible site's physical work has an independent one-block-per-ten-tick allowance. Entity and construction-theatre searches retain their local 48-block cap, while a spawned settler's assigned home radius is separately capped at 32 blocks. Keep the recommended 256 default unless the server already loads village chunks farther away; a larger activation radius is not a view-distance or force-loading setting.
 
 Turning visual progression off never removes structures that already exist. Turning market integration off leaves the local village simulation intact but makes the global market ignore settlement fundamentals.
 
@@ -100,6 +100,16 @@ These local effects are deliberately modest. Actual casualties and safety remain
 
 ## Development tiers
 
+### Peaceful difficulty
+
+With abstract simulation enabled, the authoritative world difficulty selects an automatic easier
+growth profile on Peaceful. It increases production and development, reduces food use, accelerates
+eligible settlers and recovery, and makes full 100 prosperity easier to attain. Easy/Normal/Hard
+retain the previous baseline. It does not grant player money, remove project costs, ignore damage,
+bypass housing or placement safety, or enable a disabled simulation. Difficulty is refreshed before
+startup catch-up and each server tick; catch-up uses the current difficulty, not historical settings.
+See [exact tuning and structure loot](PEACEFUL_GROWTH_AND_LOOT.md).
+
 | Tier | Name |
 |---:|---|
 | 0 | Hamlet |
@@ -110,6 +120,22 @@ These local effects are deliberately modest. Actual casualties and safety remain
 | 5 | Regional Center |
 
 A village's **functional tier can now rise or fall** as population and prosperity change. Completed physical structures are never automatically removed when the functional tier falls.
+
+### Bounded districts, open-ended cities
+
+The simulation caps each district at **tier 5**, **64 economic residents including pending settlers**,
+and **12 prosperity projects**, including at most **six housing projects**. Utilities are unique, and
+need-driven selection may stop before the project cap. The separate Village Bank is not one of these
+12 projects. Tier 5 requires at least 28 economic residents, 75 prosperity and six operational projects;
+100 prosperity is the maximum, not a requirement for tier 5. These limits also apply on Peaceful.
+
+Population needs spare functional housing, adequate food and safety. Resource production finances
+need-driven projects, which add housing or services and can lift the tier. Approved buildings and
+settlers materialize only near players in already-loaded chunks. The development radius controls
+when this work runs. Automatic city expansion now adds additional districts without a fixed city-size
+cap, subject to sustainable supplies, rising upkeep and safe loaded land. See
+[city expansion and lighting](CITY_EXPANSION.md) for controls and balance. Player construction and ordinary
+Minecraft breeding are separate; the mod does not delete excess villagers to enforce an entity cap.
 
 ## Development projects
 
@@ -130,12 +156,15 @@ Projects require population, resources, treasury, prosperity, safety, and develo
 
 ### Construction safety
 
-The materializer follows conservative rules:
+The materializer preserves real builds while allowing routine new-site preparation:
 
 - No forced chunk loading
 - The first deterministic search tests 64 project candidates through 84 blocks. A fully failed sweep persists backoff and unlocks another bounded 24-site ring, up to 256 candidates through 276 blocks; due projects rotate between pulses so a difficult lot or low-view-distance frontier cannot starve later projects
 - No placement when a required chunk is unloaded. An unreserved frontier is backed off before a later expanded sweep, while an existing reservation is retained and delayed rather than discarded on incomplete world information
 - No replacement of block entities
+- New reservations may clear ordinary torches and recognizable natural tree remnants in a bounded,
+  resumable pass. Shallow mining/blast damage can use existing foundation bridging. No direction
+  settings or player-drawn no-build zones are required; existing buildings are never retro-cleared.
 - No replacement of solid construction or protection-claimed blocks
 - No replacement of the existing terrain surface
 - The project floor is levelled in air above the highest sampled surface on a conservatively whitelisted natural lot with at most four blocks of height variation. Preflight transforms the authoritative base first and checks every ground-contact column, including rotated or mirrored annexes outside the nominal descriptor
@@ -258,13 +287,13 @@ Village Prosperity is designed around bounded work:
 - Periodic loaded-world census only
 - Dimension-aware scans restricted to loaded server levels
 - Horizontal physical-development activation: 256 blocks by default, configurable from 48 through 512, with Y ignored
-- At most 16 eligible villages considered in one construction pass
+- Every eligible site considered each construction pulse; one authored block operation per site
 - Local entity and construction-theatre searches remain capped at 48 blocks; settler home assignment remains capped at 32 blocks
 - One compact persistent record per known village
 - Small incident and resident history limits
 - Bounded project queue
-- Bounded global block-placement budget
-- Fair rotation of that budget across loaded dimensions and nearby settlements
+- Fixed one-operation allowance per site every ten ticks (2/second at 20 TPS)
+- Independent site allowances across loaded dimensions and nearby settlements
 - Persistent exponential retry gates for obstructed sites
 - Catch-up batch size adjusted for stored account and settlement counts
 - Cached village fundamentals for snapshot lists

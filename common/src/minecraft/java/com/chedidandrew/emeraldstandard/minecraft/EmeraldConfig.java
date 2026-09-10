@@ -148,9 +148,9 @@ public final class EmeraldConfig {
                 bounded(properties, "village_prosperity.development_radius",
                         DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, MIN_VILLAGE_DEVELOPMENT_RADIUS,
                         MAX_VILLAGE_DEVELOPMENT_RADIUS),
-                bounded(properties, "village_prosperity.construction_interval_ticks", 10, 1, 200),
-                bounded(properties, "village_prosperity.construction_blocks_per_tick", 2, 1, 64),
-                bounded(properties, "village_prosperity.settler_spawn_interval_ticks", 1_200, 200, 24_000),
+                fixedConstruction(properties, "village_prosperity.construction_interval_ticks", 10, 200),
+                fixedConstruction(properties, "village_prosperity.construction_blocks_per_tick", 1, 64),
+                bounded(properties, "village_prosperity.settler_spawn_interval_ticks", 600, 200, 24_000),
                 bool(properties, "village_prosperity.donations_enabled", true),
                 bool(properties, "village_prosperity.endowments_enabled", true),
                 bool(properties, "village_prosperity.project_sponsorship_enabled", true),
@@ -312,7 +312,7 @@ public final class EmeraldConfig {
     private static EmeraldConfig defaults() {
         return new EmeraldConfig(true, 200, 256, 5, 5, true, true, true,
                 (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS, true, true, true, true, 400,
-                DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, 10, 2, 1_200,
+                DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, 10, 1, 600,
                 true, true, true, true, true, true, 400, 20, 24);
     }
     private static void writeDefaults(Path path) throws IOException {
@@ -335,6 +335,14 @@ public final class EmeraldConfig {
         if (raw.trim().equalsIgnoreCase("true")) return true;
         if (raw.trim().equalsIgnoreCase("false")) return false;
         throw new IOException("Configuration " + key + " must be true or false");
+    }
+    public static boolean isFixedConstructionKey(String key) {
+        return key.equals("village_prosperity.construction_interval_ticks")
+                || key.equals("village_prosperity.construction_blocks_per_tick");
+    }
+    private static int fixedConstruction(Properties properties, String key, int fixed, int legacyMaximum) throws IOException {
+        bounded(properties, key, fixed, 1, legacyMaximum); // Validate old saves without rejecting their former speed.
+        return fixed;
     }
     private static int bounded(Properties properties, String key, int fallback, int minimum, int maximum) throws IOException {
         String raw = properties.getProperty(key);
