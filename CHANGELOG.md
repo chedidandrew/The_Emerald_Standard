@@ -2,6 +2,16 @@
 
 ## Unreleased: 0.4.0-beta.5
 
+- Save per-container Bank loot receipts before attaching loot; never recreate issued/adopted storage when broken during unfinished construction. Preserve replacement inventories. Older unfinished plans without provenance finish remaining storage empty. Economy format 26 retains the previous format-25 data and adds these receipts; back up before upgrading.
+- Defer live-occupied construction cells and occupied footing for players, villagers and animals. Recheck at the existing construction cadence without rejecting the lot, accumulating obstruction failures or triggering founding-home relocation. Apply checks to buildings, progressive Banks, terrain preparation, roads, approaches and managed connection updates; items and cosmetic displays do not stall construction.
+- Add real-server Bank break/empty/replacement/restart and legacy-loot regressions, entity wait/resume tests for Banks and ordinary projects, and a loaded/unloaded food census plus checkpoint/restart regression. Retain the prior per-chunk food-cache fix: unknown chunks do not become empty observations.
+
+- Add built-in `/nobuild add <name> <x1> <z1> <x2> <z2>`, `list` and owner/operator `remove`. Persist inclusive full-height, dimension-local areas; protect new lots and stop overlapping pending construction without removing existing blocks. No third-party claim mod is required.
+- Record meaningful native player block placements and removals; protect connected surviving clusters and recognize older supported raw-log frames. Ordinary torches and vegetation do not reserve a lot. Preserve existing storage/crafted-block guards; ambiguous old dirt/vegetation builds still need explicit zones.
+- Recover a persistently obstructed founding home once per district after five loaded, unpaused minutes. Preserve partial lots, transfer unused escrow and charge the consumed share again. Let other eligible districts expand instead of freezing the entire city behind that home.
+- Align project and Bank workers with construction eligibility; wait on temporary blockages and release mod-owned routes for paused, abandoned, repair-required or unavailable work. Preserve unrelated villager navigation.
+- Cache loaded villager/display membership and chunk food observations; distribute food surveys and reduce their cell budget under lag. Keep each site's independent two-operations-per-second pace. Journal changed district fields between full snapshots, retaining checksums and synchronous financial saves. Economy format 25 introduced recovery evidence and food caches (retained in format 26); back up the entire world before upgrading.
+
 - Fix villager head clearance at new Bank entrances by setting the first carpet row back in Bank revision 9. Preserve revision-8 and earlier structures/plans unchanged.
 - Add background construction diagnostics and safe stalled-site recovery. Persist a write-ahead start marker in economy format 24 so only provably untouched reservations may relocate; partial work and player edits stay protected. Pace stalled Bank retries.
 - Retain up to two builder assignments per site with native saved entity tags. Add cosmetic delivery loads, ground-supported scaffolding/material displays, and exact mod-owned cleanup; no new construction-management UI, inventory transfers, or free item drops.

@@ -32,6 +32,44 @@ final class EconomyPersistence {
     }
 
     static EconomyState load(
+            Path path, long fallbackSeed, long now, long ticks, long overworldClockTicks) throws IOException {
+        EconomyState state = loadSnapshot(path,fallbackSeed,now,ticks,overworldClockTicks);
+        state.villageJournal = new DurableJournal(path.resolveSibling(path.getFileName()+".village-journal"));
+        String base=state.persistedFileFingerprint==null?"":HexFormat.of().formatHex(state.persistedFileFingerprint);
+        Map<UUID,Properties> replay=new java.util.LinkedHashMap<>();
+        for(byte[] record:state.villageJournal.read()) {
+            Properties p=new Properties(); p.load(new java.io.ByteArrayInputStream(record));
+            if (!base.equals(p.getProperty("snapshot"))) continue;
+            if (Integer.parseInt(p.getProperty("format")) > EconomyState.FORMAT_VERSION)
+                throw new IOException("Village journal was written by a newer mod version");
+            UUID id=UUID.fromString(p.getProperty("village_id"));
+            Properties accumulated=replay.get(id);
+            if(accumulated==null || !Boolean.parseBoolean(p.getProperty("delta","false"))) {
+                accumulated=new Properties();
+                if(Boolean.parseBoolean(p.getProperty("delta","false"))) {
+                    var village=state.villages.get(id);
+                    if(village==null) throw new IOException("Village journal has no baseline");
+                    writeVillage(accumulated,id,village);
+                }
+                replay.put(id,accumulated);
+            }
+            for(String key:p.stringPropertyNames()) {
+                if(key.startsWith("remove.")) accumulated.remove(key.substring(7));
+                else if(key.startsWith("village.")) accumulated.setProperty(key,p.getProperty(key));
+            }
+        }
+        for(var entry:replay.entrySet()) {
+            EconomyState isolated=EconomyState.fresh(state.seed,now,ticks,overworldClockTicks);
+            isolated.economicDay=state.economicDay;
+            loadVillages(isolated,entry.getValue(),EconomyState.FORMAT_VERSION);
+            var village=isolated.villages.get(entry.getKey());
+            if(village==null || isolated.villages.size()!=1) throw new IOException("Invalid district journal scope");
+            state.villages.put(entry.getKey(),village);
+        }
+        state.validate(); return state;
+    }
+
+    private static EconomyState loadSnapshot(
             Path path,
             long fallbackSeed,
             long now,
@@ -66,12 +104,16 @@ final class EconomyPersistence {
     }
 
     static void save(EconomyState state, Path path) throws IOException {
+        byte[] previousFingerprint=state.persistedFileFingerprint;
         state.validate();
         if (path.getParent() != null) {
             Files.createDirectories(path.getParent());
         }
 
         Properties properties = toProperties(state);
+        // Two identical checkpoints in the same second must still have distinct journal epochs.
+        // Otherwise an older delta could replay over a later snapshot that returned to its baseline.
+        properties.setProperty("snapshot_generation", UUID.randomUUID().toString());
         properties.setProperty(CHECKSUM_KEY, checksum(properties));
         ByteArrayOutputStream output = new ByteArrayOutputStream(65_536);
         properties.store(
@@ -106,6 +148,41 @@ final class EconomyPersistence {
         }
         forceDirectory(path.getParent());
         state.rememberPersistedFile(path, persistedFingerprint);
+        // Keep the previous snapshot's journal epoch for backup recovery. Older epochs are obsolete.
+        if(state.villageJournal!=null && Files.exists(path.resolveSibling(path.getFileName()+".village-journal"))) try {
+            String previous=previousFingerprint==null?"":HexFormat.of().formatHex(previousFingerprint);
+            List<byte[]> keep=new ArrayList<>();
+            for(byte[] record:state.villageJournal.read()) {
+                Properties p=new Properties(); p.load(new java.io.ByteArrayInputStream(record));
+                if(previous.equals(p.getProperty("snapshot"))) keep.add(record);
+            }
+            state.villageJournal.replace(keep);
+        } catch(IOException ignored) { /* A stale epoch cannot replay against the new fingerprint. */ }
+    }
+
+    /** Force just the affected district; full snapshots remain periodic and financial saves atomic. */
+    static void journalVillage(EconomyState state,Path path,EconomyState.VillageRecord village) throws IOException {
+        if(!state.isKnownPersistedFile(path) || state.persistedEconomicDay!=state.economicDay) { save(state,path); return; }
+        EconomyState.validateVillage(village.villageId,village,state.economicDay);
+        // Match the normal snapshot failure contract (e.g. a replaced/removed data directory).
+        if(!Files.isRegularFile(path)) throw new IOException("Economy snapshot is unavailable");
+        if(state.villageJournal==null) state.villageJournal=new DurableJournal(path.resolveSibling(path.getFileName()+".village-journal"));
+        Properties current=new Properties(); writeVillage(current,village.villageId,village);
+        Properties previous=state.journalVillageBaselines.get(village.villageId);
+        Properties p=new Properties();
+        if(previous==null) p.putAll(current);
+        else {
+            for(String key:current.stringPropertyNames())
+                if(!current.getProperty(key).equals(previous.getProperty(key))) p.setProperty(key,current.getProperty(key));
+            for(String key:previous.stringPropertyNames()) if(!current.containsKey(key)) p.setProperty("remove."+key,"");
+            p.setProperty("delta","true");
+        }
+        p.setProperty("snapshot",HexFormat.of().formatHex(state.persistedFileFingerprint));
+        p.setProperty("format",Integer.toString(EconomyState.FORMAT_VERSION));
+        p.setProperty("village_id",village.villageId.toString());
+        ByteArrayOutputStream bytes=new ByteArrayOutputStream(); p.store(bytes,"Village write-ahead record");
+        state.villageJournal.append(bytes.toByteArray());
+        state.journalVillageBaselines.put(village.villageId,current);
     }
 
     private static void preserveValidPrimary(EconomyState state, Path path) {
@@ -293,6 +370,7 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "food_sources.crops", Double.toString(village.observedCropUnits));
         properties.setProperty(prefix + "food_sources.livestock", Double.toString(village.observedLivestockUnits));
         properties.setProperty(prefix + "food_sources.day", Long.toString(village.lastFoodSourcesDay));
+        village.foodChunks.forEach((chunk,sample)->properties.setProperty(prefix+"food_chunk."+chunk,sample.crops()+","+sample.livestock()));
         properties.setProperty(
                 prefix + "visual_project_selection_cursor",
                 Long.toString(village.visualProjectSelectionCursor));
@@ -370,6 +448,8 @@ final class EconomyPersistence {
             properties.setProperty(projectPrefix + "site_preparation_complete", Boolean.toString(project.sitePreparationComplete));
             properties.setProperty(projectPrefix + "site_preparation_cursor", Integer.toString(project.sitePreparationCursor));
             properties.setProperty(projectPrefix + "construction_started", Boolean.toString(project.constructionStarted));
+            properties.setProperty(projectPrefix + "obstruction_loaded_ticks", Long.toString(project.obstructionLoadedTicks));
+            properties.setProperty(projectPrefix + "founding_recovery_used", Boolean.toString(project.foundingRecoveryUsed));
             if (project.sitePreparationPlan != null)
                 properties.setProperty(projectPrefix + "site_preparation_plan", project.sitePreparationPlan.encode());
             properties.setProperty(projectPrefix + "trail.anchor_set", Boolean.toString(project.trailAnchorSet));
@@ -995,6 +1075,12 @@ final class EconomyPersistence {
 
     private static void applyVillageField(
             EconomyState.VillageRecord village, String field, String value) {
+        if(field.startsWith("food_chunk.")) {
+            String[] counts=value.split(",");
+            village.foodChunks.put(Long.parseLong(field.substring(11)),
+                    new VillageFoodSupply.ChunkObservation(Double.parseDouble(counts[0]),Double.parseDouble(counts[1])));
+            return;
+        }
         if (field.startsWith("fund.")) {
             applyProsperityFundField(
                     village.prosperityFund, field.substring("fund.".length()), value);
@@ -1193,6 +1279,8 @@ final class EconomyPersistence {
             case "site_preparation_complete" -> project.sitePreparationComplete = Boolean.parseBoolean(value);
             case "site_preparation_cursor" -> project.sitePreparationCursor = Integer.parseInt(value);
             case "construction_started" -> project.constructionStarted = Boolean.parseBoolean(value);
+            case "obstruction_loaded_ticks" -> project.obstructionLoadedTicks = Math.max(0,Long.parseLong(value));
+            case "founding_recovery_used" -> project.foundingRecoveryUsed = Boolean.parseBoolean(value);
             case "site_preparation_plan" -> project.sitePreparationPlan = SitePreparationPlan.decode(value);
             case "site_search_saw_unloaded" ->
                     project.siteSearchSawUnloadedCandidate = Boolean.parseBoolean(value);

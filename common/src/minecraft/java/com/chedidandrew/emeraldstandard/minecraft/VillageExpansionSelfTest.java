@@ -149,6 +149,7 @@ final class VillageExpansionSelfTest {
         // Observe within development range but outside particle broadcast range. This is a
         // server-only fixture observer, not a logged-in network client.
         observer.setPos(200.5, origin.getY() + 1, 8.5);
+        Villager occupant = null;
         UUID childId = null;
         try {
             for (int x = -15; x <= 40; x++) for (int z = -15; z <= 40; z++) {
@@ -236,13 +237,71 @@ final class VillageExpansionSelfTest {
             var constructor = budgetType.getDeclaredConstructor(int.class, int.class);
             constructor.setAccessible(true);
             level.players().add(observer);
+            boolean occupancyChecked = false;
+            boolean terrainOccupancyChecked = false;
             for (int pulse = 0; pulse < 20_000; pulse++) {
+                var pending = economy.villageSnapshot(childId).village();
+                var pendingHome = pending.projects.getFirst();
+                if (!terrainOccupancyChecked && !pendingHome.sitePreparationComplete) {
+                    var firstWork = pendingHome.sitePreparationPlan.cells().stream().filter(cell ->
+                            !VillageTerrainFinishing.satisfied(level,level.getBlockState(BlockPos.of(cell.position())),
+                                    cell.after())).findFirst().orElse(null);
+                    if (firstWork != null) {
+                        BlockPos target = BlockPos.of(firstWork.position());
+                        BlockState current = level.getBlockState(target);
+                        var shape = current.getCollisionShape(level,target);
+                        if (firstWork.after().equals("minecraft:air") && !shape.isEmpty()) {
+                            occupant = net.minecraft.world.entity.EntityTypes.VILLAGER.create(level,
+                                    net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                            require(occupant != null, "terrain occupant factory");
+                            occupant.setPos(target.getX()+.5,target.getY()+shape.bounds().maxY,target.getZ()+.5);
+                            require(level.addFreshEntity(occupant), "terrain occupant added");
+                            for (int retry = 0; retry < 3; retry++) invoke("materializeDevelopment", level, economy,
+                                    EmeraldConfig.current(),pulse*10L,constructor.newInstance(1,Integer.MAX_VALUE));
+                            var waiting = economy.villageSnapshot(childId).village().projects.getFirst();
+                            require(level.getBlockState(target).equals(current)
+                                    && waiting.originPos == pendingHome.originPos
+                                    && waiting.materializationFailures == pendingHome.materializationFailures
+                                    && waiting.obstructionLoadedTicks == 0 && !waiting.foundingRecoveryUsed,
+                                    "occupied terrain retains footing without failure or founding relocation");
+                            require(ConstructionWorkStatus.waitingForEntities(childId,waiting.projectId), "terrain records a temporary entity wait");
+                            occupant.discard(); occupant = null; terrainOccupancyChecked = true;
+                        }
+                    }
+                }
+                if (!occupancyChecked && pendingHome.sitePreparationComplete) {
+                    List<?> pendingTemplate = (List<?>) invoke("projectTemplate", level, origin, pending, pendingHome);
+                    Object next = pendingTemplate.get(pendingHome.materializedBlocks);
+                    BlockPos target = (BlockPos) invoke("placementTarget", level, origin, next);
+                    BlockState proposed = (BlockState) accessor(next, "state");
+                    if (!proposed.getCollisionShape(level,target).isEmpty()
+                            && level.getBlockState(target).isAir()) {
+                        occupant = net.minecraft.world.entity.EntityTypes.VILLAGER.create(level,
+                                net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                        require(occupant != null, "construction occupant factory");
+                        occupant.setPos(target.getX()+.5,target.getY(),target.getZ()+.5);
+                        require(level.addFreshEntity(occupant), "construction occupant added");
+                        for (int retry = 0; retry < 3; retry++) invoke("materializeDevelopment", level, economy,
+                                EmeraldConfig.current(), pulse*10L, constructor.newInstance(1,Integer.MAX_VALUE));
+                        var waiting = economy.villageSnapshot(childId).village().projects.getFirst();
+                        require(level.getBlockState(target).isAir()
+                                && waiting.materializedBlocks == pendingHome.materializedBlocks
+                                && waiting.materializationFailures == pendingHome.materializationFailures
+                                && waiting.originPos == pendingHome.originPos && !waiting.manualRepairRequired,
+                                "ordinary project retains occupied cell and lot without failure/backoff");
+                        require(ConstructionWorkStatus.waitingForEntities(childId,waiting.projectId), "workers share entity wait state");
+                        occupant.discard(); occupant = null;
+                        occupancyChecked = true;
+                    }
+                }
                 invoke("materializeDevelopment", level, economy, EmeraldConfig.current(), pulse * 10L,
                         constructor.newInstance(1, Integer.MAX_VALUE));
                 if (economy.villageSnapshot(childId).village().projects.getFirst().materializedComplete) break;
             }
             var built = economy.villageSnapshot(childId).village();
             var home = built.projects.getFirst();
+            require(occupancyChecked, "ordinary construction exercised occupied-cell pause and resume");
+            require(terrainOccupancyChecked, "terrain preparation exercised occupied-footing pause and resume");
             require(home.sitePreparationComplete && home.materializedComplete,
                     "real starter home completed: " + home.materializedBlocks + "/" + home.totalBlocks
                             + ", prep=" + home.sitePreparationCursor + ", error=" + economy.lastError());
@@ -257,9 +316,10 @@ final class VillageExpansionSelfTest {
             restarted.start(directory, 1234, 120 * 24_000L);
             require(restarted.villageSnapshot(childId).village().projects.getFirst().materializedComplete,
                     "constructed district survives restart");
-            System.out.println("PASS VillageExpansionSelfTest: durable charter -> funded labor -> prepared lot -> real home -> actual settler -> restart");
+            System.out.println("PASS VillageExpansionSelfTest: durable charter -> funded labor -> occupied terrain/build-cell waits -> real home -> actual settler -> restart");
         } finally {
             level.players().remove(observer);
+            if (occupant != null) occupant.discard();
             UUID cleanupId = childId;
             level.getEntitiesOfClass(Villager.class, new AABB(origin).inflate(48),
                     villager -> cleanupId != null && cleanupId.equals(VillageProsperityManager.villageId(villager)))

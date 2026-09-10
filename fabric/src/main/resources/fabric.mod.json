@@ -12,6 +12,7 @@
   },
   "license": "MIT",
   "environment": "*",
+  "mixins": ["emerald-standard.mixins.json"],
   "entrypoints": {
     "main": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabric"],
     "client": ["com.chedidandrew.emeraldstandard.fabric.EmeraldStandardFabricClient"],

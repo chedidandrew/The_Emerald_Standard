@@ -23,7 +23,7 @@ The latest [background village life](docs/BACKGROUND_VILLAGE_LIFE.md) pass adds 
 cosmetic deliveries, neighborhood gathering spaces, upkeep advice and automatic retry diagnostics.
 See the [beta.5 background-life validation record](docs/reviews/2026-09-10-beta5-background-village-life-validation.md)
 for tested behavior, exact local JAR hashes and remaining gameplay-review limits.
-Upgrading writes economy **format 24**; keep a
+Upgrading writes economy **format 26**; keep a
 pre-upgrade world backup and do not downgrade that save to an older binary.
 
 1. Back up the world before installing or upgrading this beta.
@@ -88,6 +88,12 @@ The global simulation includes expansion, bull, boom, stagnation, recession, cra
 **Farms and livestock now help feed villages:** nearby growing crops and living farm animals increase agriculture output on every difficulty. More and more-mature sources help with diminishing returns; harvesting fields or removing animals reduces the bonus on the next completed scan. See [food sources and manual farming](docs/VILLAGE_FOOD_SOURCES.md) for supported sources, range and starting balance.
 
 Newly generated project and Bank chests/barrels receive modest, one-time, building-themed loot. Homes contain household supplies, smithies contain fuel and small metal supplies, granaries contain crops/seeds, and Banks contain stationery rather than a vault of emeralds. Existing containers are neither filled retroactively nor replenished. See [Peaceful growth and loot](docs/PEACEFUL_GROWTH_AND_LOOT.md) for the complete role list and compatibility rules.
+
+Unfinished Banks persist a per-container receipt before attaching loot. Breaking a recorded
+container does not recreate it, including after restart; player replacements retain their contents.
+Older unfinished plans without receipts finish remaining storage empty to avoid rerolling unknown
+loot. Construction defers cells occupied by living players, villagers or animals, including their
+supporting floors, and resumes when clear without rejecting the lot. See [construction safety](docs/PROGRESSIVE_CONSTRUCTION.md#live-worksite-safety).
 
 The 0.4 beta expands visible settlement progression to **10 curated village projects** with need-driven priorities, immutable authored Blueprint V2 architecture, biome-aware materials, a stable village-wide visual character, and bounded sector effects. Threatened villages can prioritize defenses, food-poor villages can prioritize storage, crowded villages can prioritize housing, and mature villages can grow into markets, smithies, inns, and an Exchange Hall.
 
@@ -219,6 +225,22 @@ The command enables a full five-minute capture of the testing player's banking a
 
 The capture is written incrementally for crash resilience and then packaged under the world's `data/the_emerald_standard_debug` directory as a shareable `TES-debug-*.zip`. Reports exclude the private economy seed, world seed, chat, server address, resident UUIDs, and unrelated player or settlement data. Timing fields distinguish sampling, active recorder ticks, writes, snapshots, and full-state copies instead of presenting overlapping measurements as a subsystem profile. Interrupted captures are packaged automatically on the next server start.
 
+## Built-in no-build areas
+
+No separate land-claim mod is required. Protect a full-height area in your current dimension
+using two inclusive X/Z corners:
+
+```text
+/nobuild add my_base 100 200 160 260
+/nobuild list
+/nobuild remove my_base
+```
+
+These zones stop The Emerald Standard's development, not player building or other mods.
+Automatic protection also recognizes meaningful player-built clusters while ignoring ordinary
+torches and vegetation. See [development protection](docs/DEVELOPMENT_PROTECTION.md) for
+ownership, size limits, background recovery and backup instructions.
+
 ## Administrator commands
 
 Normal gameplay does not require commands. The `/emerald` tree requires permission level 2 and is intended for administration, diagnostics, configuration, and recovery.
@@ -276,6 +298,7 @@ Hands-on visual, transaction, terrain, raid, recovery, and multiplayer checks re
 - [Debug flight recorder](docs/DEBUGGING.md)
 - [World configuration](docs/CONFIGURATION.md)
 - [Village Prosperity System](docs/VILLAGE_PROSPERITY.md)
+- [Built-in no-build areas and development protection](docs/DEVELOPMENT_PROTECTION.md)
 - [Banker GUI and village banks](docs/GUI_AND_VILLAGE_BANKS.md)
 - [Economy model](docs/ECONOMY.md)
 - [Architecture and persistence](docs/ARCHITECTURE.md)

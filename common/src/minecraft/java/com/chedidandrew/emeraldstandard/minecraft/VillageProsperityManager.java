@@ -90,12 +90,14 @@ public final class VillageProsperityManager {
     public static void resetRuntimeState() {
         VillageFoodEnvironment.reset();
         ConstructionDiagnostics.reset();
+        ConstructionWorkStatus.reset();
         VillageConstructionActivity.reset();
         LAST_SETTLER_TICK.clear();
         REPORTED_BLUEPRINT_MISMATCHES.clear();
     }
 
     public static void tick(MinecraftServer server, EconomyService economy) {
+        BackgroundSurveyBudget.tick(server);
         EmeraldConfig config = EmeraldConfig.current();
         economy.configureVillageProsperity(
                 config.villageProsperitySimulationEnabled(),
@@ -110,6 +112,7 @@ public final class VillageProsperityManager {
         }
 
         long gameTime = server.overworld().getGameTime();
+        ConstructionWorkStatus.tick(server,economy);
         List<ServerLevel> levels = new ArrayList<>();
         server.getAllLevels().forEach(levels::add);
         levels.forEach(level -> VillageConstructionActivity.tick(level, economy, config.villageVisualProgressionEnabled()));
@@ -516,10 +519,20 @@ public final class VillageProsperityManager {
                 if (current.hasBlockEntity() || !current.getFluidState().isEmpty()
                         || !VillageTerrainFinishing.unchanged(level, current, cell.before())
                         || !VillageDevelopmentProtection.mayPlace(level, village.villageId, project.projectId,
-                                pos, current, after)) return changed;
+                                pos, current, after)) {
+                    ConstructionWorkStatus.blocked(level,village.villageId,project.projectId,pos,project.originPos);
+                    return changed;
+                }
+                if (!VillageConstructionOccupancy.mayChange(level,pos,current,after)) {
+                    ConstructionWorkStatus.occupied(level,economy,village.villageId,project.projectId,pos,project.originPos,after);
+                    ConstructionDiagnostics.record(village.villageId+"/"+project.projectId,"waiting_for_entities",
+                            finished,project.sitePreparationPlan.cells().size(),level.getGameTime(),"Preserving occupied terrain and footing");
+                    return changed;
+                }
                 if (!ensureConstructionStarted(economy, village, project)) return changed;
                 if (!level.setBlock(pos, after, after.isAir() ? Block.UPDATE_ALL
                         : Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)) return changed;
+                ConstructionWorkStatus.progressed(economy,village.villageId,project.projectId);
                 changed++; finished++;
             }
             // Persist removed terrain before declaring prep complete; do not trust a cursor to erase
@@ -545,7 +558,7 @@ public final class VillageProsperityManager {
             if (VillageSitePreparation.clearable(level, target)) {
                 if (!VillageDevelopmentProtection.mayPlace(level, village.villageId, project.projectId,
                         target, existing, Blocks.AIR.defaultBlockState())) break;
-                if (!level.setBlock(target, Blocks.AIR.defaultBlockState(), 3)) break;
+                if (!VillageConstructionOccupancy.setBlock(level,target, Blocks.AIR.defaultBlockState(), 3)) break;
                 changed++;
             }
             cursor++;
@@ -624,7 +637,7 @@ public final class VillageProsperityManager {
                 continue;
             }
             List<Long> dueProjects = village.projects.stream()
-                    .filter(p -> !p.materializedComplete && !p.manualRepairRequired && !p.abstractOnly
+                    .filter(p -> com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.eligible(snapshot.village(),p)
                             && p.retryAfterGameTick <= Math.max(0L, gameTime))
                     .map(p -> p.projectId).toList();
             for (Long selectedProjectId : dueProjects) {
@@ -774,6 +787,10 @@ public final class VillageProsperityManager {
             if (!positionColumnLoaded(level, origin)) {
                 continue;
             }
+            if (DevelopmentLandProtection.excludes(level,BlockPos.of(project.boundsMinPos),BlockPos.of(project.boundsMaxPos))) {
+                ConstructionWorkStatus.blocked(level,village.villageId,project.projectId,origin,project.originPos);
+                continue;
+            }
             if (!project.sitePreparationComplete) {
                 int changed = prepareNewSite(level, economy, village, project, remainingBlockBudget);
                 remainingBlockBudget -= changed;
@@ -782,6 +799,12 @@ public final class VillageProsperityManager {
                 var actual = refreshed == null ? project : refreshed.village().projects.stream()
                         .filter(p -> p.projectId == refreshedProjectId).findFirst().orElse(project);
                 if (changed == 0 && !actual.sitePreparationComplete) {
+                    if (ConstructionWorkStatus.waitingForEntities(village.villageId,project.projectId)) {
+                        ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
+                                "waiting_for_entities",actual.sitePreparationCursor,project.totalBlocks,gameTime,
+                                "Terrain preparation waits for occupied footing without rejecting the lot");
+                        continue;
+                    }
                     boolean retain = actual.constructionStarted || actual.materializationFailures < 2;
                     economy.deferVillageProjectMaterialization(village.villageId, project.projectId, gameTime, retain);
                     ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
@@ -802,6 +825,9 @@ public final class VillageProsperityManager {
             int placedThisTick = 0;
             boolean blocked = false;
             boolean unloaded = false;
+            boolean physicalObstruction = false;
+            boolean entityWait = false;
+            BlockPos obstruction = origin;
             while (index < constructionTarget && remainingBlockBudget > 0) {
                 Placement placement = placements.get(index);
                 if (placement.isCosmetic() && project.manualRepairRequired) {
@@ -826,6 +852,7 @@ public final class VillageProsperityManager {
                     break;
                 }
                 BlockPos target = placementTarget(level, origin, placement);
+                obstruction = target;
                 BlockState current = level.getBlockState(target);
                 if (placementSatisfied(level, origin, target, current, placement)) {
                     if (placement.isStructuralAuthority()
@@ -837,6 +864,7 @@ public final class VillageProsperityManager {
                                     current,
                                     placement.state)) {
                         blocked = true;
+                        physicalObstruction = true;
                         break;
                     }
                     index++;
@@ -846,6 +874,7 @@ public final class VillageProsperityManager {
                     // Semantic air is an integrity assertion, never a request to remove a block.
                     // Preserve the obstruction and suspend this project until the route is clear.
                     blocked = true;
+                    physicalObstruction = true;
                     break;
                 }
                 if (!VillageDevelopmentProtection.mayPlace(
@@ -862,6 +891,7 @@ public final class VillageProsperityManager {
                         continue;
                     }
                     blocked = true;
+                    physicalObstruction = true;
                     break;
                 }
                 if (placement.isTrail() && !trailHasClearance(level, target)) {
@@ -879,7 +909,14 @@ public final class VillageProsperityManager {
                         continue;
                     }
                     blocked = true;
+                    physicalObstruction = true;
                     break;
+                }
+                if (!VillageConstructionOccupancy.mayChange(level,target,current,placement.state)) {
+                    entityWait = true;
+                    ConstructionWorkStatus.occupied(level,economy,village.villageId,project.projectId,
+                            target,project.originPos,placement.state);
+                    break; // Retain the exact cell/cursor. No failure count or site relocation.
                 }
                 if (!ensureConstructionStarted(economy, village, project)) { blocked = true; break; }
                 if (!level.setBlock(target, placement.state, 3)
@@ -976,6 +1013,8 @@ public final class VillageProsperityManager {
                         "");
             }
             if (blocked) {
+                if (physicalObstruction) ConstructionWorkStatus.blocked(level,village.villageId,project.projectId,obstruction,project.originPos);
+                else if (!unloaded) ConstructionWorkStatus.progressed(economy,village.villageId,project.projectId);
                 ConstructionDiagnostics.record(village.villageId + "/" + project.projectId, "blocked",
                         index, placements.size(), gameTime, unloaded ? "Waiting for loaded chunks" : "Occupied or protected; retry automatically");
                 DebugFlightRecorder.recordConstruction(
@@ -995,10 +1034,13 @@ public final class VillageProsperityManager {
                         village.villageId, project.projectId, gameTime,
                         unloaded || project.constructionStarted || project.materializationFailures < 2);
             }
-            if (!blocked) ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
+            if (entityWait) ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
+                    "waiting_for_entities",index,placements.size(),gameTime,"Living entity occupies this cell or its supporting floor");
+            if (!blocked && !entityWait) ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
                     complete ? "complete" : index >= constructionTarget ? "economic_work" : "building",
                     index, placements.size(), gameTime, "");
             if (placedThisTick > 0) {
+                if (!entityWait && !blocked) ConstructionWorkStatus.progressed(economy,village.villageId,project.projectId);
                 double x = origin.getX() + 0.5;
                 double y = origin.getY() + 1.5;
                 double z = origin.getZ() + 0.5;
@@ -1109,6 +1151,7 @@ public final class VillageProsperityManager {
                     && level.getBlockEntity(target) == null
                     && level.getFluidState(target).isEmpty()
                     && mayApplyPlacement(current, placement);
+            if (safe && !VillageConstructionOccupancy.mayChange(level,target,current,placement.state)) break;
             if (safe
                     && level.setBlock(target, placement.state, 3)
                     && level.getBlockState(target).is(placement.state.getBlock())) {
@@ -1244,6 +1287,7 @@ public final class VillageProsperityManager {
                 index++;
                 continue;
             }
+            if (!VillageConstructionOccupancy.mayChange(level,target,current,proposed)) break;
             if (level.setBlock(target, proposed, 3)
                     && level.getBlockState(target).is(proposed.getBlock())) {
                 placed++;
@@ -1484,6 +1528,7 @@ public final class VillageProsperityManager {
                 }
                 return placed;
             }
+            if (!VillageConstructionOccupancy.mayChange(level,target,current,placement.state)) break;
             if (!level.setBlock(target, placement.state, 3)
                     || !placementSatisfied(
                             level,
@@ -2319,7 +2364,7 @@ public final class VillageProsperityManager {
                 level, villageId, projectId, position, current, updated)) {
             return false;
         }
-        return level.setBlock(
+        return VillageConstructionOccupancy.setBlock(level,
                         position,
                         updated,
                         Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)
@@ -2701,7 +2746,8 @@ public final class VillageProsperityManager {
                             candidateBounds.minimum.getZ(),
                             candidateBounds.maximum.getZ(),
                             4));
-            if (!overlaps && !overlapsExcludedProjectSite && !overlapsManagedBank) {
+            if (!overlaps && !overlapsExcludedProjectSite && !overlapsManagedBank
+                    && !DevelopmentLandProtection.excludes(level,candidateBounds.minimum,candidateBounds.maximum)) {
                 var preparation = prepareProjectSitePlan(level, origin, village, planningProject, planned);
                 if (preparation == null) continue;
                 ProjectSiteSearch available = new ProjectSiteSearch(
@@ -2756,6 +2802,9 @@ public final class VillageProsperityManager {
             long projectId,
             BlockPos origin,
             List<Placement> placements) {
+        ProjectBounds footprint=bounds(origin,placements);
+        if(DevelopmentLandProtection.excludes(level,footprint.minimum,footprint.maximum))
+            return VillageMaterializationPolicy.SiteAvailability.UNSAFE;
         var survey = new VillageSitePreparation.Survey(level);
         // Finish the chunk-only preflight before any height, block-state, or protection read. A
         // partial view cannot prove the lot unsafe and must not trigger persistent failure backoff.

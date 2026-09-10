@@ -21,18 +21,26 @@ Fresh reservations persist `construction_started=false`. Immediately before the 
 building write, the mod must durably save `construction_started=true`. A zero block cursor alone
 is not proof of an untouched site: terrain work may already exist or a crash may have interrupted
 the progress save. After repeated temporary failures, only a proven untouched project may release
-its lot and search again. Started sites retain their frozen plan and retry in place. Existing
+its lot and search again. Ordinary started sites retain their frozen plan and retry in place. Existing
 backoff, loaded-chunk restrictions and per-write protection checks remain. Changed player blocks
 and containers are never erased to make recovery succeed.
 
+A founding home's persistent physical obstruction is now a bounded exception: after 6,000
+loaded, unpaused obstruction ticks, the district may fund one replacement. Its original partial
+lot remains protected, unused escrow transfers, and the consumed share is paid again. No refund
+or world demolition occurs. Other eligible districts no longer wait indefinitely behind that
+founding home. See [development protection](DEVELOPMENT_PROTECTION.md) for exact rules.
+
 Banks continue their frozen per-cell retry logic, including deferred unsupported cells; a stalled
-Bank now waits ten seconds between retries instead of rescanning every half second. Banks are
+Bank now waits ten seconds between block-obstruction retries instead of rescanning every half second.
+Live entity occupancy instead retains the ordinary ten-tick retry cadence. Banks are
 not automatically relocated after partial construction. Permanent player obstructions or claim
 vetoes can leave work pending indefinitely. Recovery does not grant demolition permission.
 
-Economy format **24** adds the durable project-start marker. Missing older markers conservatively
+Economy format **26** retains the durable project-start marker, obstruction recovery evidence and
+per-chunk food observations, and adds per-container Bank loot receipts. Missing older start markers conservatively
 mean started. Existing project recipes and old frozen terrain plans are not rerolled. Back up
-before upgrading and use that backup to downgrade; older binaries must not open format-24 saves.
+before upgrading and use that backup to downgrade; older binaries must not open format-26 saves.
 
 ## Recognizable construction
 
@@ -41,6 +49,9 @@ tags. A villager is not assigned to multiple loaded jobs. The same builders are 
 replacement candidates for missing/dead/unavailable assignments. Bankers and children are not
 recruited. Sleeping, trading and recently attacked residents are not steered. Professions,
 inventories and normal economic output are unchanged, and a missing worker never stalls growth.
+Paused, abandoned, repair-required and completed jobs release their assignments. Temporarily
+blocked sites stop deliveries while awaiting retry. Cleanup removes only a route that this mod
+installed; it does not erase an unrelated walk target or interrupt unrelated navigation.
 
 Builders make short staging-to-site delivery trips. A small display-only load accompanies the
 delivery leg. Ground-supported scaffolding and a material pile are also vanilla block-display
@@ -67,6 +78,15 @@ occupied construction cells, storage, player landscaping, steep terrain or insuf
 skip the pocket without rejecting the building. Terrain and permanent pocket placements share
 the existing **two operations per second per site at 20 TPS** budget. Existing buildings are not
 retrofitted with gardens during this pass.
+
+## Background cost
+
+Loader join/leave events maintain a loaded villager/display index, avoiding repeated scans of all
+world entities. Food surveys rotate across ticks and retain last-known observations for chunks
+that unload; genuinely empty completed loaded scans still remove the food bonus. Slow ticks
+reduce the food survey cell budget, not each construction site's independent 2-operations/second
+allowance. Frequent durable district changes use checksummed full/delta journal records between
+periodic full snapshots; financial saves remain synchronous full-world economy checkpoints.
 
 ## Verification boundary
 

@@ -1361,6 +1361,26 @@ public final class EconomyService {
         }
     }
 
+    /** Claim once before attaching loot; also closes adopted storage without modifying its contents. */
+    public synchronized boolean markBankStorageHandled(long key, BankConstruction expected, long position) {
+        if (state == null || path == null || isCatchingUp() || expected == null) return false;
+        BankConstruction current = state.pendingBankConstructions.get(key);
+        if (current == null || current.origin() != expected.origin()
+                || current.bankerAnchor() != expected.bankerAnchor()
+                || !Objects.equals(current.villageId(), expected.villageId())
+                || current.version() != expected.version() || !current.cells().equals(expected.cells())
+                || current.handledStorage().contains(position)) return false;
+        EconomyState before = state.copy(); boolean dirtyBefore = dirty;
+        try {
+            state.pendingBankConstructions.put(key, current.withHandledStorage(position));
+            saveState(); dirty = false; resetSaveSchedule(state.lastWallClockMs); lastError = "";
+            return true;
+        } catch (IOException | RuntimeException ex) {
+            state = before; dirty = dirtyBefore; lastError = message(ex);
+            scheduleSaveRetry(state.lastWallClockMs); return false;
+        }
+    }
+
     private boolean persistBankRegionMarker(
             long regionKey,
             Long packedAnchor,
@@ -1585,6 +1605,16 @@ public final class EconomyService {
         if (state == null || villageId == null) return null;
         var village = state.villages.get(villageId);
         return village == null ? null : state.villages.get(VillageExpansion.rootId(village));
+    }
+
+    /** Partial loaded scans merge only completed chunks; unknown chunks retain their last census. */
+    public synchronized boolean observeVillageFoodChunks(UUID id, Map<Long,VillageFoodSupply.ChunkObservation> samples) {
+        if(samples.isEmpty() || isCatchingUp()) return false;
+        boolean updated=mutateVillage(id,false,v->{ v.foodChunks.putAll(samples); return true; });
+        if(!updated) return false;
+        var village=state.existingVillage(id);
+        return observeVillageFoodSources(id,Math.min(1_000_000,village.foodChunks.values().stream().mapToDouble(VillageFoodSupply.ChunkObservation::crops).sum()),
+                Math.min(1_000_000,village.foodChunks.values().stream().mapToDouble(VillageFoodSupply.ChunkObservation::livestock).sum()));
     }
 
     /** Loaded-world observations replace the old count, including a genuinely emptied field/pen. */
@@ -2870,6 +2900,50 @@ public final class EconomyService {
                 villageId, projectId, currentGameTick, false);
     }
 
+    /** Background recovery never counts unloaded, paused, or economic-labor waits. */
+    public synchronized boolean observeConstructionObstruction(UUID villageId, long projectId, int loadedTicks) {
+        return mutateVillage(villageId, false, village -> {
+            var project = findProject(village,projectId);
+            if (project == null || !VillageConstructionPolicy.eligible(village,project)) return false;
+            project.obstructionLoadedTicks = loadedTicks <= 0 ? 0
+                    : Math.min(24_000,project.obstructionLoadedTicks + Math.min(20,loadedTicks));
+            return true;
+        });
+    }
+
+    /** One replacement for a founding home after five minutes of loaded physical obstruction. */
+    public synchronized boolean recoverObstructedFoundingHome(UUID villageId, long projectId, long tick) {
+        return mutateVillage(villageId,true,village -> {
+            var p = findProject(village,projectId);
+            if (p == null || !village.districtFounding || !VillageConstructionPolicy.eligible(village,p)
+                    || p.type.housingGain() <= 0 || p.originPos == 0 || p.obstructionLoadedTicks < 6_000
+                    || p.foundingRecoveryUsed || village.projects.stream().anyMatch(other -> other.foundingRecoveryUsed)) return false;
+            // The original approval already escrowed the full budget. Transfer its unused part,
+            // charging only the consumed share again. Never credit treasury or recover placed blocks.
+            double used = !p.constructionStarted ? 0 : Math.min(1.0,Math.max(1,p.materializedBlocks)/(double)Math.max(1,p.totalBlocks));
+            double materials = p.type.materialCost()*used, treasury = p.type.treasuryCost()*used;
+            if (village.materialSupply < materials || village.treasury < treasury) return false;
+            if (p.constructionStarted) {
+                if (p.retiredLots.size() >= EconomyState.MAX_RETIRED_PROJECT_LOTS) return false;
+                p.retiredLots.add(new EconomyState.RetiredProjectLot(p.boundsMinPos,p.boundsMaxPos));
+            }
+            village.materialSupply -= materials; village.treasury -= treasury;
+            p.foundingRecoveryUsed = true; p.obstructionLoadedTicks = 0;
+            p.originPos = p.boundsMinPos = p.boundsMaxPos = 0;
+            p.materializedBlocks = 0; p.totalBlocks = p.type.nominalBlocks();
+            p.constructionStarted = false; p.sitePreparationPlan = null;
+            p.sitePreparationCursor = 0; p.sitePreparationComplete = true;
+            p.designPlanHash = ""; p.designStage = 0;
+            if (p.designQualityStage >= 0) p.designQualityStage = 0;
+            p.blocked = false; p.retryAfterGameTick = Math.max(0,tick); p.materializationFailures = 0;
+            p.trailAnchorSet = false; p.trailAnchorPos = 0;
+            p.trailMaterializedBlocks = p.trailTotalBlocks = 0; p.trailMaterializedComplete = false;
+            p.trailCenterSurfaceMigrationCursor = p.trailCenterSurfaceMigrationTotalCells = 0;
+            resetVillageProjectEntranceApproach(p); resetVillageProjectSiteSearch(p);
+            return true;
+        });
+    }
+
     /** Persist before the first world write; zero cursors alone never authorize relocation. */
     public synchronized boolean markVillageConstructionStarted(UUID villageId, long projectId) {
         return mutateVillage(villageId, true, village -> {
@@ -3743,9 +3817,8 @@ public final class EconomyService {
             }
             dirty = true;
             if (persistImmediately) {
-                saveState();
-                dirty = false;
-                resetSaveSchedule(state.lastWallClockMs);
+                EconomyPersistence.journalVillage(state,path,village);
+                // Keep the existing periodic checkpoint deadline. Other dirty state is not lost.
             }
             lastError = "";
             return true;

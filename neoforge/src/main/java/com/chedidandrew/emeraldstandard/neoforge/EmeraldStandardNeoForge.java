@@ -74,6 +74,7 @@ public final class EmeraldStandardNeoForge {
             var server = event.getServer();
             VillageProsperityManager.resetRuntimeState();
             VillageBankManager.resetRuntimeState();
+            com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.start(server);
             EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
             config.applyTo(ECONOMY);
             ECONOMY.setPeacefulVillageGrowth(server.getWorldData().getDifficulty()
@@ -120,6 +121,7 @@ public final class EmeraldStandardNeoForge {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.tick(event.getServer());
         ECONOMY.setPeacefulVillageGrowth(event.getServer().getWorldData().getDifficulty()
                 == net.minecraft.world.Difficulty.PEACEFUL);
         if (!ECONOMY.tick(
@@ -163,6 +165,19 @@ public final class EmeraldStandardNeoForge {
             return;
         }
         VillageBankManager.onEntityLoaded(event.getEntity(), ECONOMY);
+        com.chedidandrew.emeraldstandard.minecraft.DevelopmentEntities.loaded(event.getEntity(),(ServerLevel)event.getLevel());
+    }
+
+    @SubscribeEvent
+    public void onEntityLeave(net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent event) {
+        if (event.getLevel() instanceof ServerLevel level)
+            com.chedidandrew.emeraldstandard.minecraft.DevelopmentEntities.unloaded(event.getEntity(),level);
+    }
+
+    @SubscribeEvent(priority=EventPriority.LOWEST,receiveCanceled=false)
+    public void onPlayerBreak(net.neoforged.neoforge.event.level.block.BreakBlockEvent event) {
+        if(!event.isCanceled() && event.getLevel() instanceof ServerLevel level)
+            com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.removed(level,event.getPos());
     }
 
     @SubscribeEvent

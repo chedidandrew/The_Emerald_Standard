@@ -53,6 +53,8 @@ required=(
     'com/chedidandrew/emeraldstandard/minecraft/VillageStructureProgression.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageStructureLoot.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageSitePreparation.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageConstructionOccupancy.class'
+    'com/chedidandrew/emeraldstandard/minecraft/ConstructionWorkStatus.class'
     'com/chedidandrew/emeraldstandard/core/VillageExpansion.class'
     'com/chedidandrew/emeraldstandard/core/VillageFoodSupply.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageFoodEnvironment.class'

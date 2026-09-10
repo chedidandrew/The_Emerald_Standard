@@ -67,7 +67,7 @@ interiors, roofs and decoration recipes are unchanged.
 
 ## Persistence and protection
 
-Project terrain work is stored in economy format **24** together with its reservation; Bank
+Project terrain work is stored in economy format **25** together with its reservation; Bank
 terrain work is included in the Bank's existing frozen before/after plan. Clearing is top-down
 and consumes the same per-site maximum of one block operation every ten ticks as building.
 Vanilla neighbor updates, falling blocks and leaf decay are not extra authored placements.
@@ -86,7 +86,11 @@ retain the earlier vegetation-only preparation policy and cannot gain excavation
 Minecraft does not universally track who placed a block. These are contextual protections,
 not perfect ownership recognition: isolated player-made raw logs or natural-material earthworks
 can be indistinguishable from terrain. Registered claim/protection vetoes remain authoritative.
-Back up before upgrading; do not open a format-24 economy save with an older binary.
+Back up before upgrading; do not open a format-25 economy save with an older binary.
+
+The built-in [development protection](DEVELOPMENT_PROTECTION.md) layer now records meaningful
+player placements and recognizes supported raw-log doorway frames. Explicit no-build areas are
+the reliable option for older natural-material landscaping; no third-party claim mod is needed.
 
 ## Verification
 

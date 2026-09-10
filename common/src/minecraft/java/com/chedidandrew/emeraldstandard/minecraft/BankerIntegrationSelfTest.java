@@ -54,10 +54,12 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        DevelopmentProtectionSelfTest.verify(level);
         VillageStructureLootSelfTest.verify(level);
         VillageExpansionSelfTest.verify(level);
         VillageFoodEnvironmentSelfTest.verify(level);
         BankConstructionSelfTest.verify(level);
+        ConstructionSafetySelfTest.verify(level);
         BankerMenuPacketCodecSelfTest.verify();
         BankerMenuPacketCodecSelfTest.verifyExchangeResourceVisualMapping();
         verifyInventoryPersistenceGuard();

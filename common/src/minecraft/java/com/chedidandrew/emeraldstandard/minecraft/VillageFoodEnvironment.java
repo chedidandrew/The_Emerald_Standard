@@ -3,6 +3,8 @@ package com.chedidandrew.emeraldstandard.minecraft;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import java.util.LinkedHashMap;
+import java.util.Map;
+import com.chedidandrew.emeraldstandard.core.VillageFoodSupply;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -36,7 +38,7 @@ final class VillageFoodEnvironment {
     static void schedule(ServerLevel level, EconomyService economy, EconomyState.VillageRecord village) {
         if (economy.isCatchingUp() || !economy.villageProsperitySimulationEnabled()
                 || PENDING.containsKey(village.villageId) || PENDING.size() >= 128) return;
-        if (cachedLevel != level || cachedTick != level.getGameTime()) {
+        if (cachedLevel != level || level.getGameTime()-cachedTick >= 200) {
             cachedLevel = level; cachedTick = level.getGameTime();
             cachedVillages = economy.villageSnapshots().stream().map(EconomyService.VillageSnapshot::village)
                     .filter(v -> v.dimensionKey.equals(village.dimensionKey)).toList();
@@ -50,9 +52,9 @@ final class VillageFoodEnvironment {
         var first = PENDING.entrySet().iterator().next();
         UUID id = first.getKey(); Scan scan = first.getValue(); PENDING.remove(id);
         if (scan.level.getServer() != server || economy.villageSnapshot(id) == null) return;
-        if (!scan.advance(CELLS_PER_TICK)) { PENDING.put(id, scan); return; }
-        if (scan.loadedColumns >= 64)
-            economy.observeVillageFoodSources(id, Math.min(1_000_000, scan.crops), scan.livestock());
+        int budget=BackgroundSurveyBudget.cells(server,CELLS_PER_TICK);
+        if (!scan.advance(budget)) { PENDING.put(id, scan); return; }
+        economy.observeVillageFoodChunks(id,scan.completedChunks);
     }
 
     /** The complete developed rectangle, including intervening land and a farm/pen margin. */
@@ -126,6 +128,8 @@ final class VillageFoodEnvironment {
         long chunkCursor;
         int sectionCursor, cellCursor, loadedColumns;
         double crops;
+        double chunkCrops;
+        final Map<Long,VillageFoodSupply.ChunkObservation> completedChunks=new LinkedHashMap<>();
 
         Scan(ServerLevel level, EconomyState.VillageRecord village, List<EconomyState.VillageRecord> neighbors) {
             this.level = level;
@@ -159,7 +163,7 @@ final class VillageFoodEnvironment {
                 if (!level.hasChunk(cx, cz)) { nextChunk(); continue; }
                 if (sectionCursor == 0 && cellCursor == 0) loadedColumns += 256;
                 var chunk = level.getChunk(cx, cz); // Guarded above, on the server thread.
-                if (sectionCursor >= chunk.getSections().length) { nextChunk(); continue; }
+                if (sectionCursor >= chunk.getSections().length) { finishChunk(cx,cz); continue; }
                 var section = chunk.getSection(sectionCursor);
                 if (cellCursor == 0 && (section.hasOnlyAir() || !section.maybeHas(s -> cropUnits(s) > 0))) {
                     sectionCursor++;
@@ -167,15 +171,26 @@ final class VillageFoodEnvironment {
                     int x = cellCursor & 15, z = (cellCursor >> 4) & 15, y = cellCursor >> 8;
                     double units = cropUnits(section.getBlockState(x, y, z));
                     if (units > 0 && owns(new BlockPos(cx * 16 + x,
-                            level.getMinY() + sectionCursor * 16 + y, cz * 16 + z))) crops += units;
+                            level.getMinY() + sectionCursor * 16 + y, cz * 16 + z))) { crops += units; chunkCrops += units; }
                     if (++cellCursor == 4096) { cellCursor = 0; sectionCursor++; }
                 }
-                if (sectionCursor >= sectionCount) nextChunk();
+                if (sectionCursor >= sectionCount) finishChunk(cx,cz);
             }
             return chunkCursor >= (long) chunksWide * chunksDeep;
         }
 
-        private void nextChunk() { chunkCursor++; sectionCursor = cellCursor = 0; }
+        private void nextChunk() { chunkCursor++; sectionCursor = cellCursor = 0; chunkCrops=0; }
+
+        private void finishChunk(int cx,int cz) {
+            double animals=0;
+            for(Animal animal:level.getEntitiesOfClass(Animal.class,new AABB(cx*16,level.getMinY(),cz*16,
+                    cx*16+16,level.getMaxY()+1,cz*16+16),Animal::isAlive)) {
+                BlockPos pos=animal.blockPosition();
+                if((pos.getX()>>4)==cx && (pos.getZ()>>4)==cz && owns(pos)) animals+=animalUnits(animal);
+            }
+            completedChunks.put(((long)cx<<32)|(cz&0xffffffffL),new VillageFoodSupply.ChunkObservation(Math.min(1_000_000,chunkCrops),Math.min(1_000_000,animals)));
+            nextChunk();
+        }
 
         double livestock() {
             double units = 0;

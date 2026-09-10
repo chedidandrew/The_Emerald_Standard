@@ -63,6 +63,15 @@ final class VillageConstructionActivitySelfTest {
             carrier.setPos(origin.getX() - 2.5, origin.getY(), origin.getZ() + 1.5);
             VillageConstructionActivity.update(level, List.of(site));
             require(loads.getFirst().isRemoved(), "delivery sets down its visual load, without item drops");
+            Villager builder=(Villager)workers.getFirst();
+            var walkMemory=net.minecraft.world.entity.ai.memory.MemoryModuleType.WALK_TARGET;
+            VillageConstructionActivity.update(level,List.of(new VillageConstructionActivity.Site(tag,village,1,origin,origin,false)));
+            require(builder.getBrain().getMemory(walkMemory).isEmpty(),"blocked site clears its own delivery route");
+            var unrelatedWalk=new net.minecraft.world.entity.ai.memory.WalkTarget(origin.east(8),.5f,0);
+            builder.getBrain().setMemory(walkMemory,unrelatedWalk);
+            VillageConstructionActivity.update(level,List.of());
+            require(builder.getBrain().getMemory(walkMemory).orElse(null)==unrelatedWalk,"cleanup preserves unrelated villager navigation");
+            builder.getBrain().eraseMemory(walkMemory);
             BlockPos playerEdit = origin.offset(-2, 0, 4);
             level.setBlock(playerEdit, Blocks.CHEST.defaultBlockState(), 18);
             VillageConstructionActivity.update(level, List.of());

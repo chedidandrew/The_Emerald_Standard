@@ -140,6 +140,7 @@ final class VillageSitePreparation {
                 boolean upright = state.hasProperty(RotatedPillarBlock.AXIS)
                         && state.getValue(RotatedPillarBlock.AXIS) == Direction.Axis.Y;
                 vertical |= upright;
+                if (DevelopmentLandProtection.oldTimberFrame(level,pos)) { safe=false; break; }
                 floating |= upright && level.getBlockState(pos.below()).isAir();
                 for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) for (int y = -2; y <= 2; y++) {
                     BlockPos nearby = pos.offset(x, y, z);

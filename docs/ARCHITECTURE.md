@@ -84,6 +84,23 @@ village_prosperity.automatic_recovery_enabled=true
 
 ## Construction safety
 
+Current built-in protection is described in [DEVELOPMENT_PROTECTION.md](DEVELOPMENT_PROTECTION.md).
+Two-corner no-build zones need no external dependency. Shared placement guards also consult
+surviving recorded player-build clusters; old supported timber frames are excluded from natural
+tree clearance. Older unrecorded natural-material edits remain ambiguous, so explicit zones
+are the dependable user-controlled exclusion. Historical guard rules below still apply.
+
+Live entity occupancy is separate from block ownership and lot admission. Immediately before
+placement, `VillageConstructionOccupancy` checks collision shapes and occupied footing. Buildings,
+Banks, terrain preparation and optional access work defer such cells without rejecting their lot
+or accumulating permanent-obstruction failures. Roads/approaches do not waive a cell merely because
+someone is standing there. This is direct placement safety, not a whole-worksite escape-route proof.
+
+Format 26 pending Bank plans carry per-position storage receipts. Receipt saves precede loot-table
+assignment; matching adopted storage is closed without changing inventory, and destroyed recorded
+storage is not recreated. Old plans without receipt provenance suppress new loot, while preserving
+their exact geometry. See [progressive construction](PROGRESSIVE_CONSTRUCTION.md) for crash limits.
+
 Prosperity projects are intentionally conservative:
 
 - No forced chunks. Passing the horizontal activation-radius check is only permission to inspect already-loaded world state.
@@ -173,7 +190,17 @@ Eligible physical modular roads from format 13 and earlier begin at migration ve
 
 ## Save process
 
-Writes validate complete state and no-debt invariants, serialize mandatory fields, calculate the checksum, flush a temporary file, preserve a validated previous save as `.bak`, atomically replace the primary when supported, and best-effort flush parent directory metadata.
+Full snapshot writes validate complete state and no-debt invariants, serialize mandatory fields, calculate the checksum, flush a temporary file, preserve a validated previous save as `.bak`, atomically replace the primary when supported, and best-effort flush parent directory metadata.
+
+Format 25's frequent durable single-district mutations validate and force a framed CRC32C
+write-ahead record instead of serializing the entire economy. The first record contains that
+district's full fields; later records contain changed fields and explicit field removals. Each
+record is bound to the SHA-256 identity of its base snapshot. Replay merges records by district,
+then validates the complete recovered state. A torn final frame is ignored; a corrupt complete
+frame fails closed. Economic-day transitions and financial operations still use full snapshots.
+Periodic checkpoints continue even while district records are journaled. Compaction retains the
+previous snapshot's epoch for `.bak` recovery. Include the `.village-journal` sidecar in backups.
+Minecraft chunk files remain a separate transaction boundary.
 
 Inventory-linked deposits, withdrawals, and exchanges use durable `PREPARED` and `BANK_COMMITTED` journal stages because Minecraft player inventory and the bank are stored separately. See [TRANSACTION_RECOVERY.md](TRANSACTION_RECOVERY.md).
 
@@ -183,7 +210,14 @@ An in-memory, rebuildable spatial index divides villages into 64-block X/Z cells
 
 Catch-up batches scale down with known account and settlement counts. Physical development remains restricted to dimension-matching villages within the configured horizontal radius of loaded players, considers at most 16 eligible villages per pass, and performs world work only in chunks already loaded by Minecraft. Snapshot lists reuse one village-fundamentals calculation. Regression measurements cover lookup correctness plus query, save, and load work at 100, 500, and 1,000 villages and accounts.
 
-The simulation is intentionally lightweight for single-player and ordinary multiplayer, but very large public servers will eventually need storage partitioning. Ordinary mutations still synchronously serialize the whole shared world economy file, so persistence work remains linear in world state. A player-only sidecar or write-behind path is not used because global day, price, and village changes must not be acknowledged before they are durably saved together.
+The simulation is intentionally lightweight for single-player and ordinary multiplayer, but very
+large public servers still need prolonged gameplay testing. Frequent district updates now use
+the scoped journal above; financial/global mutations and periodic checkpoints remain linear
+full-world economy saves. No asynchronous acknowledgment of financial changes was introduced.
+Loaded villager/display membership uses loader lifecycle indexes, food scans merge per-chunk
+observations and rotate across ticks, and sustained slow ticks reduce food-survey work. These
+optimizations do not impose a city-size cap or divide one site's construction allowance among
+other concurrent sites.
 
 
 ## Debug flight recorder

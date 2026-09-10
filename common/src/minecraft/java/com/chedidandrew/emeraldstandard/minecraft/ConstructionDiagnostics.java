@@ -8,6 +8,14 @@ final class ConstructionDiagnostics {
     private record Status(String phase, int bucket, long tick) { }
     private static final Map<String, Status> LAST = new LinkedHashMap<>();
     static void reset() { LAST.clear(); }
+    static boolean waitingForEntities(String job) {
+        Status status = LAST.get(job);
+        return status != null && status.phase.equals("waiting_for_entities");
+    }
+    static boolean waiting(String job) {
+        Status status=LAST.get(job);
+        return status != null && !status.phase.equals("building");
+    }
     static void record(String job, String phase, int done, int total, long tick, String reason) {
         int bucket = total <= 0 ? 0 : Math.min(10, (int) ((long) done * 10 / total));
         Status previous = LAST.get(job);

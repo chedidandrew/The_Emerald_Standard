@@ -20,6 +20,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.PersistenceRegressionTes
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageProsperityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageExpansionRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageBackgroundRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.DevelopmentSafetyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageFoodSupplyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.BankConstructionRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TerrainRoadPlanRegressionTest

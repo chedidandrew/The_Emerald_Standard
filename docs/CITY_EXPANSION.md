@@ -2,7 +2,12 @@
 
 Unreleased beta.5 adds open-ended cities built from bounded districts. This is a
 local source candidate, not a published release or a claim of unlimited performance.
-Back up the world before upgrading: economy saves now use **format 24**, including food observations, progressive Bank plans and frozen project terrain work.
+Back up the world before upgrading: economy saves now use **format 26**, including food observations, progressive Bank plans and loot receipts, frozen project terrain work and loaded obstruction recovery evidence.
+
+Built-in [no-build areas](DEVELOPMENT_PROTECTION.md) protect player-selected land without a claim
+mod. A blocked founding home may receive one funded replacement while its old partial lot remains
+protected; after a persistent physical obstruction, it no longer stalls every other district's
+expansion. Ordinary food, upkeep, prosperity and placement requirements still apply.
 
 ## What happens automatically
 

@@ -43,6 +43,8 @@ public final class VillageDevelopmentProtection {
         if (level == null || position == null || existing == null || proposed == null) {
             return false;
         }
+        if (DevelopmentLandProtection.excludes(level,position,position)
+                || DevelopmentLandProtection.playerBuild(level,position)) return false;
         PlacementContext context = new PlacementContext(
                 level, villageId, projectId, position.immutable(), existing, proposed);
         for (PlacementGuard guard : GUARDS) {

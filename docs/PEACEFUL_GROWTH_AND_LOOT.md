@@ -74,9 +74,11 @@ loot-table behavior. This feature does not inject loot into vanilla village buil
   not refill the container. Restarting, changing difficulty or raising the village tier does not
   refill it; a later genuinely new annex container can receive its own initial loot.
 - Progressive Banks attach initial loot only when construction creates a fresh container after
-  the Bank plan is durably reserved. Matching existing/player containers are never seeded during
-  resume or completion. Native chunk saving stores the table/seed alongside the container.
-  No recurring backfill is used to guess whether a chest was looted.
+  the Bank plan is durably reserved and a per-position receipt is saved. Matching existing/player
+  containers are adopted without loot. Broken recorded storage is not recreated during unfinished
+  construction, even after restart; replacement inventories stay untouched. Native chunk saving
+  stores the table/seed alongside the container. Old unfinished plans without receipts finish
+  remaining storage empty, avoiding guesses about prior loot. See [construction safety](PROGRESSIVE_CONSTRUCTION.md).
 - Architectural gallery previews remain geometry demonstrations, not production loot-spawn tests.
 
 ## Can a village grow forever?

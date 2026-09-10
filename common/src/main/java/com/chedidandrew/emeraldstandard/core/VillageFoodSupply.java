@@ -3,6 +3,12 @@ package com.chedidandrew.emeraldstandard.core;
 /** Renewable, observed food-production capacity. Never creates physical items or counts loot. */
 public final class VillageFoodSupply {
     private VillageFoodSupply() { }
+    public record ChunkObservation(double crops,double livestock) {
+        public ChunkObservation {
+            if(!Double.isFinite(crops)||!Double.isFinite(livestock)||crops<0||livestock<0||crops>1_000_000||livestock>1_000_000)
+                throw new IllegalArgumentException("Invalid food observation");
+        }
+    }
 
     public static double bonus(EconomyState.VillageRecord village, long day) {
         double crops = village.observedCropUnits;

@@ -58,6 +58,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
             try {
                 VillageProsperityManager.resetRuntimeState();
                 VillageBankManager.resetRuntimeState();
+                com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.start(server);
                 EmeraldConfig config = EmeraldConfig.load(server.getWorldPath(LevelResource.DATA));
                 config.applyTo(ECONOMY);
                 ECONOMY.setPeacefulVillageGrowth(server.getWorldData().getDifficulty()
@@ -101,6 +102,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.tick(server);
             ECONOMY.setPeacefulVillageGrowth(server.getWorldData().getDifficulty()
                     == net.minecraft.world.Difficulty.PEACEFUL);
             if (!ECONOMY.tick(
@@ -131,8 +133,15 @@ public final class EmeraldStandardFabric implements ModInitializer {
         ServerLivingEntityEvents.MOB_CONVERSION.register((original, converted, params) ->
                 VillageBankManager.onBankerConversion(original, converted, ECONOMY));
 
-        ServerEntityEvents.ENTITY_LOAD.register((entity, level) ->
-                VillageBankManager.onEntityLoaded(entity, ECONOMY));
+        ServerEntityEvents.ENTITY_LOAD.register((entity, level) -> {
+            VillageBankManager.onEntityLoaded(entity, ECONOMY);
+            com.chedidandrew.emeraldstandard.minecraft.DevelopmentEntities.loaded(entity,level);
+        });
+        ServerEntityEvents.ENTITY_UNLOAD.register(com.chedidandrew.emeraldstandard.minecraft.DevelopmentEntities::unloaded);
+        net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.AFTER.register((world,player,pos,state,entity)-> {
+            if(world instanceof net.minecraft.server.level.ServerLevel level)
+                com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.removed(level,pos);
+        });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             recover(handler.player);

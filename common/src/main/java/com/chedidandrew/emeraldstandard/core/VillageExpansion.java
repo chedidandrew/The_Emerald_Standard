@@ -27,7 +27,8 @@ public final class VillageExpansion {
             var root = state.villages.get(rootId(v));
             if (root == null) continue;
             if (v.cityId != null && v.districtFounding && v.projects.stream().noneMatch(
-                    p -> p.materializedComplete && p.type.housingGain() > 0))
+                    p -> (p.materializedComplete && p.type.housingGain() > 0)
+                            || p.foundingRecoveryUsed || p.obstructionLoadedTicks >= 6_000))
                 root.expansionWaitingForHome = true;
             root.cityUpkeepDeficit |= v.expansionUpkeepShortfalls >= 3;
         }

@@ -94,11 +94,49 @@ final class VillageFoodEnvironmentSelfTest {
                     && VillageFoodEnvironment.cropUnits(Blocks.CHEST.defaultBlockState()) == 0
                     && VillageFoodEnvironment.cropUnits(Blocks.HAY_BLOCK.defaultBlockState()) == 0,
                     "edible growing crops qualify, stored loot/hay do not");
-            System.out.println("PASS VillageFoodEnvironmentSelfTest: mature/young crops, harvest loss, livestock/death/range, pets, exclusive district ownership");
+            verifyUnknownChunks(level);
+            System.out.println("PASS VillageFoodEnvironmentSelfTest: mature/young crops, harvest loss, livestock/death/range, pets, exclusive district ownership, unloaded census preservation/restart");
         } finally {
             animals.forEach(Animal::discard);
             before.forEach((pos, state) -> level.setBlock(pos, state, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE));
         }
+    }
+
+    private static void verifyUnknownChunks(ServerLevel level) {
+        try {
+            BlockPos center = new BlockPos(6008, level.getMaxY() - 48, 6008);
+            level.getChunk(center); // Load only the fixture center, not its entire district.
+            var state = EconomyState.fresh(835, System.currentTimeMillis(), 0);
+            var village = state.village(new UUID(835, 836));
+            village.centerPos = center.asLong(); village.dimensionKey = "minecraft:overworld";
+            var scan = scan(level, village, List.of(village));
+            Long unknown = null;
+            for (int cx = scan.minChunkX; cx < scan.minChunkX + scan.chunksWide; cx++)
+                for (int cz = scan.minChunkZ; cz < scan.minChunkZ + scan.chunksDeep; cz++)
+                    if (!level.hasChunk(cx, cz)) unknown = ((long) cx << 32) | (cz & 0xffffffffL);
+            require(unknown != null && !scan.completedChunks.containsKey(unknown),
+                    "unloaded columns are unknown, not empty completed observations");
+            long loaded = ((long) (center.getX() >> 4) << 32) | ((center.getZ() >> 4) & 0xffffffffL);
+            require(scan.completedChunks.containsKey(loaded), "fully inspected loaded column is published");
+            var dir = java.nio.file.Files.createTempDirectory("tes-food-unknown-runtime-");
+            state.save(dir.resolve("the_emerald_standard.properties"));
+            var economy = new com.chedidandrew.emeraldstandard.core.EconomyService(); economy.start(dir, 835, 0);
+            require(economy.observeVillageFoodChunks(village.villageId, Map.of(unknown,
+                    new com.chedidandrew.emeraldstandard.core.VillageFoodSupply.ChunkObservation(50, 2), loaded,
+                    new com.chedidandrew.emeraldstandard.core.VillageFoodSupply.ChunkObservation(100, 3))), "seed prior census");
+            require(economy.observeVillageFoodChunks(village.villageId, scan.completedChunks), "publish partial real census");
+            double crops = 50 + scan.completedChunks.values().stream().mapToDouble(v -> v.crops()).sum();
+            double livestock = 2 + scan.completedChunks.values().stream().mapToDouble(v -> v.livestock()).sum();
+            var observed = economy.villageSnapshot(village.villageId).village();
+            require(close(observed.observedCropUnits, crops) && close(observed.observedLivestockUnits, livestock),
+                    "new loaded counts replace stale loaded counts; unknown crops and livestock remain");
+            require(economy.saveNow(), "food census checkpoint saved");
+            var restarted = new com.chedidandrew.emeraldstandard.core.EconomyService(); restarted.start(dir, 835, 0);
+            observed = restarted.villageSnapshot(village.villageId).village();
+            require(close(observed.observedCropUnits, crops) && observed.foodChunks.containsKey(unknown),
+                    "partial census and retained unknown sources survive restart");
+            require(!level.hasChunk((int) (unknown >> 32), (int) (long) unknown), "census never force-loads unknown chunk");
+        } catch (java.io.IOException ex) { throw new IllegalStateException("Food census persistence fixture failed", ex); }
     }
 
     private static VillageFoodEnvironment.Scan scan(ServerLevel level, EconomyState.VillageRecord village,

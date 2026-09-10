@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 24;
+    public static final int FORMAT_VERSION = 26;
     /** Five in-game years, shared by market, commodity, and personal history views. */
     public static final int HISTORY_DAYS = 1_825;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -101,6 +101,9 @@ public final class EconomyState {
      */
     transient Path persistedFile;
     transient byte[] persistedFileFingerprint;
+    transient long persistedEconomicDay;
+    transient DurableJournal villageJournal;
+    transient Map<UUID,java.util.Properties> journalVillageBaselines = new HashMap<>();
 
     public enum InventoryTransactionKind {
         DEPOSIT,
@@ -647,6 +650,10 @@ public final class EconomyState {
         public SitePreparationPlan sitePreparationPlan;
         /** Write-ahead evidence: old saves conservatively count as already started. */
         public boolean constructionStarted = true;
+        /** Counts only observed, loaded physical obstruction; not economic or offline waiting. */
+        public long obstructionLoadedTicks;
+        /** Exactly one automatically funded founding-home replacement is allowed. */
+        public boolean foundingRecoveryUsed;
         /** Frozen route endpoint so mutable village metadata cannot reorder the saved plan. */
         public boolean trailAnchorSet;
         public long trailAnchorPos;
@@ -714,6 +721,8 @@ public final class EconomyState {
             copy.sitePreparationCursor = sitePreparationCursor;
             copy.sitePreparationPlan = sitePreparationPlan;
             copy.constructionStarted = constructionStarted;
+            copy.obstructionLoadedTicks = obstructionLoadedTicks;
+            copy.foundingRecoveryUsed = foundingRecoveryUsed;
             copy.trailAnchorSet = trailAnchorSet;
             copy.trailAnchorPos = trailAnchorPos;
             copy.trailMaterializedBlocks = trailMaterializedBlocks;
@@ -853,6 +862,8 @@ public final class EconomyState {
         public double observedCropUnits;
         public double observedLivestockUnits;
         public long lastFoodSourcesDay;
+        /** Last complete observation per chunk; absence/unloading is not a zero-food observation. */
+        public final Map<Long,VillageFoodSupply.ChunkObservation> foodChunks = new HashMap<>();
         /** Shared authored language; biome dialect is locked when the first managed lot is reserved. */
         public String architectureCharacter = "";
         public String architectureDialect = "";
@@ -988,6 +999,7 @@ public final class EconomyState {
             copy.observedCropUnits = observedCropUnits;
             copy.observedLivestockUnits = observedLivestockUnits;
             copy.lastFoodSourcesDay = lastFoodSourcesDay;
+            copy.foodChunks.putAll(foodChunks);
             copy.architectureCharacter = architectureCharacter;
             copy.architectureDialect = architectureDialect;
             ProsperityFund fundCopy = prosperityFund.copy();
@@ -1104,12 +1116,17 @@ public final class EconomyState {
             copy.pendingInventoryTransactions.put(entry.getKey(), entry.getValue().copy());
         }
         copy.persistedFile = persistedFile;
+        copy.persistedEconomicDay = persistedEconomicDay;
+        copy.villageJournal = villageJournal;
+        copy.journalVillageBaselines = journalVillageBaselines;
         copy.persistedFileFingerprint = persistedFileFingerprint == null
                 ? null : persistedFileFingerprint.clone();
         return copy;
     }
 
     void rememberPersistedFile(Path path, byte[] fingerprint) {
+        persistedEconomicDay = economicDay;
+        journalVillageBaselines = new HashMap<>();
         persistedFile = normalizedPath(path);
         persistedFileFingerprint = fingerprint.clone();
     }
@@ -2285,7 +2302,7 @@ public final class EconomyState {
         }
     }
 
-    private static void validateVillage(UUID id, VillageRecord village, long economicDay)
+    static void validateVillage(UUID id, VillageRecord village, long economicDay)
             throws IOException {
         if (id == null
                 || village == null
@@ -2393,6 +2410,7 @@ public final class EconomyState {
                     || project.designDressingId == null
                     || project.designPlanHash == null
                     || project.sitePreparationCursor < 0 || project.sitePreparationCursor > 1_000_000
+                    || project.obstructionLoadedTicks < 0 || project.obstructionLoadedTicks > 24_000
                     || project.projectId <= previousProject
                     || project.approvedDay < 0L
                     || project.approvedDay > economicDay

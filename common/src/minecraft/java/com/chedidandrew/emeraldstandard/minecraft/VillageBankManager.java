@@ -335,7 +335,8 @@ public final class VillageBankManager {
                 })) {
                     int changed = advanceBankConstruction(level, economy, entry.getKey(), entry.getValue());
                     if (changed == 0 && economy.pendingBankConstructionsSnapshot().containsKey(entry.getKey()))
-                        CONSTRUCTION_RETRY.put(entry.getKey(), gameTime + 200L);
+                        CONSTRUCTION_RETRY.put(entry.getKey(), gameTime
+                                + (ConstructionDiagnostics.waitingForEntities("bank:" + entry.getKey()) ? 10L : 200L));
                     else CONSTRUCTION_RETRY.remove(entry.getKey());
                 }
             }
@@ -653,6 +654,8 @@ public final class VillageBankManager {
             }
         }
         var preparation = survey.freeze(volume, origin.getY(), villageId, key);
+        if (DevelopmentLandProtection.excludes(level,origin.offset(BANK_PLOT_MIN_X,0,BANK_PLOT_MIN_Z),
+                origin.offset(BANK_PLOT_MAX_X,0,BANK_PLOT_MAX_Z))) return false;
         if (preparation == null) return false;
         Set<BlockPos> occupied = authored.stream().map(BankPlacement::position)
                 .collect(java.util.stream.Collectors.toSet());
@@ -693,9 +696,19 @@ public final class VillageBankManager {
 
     /** One authored block each ten ticks, independently for every loaded construction site. */
     static int advanceBankConstruction(ServerLevel level, EconomyService economy, long key, BankConstruction plan) {
+        // Callers may retain a geometry snapshot; receipts must always come from live saved authority.
+        BankConstruction authoritative = economy.pendingBankConstructionsSnapshot().get(key);
+        if (authoritative == null || authoritative.origin() != plan.origin()
+                || !authoritative.cells().equals(plan.cells())) return 0;
+        plan = authoritative;
+        BlockPos siteOrigin = BlockPos.of(plan.origin());
+        if (DevelopmentLandProtection.excludes(level,siteOrigin.offset(BANK_PLOT_MIN_X,0,BANK_PLOT_MIN_Z),
+                siteOrigin.offset(BANK_PLOT_MAX_X,0,BANK_PLOT_MAX_Z))) {
+            ConstructionDiagnostics.record("bank:"+key,"protected",0,plan.cells().size(),level.getGameTime(),"No-build zone overlaps reserved Bank lot");
+            return 0;
+        }
         var village = plan.villageId() == null ? null : economy.villageSnapshot(plan.villageId());
-        if (village != null && village.village().expansionMode
-                == com.chedidandrew.emeraldstandard.core.VillageExpansion.Mode.PAUSED) return 0;
+        if (village != null && !com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.villageEligible(village.village())) return 0;
         ParsedBankConstruction parsed = CONSTRUCTION_CACHE.get(key);
         if (parsed == null || !parsed.plan().equals(plan)) {
             List<BankPlacement> before = new ArrayList<>(), after = new ArrayList<>();
@@ -710,13 +723,24 @@ public final class VillageBankManager {
             parsed = new ParsedBankConstruction(plan, before, after); CONSTRUCTION_CACHE.put(key, parsed);
         }
         boolean unfinished = false;
+        boolean occupied = false;
         int matched = 0;
         for (int i = 0; i < parsed.after().size(); i++) {
             BankPlacement cell = parsed.after().get(i);
             if (!isLoaded(level, cell.position())) { unfinished = true; continue; }
             BlockState current = level.getBlockState(cell.position());
-            if (isOwnedBankPlacement(current, cell.state())) { matched++; continue; }
+            boolean storage = plan.cells().get(i).storage();
+            boolean handled = plan.handledStorage().contains(cell.position().asLong());
+            if (isOwnedBankPlacement(current, cell.state())) {
+                // Adopted containers keep their contents and permanently close this loot opportunity.
+                if (storage && !handled && !economy.markBankStorageHandled(key,plan,cell.position().asLong())) {
+                    unfinished = true; continue;
+                }
+                matched++; continue;
+            }
             unfinished = true;
+            // Preserve player removal: no repeat loot and no infinite free replacement chest blocks.
+            if (storage && handled) continue;
             // Never overwrite player edits or containers. A blocked cell remains pending.
             if ((!VillageSitePreparation.matchesRemoval(current, plan.cells().get(i).before())
                         && !(current.isAir() && VillageSitePreparation.vegetation(parsed.before().get(i).state())))
@@ -725,19 +749,26 @@ public final class VillageBankManager {
                     || !VillageDevelopmentProtection.mayPlace(level, plan.villageId(), key,
                             cell.position(), current, cell.state())) continue;
             if (!cell.state().canSurvive(level, cell.position())) continue;
+            if (!VillageConstructionOccupancy.mayChange(level,cell.position(),current,cell.state())) {
+                occupied = true; continue;
+            }
             // Defer neighbor-shape updates so a door/bed's second half can arrive next pulse.
             if (level.setBlock(cell.position(), cell.state(), cell.state().isAir() ? Block.UPDATE_ALL
                     : Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)) {
-                // Only this freshly created storage is ours; never seed an adopted/player container.
-                VillageStructureLoot.assignNewStorage(level, cell.position(), VillageStructureLoot.key("bank"));
+                // Persist the receipt before attaching loot. A save failure leaves this chest empty;
+                // its later adoption must never guess whether a prior loot grant succeeded.
+                if (storage && economy.markBankStorageHandled(key,plan,cell.position().asLong())
+                        && !plan.legacyLootSuppressed())
+                    VillageStructureLoot.assignNewStorage(level, cell.position(), VillageStructureLoot.key("bank"));
                 ConstructionDiagnostics.record("bank:" + key, "building", matched + 1, parsed.after().size(),
                         level.getGameTime(), "automatic progressive construction");
                 return 1;
             }
         }
         if (unfinished) {
-            ConstructionDiagnostics.record("bank:" + key, "retry_in_place", matched, parsed.after().size(),
-                    level.getGameTime(), "unloaded, protected, changed or not-yet-supported cells; preserving saved work");
+            ConstructionDiagnostics.record("bank:" + key, occupied ? "waiting_for_entities" : "retry_in_place", matched, parsed.after().size(),
+                    level.getGameTime(), occupied ? "Living entity occupies a placement or its supporting floor; retry shortly"
+                            : "unloaded, protected, changed or not-yet-supported cells; preserving saved work");
             return 0;
         }
         BlockPos anchor = BlockPos.of(plan.bankerAnchor());
@@ -2734,6 +2765,10 @@ public final class VillageBankManager {
             if (original.equals(placement.state())) {
                 continue;
             }
+            if (!VillageConstructionOccupancy.mayChange(level,placement.position(),original,placement.state())) {
+                rollbackBank(level,placed);
+                return;
+            }
             boolean changed = level.setBlock(placement.position(), placement.state(), 3);
             BlockState applied = level.getBlockState(placement.position());
             if (!changed || !applied.equals(placement.state())) {
@@ -3060,7 +3095,7 @@ public final class VillageBankManager {
                 level, villageId, bankKey, position, current, updated)) {
             return false;
         }
-        return level.setBlock(
+        return VillageConstructionOccupancy.setBlock(level,
                         position,
                         updated,
                         Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)
@@ -3097,7 +3132,7 @@ public final class VillageBankManager {
         List<BankMutation> placed = new ArrayList<>(plan.size());
         for (BankPlacement placement : plan) {
             BlockState original = level.getBlockState(placement.position());
-            boolean changed = level.setBlock(placement.position(), placement.state(), 3);
+            boolean changed = VillageConstructionOccupancy.setBlock(level,placement.position(), placement.state(), 3);
             BlockState applied = level.getBlockState(placement.position());
             if (!changed || !applied.equals(placement.state())) {
                 // Some integrations can report a failed/cancelled placement after mutating the

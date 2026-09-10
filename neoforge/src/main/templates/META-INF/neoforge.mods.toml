@@ -1,6 +1,9 @@
 license="${mod_license}"
 issueTrackerURL="https://github.com/chedidandrew/The_Emerald_Standard/issues"
 
+[[mixins]]
+config="emerald-standard.mixins.json"
+
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"

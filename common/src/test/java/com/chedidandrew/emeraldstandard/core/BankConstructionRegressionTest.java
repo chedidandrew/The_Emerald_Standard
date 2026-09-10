@@ -53,7 +53,57 @@ public final class BankConstructionRegressionTest {
         } catch (IllegalArgumentException expected) { }
         try { BankConstruction.decode("not base64"); throw new AssertionError("malformed data accepted");
         } catch (java.io.IOException expected) { }
-        System.out.println("PASS BankConstructionRegressionTest: frozen plans, restart, duplicate rejection, atomic completion");
+        verifyLootReceipts();
+        System.out.println("PASS BankConstructionRegressionTest: frozen plans, restart, duplicate rejection, atomic completion, durable loot receipts and legacy migration");
+    }
+
+    private static void verifyLootReceipts() throws Exception {
+        var plan = new BankConstruction(10, 20, null, 8, List.of(
+                new BankConstruction.Cell(10, "minecraft:air", "minecraft:chest[facing=north]"),
+                new BankConstruction.Cell(11, "minecraft:air", "minecraft:barrel"),
+                new BankConstruction.Cell(12, "minecraft:air", "minecraft:stone")));
+        var dir = Files.createTempDirectory("tes-bank-loot-receipts-");
+        var service = new EconomyService(); service.startWithSeed(dir, 0, 0, 73);
+        require(service.reserveBankConstruction(9, plan), "loot fixture reserved");
+        require(!service.markBankStorageHandled(9, plan, 12), "non-storage receipt rejected");
+        require(service.markBankStorageHandled(9, plan, 10), "first chest receipt saved");
+        require(!service.markBankStorageHandled(9, plan, 10), "stale plan cannot claim twice");
+        var restarted = new EconomyService(); restarted.startWithSeed(dir, 0, 0, 73);
+        var saved = restarted.pendingBankConstructionsSnapshot().get(9L);
+        require(saved.handledStorage().equals(java.util.Set.of(10L)) && !saved.legacyLootSuppressed(),
+                "receipt and new-plan provenance survive restart");
+        require(saved.equals(BankConstruction.decode(saved.encode())), "receipt payload round trip");
+        require(!restarted.markBankStorageHandled(9, plan, 10), "restart does not reopen issued loot");
+
+        // Make only the fixture's expected save target unwritable: receipt must roll back.
+        var file = dir.resolve("the_emerald_standard.properties");
+        var backup = dir.resolve("receipt-test-original.properties");
+        Files.move(file, backup); Files.createDirectory(file);
+        Files.writeString(file.resolve("blocker"), "fixture");
+        try {
+            require(!restarted.markBankStorageHandled(9, plan, 11), "failed receipt save cannot authorize loot");
+            require(!restarted.pendingBankConstructionsSnapshot().get(9L).handledStorage().contains(11L),
+                    "failed receipt rolls back in-memory claim");
+        } finally {
+            Files.delete(file.resolve("blocker")); Files.delete(file); Files.move(backup, file);
+        }
+        require(restarted.markBankStorageHandled(9, plan, 11), "receipt can retry after storage recovers");
+
+        var bytes = new java.io.ByteArrayOutputStream();
+        try (var out = new java.io.DataOutputStream(bytes)) {
+            out.writeLong(plan.origin()); out.writeLong(plan.bankerAnchor()); out.writeUTF("");
+            out.writeInt(plan.version()); out.writeInt(plan.cells().size());
+            for (var cell : plan.cells()) {
+                out.writeLong(cell.position()); out.writeUTF(cell.before()); out.writeUTF(cell.after());
+            }
+        }
+        var legacy = BankConstruction.decode(java.util.Base64.getEncoder().encodeToString(bytes.toByteArray()));
+        require(legacy.legacyLootSuppressed() && legacy.handledStorage().isEmpty()
+                && legacy.cells().equals(plan.cells()), "old plans keep geometry but cannot reroll unknown loot");
+        require(BankConstruction.decode(legacy.withHandledStorage(10).encode()).legacyLootSuppressed(),
+                "legacy suppression survives receipt updates and saves");
+        try { plan.withHandledStorage(12); throw new AssertionError("non-storage position accepted"); }
+        catch (IllegalArgumentException expected) { }
     }
     private static void require(boolean value, String message) { if (!value) throw new AssertionError(message); }
 }
