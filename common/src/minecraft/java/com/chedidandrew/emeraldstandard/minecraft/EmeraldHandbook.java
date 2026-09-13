@@ -28,7 +28,7 @@ public final class EmeraldHandbook {
             BankerProfessionSupport.MOD_ID, "handbook");
     public static final ResourceKey<Item> HANDBOOK_ITEM_KEY =
             ResourceKey.create(Registries.ITEM, HANDBOOK_ID);
-    public static final int PAGE_COUNT = 46;
+    public static final int PAGE_COUNT = 61;
 
     private static final String KEY = "book.the_emerald_standard.handbook.";
     private static final int CONTENTS_BANKING_PAGE = 3;
@@ -216,6 +216,28 @@ public final class EmeraldHandbook {
                 itemIcon("bell", "block.minecraft.bell", "[Village]"),
                 blockIcon("bricks", "block.minecraft.bricks", "[Building]")));
 
+        // Append, preserving every existing fallback page link.
+        pages.add(sectionPage("specialists", 47,
+                itemIcon("gold_ingot", "item.minecraft.gold_ingot", "[Gold]")));
+        pages.add(sectionPage("creative_content", 48,
+                itemIcon("villager_spawn_egg", "item.the_emerald_standard.banker_spawn_egg", "[Egg]")));
+        pages.add(sectionPage("recipe_fence", 49,
+                itemIcon("barrier", "block.the_emerald_standard.construction_fence", "[Fence]")));
+        pages.add(sectionPage("construction_crews", 50,
+                itemIcon("villager_spawn_egg", "item.the_emerald_standard.builder_spawn_egg", "[Crew]")));
+
+        // The appended news/growth pages preserve all earlier page links.
+            pages.add(sectionPage("growth_targets",51,itemIcon("emerald","item.minecraft.emerald","[Risk]")));
+            pages.add(sectionPage("newspaper",52,itemIcon("paper","item.minecraft.paper","[News]")));
+            pages.add(sectionPage("player_news",53,itemIcon("bread","item.minecraft.bread","[Local]")));
+            pages.add(sectionPage("recipe_newspaper",54,itemIcon("paper","item.minecraft.paper","[Craft]")));
+            pages.add(sectionPage("browser_help",55,itemIcon("emerald","item.minecraft.emerald","[Market]")));
+            pages.add(sectionPage("town_report",56,itemIcon("paper","item.minecraft.paper","[Town]")));
+            pages.add(sectionPage("fund_receipt",57,itemIcon("paper","item.minecraft.paper","[Fund]")));
+        pages.add(sectionPage("live_market",58,itemIcon("clock_00","item.minecraft.clock","[Live]")));
+        pages.add(sectionPage("market_ranges",59,itemIcon("paper","item.minecraft.paper","[Chart]")));
+        pages.add(sectionPage("market_clock",60,itemIcon("clock_00","item.minecraft.clock","[Time]")));
+        pages.add(sectionPage("construction_safety",61,blockIcon("bricks","block.minecraft.bricks","[Repair]")));
         if (pages.size() != PAGE_COUNT) {
             throw new IllegalStateException("Handbook page index drift: " + pages.size());
         }

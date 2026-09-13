@@ -11,8 +11,10 @@ import java.util.UUID;
 public final class VillageProsperityEngine {
     public static final int MAX_ABSTRACT_POPULATION = 64;
     public static final int MAX_PROJECTS_PER_VILLAGE = 12;
+    public static int projectLimit(EconomyState.VillageRecord v) { return v.organicTerritory ? 512 : MAX_PROJECTS_PER_VILLAGE; }
+    public static int populationLimit(EconomyState.VillageRecord v) { return v.organicTerritory ? 512 : MAX_ABSTRACT_POPULATION; }
     public static final int INCIDENT_HISTORY_LIMIT = 16;
-    public static final int RESIDENT_HISTORY_LIMIT = 128;
+    public static final int RESIDENT_HISTORY_LIMIT = 1024;
     public static final int MARKET_SHADOW_FORMULA_VERSION = 1;
     public static final double RESTORATION_EMERALD_TARGET = 25.0;
     public static final int INCIDENT_RECOVERY_DAYS = 7;
@@ -50,7 +52,8 @@ public final class VillageProsperityEngine {
         AWAY,
         INFECTED,
         EMIGRATED,
-        DEAD
+        DEAD,
+        UNVERIFIED
     }
 
     public enum ProjectType {
@@ -147,6 +150,7 @@ public final class VillageProsperityEngine {
             return;
         }
         village.lastSimulatedDay = day;
+        VillageGuardSecurity.refresh(village, day);
         normalizeProjectAuthority(village, requirePhysicalWorld);
 
         if (village.population <= 0 && !(village.districtFounding && village.pendingSettlers > 0)) {
@@ -177,7 +181,7 @@ public final class VillageProsperityEngine {
         int granaries = completedProjects(village, ProjectType.GRANARY);
         int guardPosts = completedProjects(village, ProjectType.GUARD_POST);
         int exchanges = completedProjects(village, ProjectType.EXCHANGE_HALL);
-        double safetyFactor = clamp(0.25 + village.safety / 125.0, 0.25, 1.05);
+        double safetyFactor = clamp(0.25 + VillageGuardSecurity.effectiveSafety(village) / 125.0, 0.25, 1.05);
         double prosperityFactor = clamp(0.55 + village.prosperity / 180.0, 0.55, 1.12);
         double lifecycleFactor = switch (village.lifecycle) {
             case ACTIVE -> 1.0;
@@ -210,7 +214,7 @@ public final class VillageProsperityEngine {
                 * profession.transport();
         village.securityOutput = population * 0.08
                 * (1.0 + 0.35 * guardPosts)
-                * clamp(0.5 + village.safety / 100.0, 0.4, 1.5)
+                * clamp(0.5 + VillageGuardSecurity.effectiveSafety(village) / 100.0, 0.4, 1.5)
                 * profession.security();
 
         double foodUse = population * 0.46 * (peaceful ? 0.65 : 1.0);
@@ -274,7 +278,7 @@ public final class VillageProsperityEngine {
         double targetProsperity = 18.0
                 + 28.0 * clamp(housingRatio, 0.0, 1.0)
                 + 24.0 * clamp(foodDays / 30.0, 0.0, 1.0)
-                + 22.0 * clamp(village.safety / 100.0, 0.0, 1.0)
+                + 22.0 * clamp(VillageGuardSecurity.effectiveSafety(village) / 100.0, 0.0, 1.0)
                 + Math.min(8.0, village.developmentTier * 1.6);
         if (peaceful) targetProsperity = Math.min(100.0, targetProsperity + 12.0);
         village.prosperity = approach(village.prosperity, targetProsperity, peaceful ? 0.16 : 0.08);
@@ -282,7 +286,8 @@ public final class VillageProsperityEngine {
             village.prosperity = 100.0;
         }
 
-        if (day - village.lastIncidentDay > INCIDENT_RECOVERY_DAYS) {
+        if (village.lastIncidentCause == IncidentCause.NONE
+                || day - village.lastIncidentDay > INCIDENT_RECOVERY_DAYS) {
             // A bounded, recently observed light-coverage benefit, not a per-torch counter.
             double lighting = village.lightingCoveragePercent / 100.0
                     * clamp(1.0 - Math.max(0L, day - village.lastLightingDay) / 7.0, 0.0, 1.0);
@@ -293,7 +298,24 @@ public final class VillageProsperityEngine {
 
         updateLifecycle(village, day);
         if (village.expansionMode != VillageExpansion.Mode.PAUSED) {
-            advanceProjects(village, worldSeed, day, productivity * (peaceful ? 2.0 : 1.0), requirePhysicalWorld);
+            double starterMomentum = VillageStarterGrowth.momentum(village);
+            if (starterMomentum > 0.0) {
+                // Two bounded half-day work shifts. No repeated economy/day advancement, and no
+                // effect on interest, prices, donations or the player's bank/inventory balances.
+                if (VillageStarterGrowth.hasRoom(village, requirePhysicalWorld)
+                        && (nextProjectPlan(village, worldSeed, day) != null
+                            || village.projects.stream().anyMatch(p -> !p.economicComplete)))
+                    VillageStarterGrowth.mobilize(village, starterMomentum);
+                for (int shift = 0; shift < 2; shift++) {
+                    maybeApproveProject(village, worldSeed, day, requirePhysicalWorld);
+                    advanceProjects(village, worldSeed, day,
+                            productivity * (peaceful ? 2.0 : 1.0) / 2.0, requirePhysicalWorld,
+                            VillageStarterGrowth.momentum(village));
+                    updateDevelopmentTier(village);
+                }
+            } else {
+                advanceProjects(village, worldSeed, day, productivity * (peaceful ? 2.0 : 1.0), requirePhysicalWorld);
+            }
             maybeGrowPopulation(village, worldSeed, day, requirePhysicalWorld, peaceful);
             maybeApproveProject(village, worldSeed, day, requirePhysicalWorld);
         }
@@ -345,7 +367,7 @@ public final class VillageProsperityEngine {
         int population = economicPopulation(village);
         long sinceIncident = day - village.lastIncidentDay;
         if (village.lifecycle == Lifecycle.RECOVERING) {
-            if (population >= 4 && village.safety >= 50.0 && village.prosperity >= 35.0) {
+            if (population >= 4 && VillageGuardSecurity.effectiveSafety(village) >= 50.0 && village.prosperity >= 35.0) {
                 village.lifecycle = Lifecycle.ACTIVE;
             }
             return;
@@ -354,7 +376,7 @@ public final class VillageProsperityEngine {
                         || village.lifecycle == Lifecycle.THREATENED)
                 && population <= 2
                 && sinceIncident > INCIDENT_RECOVERY_DAYS
-                && village.safety >= 35.0
+                && VillageGuardSecurity.effectiveSafety(village) >= 35.0
                 && village.prosperity >= 20.0) {
             // A settlement with living survivors must have a path back. RECOVERING enables
             // bounded population growth; fully extinct player-caused settlements still require
@@ -362,7 +384,8 @@ public final class VillageProsperityEngine {
             village.lifecycle = Lifecycle.RECOVERING;
             return;
         }
-        if (sinceIncident <= INCIDENT_RECOVERY_DAYS || village.safety < 30.0) {
+        if ((village.lastIncidentCause != IncidentCause.NONE && sinceIncident <= INCIDENT_RECOVERY_DAYS)
+                || VillageGuardSecurity.effectiveSafety(village) < 30.0) {
             village.lifecycle = Lifecycle.THREATENED;
         } else if (village.prosperity < 25.0 || population <= 2) {
             village.lifecycle = Lifecycle.DEVASTATED;
@@ -376,36 +399,7 @@ public final class VillageProsperityEngine {
             long worldSeed,
             long day,
             boolean requirePhysicalWorld, boolean peaceful) {
-        if (village.lifecycle != Lifecycle.ACTIVE && village.lifecycle != Lifecycle.RECOVERING) {
-            return;
-        }
-        int committedPopulation = economicPopulation(village);
-        int effectiveHousing = effectiveHousingCapacity(village);
-        if (committedPopulation >= MAX_ABSTRACT_POPULATION
-                || village.expansionUpkeepShortfalls >= 3
-                || committedPopulation >= effectiveHousing
-                || village.foodSupply
-                        < committedPopulation * GROWTH_FOOD_PER_RESIDENT
-                || village.safety < GROWTH_SAFETY_THRESHOLD) {
-            return;
-        }
-        double baseChance = 0.0014
-                + 0.0012 * clamp(village.prosperity / 100.0, 0.0, 1.0)
-                + 0.0006 * clamp((effectiveHousing - committedPopulation) / 8.0, 0.0, 1.0);
-        double draw = unit(worldSeed, village.villageId, day, GROWTH_SALT);
-        if (peaceful) baseChance *= 20.0;
-        if (draw < baseChance) {
-            if (requirePhysicalWorld) {
-                // In visual worlds, a population increase becomes real only after a settler entity
-                // is safely materialized and observed by a loaded-world census.
-                village.pendingSettlers = Math.min(
-                        MAX_ABSTRACT_POPULATION - village.population,
-                        village.pendingSettlers + 1);
-            } else {
-                village.population++;
-            }
-            village.foodSupply = Math.max(0.0, village.foodSupply - 6.0);
-        }
+        VillageImmigration.advance(village, day, requirePhysicalWorld, peaceful);
     }
 
     private static void advanceProjects(
@@ -414,6 +408,12 @@ public final class VillageProsperityEngine {
             long day,
             double productivity,
             boolean requirePhysicalWorld) {
+        advanceProjects(village, worldSeed, day, productivity, requirePhysicalWorld, 0.0);
+    }
+
+    private static void advanceProjects(
+            EconomyState.VillageRecord village, long worldSeed, long day, double productivity,
+            boolean requirePhysicalWorld, double starterWork) {
         EconomyState.VillageProject active = village.projects.stream()
                 .filter(project -> !project.economicComplete)
                 .findFirst()
@@ -430,8 +430,8 @@ public final class VillageProsperityEngine {
         village.developmentPoints -= developmentSpend;
         active.economicProgress = clamp(
                 active.economicProgress
-                        + workforce * randomFactor / denominator
-                        + developmentSpend / denominator,
+                        + Math.max(starterWork, workforce * randomFactor / denominator
+                                + developmentSpend / denominator),
                 0.0,
                 1.0);
         if (active.economicProgress >= 1.0) {
@@ -465,6 +465,7 @@ public final class VillageProsperityEngine {
             boolean requirePhysicalWorld) {
         ProjectPlan plan = nextProjectPlan(village, worldSeed, day);
         if (village.expansionMode == VillageExpansion.Mode.PAUSED || village.expansionUpkeepShortfalls >= 3) return;
+        if (!VillageStarterGrowth.hasRoom(village, requirePhysicalWorld)) return;
         if (plan == null
                 || village.materialSupply < plan.type().materialCost()
                 || village.treasury < plan.type().treasuryCost()
@@ -475,6 +476,11 @@ public final class VillageProsperityEngine {
         village.materialSupply -= desired.materialCost();
         village.treasury -= desired.treasuryCost();
         village.developmentPoints -= plan.requiredDevelopment();
+        createProject(village, desired, day, requirePhysicalWorld);
+    }
+
+    private static void createProject(EconomyState.VillageRecord village, ProjectType desired,
+            long day, boolean requirePhysicalWorld) {
         EconomyState.VillageProject project = new EconomyState.VillageProject();
         project.projectId = ++village.projectSerial;
         project.type = desired;
@@ -520,6 +526,27 @@ public final class VillageProsperityEngine {
         village.projects.add(project);
     }
 
+    /** Debug-only: no economic debits or fake residents; each district stays bounded. */
+    static boolean forceDevelopment(EconomyState.VillageRecord village, long day) {
+        var pending = village.projects.stream().filter(p -> !p.abstractOnly && !p.materializedComplete
+                && !p.manualRepairRequired && !p.economicComplete).findFirst().orElse(null);
+        if (pending != null) {
+            completeProject(village, pending, day, true);
+            return true;
+        }
+        // One temporarily obstructed lot must not freeze an entire one-district city.
+        // Keep a small backlog; no unbounded queues while chunks or occupants are unavailable.
+        if (village.projects.stream().filter(p -> !p.abstractOnly && !p.materializedComplete
+                && !p.manualRepairRequired).count() >= (village.organicTerritory ? 2 : 1)) return false;
+        if (village.projects.size() >= projectLimit(village) || village.projectSerial == Long.MAX_VALUE)
+            return false;
+        ProjectType[] catalog = ProjectType.values();
+        ProjectType desired = catalog[village.projects.size() % catalog.length];
+        createProject(village, desired, day, true);
+        completeProject(village, village.projects.getLast(), day, true);
+        return true;
+    }
+
     /**
      * Uses village-owned capital to close only the exact input gap for the next valid project,
      * then retries approval in the same economic day. Ordinary Fund spending remains rate-limited.
@@ -543,7 +570,7 @@ public final class VillageProsperityEngine {
             return 0L;
         }
         ProjectPlan plan = nextProjectPlan(village, worldSeed, day);
-        if (plan == null) {
+        if (plan == null || !VillageStarterGrowth.hasRoom(village, requirePhysicalWorld)) {
             return 0L;
         }
         long spent = EconomyState.releaseFundCapitalForProject(
@@ -619,9 +646,9 @@ public final class VillageProsperityEngine {
         project.abstractOnly = !requirePhysicalWorld;
     }
 
-    private static ProjectPlan nextProjectPlan(
+    static ProjectPlan nextProjectPlan(
             EconomyState.VillageRecord village, long worldSeed, long day) {
-        if (village.projects.size() >= MAX_PROJECTS_PER_VILLAGE
+        if (village.projects.size() >= projectLimit(village)
                 || village.projects.stream().anyMatch(project -> !project.economicComplete)) {
             return null;
         }
@@ -630,12 +657,12 @@ public final class VillageProsperityEngine {
         int housingProjects = countProjects(village, ProjectType.COTTAGE)
                 + countProjects(village, ProjectType.HOUSE)
                 + countProjects(village, ProjectType.INN);
-        boolean hasWarehouse = hasProject(village, ProjectType.WAREHOUSE);
+        boolean hasWarehouse = countProjects(village, ProjectType.WAREHOUSE) >= (village.organicTerritory ? 1 + village.population/64 : 1);
         boolean hasMine = hasProject(village, ProjectType.MINE_ENTRANCE);
-        boolean hasMarket = hasProject(village, ProjectType.MARKET_SQUARE);
+        boolean hasMarket = countProjects(village, ProjectType.MARKET_SQUARE) >= (village.organicTerritory ? 1 + village.population/96 : 1);
         boolean hasSmithy = hasProject(village, ProjectType.SMITHY);
-        boolean hasGranary = hasProject(village, ProjectType.GRANARY);
-        boolean hasGuardPost = hasProject(village, ProjectType.GUARD_POST);
+        boolean hasGranary = countProjects(village, ProjectType.GRANARY) >= (village.organicTerritory ? 1 + village.population/48 : 1);
+        boolean hasGuardPost = countProjects(village, ProjectType.GUARD_POST) >= (village.organicTerritory ? 1 + village.population/64 : 1);
         boolean hasExchange = hasProject(village, ProjectType.EXCHANGE_HALL);
         int committedPopulation = economicPopulation(village);
         int effectiveHousing = effectiveHousingCapacity(village);
@@ -647,12 +674,12 @@ public final class VillageProsperityEngine {
             // Founders need a real bed before any guard post or other support project.
             desired = ProjectType.COTTAGE;
         } else if ((village.lifecycle == Lifecycle.THREATENED
-                        || village.safety < SECURITY_PROJECT_THRESHOLD)
+                        || VillageGuardSecurity.effectiveSafety(village) < SECURITY_PROJECT_THRESHOLD)
                 && !hasGuardPost && committedPopulation >= 4) {
             desired = ProjectType.GUARD_POST;
         } else if (foodDays < 18.0 && !hasGranary && committedPopulation >= 5) {
             desired = ProjectType.GRANARY;
-        } else if (committedPopulation >= effectiveHousing - 1 && housingProjects < 6) {
+        } else if (committedPopulation >= effectiveHousing - 1 && (village.organicTerritory || housingProjects < 6)) {
             desired = village.developmentTier >= 3
                     ? ProjectType.INN
                     : village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
@@ -669,10 +696,19 @@ public final class VillageProsperityEngine {
                 && village.developmentTier >= 4
                 && village.prosperity >= 68.0) {
             desired = ProjectType.EXCHANGE_HALL;
-        } else if (housingProjects < 6
+        } else if ((village.organicTerritory || housingProjects < 6)
                 && committedPopulation >= effectiveHousing - 2
                 && unit(worldSeed, village.villageId, day, PROJECT_SALT) < 0.012) {
             desired = village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
+        }
+
+        // Young settlements prepare a modest food/safety/housing cushion instead of waiting
+        // dozens of days for a shortage or a rare random housing roll. Needs above still win.
+        if (desired == null && VillageStarterGrowth.momentum(village) > 0.0) {
+            if (!hasGranary) desired = ProjectType.GRANARY;
+            else if (!hasGuardPost) desired = ProjectType.GUARD_POST;
+            else if (housingProjects == 0 && effectiveHousing < committedPopulation + 4)
+                desired = village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
         }
 
         double requiredDevelopment = switch (desired == null ? ProjectType.COTTAGE : desired) {
@@ -688,14 +724,17 @@ public final class VillageProsperityEngine {
             case EXCHANGE_HALL -> 24.0;
         };
         if (desired == null
-                || (isUniqueProject(desired) && hasProject(village, desired))
+                || (isUniqueProject(desired) && !(village.organicTerritory && switch (desired) {
+                    case WAREHOUSE, MARKET_SQUARE, GRANARY, GUARD_POST -> true;
+                    default -> false;
+                }) && hasProject(village, desired))
                 || village.projectSerial == Long.MAX_VALUE) {
             return null;
         }
         return new ProjectPlan(desired, requiredDevelopment);
     }
 
-    private record ProjectPlan(ProjectType type, double requiredDevelopment) {}
+    public record ProjectPlan(ProjectType type, double requiredDevelopment) {}
 
     private static void updateDevelopmentTier(EconomyState.VillageRecord village) {
         int completed = (int) village.projects.stream()
@@ -734,6 +773,7 @@ public final class VillageProsperityEngine {
             return;
         }
         village.lastSimulatedDay = Math.max(village.lastSimulatedDay, day);
+        VillageGuardSecurity.refresh(village, day);
         if (village.population <= 0) {
             advanceRecovery(village, day, true, true);
             return;
@@ -751,7 +791,7 @@ public final class VillageProsperityEngine {
                 village.treasury + Math.max(0.05, population * 0.015),
                 0.0,
                 1_000_000.0);
-        double productivity = clamp(0.45 + village.safety / 180.0, 0.45, 1.0);
+        double productivity = clamp(0.45 + VillageGuardSecurity.effectiveSafety(village) / 180.0, 0.45, 1.0);
         advanceProjects(village, worldSeed, day, productivity, true);
         maybeApproveProject(village, worldSeed, day, true);
         updateDevelopmentTier(village);
@@ -986,7 +1026,7 @@ public final class VillageProsperityEngine {
         double population = Math.max(1.0, economicPopulation(village));
         double weight = Math.min(6.0, StrictMath.sqrt(population));
         double broad = broadFundamentalScore(
-                village.prosperity, village.safety, village.developmentTier);
+                village.prosperity, VillageGuardSecurity.effectiveSafety(village), village.developmentTier);
         return new MarketContribution(
                 weight,
                 broad,
@@ -1026,6 +1066,9 @@ public final class VillageProsperityEngine {
             case "POTN" -> 0.010 * fundamentals.alchemy() + 0.001 * fundamentals.trade();
             case "IRNG" -> 0.010 * fundamentals.security() - 0.002 * fundamentals.broad();
             case "MCRT" -> 0.010 * fundamentals.transport() + 0.002 * fundamentals.broad();
+            case "BRCK" -> 0.008 * fundamentals.broad() + 0.004 * fundamentals.mining();
+            case "FISH" -> 0.006 * fundamentals.agriculture() + 0.003 * fundamentals.trade();
+            case "VENT" -> 0.006 * fundamentals.trade();
             default -> 0.0;
         };
         return clamp(drift, -0.012, 0.012);
@@ -1346,12 +1389,19 @@ public final class VillageProsperityEngine {
      * dormant until its first settler is observed; otherwise queued settlers contribute exactly
      * once and the shared population cap applies before any economic calculation.
      */
+    /** Physical/known head count for the UI, separate from the 64-resident economic cap. */
+    public static int knownResidentCount(EconomyState.VillageRecord village) {
+        int tracked=(int)village.residents.values().stream().filter(r -> r.status==ResidentStatus.ACTIVE
+                || r.status==ResidentStatus.UNVERIFIED || r.status==ResidentStatus.AWAY).count();
+        return Math.max(village.observedPopulation,Math.max(village.population,tracked));
+    }
+
     public static int economicPopulation(EconomyState.VillageRecord village) {
         if (village == null || village.population <= 0) {
             return 0;
         }
         long committed = (long) village.population + Math.max(0, village.pendingSettlers);
-        return (int) Math.min(MAX_ABSTRACT_POPULATION, committed);
+        return (int) Math.min(populationLimit(village), committed);
     }
 
     private static double outputScore(double actual, double baseline) {

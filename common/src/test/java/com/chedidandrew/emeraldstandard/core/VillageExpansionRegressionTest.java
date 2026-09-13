@@ -16,7 +16,7 @@ public final class VillageExpansionRegressionTest {
 
     private static EconomyState state() {
         var s = EconomyState.fresh(1234, 0, 0);
-        s.economicDay = 100;
+        s.economicDay = 100; s.liveMarket=LiveMarket.adopt(s);
         var v = s.village(ROOT);
         v.dimensionKey = "minecraft:overworld";
         v.centerPos = pack(0, 64, 0);

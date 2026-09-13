@@ -628,6 +628,7 @@ public final class FinanceRoadmapRegressionTest {
             UUID donorId = UUID.fromString("ae6cd2eb-90e0-375b-babc-c41851a58e79");
             EconomyState state = EconomyState.fresh(916L, 0L, 0L);
             state.economicDay = 14L;
+            state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
             EconomyState.VillageRecord village = state.village(villageId);
             initializeVillage(village);
             village.lifecycle = VillageProsperityEngine.Lifecycle.THREATENED;

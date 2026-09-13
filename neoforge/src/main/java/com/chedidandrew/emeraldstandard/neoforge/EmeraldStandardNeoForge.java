@@ -63,7 +63,13 @@ public final class EmeraldStandardNeoForge {
             });
 
     public EmeraldStandardNeoForge(IEventBus modEventBus) {
+        MENUS.register("newspaper",()-> {
+            var type=new MenuType<>(com.chedidandrew.emeraldstandard.minecraft.NewspaperMenu::new,FeatureFlags.DEFAULT_FLAGS);
+            com.chedidandrew.emeraldstandard.minecraft.NewspaperMenu.TYPE=type; return type;
+        });
         BankerProfessionNeoForge.register(modEventBus);
+        ConstructionContentNeoForge.register(modEventBus);
+        EmeraldCreativeNeoForge.register(modEventBus);
         MENUS.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
     }
@@ -85,12 +91,16 @@ public final class EmeraldStandardNeoForge {
                     server.overworld().getGameTime(),
                     server.overworld().getOverworldClockTime());
             VillageBankManager.beginServerSession(server, ECONOMY);
+                com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.start(server,ECONOMY);
+                com.chedidandrew.emeraldstandard.minecraft.ConstructionOwnership.start(server,ECONOMY);
+                com.chedidandrew.emeraldstandard.minecraft.MarketTimeRuntime.start(server,ECONOMY);
             LOGGER.info(
                     "The Emerald Standard economy started with {} catch-up day(s) remaining",
                     ECONOMY.catchUpDaysRemaining());
             DebugFlightRecorder.initialize(server);
             if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
-                BankerIntegrationSelfTest.run(server.overworld());
+                com.chedidandrew.emeraldstandard.minecraft.MarketTimeCommandSelfTest.run(server,ECONOMY);
+                    BankerIntegrationSelfTest.run(server.overworld());
                 LOGGER.info("The Emerald Standard Banker integration self-test passed");
             }
             StructureGallery.autoBuildIfRequested(server);
@@ -104,6 +114,9 @@ public final class EmeraldStandardNeoForge {
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
         var server = event.getServer();
+            com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.stop(server);
+            com.chedidandrew.emeraldstandard.minecraft.ConstructionOwnership.stop(server);
+            com.chedidandrew.emeraldstandard.minecraft.MarketTimeRuntime.stop(server);
         DebugFlightRecorder.stopForShutdown(server, ECONOMY);
         if (!VillageBankManager.flushPendingLifecycleForShutdown(server, ECONOMY)) {
             LOGGER.error("Could not flush pending Banker lifecycle state before shutdown: {}",
@@ -121,6 +134,7 @@ public final class EmeraldStandardNeoForge {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.tick(event.getServer());
         com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.tick(event.getServer());
         ECONOMY.setPeacefulVillageGrowth(event.getServer().getWorldData().getDifficulty()
                 == net.minecraft.world.Difficulty.PEACEFUL);
@@ -199,6 +213,8 @@ public final class EmeraldStandardNeoForge {
 
     @SubscribeEvent
     public void onBlockInteract(PlayerInteractEvent.RightClickBlock event) {
+        if (com.chedidandrew.emeraldstandard.minecraft.ExchangeDeskInteraction.placingBlock(event.getEntity()))
+            return;
         if (event.getHand() != InteractionHand.MAIN_HAND
                 || event.getEntity().level().isClientSide()
                 || !(event.getEntity() instanceof ServerPlayer player)) {
@@ -217,13 +233,15 @@ public final class EmeraldStandardNeoForge {
             return;
         }
         if (access.decision().warnsUnsafeBank()) {
+            player.sendSystemMessage(Component.literal(
+                    VillageBankManager.bankOperationProblem((ServerLevel) player.level(), ECONOMY, access.bankRegionKey())));
             player.sendSystemMessage(Component.translatable(
                     access.decision().opensDashboard()
                             ? "message.the_emerald_standard.bank_desk_personal_fallback"
                             : "message.the_emerald_standard.bank_unsafe"));
         }
         boolean opened = access.decision().opensDashboard()
-                && BankerAccess.openAt(player, ECONOMY, access.accessPoint());
+                && BankerAccess.openAt(player, ECONOMY, access.accessPoint(), access.bankRegionKey());
         if (access.decision().opensDashboard() && !opened) {
             player.sendSystemMessage(Component.translatable(
                     "message.the_emerald_standard.bank_open_failed"));

@@ -22,11 +22,18 @@ public final class EmeraldStandardNeoForgeClient {
     private static final Logger LOGGER = LogUtils.getLogger();
     private EmeraldStandardNeoForgeClient() { }
     @SubscribeEvent
+    public static void registerBuilders(net.neoforged.neoforge.client.event.EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(com.chedidandrew.emeraldstandard.minecraft.ConstructionContent.builder,
+                com.chedidandrew.emeraldstandard.client.ConstructionBuilderRenderer::new);
+    }
+    @SubscribeEvent
     public static void registerScreens(RegisterMenuScreensEvent event) {
         ModList.get().getModContainerById(EmeraldStandardNeoForge.MOD_ID).orElseThrow()
                 .registerExtensionPoint(IConfigScreenFactory.class,
                         (container, parent) -> new EmeraldSettingsScreen(parent));
         event.register(EmeraldStandardNeoForge.BANKER_MENU.get(), BankerScreen::new);
+        event.register(com.chedidandrew.emeraldstandard.minecraft.NewspaperMenu.TYPE,
+                com.chedidandrew.emeraldstandard.client.NewspaperScreen::new);
         HandbookReaderItem.registerReader(() -> Minecraft.getInstance().gui.setScreen(new HandbookScreen(null)));
         ClientSmokeSupport.initialized(LOGGER, () -> {
             var container = ModList.get().getModContainerById(EmeraldStandardNeoForge.MOD_ID).orElseThrow();

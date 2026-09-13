@@ -100,13 +100,77 @@ public final class BankerMenuPacketCodecSelfTest {
         }
 
         verifyActivityPagingBounds();
+        verifyInvestmentSlots(serverLogical, clientLogical, serverPacked, clientPacked);
         verifyActivitySubtypeMapping();
         verifyActivityFiltering();
         verifyExactAmountButtonPacket();
+        verifyDistrictMapPackets(serverLogical, clientLogical, serverPacked, clientPacked);
+    }
+
+    private static void verifyDistrictMapPackets(SimpleContainerData server, SimpleContainerData client,
+            ShortPackedContainerData serverPacked, ShortPackedContainerData clientPacked) {
+        require(serverPacked.getCount() < 32767, "Map exceeds signed-short menu slot IDs");
+        var marker = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Marker(
+                -30000000, 29999980, -29999990, 30000000, 2, 42, 3, 37, 0);
+        var page = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Page(
+                0, 1, 42, 0, -30000000, 30000000, List.of(marker));
+        int start = BankerMenu.DATA_DISTRICT_MAP;
+        int[] values = com.chedidandrew.emeraldstandard.core.VillageDistrictMap.encode(page, 65536);
+        for (int i = 0; i < values.length; i++) {
+            server.set(start + i, values[i]); syncLogicalValue(serverPacked, clientPacked, start + i);
+        }
+        require(page.equals(com.chedidandrew.emeraldstandard.core.VillageDistrictMap.decode(i -> client.get(start + i))),
+                "Map world-border coordinates lost through real packet codec");
+        server.set(start, 65537); syncLogicalValue(serverPacked, clientPacked, start);
+        require(com.chedidandrew.emeraldstandard.core.VillageDistrictMap.decode(i -> client.get(start + i)) == null,
+                "Map must retain previous frame until final revision arrives");
+    }
+
+    private static void verifyInvestmentSlots(SimpleContainerData server, SimpleContainerData client,
+            ShortPackedContainerData serverPacked, ShortPackedContainerData clientPacked) {
+        int count = com.chedidandrew.emeraldstandard.core.EconomyEngine.ASSETS.size();
+        require(BankerMenu.BUTTON_ASSET_BASE + count <= BankerMenu.BUTTON_RESOURCE_BASE
+                        || BankerMenu.BUTTON_RESOURCE_BASE + BankerMenu.RESOURCE_NAMES.size() <= BankerMenu.BUTTON_ASSET_BASE,
+                "Investment buttons overlap resource buttons");
+        require(BankerMenu.DATA_ASSET_PRICE_BASE + 2*count == BankerMenu.DATA_ASSET_HOLDING_BASE
+                        && BankerMenu.DATA_ASSET_HOLDING_BASE + 2*count == BankerMenu.DATA_ASSET_OWNED_BASE
+                        && BankerMenu.DATA_ASSET_OWNED_BASE + count == BankerMenu.DATA_HISTORY_COUNT,
+                "Investment prices, holdings or history overlap");
+        server.set(BankerMenu.DATA_HISTORY_COUNT, 57);
+        for (int i = 0; i < count; i++) {
+            long quote = i == 0 ? 1L : 50_000_000_000_000L + 37*i;
+            server.set(BankerMenu.DATA_ASSET_PRICE_BASE + 2*i, (int)quote);
+            server.set(BankerMenu.DATA_ASSET_PRICE_BASE + 2*i+1, (int)(quote>>>32));
+            long holding = i == 0 ? 0 : 5_000_000_000L + 51*i;
+            server.set(BankerMenu.DATA_ASSET_HOLDING_BASE + 2*i, (int)holding);
+            server.set(BankerMenu.DATA_ASSET_HOLDING_BASE + 2*i+1, (int)(holding >>> 32));
+            server.set(BankerMenu.DATA_ASSET_OWNED_BASE + i, 1);
+        }
+        for (int i = BankerMenu.DATA_ASSET_PRICE_BASE; i <= BankerMenu.DATA_HISTORY_COUNT; i++)
+            syncLogicalValue(serverPacked, clientPacked, i);
+        for (int i = 0; i < count; i++) {
+            require(((client.get(BankerMenu.DATA_ASSET_PRICE_BASE+2*i)&0xffffffffL)
+                        | ((long)client.get(BankerMenu.DATA_ASSET_PRICE_BASE+2*i+1)<<32)) == (i==0?1L:50_000_000_000_000L+37*i)
+                    && ((client.get(BankerMenu.DATA_ASSET_HOLDING_BASE+2*i)&0xffffffffL)
+                        | ((long)client.get(BankerMenu.DATA_ASSET_HOLDING_BASE+2*i+1)<<32)) == (i==0?0:5_000_000_000L+51*i)
+                    && client.get(BankerMenu.DATA_ASSET_OWNED_BASE+i)==1,
+                    "Investment packet data mixed up listing " + i);
+        }
+        require(client.get(BankerMenu.DATA_HISTORY_COUNT) == 57, "Last investment overwrote history");
     }
 
     /** Requires live registries and is therefore called by the in-server integration smoke. */
     public static void verifyExchangeResourceVisualMapping() {
+        try {
+            BankerMenu sizingProbe = new BankerMenu(0, null);
+            for (String name : List.of("assetPricesMicro", "assetHoldingsCenti", "assetOwned")) {
+                var field = BankerMenu.class.getDeclaredField(name);
+                field.setAccessible(true);
+                require(java.lang.reflect.Array.getLength(field.get(sizingProbe))
+                                == com.chedidandrew.emeraldstandard.core.EconomyEngine.ASSETS.size(),
+                        "Server investment backing array is out of date: " + name);
+            }
+        } catch (ReflectiveOperationException exception) { throw new IllegalStateException(exception); }
         Set<String> canonicalNames = new HashSet<>();
         Map<Item, String> canonicalItems = new IdentityHashMap<>();
         for (String name : BankerMenu.RESOURCE_NAMES) {
@@ -239,6 +303,20 @@ public final class BankerMenuPacketCodecSelfTest {
     }
 
     private static void verifyExactAmountButtonPacket() {
+        require(BankerMenu.BUTTON_ASSET_BASE > BankerMenu.BUTTON_MAP_NEXT
+                && BankerMenu.BUTTON_ASSET_BASE + com.chedidandrew.emeraldstandard.core.EconomyEngine.ASSETS.size()
+                        < BankerAmountSelection.BUTTON_BASE,
+                "Investment selector overlaps resource, map, action or amount button IDs");
+        for (int i = 0; i < com.chedidandrew.emeraldstandard.core.EconomyEngine.ASSETS.size(); i++) {
+            int button = BankerMenu.BUTTON_ASSET_BASE + i;
+            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                ServerboundContainerButtonClickPacket.STREAM_CODEC.encode(
+                        buffer, new ServerboundContainerButtonClickPacket(7, button));
+                require(ServerboundContainerButtonClickPacket.STREAM_CODEC.decode(buffer).buttonId() == button,
+                        "Investment selector did not survive the button codec");
+            } finally { buffer.release(); }
+        }
         int ordinary = BankerAmountSelection.encodeButtonId(1_000_000);
         int fund = BankerAmountSelection.encodeFundButtonId(1_000_000);
         require(ordinary != fund

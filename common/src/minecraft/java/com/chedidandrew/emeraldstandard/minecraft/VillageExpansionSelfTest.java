@@ -51,6 +51,7 @@ final class VillageExpansionSelfTest {
             require(safe(level, floor), "shallow mined/blast crater is bridged");
             set(level, before, floor, Blocks.GRASS_BLOCK.defaultBlockState());
             set(level, before, floor.below(), Blocks.STONE.defaultBlockState());
+            verifyLiveConstructionSupport(level,before,floor);
             BlockPos trunk = floor.above(4), canopy = floor.above(6);
             set(level, before, trunk, Blocks.OAK_LOG.defaultBlockState());
             set(level, before, canopy, Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, false));
@@ -71,12 +72,39 @@ final class VillageExpansionSelfTest {
             verifyRoughTerrain(level);
             VillageTerrainFinishingSelfTest.verify(level);
             VillageConstructionActivitySelfTest.verify(level);
-            verifyFirstDistrict(level);
+            verifyFirstDistrict(level,false);
+            verifyFirstDistrict(level,true);
         } catch (Exception exception) {
             throw new IllegalStateException("Village expansion runtime check failed", exception);
         } finally {
             before.forEach((pos, state) -> level.setBlock(pos, state, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE));
         }
+    }
+    private static void verifyLiveConstructionSupport(ServerLevel level,Map<BlockPos,BlockState> before,BlockPos floor) {
+        var original=new SupportedConstructionOrder.Cell(BlockPos.ZERO,Blocks.STONE.defaultBlockState(),0);
+        var replacement=new SupportedConstructionOrder.Cell(BlockPos.ZERO,Blocks.OAK_PLANKS.defaultBlockState(),0);
+        var upper=new SupportedConstructionOrder.Cell(new BlockPos(0,1,0),Blocks.OAK_LOG.defaultBlockState(),1);
+        var supports=SupportedConstructionOrder.supportPalette(List.of(original,upper,replacement));
+        for(var block:List.of(Blocks.STONE,Blocks.OAK_PLANKS)) {
+            set(level,before,floor,block.defaultBlockState());
+            require(SupportedConstructionOrder.supportedNow(level,floor,upper,supports),"old/new authored support stage accepted");
+        }
+        for(var block:List.of(Blocks.AIR,Blocks.DIRT)) {
+            set(level,before,floor,block.defaultBlockState());
+            require(!SupportedConstructionOrder.supportedNow(level,floor,upper,supports),"missing/unrelated support blocks dependent work");
+        }
+        var bell=new SupportedConstructionOrder.Cell(new BlockPos(0,1,0),Blocks.BELL.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.BellBlock.ATTACHMENT,
+                        net.minecraft.world.level.block.state.properties.BellAttachType.CEILING),5);
+        var ceiling=new SupportedConstructionOrder.Cell(new BlockPos(0,2,0),Blocks.STONE.defaultBlockState(),2);
+        var suspended=SupportedConstructionOrder.supportPalette(List.of(bell,ceiling));
+        set(level,before,floor,Blocks.AIR.defaultBlockState());
+        set(level,before,floor.above(2),Blocks.STONE.defaultBlockState());
+        require(SupportedConstructionOrder.supportedNow(level,floor,bell,suspended),"ceiling bell uses upper support, not floor");
+        set(level,before,floor.above(2),Blocks.AIR.defaultBlockState());
+        require(!SupportedConstructionOrder.supportedNow(level,floor,bell,suspended),"ceiling bell waits for missing upper support");
+        set(level,before,floor,Blocks.GRASS_BLOCK.defaultBlockState());
+        System.out.println("PASS live construction supports: original/upgraded material, missing/unrelated replacement and ceiling bell attachments");
     }
     private static void verifyRoughTerrain(ServerLevel level) throws Exception {
         BlockPos floor = new BlockPos(1000, level.getMaxY() - 80, 1000);
@@ -138,7 +166,7 @@ final class VillageExpansionSelfTest {
             before.forEach((pos, state) -> level.setBlock(pos, state, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE));
         }
     }
-    private static void verifyFirstDistrict(ServerLevel level) throws Exception {
+    private static void verifyFirstDistrict(ServerLevel level, boolean forced) throws Exception {
         // A separate, high-altitude fixture in this disposable smoke world exercises actual
         // production construction. It never loads or edits a player's development/test save.
         BlockPos origin = new BlockPos(0, level.getMaxY() - 48, 0);
@@ -164,6 +192,7 @@ final class VillageExpansionSelfTest {
                 set(level, before, origin.offset(x, 0, z), Blocks.DIRT.defaultBlockState());
             var state = EconomyState.fresh(1234, System.currentTimeMillis(), 0);
             state.economicDay = 100;
+            state.liveMarket=com.chedidandrew.emeraldstandard.core.LiveMarket.adopt(state);
             UUID rootId = new UUID(124, 578);
             var root = state.village(rootId);
             root.dimensionKey = "minecraft:overworld";
@@ -175,12 +204,22 @@ final class VillageExpansionSelfTest {
             root.prosperity = 85; root.safety = 80; root.expansionHealthyDays = 3;
             root.lastCensusDay = root.lastSimulatedDay = 100;
             root.architectureDialect = "plains";
+            if (forced) {
+                root.foodSupply=root.materialSupply=root.treasury=root.safety=root.prosperity=0;
+                root.developmentTier=0; root.expansionHealthyDays=0;
+                root.expansionMode=com.chedidandrew.emeraldstandard.core.VillageExpansion.Mode.PAUSED;
+            }
+            var debugProperties=new java.util.Properties();
+            debugProperties.setProperty(EmeraldConfig.FORCED_DEVELOPMENT_KEY,Boolean.toString(forced));
+            var testConfig=forced ? EmeraldConfig.parse(debugProperties) : EmeraldConfig.current();
+            int batch=forced ? 64 : 1;
             var directory = Files.createTempDirectory("tes-city-runtime-");
             state.save(directory.resolve("the_emerald_standard.properties"));
             var economy = new EconomyService();
             economy.configureEconomicClock(false, 30);
             economy.configureVillageProsperity(true, true);
             economy.start(directory, 1234, 0);
+            economy.configureForcedVillageDevelopment(forced);
             var draft = economy.draftVillageDistrict(rootId, origin.offset(5, 0, 5).asLong());
             require(draft != null, "runtime charter ready");
             childId = draft.villageId;
@@ -223,10 +262,12 @@ final class VillageExpansionSelfTest {
             var prepRestart = new EconomyService(); prepRestart.configureEconomicClock(false, 30);
             prepRestart.configureVillageProsperity(true, true); prepRestart.start(directory, 1234, 0);
             economy = prepRestart;
+            economy.configureForcedVillageDevelopment(forced);
             require(economy.villageSnapshot(childId).village().projects.getFirst().sitePreparationPlan.equals(project.sitePreparationPlan),
                     "partially cleared project resumes exact frozen work after restart");
             // Advance economic labor only; no synthetic villagers or completed structures.
-            for (int day = 1; day <= 120; day++) {
+            if (forced) economy.forceVillageDevelopment(childId);
+            for (int day = 1; !forced && day <= 120; day++) {
                 require(economy.tick(day * 24_000L), "economic labor tick");
                 if (economy.villageSnapshot(childId).village().projects.getFirst().economicComplete) break;
             }
@@ -238,7 +279,9 @@ final class VillageExpansionSelfTest {
             constructor.setAccessible(true);
             level.players().add(observer);
             boolean occupancyChecked = false;
+            boolean damageRepaired = false;
             boolean terrainOccupancyChecked = false;
+            boolean fenceChecked = false;
             for (int pulse = 0; pulse < 20_000; pulse++) {
                 var pending = economy.villageSnapshot(childId).village();
                 var pendingHome = pending.projects.getFirst();
@@ -256,8 +299,8 @@ final class VillageExpansionSelfTest {
                             require(occupant != null, "terrain occupant factory");
                             occupant.setPos(target.getX()+.5,target.getY()+shape.bounds().maxY,target.getZ()+.5);
                             require(level.addFreshEntity(occupant), "terrain occupant added");
-                            for (int retry = 0; retry < 3; retry++) invoke("materializeDevelopment", level, economy,
-                                    EmeraldConfig.current(),pulse*10L,constructor.newInstance(1,Integer.MAX_VALUE));
+                            for (int retry = 0; retry < 3; retry++) constructionPulse(level,economy,
+                                    testConfig,pulse*10L,constructor.newInstance(batch,Integer.MAX_VALUE),childId);
                             var waiting = economy.villageSnapshot(childId).village().projects.getFirst();
                             require(level.getBlockState(target).equals(current)
                                     && waiting.originPos == pendingHome.originPos
@@ -269,8 +312,18 @@ final class VillageExpansionSelfTest {
                         }
                     }
                 }
+                if (!forced && !fenceChecked && pendingHome.sitePreparationComplete) {
+                    invoke("materializeDevelopment",level,economy,testConfig,pulse*10L,
+                            constructor.newInstance(batch,Integer.MAX_VALUE));
+                    require(economy.villageSnapshot(childId).village().projects.getFirst().materializedBlocks==0,
+                            "normal home waits after terrain work and before its first structural cell");
+                    VillageConstructionActivitySelfTest.prepareFences(level,economy,
+                            VillageConstructionActivity.projectTag(childId,pendingHome.projectId,pendingHome.originPos));
+                    fenceChecked=true;
+                }
                 if (!occupancyChecked && pendingHome.sitePreparationComplete) {
                     List<?> pendingTemplate = (List<?>) invoke("projectTemplate", level, origin, pending, pendingHome);
+                    pendingTemplate = (List<?>) invoke("constructionTemplate", pendingTemplate, pendingHome);
                     Object next = pendingTemplate.get(pendingHome.materializedBlocks);
                     BlockPos target = (BlockPos) invoke("placementTarget", level, origin, next);
                     BlockState proposed = (BlockState) accessor(next, "state");
@@ -281,8 +334,8 @@ final class VillageExpansionSelfTest {
                         require(occupant != null, "construction occupant factory");
                         occupant.setPos(target.getX()+.5,target.getY(),target.getZ()+.5);
                         require(level.addFreshEntity(occupant), "construction occupant added");
-                        for (int retry = 0; retry < 3; retry++) invoke("materializeDevelopment", level, economy,
-                                EmeraldConfig.current(), pulse*10L, constructor.newInstance(1,Integer.MAX_VALUE));
+                        for (int retry = 0; retry < 3; retry++) constructionPulse(level,economy,
+                                testConfig,pulse*10L,constructor.newInstance(batch,Integer.MAX_VALUE),childId);
                         var waiting = economy.villageSnapshot(childId).village().projects.getFirst();
                         require(level.getBlockState(target).isAir()
                                 && waiting.materializedBlocks == pendingHome.materializedBlocks
@@ -294,33 +347,77 @@ final class VillageExpansionSelfTest {
                         occupancyChecked = true;
                     }
                 }
-                invoke("materializeDevelopment", level, economy, EmeraldConfig.current(), pulse * 10L,
-                        constructor.newInstance(1, Integer.MAX_VALUE));
+                var repairProbe=economy.villageSnapshot(childId).village();
+                var repairHome=repairProbe.projects.getFirst();
+                if(!damageRepaired && repairHome.materializedBlocks>30 && !repairHome.materializedComplete) {
+                    List<?> repairTemplate=(List<?>)invoke("projectTemplate",level,origin,repairProbe,repairHome);
+                    repairTemplate=(List<?>)invoke("constructionTemplate",repairTemplate,repairHome);
+                    for(int ri=0;ri<Math.min(repairTemplate.size(),repairHome.materializedBlocks);ri++) {
+                        Object cell=repairTemplate.get(ri);
+                        BlockPos damage=(BlockPos)invoke("placementTarget",level,origin,cell);
+                        BlockState expected=(BlockState)accessor(cell,"state");
+                        if(expected.isAir()||expected.hasBlockEntity()
+                                ||!ConstructionOwnership.owned(level,damage,level.getBlockState(damage))) continue;
+                        require(level.destroyBlock(damage,true),"unfinished damage remains freely breakable");
+                        damageRepaired=true; break;
+                    }
+                }
+                constructionPulse(level,economy,testConfig,pulse*10L,
+                        constructor.newInstance(batch,Integer.MAX_VALUE),childId);
                 if (economy.villageSnapshot(childId).village().projects.getFirst().materializedComplete) break;
             }
             var built = economy.villageSnapshot(childId).village();
             var home = built.projects.getFirst();
             require(occupancyChecked, "ordinary construction exercised occupied-cell pause and resume");
             require(terrainOccupancyChecked, "terrain preparation exercised occupied-footing pause and resume");
-            require(home.sitePreparationComplete && home.materializedComplete,
+            require(forced || fenceChecked,"normal project exercised fence-before-structure stage");
+            require(damageRepaired,"ordinary fixture exercised damage after its placement cursor");
+            require(home.sitePreparationComplete && home.materializedComplete && !home.manualRepairRequired,
                     "real starter home completed: " + home.materializedBlocks + "/" + home.totalBlocks
                             + ", prep=" + home.sitePreparationCursor + ", error=" + economy.lastError());
+            require(ConstructionOwnership.get(level).handoverFloor(ConstructionOwnership.project(childId,home.projectId,home.originPos))==home.totalBlocks,
+                    "handover permanently excludes the finished prefix from any future upgrade repair");
+            require(!home.constructionOrderCuts.isEmpty() && home.constructionOrderCuts.getFirst()==0
+                    && home.constructionOrderCuts.getLast()==home.totalBlocks,
+                    "actual home uses a saved support-first schedule without changing total work");
             VillageWalkingSelfTest.building(level, BlockPos.of(home.boundsMinPos), BlockPos.of(home.boundsMaxPos), "starter cottage");
-            invoke("spawnPendingSettler", level, economy, built, EmeraldConfig.current(), 100_000L);
+            if (!forced) {
+                VillagePopulationEnvironment.reset();
+                var housingScan=new VillagePopulationEnvironment.Scan(level,built,List.of(built));
+                while(!housingScan.advance(4096)) {}
+                require(economy.observeDistrictHousing(childId,housingScan.completed),"new home bed survey saves");
+                built=economy.villageSnapshot(childId).village();
+                invoke("spawnPendingSettler", level, economy, built, EmeraldConfig.current(), 100_000L);
+            }
             UUID expected = childId;
-            require(!level.getEntitiesOfClass(Villager.class, new AABB(origin).inflate(48),
+            require(forced || !level.getEntitiesOfClass(Villager.class, new AABB(origin).inflate(48),
                     villager -> expected.equals(VillageProsperityManager.villageId(villager))).isEmpty(),
-                    "actual settler arrives only after real home and bed");
+                    "actual settler arrives only after real home and bed: "+VillagePopulationEnvironment.status(childId)
+                            +"; residents="+built.population+" queued="+built.pendingSettlers
+                            +" beds="+built.housingChunks+" service="+economy.lastError());
             require(economy.saveNow(), "constructed district saves");
             var restarted = new EconomyService(); restarted.configureEconomicClock(false, 30);
             restarted.start(directory, 1234, 120 * 24_000L);
             require(restarted.villageSnapshot(childId).village().projects.getFirst().materializedComplete,
                     "constructed district survives restart");
+            require(restarted.villageSnapshot(childId).village().projects.getFirst().constructionOrderCuts.equals(home.constructionOrderCuts),
+                    "completed home retains the same sequence for later integrity audits");
+            if (forced) {
+                economy.configureForcedVillageDevelopment(false);
+                require(economy.developmentVillageSnapshot(childId).village().projects.getFirst().materializedComplete,
+                        "disable demolished completed debug building");
+                require(!economy.forceVillageDevelopment(childId),"disable left debug approvals active");
+                System.out.println("PASS ForcedDevelopmentSelfTest: paused zero-resource city, real terrain and cottage, occupied-cell protection, no synthetic residents, disable and restart");
+            }
             System.out.println("PASS VillageExpansionSelfTest: durable charter -> funded labor -> occupied terrain/build-cell waits -> real home -> actual settler -> restart");
         } finally {
             level.players().remove(observer);
+            VillageConstructionActivitySelfTest.cleanupCrews(level);
             if (occupant != null) occupant.discard();
             UUID cleanupId = childId;
+            var receipts=ConstructionOwnership.get(level);
+            for(String job:List.copyOf(receipts.sites.keySet()))
+                if(cleanupId!=null&&job.startsWith(cleanupId+"/")) receipts.finish(job);
             level.getEntitiesOfClass(Villager.class, new AABB(origin).inflate(48),
                     villager -> cleanupId != null && cleanupId.equals(VillageProsperityManager.villageId(villager)))
                     .forEach(Villager::discard);
@@ -335,6 +432,13 @@ final class VillageExpansionSelfTest {
             }
         }
         throw new NoSuchMethodException(name);
+    }
+    private static void constructionPulse(ServerLevel level,EconomyService economy,EmeraldConfig config,
+            long tick,Object budget,UUID village) throws Exception {
+        if (config.forcedVillageDevelopment()) {
+            ForcedDevelopmentRuntime.reset(); ForcedDevelopmentRuntime.claim(level.getServer());
+            invoke("materializeDevelopment",level,economy,config,tick,budget,economy.developmentVillageSnapshot(village));
+        } else invoke("materializeDevelopment",level,economy,config,tick,budget);
     }
     private static void verifyRotationFallback(ServerLevel level, EconomyService economy,
             EconomyState.VillageRecord draft, BlockPos fixture) throws Exception {
@@ -353,6 +457,30 @@ final class VillageExpansionSelfTest {
                             && doors.get() > 1 && accessor(result, "preparation") != null,
                     "another orientation rescues the same site after its first entrance is vetoed");
         }
+        var accepted = SiteSearchDiagnostics.last(draft.villageId+"/"+project.projectId);
+        require(accepted != null && accepted.reason() == SiteSearchDiagnostics.Reason.AVAILABLE,
+                "actual candidate acceptance reaches session diagnostics");
+        project.siteSearchCursor = offsets.size()-1;
+        try (var veto = VillageDevelopmentProtection.register(context -> false)) {
+            var result = invoke("findProjectOrigin",level,economy,draft,project,List.of(),List.of());
+            require(accessor(result,"availability") != VillageMaterializationPolicy.SiteAvailability.AVAILABLE
+                            && project.siteSearchCursor == offsets.size(),
+                    "blocked last candidate checkpoints progress without placing anything");
+            require(SiteSearchDiagnostics.last(draft.villageId+"/"+project.projectId).reason()
+                            == SiteSearchDiagnostics.Reason.TEMPLATE_OBSTRUCTION,
+                    "actual template protection rejection is recorded");
+        }
+        var second = project.copy(); second.projectId += 100;
+        var reportVillage = draft.copy(); reportVillage.projects.add(second);
+        var reportMethod=DebugFlightRecorder.class.getDeclaredMethod("villageFields",EconomyState.VillageRecord.class,long.class,
+                net.minecraft.server.MinecraftServer.class);
+        reportMethod.setAccessible(true);
+        var report=(Map<?,?>)reportMethod.invoke(null,reportVillage,level.getGameTime(),level.getServer());
+        require(((List<?>)report.get("projects")).size()==reportVillage.projects.size()
+                        && report.toString().contains("siteSearchCursor") && report.toString().contains("TEMPLATE_OBSTRUCTION")
+                        && report.toString().contains("retryRemainingTicks") && report.toString().contains("walkwayConnection"),
+                "debug snapshot exposes every project, actual rejection, cursor and countdown");
+        System.out.println("PASS site-search diagnostics: native accepted/protected candidates, last-candidate progress and all-project debug snapshot");
         System.out.println("PASS VillageExpansionSelfTest: production site search rotates a vetoed entrance at the same position");
     }
     private static Object accessor(Object record, String name) throws Exception {
@@ -377,7 +505,10 @@ final class VillageExpansionSelfTest {
         Object result = method.invoke(null, level, floor.getX(), floor.getZ(), constructor.newInstance(5, 5, 10), List.of());
         var availability = result.getClass().getDeclaredMethod("availability");
         availability.setAccessible(true);
-        return availability.invoke(result) == VillageMaterializationPolicy.SiteAvailability.AVAILABLE;
+        boolean available = availability.invoke(result) == VillageMaterializationPolicy.SiteAvailability.AVAILABLE;
+        if (!available) require(accessor(result,"rejection") != null && !String.valueOf(accessor(result,"detail")).isBlank(),
+                "rejected production terrain survey provides a cause");
+        return available;
     }
     private static void require(boolean condition, String message) {
         if (!condition) throw new IllegalStateException(message);

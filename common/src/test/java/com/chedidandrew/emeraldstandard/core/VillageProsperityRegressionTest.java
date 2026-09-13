@@ -638,18 +638,17 @@ public final class VillageProsperityRegressionTest {
                     "minecraft:overworld", pack(0,64,0), 7L, 0L, 1, 4, 0, false,
                     List.of(new EconomyService.ResidentObservation(resident, "minecraft:farmer", pack(0,64,0)))));
             require(service.tickAt(31L * 24_000L, 0L), "Could not advance emigration test clock");
+            while(service.catchUpDaysRemaining()>0)require(service.tickAt(31L*24_000L,0L),"Emigration catch-up");
             EconomyService.VillageSnapshot after = service.observeVillage(new EconomyService.VillageObservation(
                     "minecraft:overworld", pack(0,64,0), 7L, 0L, 0, 4, 0, false, List.of()));
             EconomyState.ResidentRecord record = after.village().residents.get(resident);
-            require(record != null && record.status == VillageProsperityEngine.ResidentStatus.EMIGRATED,
-                    "Long-absent resident did not emigrate");
-            require(after.village().population == 0, "Emigrated resident remained in productive population");
-            require(after.village().lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED,
-                    "Emigration left a zero-population village in a productive lifecycle");
-            require(after.village().pendingSettlers == 0,
-                    "Emigration incorrectly queued free replacement settlers");
-            require(after.fundamentals().eligibleVillages() == 0,
-                    "Emigration collapse continued influencing market fundamentals");
+            require(record != null && record.status == VillageProsperityEngine.ResidentStatus.UNVERIFIED,
+                    "Long-absent resident must remain unverified");
+            require(after.village().population >= 1, "Unknown chunks removed a known resident");
+            require(after.village().lifecycle != VillageProsperityEngine.Lifecycle.ABANDONED,
+                    "Missing census falsely abandoned a living village");
+            require(after.village().pendingSettlers <= VillageImmigration.MAX_PENDING,
+                    "Long absence exceeded bounded immigration queue");
         } finally { deleteTree(root); }
     }
 
@@ -1537,7 +1536,9 @@ public final class VillageProsperityRegressionTest {
         queuedProject.type = VillageProsperityEngine.ProjectType.COTTAGE;
         queuedProject.totalBlocks = queuedProject.type.nominalBlocks();
         queued.projects.add(queuedProject);
-        queued.projectSerial = 3L;
+        // Test ordinary per-resident labor beyond the starter drive's daily labor floor.
+        queued.projectSerial = 9L;
+        queued.lastImmigrationDay = 1; // Isolate workforce accounting from the new daily group approvals.
 
         EconomyState.VillageRecord censused = queued.copy();
         censused.population = 12;
@@ -1601,8 +1602,8 @@ public final class VillageProsperityRegressionTest {
             require(queuedTotal == censusedTotal,
                     "Pending settlers changed the deterministic population-growth decision");
             if (queuedTotal > 12) {
-                require(queuedTotal == 13,
-                        "One growth decision added more than one committed settler");
+                require(queuedTotal <= 12 + VillageImmigration.MAX_DAILY_ARRIVALS,
+                        "One growth decision exceeded its group cap");
                 grew = true;
                 break;
             }
@@ -1661,9 +1662,9 @@ public final class VillageProsperityRegressionTest {
                             false,
                             List.of())).village();
             require(partial.population == 8
-                            && partial.pendingSettlers == 4
-                            && partial.population + partial.pendingSettlers == 12,
-                    "A partial census counted a queued settler twice or lost one");
+                            && partial.pendingSettlers == 5
+                            && partial.population + partial.pendingSettlers == 13,
+                    "An external resident incorrectly consumed an unrelated immigration approval");
 
             EconomyState.VillageRecord complete = service.observeVillage(
                     villageId,
@@ -1678,9 +1679,9 @@ public final class VillageProsperityRegressionTest {
                             false,
                             List.of())).village();
             require(complete.population == 12
-                            && complete.pendingSettlers == 0
-                            && VillageProsperityEngine.economicPopulation(complete) == 12,
-                    "A complete census did not preserve committed population");
+                            && complete.pendingSettlers == 5
+                            && VillageProsperityEngine.economicPopulation(complete) == 17,
+                    "A complete external census consumed immigrants that were never materialized");
         } finally {
             deleteTree(root);
         }

@@ -220,10 +220,20 @@ public final class VillageArchitecture {
                     .toList());
 
     /** Low-profile courtyard smithy roofs with a continuous projecting eave. */
-    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+    private static final List<BlueprintDescriptor> REVISION_NINE_BLUEPRINT_CATALOG = validateActiveCatalog(
             REVISION_EIGHT_BLUEPRINT_CATALOG.stream()
                     .map(previous -> new BlueprintDescriptor(
                             previous.type(), previous.templateId(), 9,
+                            previous.width(), previous.depth(), previous.height(),
+                            previous.mirrorable(), previous.scale(),
+                            previous.paletteIds(), previous.dressingIds()))
+                    .toList());
+
+    /** Corrected uphill roof-stair direction; all older placement streams remain resolvable. */
+    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+            REVISION_NINE_BLUEPRINT_CATALOG.stream()
+                    .map(previous -> new BlueprintDescriptor(
+                            previous.type(), previous.templateId(), 10,
                             previous.width(), previous.depth(), previous.height(),
                             previous.mirrorable(), previous.scale(),
                             previous.paletteIds(), previous.dressingIds()))
@@ -666,7 +676,7 @@ public final class VillageArchitecture {
     }
 
     public static BlueprintDescriptor blueprint(String templateId, int templateRevision) {
-        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
+        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_NINE_BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
                         REVISION_SEVEN_BLUEPRINT_CATALOG, REVISION_SIX_BLUEPRINT_CATALOG,
                         REVISION_FIVE_BLUEPRINT_CATALOG, REVISION_FOUR_BLUEPRINT_CATALOG,
                         REVISION_THREE_BLUEPRINT_CATALOG, REVISION_TWO_BLUEPRINT_CATALOG,

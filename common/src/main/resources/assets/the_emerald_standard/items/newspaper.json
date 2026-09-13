@@ -1,0 +1,14 @@
+{
+  "model": {
+    "type": "minecraft:condition",
+    "property": "minecraft:using_item",
+    "on_true": {
+      "type": "minecraft:model",
+      "model": "the_emerald_standard:item/newspaper_open"
+    },
+    "on_false": {
+      "type": "minecraft:model",
+      "model": "the_emerald_standard:item/newspaper"
+    }
+  }
+}

@@ -19,6 +19,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -56,6 +57,10 @@ final class EconomyPersistence {
             for(String key:p.stringPropertyNames()) {
                 if(key.startsWith("remove.")) accumulated.remove(key.substring(7));
                 else if(key.startsWith("village.")) accumulated.setProperty(key,p.getProperty(key));
+            }
+            if(Integer.parseInt(p.getProperty("format"))<35) {
+                for(String key:new ArrayList<>(accumulated.stringPropertyNames())) if(key.contains(".project.") && key.endsWith(".total_blocks"))
+                    accumulated.putIfAbsent(key.substring(0,key.length()-"total_blocks".length())+"construction_order_v1","");
             }
         }
         for(var entry:replay.entrySet()) {
@@ -231,10 +236,19 @@ final class EconomyPersistence {
                 "overworld.clock_ticks",
                 Long.toString(state.lastOverworldClockTicks));
         properties.setProperty("pending.economic_ms", Long.toString(state.pendingEconomicMillis));
+        state.liveMarket.write(properties);
         properties.setProperty("regime", state.regime.name());
         properties.setProperty("event", state.lastMarketEvent.name());
         properties.setProperty("event.day", Long.toString(state.lastMarketEventDay));
+        state.commodityReferences.forEach((key,value) -> properties.setProperty("commodity.reference."+key,Double.toString(value)));
+        NewsWire.write(state,properties);
+        for(var event:EconomyEngine.MarketEvent.values()) if(event!=EconomyEngine.MarketEvent.NONE)
+            properties.setProperty("event.cooldown."+event.name(),Long.toString(state.eventCooldowns.getOrDefault(event,-1L)));
 
+        state.commodityIndexWeights.forEach((key,value)->properties.setProperty("index.commodity.weight."+key,Double.toString(value)));
+        state.stockIndexShares.forEach((key,value)->properties.setProperty("index.stock.shares."+key,Double.toString(value)));
+        properties.setProperty("index.stock.divisor", Double.toString(state.stockIndexDivisor));
+        properties.setProperty("index.stock.started_day", Long.toString(state.stockIndexStartedDay));
         state.prices.forEach((key, value) ->
                 properties.setProperty("price." + key, Double.toString(value)));
         state.commodityPrices.forEach((key, value) ->
@@ -261,6 +275,8 @@ final class EconomyPersistence {
         state.fallbackBankRegions.forEach(region ->
                 properties.setProperty(
                         "bank.fallback." + Long.toUnsignedString(region, 16), "true"));
+        state.villageIdentityRedirects.forEach((from, to) ->
+                properties.setProperty("village_redirect." + from, to.toString()));
         state.bankRegionVillageIds.forEach((region, villageId) ->
                 properties.setProperty(
                         "bank.village." + Long.toUnsignedString(region, 16),
@@ -290,7 +306,7 @@ final class EconomyPersistence {
         state.villages.forEach((villageId, village) ->
                 writeVillage(properties, villageId, village));
         state.villageMarketShadows.forEach((villageId, shadow) ->
-                writeVillageMarketShadow(properties, villageId, shadow));
+                writeVillageMarketShadow(properties, villageId, shadow, state.economicDay));
 
         for (Map.Entry<UUID, EconomyState.Account> entry : state.accounts.entrySet()) {
             writeAccount(properties, entry.getKey(), entry.getValue());
@@ -335,6 +351,10 @@ final class EconomyPersistence {
                 Integer.toString(village.observedHousingCapacity));
         properties.setProperty(prefix + "housing", Integer.toString(village.housingCapacity));
         properties.setProperty(prefix + "pending_settlers", Integer.toString(village.pendingSettlers));
+        properties.setProperty(prefix + "immigration_progress", Double.toString(village.immigrationProgress));
+        properties.setProperty(prefix + "immigration_day", Long.toString(village.lastImmigrationDay));
+        village.housingChunks.forEach((key,beds) -> properties.setProperty(prefix+"housing_chunk."+key,
+                beds.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","))));
         properties.setProperty(prefix + "tier", Integer.toString(village.developmentTier));
         properties.setProperty(prefix + "collapse_count", Integer.toString(village.collapseCount));
         properties.setProperty(prefix + "casualties.hostile", Integer.toString(village.hostileCasualties));
@@ -356,6 +376,8 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "development_points", Double.toString(village.developmentPoints));
         properties.setProperty(prefix + "restoration_funded", Boolean.toString(village.restorationFunded));
         properties.setProperty(prefix + "project_serial", Long.toString(village.projectSerial));
+        properties.setProperty(prefix + "organic_territory", Boolean.toString(village.organicTerritory));
+        properties.setProperty(prefix + "territory_cells", village.territoryCells.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
         if (village.cityId != null) properties.setProperty(prefix + "city_id", village.cityId.toString());
         properties.setProperty(prefix + "expansion_mode", village.expansionMode.name());
         properties.setProperty(prefix + "expansion_approved", Boolean.toString(village.expansionApproved));
@@ -370,7 +392,8 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "food_sources.crops", Double.toString(village.observedCropUnits));
         properties.setProperty(prefix + "food_sources.livestock", Double.toString(village.observedLivestockUnits));
         properties.setProperty(prefix + "food_sources.day", Long.toString(village.lastFoodSourcesDay));
-        village.foodChunks.forEach((chunk,sample)->properties.setProperty(prefix+"food_chunk."+chunk,sample.crops()+","+sample.livestock()));
+        village.foodChunks.forEach((chunk,sample)->properties.setProperty(prefix+"food_chunk."+chunk,
+                sample.crops()+","+sample.livestock()+","+(sample.day()<0?village.lastFoodSourcesDay:sample.day())));
         properties.setProperty(
                 prefix + "visual_project_selection_cursor",
                 Long.toString(village.visualProjectSelectionCursor));
@@ -384,6 +407,8 @@ final class EconomyPersistence {
             properties.setProperty(residentPrefix + "status", resident.status.name());
             properties.setProperty(residentPrefix + "last_seen", Long.toString(resident.lastSeenDay));
             properties.setProperty(residentPrefix + "pos", Long.toString(resident.lastKnownPos));
+            properties.setProperty(residentPrefix + "home", Long.toString(resident.homePos));
+            properties.setProperty(residentPrefix + "immigrant", Boolean.toString(resident.immigrant));
         });
         for (EconomyState.VillageProject project : village.projects) {
             String projectPrefix = prefix + "project." + project.projectId + ".";
@@ -404,6 +429,7 @@ final class EconomyPersistence {
                     projectPrefix + "site_search_saw_unloaded",
                     Boolean.toString(project.siteSearchSawUnloadedCandidate));
             properties.setProperty(projectPrefix + "blocks", Integer.toString(project.materializedBlocks));
+            properties.setProperty(projectPrefix + "construction_order_v1", ConstructionOrderState.encode(project.constructionOrderCuts));
             properties.setProperty(projectPrefix + "total_blocks", Integer.toString(project.totalBlocks));
             properties.setProperty(projectPrefix + "materialized_complete", Boolean.toString(project.materializedComplete));
             properties.setProperty(projectPrefix + "blocked", Boolean.toString(project.blocked));
@@ -497,7 +523,12 @@ final class EconomyPersistence {
     private static void writeVillageMarketShadow(
             Properties properties,
             UUID villageId,
-            EconomyState.VillageMarketShadow shadow) {
+            EconomyState.VillageMarketShadow shadow, long day) {
+        // Loaded guards are session-local. Persist matching scores and source data, without
+        // changing the live counterfactual or granting an unverified bonus after mod removal.
+        shadow = shadow.copy();
+        VillageGuardSecurity.observe(shadow.counterfactualVillage, 0, 0, 0, day);
+        VillageProsperityEngine.refreshMarketShadow(shadow, day);
         String prefix = "market.shadow." + villageId + ".";
         properties.setProperty(prefix + "present", Boolean.toString(shadow.present));
         properties.setProperty(prefix + "formula_version", Integer.toString(shadow.formulaVersion));
@@ -650,6 +681,7 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "count", Integer.toString(transaction.itemCount));
         properties.setProperty(
                 prefix + "inventory_before", Integer.toString(transaction.inventoryCountBefore));
+        properties.setProperty(prefix + "receipt_tracked", Boolean.toString(transaction.receiptTracked));
         properties.setProperty(
                 prefix + "bank_delta", Long.toString(transaction.bankDeltaMicro));
         properties.setProperty(
@@ -739,6 +771,20 @@ final class EconomyPersistence {
             }
 
             for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+                if(format<33&&asset.ticker().equals("VCIX")) {
+                    state.prices.put("VCIX",100.0);
+                    state.priceHistory.put("VCIX",new ArrayList<>(List.of(100.0)));
+                    continue;
+                }
+                if (format < 30 && asset.isCommodity()
+                        && !properties.containsKey("price." + asset.ticker())) continue;
+                if (format < 27 && EconomyEngine.isSpecialist(asset.ticker())
+                        && !properties.containsKey("price." + asset.ticker())) {
+                    // New listings start today, not with invented pre-listing history.
+                    state.prices.put(asset.ticker(), 100.0);
+                    state.priceHistory.put(asset.ticker(), new ArrayList<>(List.of(100.0)));
+                    continue;
+                }
                 double price = format >= 2
                         ? requiredDouble(properties, "price." + asset.ticker())
                         : doubleValue(properties, "price." + asset.ticker(), 100.0);
@@ -751,7 +797,30 @@ final class EconomyPersistence {
                     state.priceHistory.put(asset.ticker(), new ArrayList<>(List.of(price)));
                 }
             }
+            if (format < 34) {
+                StockIndex.initialize(state);
+            } else {
+                state.stockIndexShares.clear();
+                for (String ticker : StockIndex.CONSTITUENTS)
+                    state.stockIndexShares.put(ticker, requiredDouble(properties, "index.stock.shares." + ticker));
+                for (String key : properties.stringPropertyNames()) {
+                    if (key.startsWith("index.stock.shares.")
+                            && !StockIndex.CONSTITUENTS.contains(key.substring("index.stock.shares.".length())))
+                        throw new IOException("Unknown VILX constituent: " + key);
+                }
+                state.stockIndexDivisor = requiredDouble(properties, "index.stock.divisor");
+                state.stockIndexStartedDay = requiredLong(properties, "index.stock.started_day");
+            }
+            if(format<33)state.initializeCommodityIndex();
+            else for(var a:EconomyEngine.ASSETS)if(a.isCommodity())
+                state.commodityIndexWeights.put(a.ticker(),requiredDouble(properties,"index.commodity.weight."+a.ticker()));
             for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
+                if (format < 30 && EconomyEngine.isNewCommodity(commodity.id())
+                        && !properties.containsKey("commodity." + commodity.id())) {
+                    state.commodityPrices.put(commodity.id(), commodity.anchorPrice());
+                    state.commodityHistory.put(commodity.id(), new ArrayList<>(List.of(commodity.anchorPrice())));
+                    continue;
+                }
                 double price = format >= 2
                         ? requiredDouble(properties, "commodity." + commodity.id())
                         : doubleValue(
@@ -769,6 +838,28 @@ final class EconomyPersistence {
                             commodity.id(), new ArrayList<>(List.of(price)));
                 }
             }
+            for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+                if (format < 30 && asset.isCommodity() && !state.prices.containsKey(asset.ticker())) {
+                    double price = state.commodityPrices.get(asset.commodityId());
+                    state.prices.put(asset.ticker(), price);
+                    state.priceHistory.put(asset.ticker(), new ArrayList<>(List.of(price)));
+                }
+            }
+            for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
+                // New fundamentals start from today's quote; never rewrite history or replay years of growth.
+                state.commodityReferences.put(commodity.id(), format >= 31
+                        ? requiredDouble(properties, "commodity.reference." + commodity.id())
+                        : state.commodityPrices.get(commodity.id()));
+            }
+            if (format >= 31) {
+                NewsWire.read(state, properties);
+                for(var event:EconomyEngine.MarketEvent.values()) if(event!=EconomyEngine.MarketEvent.NONE) {
+                    long day=Long.parseLong(Objects.requireNonNull(properties.getProperty("event.cooldown."+event.name())));
+                    if(day < -1 || day > state.economicDay) throw new IOException("Invalid event cooldown");
+                    if(day>=0) state.eventCooldowns.put(event,day);
+                }
+            } else if(state.lastMarketEvent!=EconomyEngine.MarketEvent.NONE)
+                state.eventCooldowns.put(state.lastMarketEvent,state.lastMarketEventDay);
             if (format >= 4) {
                 loadGeneratedBankRegions(state, properties);
             }
@@ -825,6 +916,7 @@ final class EconomyPersistence {
                 EconomyState.ensurePositionCollections(account);
                 PortfolioAnalytics.migrateLegacyBasis(account, state);
             }
+            state.liveMarket=format>=36?LiveMarket.read(properties):LiveMarket.adopt(state);
             state.validate();
             state.rememberPersistedFile(path, persistedFingerprint);
             return state;
@@ -864,6 +956,10 @@ final class EconomyPersistence {
             }
         }
         for (Map.Entry<UUID, Map<Long, EconomyState.VillageProject>> entry : projects.entrySet()) {
+            if (format>=35) for(long id:entry.getValue().keySet()) {
+                String orderKey="village."+entry.getKey()+".project."+id+".construction_order_v1";
+                if(!properties.containsKey(orderKey)) throw new IOException("Missing construction order: "+orderKey);
+            }
             EconomyState.VillageRecord village = state.villages.get(entry.getKey());
             if (village != null) {
                 village.projects.addAll(entry.getValue().values());
@@ -941,6 +1037,10 @@ final class EconomyPersistence {
                     normalizeHousingAccounting(village, format);
                     normalizeProsperityFund(village.prosperityFund);
                 });
+        if (format == 28) {
+            for (var shadow : state.villageMarketShadows.values())
+                VillageGuardSecurity.recoverLegacyShadow(shadow, state.economicDay);
+        }
     }
 
     private static void normalizeProsperityFund(EconomyState.ProsperityFund fund) {
@@ -1075,10 +1175,17 @@ final class EconomyPersistence {
 
     private static void applyVillageField(
             EconomyState.VillageRecord village, String field, String value) {
+        if (field.startsWith("housing_chunk.")) {
+            village.housingChunks.put(Long.parseLong(field.substring(14)), value.isBlank() ? java.util.List.of()
+                    : java.util.Arrays.stream(value.split(",")).map(Long::parseLong).distinct().toList());
+            return;
+        }
         if(field.startsWith("food_chunk.")) {
             String[] counts=value.split(",");
+            if (counts.length < 2 || counts.length > 3) throw new IllegalArgumentException("Invalid food chunk observation");
             village.foodChunks.put(Long.parseLong(field.substring(11)),
-                    new VillageFoodSupply.ChunkObservation(Double.parseDouble(counts[0]),Double.parseDouble(counts[1])));
+                    new VillageFoodSupply.ChunkObservation(Double.parseDouble(counts[0]),Double.parseDouble(counts[1]),
+                            counts.length == 3 ? Long.parseLong(counts[2]) : -1));
             return;
         }
         if (field.startsWith("fund.")) {
@@ -1108,6 +1215,8 @@ final class EconomyPersistence {
                     village.observedHousingCapacity = Integer.parseInt(value);
             case "housing" -> village.housingCapacity = Integer.parseInt(value);
             case "pending_settlers" -> village.pendingSettlers = Integer.parseInt(value);
+            case "immigration_progress" -> village.immigrationProgress = Double.parseDouble(value);
+            case "immigration_day" -> village.lastImmigrationDay = Long.parseLong(value);
             case "tier" -> village.developmentTier = Integer.parseInt(value);
             case "collapse_count" -> village.collapseCount = Integer.parseInt(value);
             case "casualties.hostile" -> village.hostileCasualties = Integer.parseInt(value);
@@ -1129,6 +1238,8 @@ final class EconomyPersistence {
             case "development_points" -> village.developmentPoints = Double.parseDouble(value);
             case "restoration_funded" -> village.restorationFunded = Boolean.parseBoolean(value);
             case "project_serial" -> village.projectSerial = Long.parseLong(value);
+            case "organic_territory" -> village.organicTerritory = Boolean.parseBoolean(value);
+            case "territory_cells" -> { if (!value.isBlank()) for(String cell:value.split(",")) { if(village.territoryCells.size()>=VillageTerritory.MAX_CELLS) throw new IllegalArgumentException("Too many territory parcels"); village.territoryCells.add(Long.parseLong(cell)); } }
             case "city_id" -> village.cityId = UUID.fromString(value);
             case "expansion_mode" -> village.expansionMode = VillageExpansion.Mode.valueOf(value);
             case "expansion_approved" -> village.expansionApproved = Boolean.parseBoolean(value);
@@ -1239,6 +1350,8 @@ final class EconomyPersistence {
             case "status" -> resident.status = VillageProsperityEngine.ResidentStatus.valueOf(value);
             case "last_seen" -> resident.lastSeenDay = Long.parseLong(value);
             case "pos" -> resident.lastKnownPos = Long.parseLong(value);
+            case "home" -> resident.homePos = Long.parseLong(value);
+            case "immigrant" -> resident.immigrant = Boolean.parseBoolean(value);
             default -> {
             }
         }
@@ -1285,6 +1398,10 @@ final class EconomyPersistence {
             case "site_search_saw_unloaded" ->
                     project.siteSearchSawUnloadedCandidate = Boolean.parseBoolean(value);
             case "blocks" -> project.materializedBlocks = Integer.parseInt(value);
+            case "construction_order_v1" -> {
+                project.constructionOrderCuts.clear();
+                project.constructionOrderCuts.addAll(ConstructionOrderState.decode(value));
+            }
             case "total_blocks" -> project.totalBlocks = Integer.parseInt(value);
             case "materialized_complete" -> project.materializedComplete = Boolean.parseBoolean(value);
             case "blocked" -> project.blocked = Boolean.parseBoolean(value);
@@ -1419,6 +1536,15 @@ final class EconomyPersistence {
 
     private static void loadBankVillageAssociations(
             EconomyState state, Properties properties) throws IOException {
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith("village_redirect.")) continue;
+            try {
+                state.villageIdentityRedirects.put(UUID.fromString(key.substring(17)),
+                        UUID.fromString(properties.getProperty(key)));
+            } catch (RuntimeException exception) {
+                throw new IOException("Invalid village redirect", exception);
+            }
+        }
         String prefix = "bank.village.";
         for (String key : properties.stringPropertyNames()) {
             if (!key.startsWith(prefix)) {
@@ -1675,6 +1801,7 @@ final class EconomyPersistence {
             case "item" -> transaction.itemKey = value;
             case "count" -> transaction.itemCount = Integer.parseInt(value);
             case "inventory_before" -> transaction.inventoryCountBefore = Integer.parseInt(value);
+            case "receipt_tracked" -> transaction.receiptTracked = Boolean.parseBoolean(value);
             case "bank_delta" -> transaction.bankDeltaMicro = Long.parseLong(value);
             case "created_day" -> transaction.createdEconomicDay = Long.parseLong(value);
             case "created_wall" -> transaction.createdWallClockMs = Long.parseLong(value);

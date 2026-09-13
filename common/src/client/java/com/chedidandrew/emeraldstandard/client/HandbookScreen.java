@@ -7,11 +7,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.Tooltip;
+
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
 /** Wide, chapter-based reader; all body content remains reachable at every supported GUI scale. */
@@ -27,8 +28,15 @@ public final class HandbookScreen extends Screen {
     private EditBox search;
     private List<Integer> matches = List.of();
     private final List<FormattedCharSequence> lines = new ArrayList<>();
+    private record SectionStart(String id, int line) { }
+    private final List<SectionStart> sectionStarts = new ArrayList<>();
     private Button previous;
     private Button next;
+    private final java.util.Map<String, List<HandbookRecipes.Recipe>> recipeCache = new java.util.HashMap<>();
+    private final List<HandbookRecipeCard> recipeCards = new ArrayList<>();
+    private final RecipeAnimation recipeAnimation = new RecipeAnimation();
+    private boolean recipesPaused;
+    private long recipeFrame;
 
     public HandbookScreen(Screen parent) {
         super(Component.literal("The Emerald Standard: Starter Handbook"));
@@ -72,7 +80,7 @@ public final class HandbookScreen extends Screen {
             Button button = button(font.plainSubstrByWidth(name, layout.sidebar() - 22),
                     x + 8, y + 61 + row * 23, layout.sidebar() - 8,
                     () -> select(index));
-            button.setTooltip(Tooltip.create(Component.literal(name)));
+            button.setTooltip(GuiTooltips.widget(Component.literal(name)));
             if (chapter == index) button.active = false;
         }
         button("Up", x + 8, y + layout.height() - 32, (layout.sidebar() - 12) / 2,
@@ -94,6 +102,15 @@ public final class HandbookScreen extends Screen {
         previous.active = chapter > 0;
         next.active = chapter + 1 < HandbookChapters.ALL.size();
         rebuildText();
+        if (!recipeCards.isEmpty()) {
+            Button pause = button(recipesPaused ? "Resume recipes" : "Pause recipes",
+                    x + layout.width() - 101, y + 33, 90, () -> {
+                        recipesPaused = !recipesPaused;
+                        rebuildWidgets();
+                    });
+            pause.setTooltip(GuiTooltips.widget(Component.literal(
+                    "Cycle every 0.9 seconds. Hover over a recipe to pause and read item names. No items are consumed.")));
+        }
     }
 
     private Button button(String label, int x, int y, int w, Runnable action) {
@@ -105,6 +122,15 @@ public final class HandbookScreen extends Screen {
         chapter = Math.max(0, Math.min(HandbookChapters.ALL.size() - 1, index));
         scroll = 0;
         rebuildWidgets();
+        // A long chapter should open at the searched topic, preferring a heading match.
+        String needle = query.strip().toLowerCase(java.util.Locale.ROOT);
+        if (!needle.isEmpty()) {
+            var target = sectionStarts.stream().filter(s -> HandbookChapters.title(s.id()).getString()
+                    .toLowerCase(java.util.Locale.ROOT).contains(needle)).findFirst()
+                    .orElseGet(() -> sectionStarts.stream().filter(s -> HandbookChapters.body(s.id()).getString()
+                            .toLowerCase(java.util.Locale.ROOT).contains(needle)).findFirst().orElse(null));
+            if (target != null) scroll = Math.min(maxScroll(), target.line());
+        }
     }
 
     private void resizeText(int difference) {
@@ -119,19 +145,45 @@ public final class HandbookScreen extends Screen {
 
     private void rebuildText() {
         lines.clear();
+        sectionStarts.clear();
+        recipeCards.clear();
         int wrapWidth = Math.max(24, (int) (layout.bodyWidth() / textScale()));
         for (String section : HandbookChapters.ALL.get(chapter).sections()) {
-            lines.addAll(font.split(HandbookChapters.title(section).copy()
-                    .withStyle(style -> style.withBold(true).withColor(0x244C38)), wrapWidth));
+            int titleLine = lines.size();
+            sectionStarts.add(new SectionStart(section, titleLine));
+            var heading = font.split(HandbookChapters.title(section).copy()
+                    .withStyle(style -> style.withBold(true).withColor(0x244C38)), wrapWidth);
+            lines.addAll(heading);
             lines.add(FormattedCharSequence.EMPTY);
-            lines.addAll(font.split(HandbookChapters.body(section), wrapWidth));
+            var recipes = recipeCache.computeIfAbsent(section, HandbookRecipes::load);
+            if (!recipes.isEmpty()) {
+                HandbookRecipeCard card = new HandbookRecipeCard(titleLine, lines.size(),
+                        Math.min(1.5f, Math.min(wrapWidth / (float) HandbookRecipeCard.WIDTH,
+                                Math.max(12, (visibleLines() - heading.size() - 1) * 12f)
+                                        / HandbookRecipeCard.HEIGHT)), recipes);
+                recipeCards.add(card);
+                for (int i = 0; i < card.rows(); i++) lines.add(FormattedCharSequence.EMPTY);
+                String hint = recipes.stream().allMatch(HandbookRecipes.Recipe::serverRecipe)
+                        ? "Known server recipes. " : "Default recipe (datapacks may change it). ";
+                hint += "Hover for item names and to pause.";
+                hint += recipes.stream().allMatch(HandbookRecipes.Recipe::serverRecipe)
+                        ? " Matching ingredient alternatives cycle automatically."
+                        : switch (section) {
+                            case "recipe_desk" -> " Any matching planks work, including mixed wood types. Place the desk and right-click to open your account.";
+                            case "recipe_fence" -> " Four sticks, yellow dye and black dye make four manual caution fences.";
+                            default -> " Book + Emerald, in any two slots. Craft again if lost; use the handbook to open it.";
+                        };
+                lines.addAll(font.split(Component.literal(hint), wrapWidth));
+                lines.add(FormattedCharSequence.EMPTY);
+                lines.addAll(font.split(HandbookChapters.body(section), wrapWidth));
+            } else lines.addAll(font.split(HandbookChapters.body(section), wrapWidth));
             lines.add(FormattedCharSequence.EMPTY);
             lines.add(FormattedCharSequence.EMPTY);
         }
         scroll = Math.min(scroll, maxScroll());
     }
     private float textScale() { return percent / 100.0f; }
-    private int visibleLines() { return Math.max(1, (int) (layout.bodyHeight() / (12 * textScale()))); }
+    private int visibleLines() { return Math.max(1, (int) ((layout.bodyHeight() - 10) / (12 * textScale()))); }
     private int maxScroll() { return HandbookLayout.maximumScroll(lines.size(), visibleLines()); }
     private void moveScroll(int delta) { scroll = Math.max(0, Math.min(maxScroll(), scroll + delta)); }
 
@@ -141,6 +193,24 @@ public final class HandbookScreen extends Screen {
     int scrollLimit() { return maxScroll(); }
     int textPercent() { return percent; }
     int matchingChapters() { return matches.size(); }
+    boolean textFitsBody() {
+        return lines.stream().allMatch(line -> font.width(line) * textScale() <= layout.bodyWidth() + 1);
+    }
+    int recipeCardCount() { return recipeCards.size(); }
+    boolean recipesPaused() { return recipesPaused; }
+    long recipeFrame() { return recipeFrame; }
+    int recipeTitleLine(int index) { return recipeCards.get(index).titleLine(); }
+    boolean recipeCardsFitViewport() {
+        return recipeCards.stream().allMatch(card ->
+                card.scale() * HandbookRecipeCard.HEIGHT + (card.line() - card.titleLine()) * 12
+                        <= visibleLines() * 12 + 0.01
+                && card.scale() * HandbookRecipeCard.WIDTH * textScale() <= layout.bodyWidth() + 0.01);
+    }
+    int[] firstRecipeIngredientCenter() {
+        var card = recipeCards.getFirst();
+        return new int[] {(int) (layout.bodyX() + 35 * card.scale() * textScale()),
+                (int) (layout.bodyY() + ((card.line() - scroll) * 12 + 29 * card.scale()) * textScale())};
+    }
 
     @Override
     public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
@@ -157,15 +227,35 @@ public final class HandbookScreen extends Screen {
         g.text(font, font.plainSubstrByWidth("Starter Handbook", layout.width() - 166),
                 layout.x() + 10, layout.y() + 13, 0xFFF4F1DF, false);
         String name = HandbookChapters.ALL.get(chapter).name();
-        g.text(font, font.plainSubstrByWidth(name, layout.bodyWidth()),
+        if (!recipeCards.isEmpty() && font.width(name) > layout.bodyWidth() - 95) name = "Recipes";
+        g.text(font, font.plainSubstrByWidth(name, layout.bodyWidth() - (recipeCards.isEmpty() ? 0 : 95)),
                 layout.bodyX(), layout.y() + 40, 0xFF19392D, false);
+        double localMouseX = (mouseX - layout.bodyX()) / textScale();
+        double localMouseY = (mouseY - layout.bodyY()) / textScale();
+        boolean insideBody = mouseX >= layout.bodyX() && mouseX < layout.bodyX() + layout.bodyWidth()
+                && mouseY >= layout.bodyY() && mouseY < layout.bodyY() + visibleLines() * 12 * textScale();
+        boolean hoveringRecipe = insideBody && recipeCards.stream().anyMatch(card ->
+                card.contains(localMouseX, localMouseY - (card.line() - scroll) * 12));
+        recipeFrame = recipeAnimation.frame(System.nanoTime() / 1_000_000,
+                recipesPaused || hoveringRecipe || recipeCards.isEmpty());
+        ItemStack hoveredItem = ItemStack.EMPTY;
+        g.enableScissor(layout.bodyX(), layout.bodyY(), layout.bodyX() + layout.bodyWidth(),
+                layout.bodyY() + (int) (visibleLines() * 12 * textScale()));
         g.pose().pushMatrix();
         g.pose().translate(layout.bodyX(), layout.bodyY());
         g.pose().scale(textScale(), textScale());
         for (int i = 0; i < visibleLines() && scroll + i < lines.size(); i++) {
             g.text(font, lines.get(scroll + i), 0, i * 12, 0xFF26352D, false);
         }
+        for (var card : recipeCards) {
+            int cardY = (card.line() - scroll) * 12;
+            if (cardY + card.rows() * 12 < 0 || cardY >= visibleLines() * 12) continue;
+            ItemStack item = card.draw(g, font, cardY, recipeFrame, localMouseX, localMouseY);
+            if (insideBody && !item.isEmpty()) hoveredItem = item;
+        }
         g.pose().popMatrix();
+        g.disableScissor();
+        if (!hoveredItem.isEmpty()) g.setTooltipForNextFrame(font, hoveredItem, mouseX, mouseY);
         if (maxScroll() > 0) {
             int trackX = layout.x() + layout.width() - 11;
             int trackHeight = layout.bodyHeight();

@@ -80,6 +80,15 @@ public final class VillageProsperityManager {
     private static final int PROJECT_ENTRANCE_INSPECTIONS_PER_PULSE = 32;
     private static final long PROJECT_TRAIL_PULSE_CADENCE = 2L;
     private static final Map<UUID, Long> LAST_SETTLER_TICK = new HashMap<>();
+    private static final ForcedDevelopmentWorkBudget.Rotation FORCED_ROTATION = new ForcedDevelopmentWorkBudget.Rotation();
+    private static final Map<String, List<UUID>> FORCED_NEARBY = new HashMap<>();
+    private static long forcedNearbyTick = Long.MIN_VALUE;
+    private static final Map<List<Object>, List<Placement>> FORCED_TEMPLATES =
+            new java.util.LinkedHashMap<>(32,0.75f,true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<List<Object>,List<Placement>> e) {
+                    return size() > 32;
+                }
+            };
     private static final Set<BlueprintMismatchKey> REPORTED_BLUEPRINT_MISMATCHES =
             new HashSet<>();
 
@@ -89,16 +98,34 @@ public final class VillageProsperityManager {
     /** Clears world-session-only presentation and pacing state between server instances. */
     public static void resetRuntimeState() {
         VillageFoodEnvironment.reset();
+        VillagePopulationEnvironment.reset();
         ConstructionDiagnostics.reset();
+        SiteSearchDiagnostics.reset();
         ConstructionWorkStatus.reset();
         VillageConstructionActivity.reset();
         LAST_SETTLER_TICK.clear();
         REPORTED_BLUEPRINT_MISMATCHES.clear();
+        FORCED_NEARBY.clear();
+        forcedNearbyTick = Long.MIN_VALUE;
+        FORCED_ROTATION.reset();
+        FORCED_TEMPLATES.clear();
+        CONSTRUCTION_SEQUENCES.clear();
+        ForcedDevelopmentRuntime.reset();
+        ConstructionTimeRuntime.reset();
     }
 
     public static void tick(MinecraftServer server, EconomyService economy) {
         BackgroundSurveyBudget.tick(server);
         EmeraldConfig config = EmeraldConfig.current();
+        ConstructionTimeRuntime.tick(server, config);
+        economy.configureForcedVillageDevelopment(config.forcedVillageDevelopment());
+        if (config.forcedVillageDevelopment()) {
+            tickForcedDevelopment(server, economy, config);
+            return;
+        }
+        FORCED_NEARBY.clear();
+        forcedNearbyTick = Long.MIN_VALUE;
+        FORCED_TEMPLATES.clear();
         economy.configureVillageProsperity(
                 config.villageProsperitySimulationEnabled(),
                 config.villageVisualProgressionEnabled(),
@@ -123,18 +150,19 @@ public final class VillageProsperityManager {
             if (!economy.isCatchingUp() && config.villageProsperitySimulationEnabled()
                     && config.villageVisualProgressionEnabled()) {
                 for (ServerLevel level : levels) {
-                    if (tryExpandDistrict(level, economy, config)) break;
+                    // Territory grows with a reserved lot; never charter another artificial village here.
                 }
             }
         }
         VillageFoodEnvironment.tick(server, economy);
+        VillagePopulationEnvironment.tick(server, economy, config);
         if (config.villageVisualProgressionEnabled()
-                && gameTime % 10L == 0L
+                && config.constructionAllowance(gameTime) > 0
                 && !levels.isEmpty()) {
             MaterializationBudget budget = new MaterializationBudget(
-                    1, Integer.MAX_VALUE);
+                    config.constructionAllowance(gameTime), Integer.MAX_VALUE);
             int firstLevel = Math.floorMod(
-                    gameTime / 10L, levels.size());
+                    gameTime / 20L, levels.size());
             for (int step = 0; step < levels.size(); step++) {
                 ServerLevel level = levels.get((firstLevel + step) % levels.size());
                 try {
@@ -165,6 +193,50 @@ public final class VillageProsperityManager {
 
     public static void forgetPlayer(UUID playerId) {
         // Player-specific state is intentionally not stored here. Kept as an integration seam.
+    }
+
+    /** Debug work is global, round-robin and online-only; it never multiplies by city size. */
+    private static void tickForcedDevelopment(MinecraftServer server, EconomyService economy, EmeraldConfig config) {
+        if (economy.isCatchingUp()) return;
+        long tick = server.overworld().getGameTime();
+        List<ServerLevel> levels = new ArrayList<>();
+        server.getAllLevels().forEach(l -> { if (!l.players().isEmpty()) levels.add(l); });
+        if (levels.isEmpty()) return;
+        if (forcedNearbyTick == Long.MIN_VALUE || tick < forcedNearbyTick || tick - forcedNearbyTick >= 20) {
+            FORCED_NEARBY.clear(); forcedNearbyTick = tick;
+            for (var level : levels) {
+                FORCED_NEARBY.put(dimensionKey(level), economy.developmentVillageIdsNear(dimensionKey(level),
+                        level.players().stream().map(p -> p.blockPosition().asLong()).toList(),
+                        config.villageDevelopmentRadius()));
+            }
+        }
+        // No extra settlers/workers are spawned by the debug accelerator. Existing temporary
+        // worksites clean up through the ordinary ownership-aware presentation ledger.
+        if (tick % 20 == 0) {
+            ConstructionWorkStatus.tick(server, economy);
+            server.getAllLevels().forEach(l -> VillageConstructionActivity.tick(l,economy,false));
+        }
+        if (tick % 200 == 0) scanLoadedVillages(
+                levels.get(Math.floorMod(tick / 200,levels.size())), economy, config);
+        // Rotate by successful grants, not tick parity: a Bank consuming even ticks under lag
+        // must not permanently starve one dimension or every second district.
+        int allowance = ForcedDevelopmentRuntime.claim(server);
+        if (allowance == 0) return;
+        var level = levels.get(FORCED_ROTATION.next("work-level",levels.size()));
+        var ids = FORCED_NEARBY.getOrDefault(dimensionKey(level),List.of());
+        if (ids.isEmpty()) return;
+        UUID id = ids.get(FORCED_ROTATION.next("site:"+dimensionKey(level),ids.size()));
+        var snapshot = economy.developmentVillageSnapshot(id);
+        if (snapshot == null || !villageWorkAreaAvailable(level,snapshot.village())) return;
+        economy.forceVillageDevelopment(id);
+        snapshot = economy.developmentVillageSnapshot(id);
+        try {
+            materializeDevelopment(level,economy,config,tick,new MaterializationBudget(allowance,1),snapshot);
+        } catch (BlueprintPlanMismatchException mismatch) {
+            economy.deferVillageProjectMaterialization(mismatch.villageId,mismatch.projectId,tick,true);
+            if (REPORTED_BLUEPRINT_MISMATCHES.add(new BlueprintMismatchKey(mismatch.villageId,mismatch.projectId)))
+                LOGGER.error("Paused incompatible debug construction plan; no unsafe replacement was made",mismatch);
+        }
     }
 
     /** Records only an actual death event. Entity absence or chunk unload never counts as death. */
@@ -270,9 +342,12 @@ public final class VillageProsperityManager {
 
     private static void scanLoadedVillages(
             ServerLevel level, EconomyService economy, EmeraldConfig config) {
+        VillagePopulationEnvironment.survey(level, economy, config);
         String dimensionKey = dimensionKey(level);
         Set<UUID> observed = new HashSet<>();
         Set<Long> sampledAreas = new HashSet<>();
+        Map<Long, Long> bankBells = "minecraft:overworld".equals(dimensionKey)
+                ? VillageBankManager.generatedBankBellRegions(economy) : Map.of();
         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
             if (player.level() != level) {
                 continue;
@@ -292,14 +367,19 @@ public final class VillageProsperityManager {
             }
 
             AABB area = new AABB(villageProbe).inflate(48.0, 24.0, 48.0);
+            // Missing resident chunks are unknown, not evidence of abandonment.
+            if (!censusChunksLoaded(level, villageProbe, 48)) continue;
             List<Villager> nearbyVillagers = level.getEntitiesOfClass(
-                    Villager.class, area, villager -> villager.isAlive());
-            UUID preferredVillageId = preferredTaggedVillage(nearbyVillagers);
+                    Villager.class, area, villager -> villager.isAlive() && !BankerAccess.isBanker(villager));
+            var naturalVillage=NaturalVillageIdentity.near(level,villageProbe);
+            UUID preferredVillageId = naturalVillage!=null ? naturalVillage.id()
+                    : economy.territoryVillageId(dimensionKey,villageProbe.asLong());
+            if(preferredVillageId==null) continue; // Generated POIs cannot start another district.
             List<Villager> villagers = preferredVillageId == null
                     ? nearbyVillagers
                     : nearbyVillagers.stream()
                             .filter(villager -> {
-                                UUID tagged = villageId(villager);
+                                UUID tagged = economy.canonicalVillageId(villageId(villager));
                                 return tagged == null || preferredVillageId.equals(tagged);
                             })
                             .toList();
@@ -307,27 +387,38 @@ public final class VillageProsperityManager {
             EconomyService.VillageSnapshot taggedVillage = preferredVillageId == null
                     ? null
                     : economy.villageSnapshot(preferredVillageId);
-            boolean trustedTaggedVillage =
-                    isMatchingVillage(taggedVillage, dimensionKey, approximateCenter, 96.0);
-            BlockPos center = trustedTaggedVillage
-                    ? BlockPos.of(taggedVillage.village().centerPos)
-                    : stableCenter(level, villagers, villageProbe);
-            int bedCount = countBeds(level, center, 24, 6);
-            List<Monster> hostiles = level.getEntitiesOfClass(
-                    Monster.class,
-                    new AABB(center).inflate(40.0, 16.0, 40.0),
-                    LivingEntity::isAlive);
-            boolean raidActive = hostiles.stream().anyMatch(VillageProsperityManager::isRaider);
+            boolean trustedTaggedVillage = taggedVillage != null
+                    && dimensionKey.equals(taggedVillage.village().dimensionKey);
+            BlockPos center = naturalVillage!=null ? naturalVillage.center() : trustedTaggedVillage
+                    ? BlockPos.of(taggedVillage.village().centerPos) : null;
+            if (center == null) continue;
             EconomyService.VillageSnapshot knownVillage = trustedTaggedVillage
                     ? taggedVillage
                     : null;
-            if (!isMatchingVillage(knownVillage, dimensionKey, center, 72.0)) {
+            if (naturalVillage==null && !isMatchingVillage(knownVillage, dimensionKey, center, 72.0)) {
                 knownVillage = economy.nearestVillageSnapshot(
                         dimensionKey, center.asLong(), 48.0);
             }
             UUID trustedVillageId = knownVillage == null
                     ? null
                     : knownVillage.village().villageId;
+            if (trustedVillageId != null) {
+                // Known districts use the ownership-aware whole-height census, not this discovery box.
+                if (observed.add(trustedVillageId)) {
+                    observeLighting(level, economy, knownVillage.village());
+                    GuardVillagersCompat.observe(level, economy, knownVillage.village(), config);
+                }
+                continue;
+            }
+            int bedCount = countBeds(level, center, 24, 6);
+            List<Villager> discoveryResidents = villagers;
+            List<Monster> hostiles = level.getEntitiesOfClass(
+                    Monster.class, new AABB(center).inflate(40.0, 16.0, 40.0), LivingEntity::isAlive)
+                    .stream().filter(monster -> discoveryResidents.stream().anyMatch(resident ->
+                            VillagePopulationEnvironment.dangerous(level, resident.blockPosition(),
+                                    resident, List.of(monster)))).toList();
+            // Initial discovery must not label a sheltered village threatened by cave monsters.
+            boolean raidActive = hostiles.stream().anyMatch(VillageProsperityManager::isRaider);
             long regionKey = "minecraft:overworld".equals(dimensionKey)
                     ? VillageBankManager.bankKeyForVillage(
                             economy,
@@ -353,9 +444,7 @@ public final class VillageProsperityManager {
                         professionId(villager.getVillagerData().profession()),
                         villager.blockPosition().asLong()));
             }
-            EconomyService.VillageSnapshot snapshot = economy.observeVillage(
-                    preferredVillageId,
-                    new EconomyService.VillageObservation(
+            var observation = new EconomyService.VillageObservation(
                             dimensionKey,
                             center.asLong(),
                             regionKey,
@@ -364,11 +453,15 @@ public final class VillageProsperityManager {
                             bedCount,
                             hostiles.size(),
                             raidActive,
-                            residents));
+                            residents);
+            EconomyService.VillageSnapshot snapshot = naturalVillage!=null
+                    ? economy.observeNaturalVillage(naturalVillage.id(),observation,naturalVillage.parcels())
+                    : economy.observeVillage(preferredVillageId,observation);
             if (snapshot == null || !observed.add(snapshot.village().villageId)) {
                 continue;
             }
             observeLighting(level, economy, snapshot.village());
+            GuardVillagersCompat.observe(level, economy, snapshot.village(), config);
             VillageFoodEnvironment.schedule(level, economy, snapshot.village());
             DebugFlightRecorder.recordVillageObservation(level.getServer(), snapshot);
             for (Villager villager : villagers) {
@@ -418,7 +511,21 @@ public final class VillageProsperityManager {
     private static boolean tryExpandDistrict(ServerLevel level, EconomyService economy, EmeraldConfig config) {
         List<Long> players = level.players().stream().map(p -> p.blockPosition().asLong()).toList();
         if (players.isEmpty()) return false;
-        var nearby = economy.villageSnapshotsNear(dimensionKey(level), players, config.villageDevelopmentRadius());
+        List<EconomyService.VillageSnapshot> nearby;
+        long frontier = 0;
+        if (config.forcedVillageDevelopment()) {
+            var ids = FORCED_NEARBY.getOrDefault(dimensionKey(level),List.of());
+            if (ids.isEmpty()) return false;
+            frontier = FORCED_ROTATION.next("frontier:"+dimensionKey(level),ids.size()*8);
+            var selected = economy.developmentVillageSnapshot(ids.get(Math.floorMod(frontier / 8,ids.size())));
+            if (selected == null) return false;
+            // Do not branch an unfinished new neighborhood into an endless queue of empty lots.
+            // Other established frontiers can continue even if this one is obstructed/unloaded.
+            if (selected.village().cityId != null && !selected.village().cityId.equals(selected.village().villageId)
+                    && selected.village().projects.stream().noneMatch(p -> p.materializedComplete && p.type.housingGain() > 0))
+                return false;
+            nearby = List.of(selected);
+        } else nearby = economy.villageSnapshotsNear(dimensionKey(level), players, config.villageDevelopmentRadius());
         var tried = new HashSet<UUID>();
         int attempts = 0;
         for (var snapshot : nearby) {
@@ -427,14 +534,20 @@ public final class VillageProsperityManager {
             var status = economy.expansionStatus(rootId);
             if (status == null || status.reason() != VillageExpansion.Reason.READY) continue;
             if (++attempts > 2) break;
-            var root = economy.villageSnapshot(rootId).village();
+            var root = economy.developmentVillageSnapshot(rootId).village();
             int radius = Math.max(1, (int) Math.ceil(Math.sqrt(status.districts() + 2)));
             int side = radius * 2 + 1;
             long slot = Math.floorMod(status.siteCursor(), (long) side * side);
             int dx = (int) (slot % side) - radius, dz = (int) (slot / side) - radius;
             economy.advanceDistrictSiteSearch(rootId);
-            if (dx == 0 && dz == 0) continue;
-            BlockPos candidate = BlockPos.of(root.centerPos).offset(dx * 112, 0, dz * 112);
+            if (!config.forcedVillageDevelopment() && dx == 0 && dz == 0) continue;
+            if (config.forcedVillageDevelopment()) {
+                int[][] directions = {{1,0},{0,1},{-1,0},{0,-1},{1,1},{-1,1},{-1,-1},{1,-1}};
+                int[] direction = directions[Math.floorMod(frontier,8)];
+                dx = direction[0]; dz = direction[1];
+            }
+            BlockPos candidate = BlockPos.of(config.forcedVillageDevelopment()
+                    ? snapshot.village().centerPos : root.centerPos).offset(dx * 112, 0, dz * 112);
             if (!positionColumnLoaded(level, candidate) || !level.getWorldBorder().isWithinBounds(candidate)) continue;
             // Grow from an existing district frontier, not a disconnected outpost across the map.
             boolean connected = nearby.stream().anyMatch(s -> rootId.equals(VillageExpansion.rootId(s.village()))
@@ -448,7 +561,9 @@ public final class VillageProsperityManager {
             if (draft == null || draft.projects.isEmpty()) continue;
             var project = draft.projects.getFirst();
             project.siteSearchCursor = (int) Math.floorMod(status.siteCursor(), 8);
-            var lots = economy.villageProjectLotExclusions(dimensionKey(level));
+            var lots = config.forcedVillageDevelopment()
+                    ? economy.villageProjectLotExclusionsNear(dimensionKey(level),groundedCandidate.asLong(),1024)
+                    : economy.villageProjectLotExclusions(dimensionKey(level));
             List<Long> banks = new ArrayList<>(economy.generatedBankAnchorsSnapshot().values());
             banks.addAll(VillageBankManager.pendingBankAnchors(economy));
             economy.retiredBankAnchorsSnapshot().values().forEach(banks::addAll);
@@ -568,11 +683,9 @@ public final class VillageProsperityManager {
     }
 
     private static MaterializationBudget materializeDevelopment(
-            ServerLevel level,
-            EconomyService economy,
-            EmeraldConfig config,
-            long gameTime,
-            MaterializationBudget budget) {
+            ServerLevel level, EconomyService economy, EmeraldConfig config, long gameTime,
+            MaterializationBudget budget, EconomyService.VillageSnapshot forcedSnapshot) {
+        boolean forced = forcedSnapshot != null;
         int remainingBlockBudget = budget.remainingBlocks;
         String dimensionKey = dimensionKey(level);
         List<Long> playerPositions = level.players().stream()
@@ -581,10 +694,11 @@ public final class VillageProsperityManager {
         if (playerPositions.isEmpty()) {
             return budget;
         }
-        List<EconomyService.VillageSnapshot> snapshots = economy.villageSnapshotsNear(
-                dimensionKey, playerPositions, config.villageDevelopmentRadius());
+        List<EconomyService.VillageSnapshot> snapshots = forced ? List.of(forcedSnapshot)
+                : economy.villageSnapshotsNear(dimensionKey, playerPositions, config.villageDevelopmentRadius());
         List<EconomyService.VillageProjectLot> excludedProjectLots = new ArrayList<>(
-                economy.villageProjectLotExclusions(dimensionKey));
+                forced ? economy.villageProjectLotExclusionsNear(dimensionKey,forcedSnapshot.village().centerPos,1024)
+                        : economy.villageProjectLotExclusions(dimensionKey));
         List<Long> managedBankLots = new ArrayList<>();
         if ("minecraft:overworld".equals(dimensionKey)) {
             managedBankLots.addAll(economy.generatedBankAnchorsSnapshot().values());
@@ -595,7 +709,7 @@ public final class VillageProsperityManager {
         int firstVillage = snapshots.isEmpty()
                 ? 0
                 : Math.floorMod(
-                        gameTime / config.villageConstructionIntervalTicks()
+                        gameTime / 20L
                                 + dimensionKey.hashCode(),
                         snapshots.size());
         int processedVillages = 0;
@@ -606,13 +720,13 @@ public final class VillageProsperityManager {
                         VillageMaterializationPolicy.rotatingIndex(
                                 firstVillage, step, snapshots.size()));
                 EconomyState.VillageRecord village = snapshot.village();
-            if (village.expansionMode == VillageExpansion.Mode.PAUSED) continue;
+            if (!forced && village.expansionMode == VillageExpansion.Mode.PAUSED) continue;
             BlockPos villageCenter = BlockPos.of(village.centerPos);
-            if (!positionColumnLoaded(level, villageCenter)) {
+            if (!villageWorkAreaAvailable(level, village)) {
                 continue;
             }
-            spawnPendingSettler(level, economy, village, config, gameTime);
-            reconcileOneMaterializedProject(
+            if (!forced) spawnPendingSettler(level, economy, village, config, gameTime);
+            if (!forced) reconcileOneMaterializedProject(
                     level,
                     economy,
                     village,
@@ -623,29 +737,51 @@ public final class VillageProsperityManager {
             for (var finished : village.projects) {
                 if (!finished.materializedComplete) continue;
                 var siteVillage = village.copy(); siteVillage.projects.clear(); siteVillage.projects.add(finished);
-                int pathBudget = 1;
+                int pathBudget = forced ? remainingBlockBudget : config.constructionAllowance(gameTime);
+                if (pathBudget <= 0) break;
+                int initialPathBudget = pathBudget;
                 pathBudget -= materializeOneModularEntranceApproach(level, economy, siteVillage, 0L, pathBudget);
                 if (pathBudget > 0) pathBudget -= materializeOneModularTrailCenterSurfaceMigration(
                         level, economy, siteVillage, 0L, pathBudget);
-                if (pathBudget > 0) materializeOneModularTrail(level, economy, siteVillage, 0L, pathBudget);
+                if (pathBudget > 0) pathBudget -= materializeOneModularTrail(level, economy, siteVillage, 0L, pathBudget);
+                if (forced) remainingBlockBudget -= initialPathBudget - pathBudget;
+            }
+            if (remainingBlockBudget > 0) {
+                int connectionWrites = materializeOneWalkwayConnection(level, village, excludedProjectLots,
+                        managedBankLots, gameTime, Math.min(2, remainingBlockBudget));
+                if (forced) remainingBlockBudget -= connectionWrites;
+                int lampWrites = materializeOneWalkwayLamp(level, village, excludedProjectLots,
+                        managedBankLots, gameTime, Math.min(2, remainingBlockBudget));
+                if (forced) remainingBlockBudget -= lampWrites;
             }
             // A funded founding crew may build the first home before its settlers can safely
             // spawn. Ordinary empty/abandoned villages keep the existing recovery rules.
-            if ((village.population <= 0 && !village.districtFounding)
+            if (!forced && ((village.population <= 0 && !village.districtFounding)
                     || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT
-                    || village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED) {
+                    || village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED)) {
                 continue;
             }
+            // Clamp old saved 20-minute site-search delays once, not a sliding runtime deadline.
+            if (economy.boundVillageProjectSiteRetries(village.villageId, gameTime)) {
+                var retrySnapshot = economy.developmentVillageSnapshot(village.villageId);
+                if (retrySnapshot == null) continue;
+                village = retrySnapshot.village();
+            }
             List<Long> dueProjects = village.projects.stream()
-                    .filter(p -> com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.eligible(snapshot.village(),p)
+                    .filter(p -> (forced ? !p.materializedComplete && !p.manualRepairRequired && !p.abstractOnly
+                            : com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.eligible(snapshot.village(),p))
                             && p.retryAfterGameTick <= Math.max(0L, gameTime))
                     .map(p -> p.projectId).toList();
+            if (forced && dueProjects.size() > 1) dueProjects = List.of(dueProjects.get(
+                    FORCED_ROTATION.next("project:"+village.villageId, dueProjects.size())));
             for (Long selectedProjectId : dueProjects) {
-            remainingBlockBudget = 1;
+            if (!forced) remainingBlockBudget = ConstructionTimeRuntime.allowance(
+                    "village:" + village.villageId + ":" + selectedProjectId, gameTime, config);
+            if (remainingBlockBudget <= 0) break;
             // The integrity pass above may have changed the authoritative project record. Refresh
             // for each independent construction site so this pulse never acts
             // on the stale proximity snapshot that preceded that mutation.
-            EconomyService.VillageSnapshot claimedSnapshot = economy.villageSnapshot(
+            EconomyService.VillageSnapshot claimedSnapshot = economy.developmentVillageSnapshot(
                     village.villageId);
             if (claimedSnapshot == null) {
                 continue;
@@ -794,7 +930,7 @@ public final class VillageProsperityManager {
             if (!project.sitePreparationComplete) {
                 int changed = prepareNewSite(level, economy, village, project, remainingBlockBudget);
                 remainingBlockBudget -= changed;
-                var refreshed = economy.villageSnapshot(village.villageId);
+                var refreshed = economy.developmentVillageSnapshot(village.villageId);
                 long refreshedProjectId = project.projectId;
                 var actual = refreshed == null ? project : refreshed.village().projects.stream()
                         .filter(p -> p.projectId == refreshedProjectId).findFirst().orElse(project);
@@ -815,8 +951,50 @@ public final class VillageProsperityManager {
                                 : project.sitePreparationPlan.cells().size(), gameTime, "");
                 continue;
             }
+            if (!forced && config.villageVisualProgressionEnabled() && !ConstructionSitePresentation.fenceReady(level,
+                    VillageConstructionActivity.projectTag(village.villageId, project.projectId, project.originPos))) {
+                ConstructionDiagnostics.record(village.villageId + "/" + project.projectId, "preparing_fence",
+                        project.materializedBlocks, project.totalBlocks, gameTime,
+                        "Preparing safe perimeter before structural work");
+                continue;
+            }
             List<Placement> placements = projectTemplate(level, origin, village, project);
-            int index = Math.min(project.materializedBlocks, placements.size());
+            var nextOrder = com.chedidandrew.emeraldstandard.core.ConstructionOrderState.extend(
+                    project.constructionOrderCuts, project.materializedBlocks, placements.size());
+            if (!nextOrder.equals(project.constructionOrderCuts)) {
+                if (!economy.prepareVillageConstructionOrder(village.villageId,project.projectId,placements.size())) continue;
+                project.constructionOrderCuts.clear(); project.constructionOrderCuts.addAll(nextOrder);
+            }
+            var constructionSchedule = constructionSchedule(placements, project);
+            placements = constructionSchedule.ordered();
+            String ownershipJob=ConstructionOwnership.project(village.villageId,project.projectId,project.originPos);
+            var ownership=ConstructionOwnership.get(level);
+            boolean legacyEnrollment=!ownership.sites.containsKey(ownershipJob);
+            ownership.begin(economy,ownershipJob,village.villageId,project.projectId,project.originPos,false);
+            // Append-only ranges after an earlier handover are upgrades, not permission to regenerate the old house.
+            if(project.constructionOrderCuts.size()>2) ownership.protectPrefix(ownershipJob,
+                    project.constructionOrderCuts.get(project.constructionOrderCuts.size()-2));
+            int handoverFloor=ownership.handoverFloor(ownershipJob);
+            if(ownership.needsRegistration(ownershipJob,placements.size())) {
+            for(int i=handoverFloor;i<placements.size();i++) {
+                Placement p=placements.get(i);
+                if(!placementColumnLoaded(level,origin,p)) continue;
+                BlockPos pos=placementTarget(level,origin,p);
+                ownership.reserve(ownershipJob,pos,p.state);
+                // Legacy active prefixes are recoverable, but never adopt containers with unknown loot/inventories.
+                if(legacyEnrollment&&i<project.materializedBlocks&&!p.state.isAir()&&level.getBlockEntity(pos)==null
+                        &&!DevelopmentLandProtection.playerBuild(level,pos)
+                        &&placementSatisfied(level,origin,pos,level.getBlockState(pos),p))
+                    ownership.claim(ownershipJob,pos,p.state,false);
+            }
+            ownership.registered(ownershipJob,placements.size());
+            }
+            int index = Math.min(Math.max(project.materializedBlocks,handoverFloor), placements.size());
+            int firstPending = -1;
+            int pendingPhase = Integer.MAX_VALUE;
+            String supportWaitReason = "";
+            int waivedDressing = 0;
+            int inspected = 0;
             int constructionTarget = VillageMaterializationPolicy.constructionTargetBlocks(
                     project.economicProgress,
                     project.economicComplete,
@@ -828,8 +1006,18 @@ public final class VillageProsperityManager {
             boolean physicalObstruction = false;
             boolean entityWait = false;
             BlockPos obstruction = origin;
+            BlockPos occupiedAt = origin;
             while (index < constructionTarget && remainingBlockBudget > 0) {
+                // Always allow one safe operation after preflight; expensive templates must not
+                // cause permanent starvation. All subsequent operations obey the shared deadline.
+                if (forced && placedThisTick > 0 && !ForcedDevelopmentRuntime.hasTime()) break;
+                if (!forced && placedThisTick >= config.constructionAllowance(gameTime)
+                        && !ConstructionTimeRuntime.hasTime()) break;
+                if(++inspected>4096) break; // Bounded even when many cells are already placed.
                 Placement placement = placements.get(index);
+                int phase=SupportedConstructionOrder.phase(new SupportedConstructionOrder.Cell(
+                        new BlockPos(placement.dx,placement.dy,placement.dz),placement.state,placement.constructionPhase));
+                if(firstPending>=0&&phase>pendingPhase) break; // No floating later phase around a blocked support.
                 if (placement.isCosmetic() && project.manualRepairRequired) {
                     // A structural integrity rewind must never turn destroyed yard props into a
                     // renewable repair source. Cosmetics get their one attempt only during fresh
@@ -898,9 +1086,33 @@ public final class VillageProsperityManager {
                     index++;
                     continue;
                 }
+                boolean supported = constructionSchedule.disconnected().contains(new BlockPos(placement.dx,placement.dy,placement.dz))
+                        || SupportedConstructionOrder.supportedNow(level,origin,
+                            new SupportedConstructionOrder.Cell(new BlockPos(placement.dx,placement.dy,placement.dz),placement.state,placement.constructionPhase),
+                            constructionSchedule.supports());
+                if(!supported) {
+                    // A yard foot may already have been waived on solid terrain/protected ground.
+                    // Never let its unsupplied decoration become a mandatory support dependency.
+                    // Supplied unfinished blocks retain repair authority; required fixtures never waive.
+                    if (placement.isCosmetic() && !ConstructionOwnership.owned(level,target,placement.state)) {
+                        waivedDressing++; index++; continue;
+                    }
+                    if(firstPending<0) {
+                        firstPending=index; pendingPhase=phase;
+                        supportWaitReason=SupportedConstructionOrder.waitReason(level,origin,
+                                new SupportedConstructionOrder.Cell(new BlockPos(placement.dx,placement.dy,placement.dz),
+                                        placement.state,placement.constructionPhase),constructionSchedule.supports());
+                    }
+                    index++;
+                    continue; // Other independent cells can proceed; never place above missing supports.
+                }
                 boolean safe = level.getBlockEntity(target) == null
                         && level.getFluidState(target).isEmpty()
                         && mayApplyPlacement(current, placement)
+                        && (constructionSchedule.disconnected().contains(new BlockPos(placement.dx,placement.dy,placement.dz))
+                            || SupportedConstructionOrder.supportedNow(level,origin,
+                                new SupportedConstructionOrder.Cell(new BlockPos(placement.dx,placement.dy,placement.dz),placement.state,placement.constructionPhase),
+                                constructionSchedule.supports()))
                         && (!placement.isCosmetic()
                                 || cosmeticPlacementSupported(level, origin, target, placement));
                 if (!safe) {
@@ -913,12 +1125,16 @@ public final class VillageProsperityManager {
                     break;
                 }
                 if (!VillageConstructionOccupancy.mayChange(level,target,current,placement.state)) {
+                    if(!entityWait) occupiedAt=target;
                     entityWait = true;
                     ConstructionWorkStatus.occupied(level,economy,village.villageId,project.projectId,
                             target,project.originPos,placement.state);
-                    break; // Retain the exact cell/cursor. No failure count or site relocation.
+                    if(firstPending<0) { firstPending=index; pendingPhase=phase; }
+                    index++;
+                    continue; // Return to the first deferred cell after other safe same-phase work.
                 }
                 if (!ensureConstructionStarted(economy, village, project)) { blocked = true; break; }
+                ownership.claim(ownershipJob,target,placement.state,placement.state.hasBlockEntity());
                 if (!level.setBlock(target, placement.state, 3)
                         || !level.getBlockState(target).is(placement.state.getBlock())) {
                     if (placement.isCosmetic()) {
@@ -928,11 +1144,12 @@ public final class VillageProsperityManager {
                     blocked = true;
                     break;
                 }
-                VillageStructureLoot.assignNewStorage(level, target, VillageStructureLoot.table(project.type));
+                // Generated storage remains empty/locked until a verified handover.
                 placedThisTick++;
                 remainingBlockBudget--;
                 index++;
             }
+            if(firstPending>=0) index=firstPending;
             boolean complete = index >= placements.size();
             if (isManagedProject(project) && (placedThisTick > 0 || complete)) {
                 normalizeAuthoredModularConnections(
@@ -943,15 +1160,16 @@ public final class VillageProsperityManager {
                         placements.subList(0, index));
             }
             boolean completionDamaged = false;
-            if (complete) {
-                // Construction is incremental, so a player can change an earlier authored block
-                // after its cursor has advanced. Verify the complete template once before granting
-                // authority; never repair or overwrite a mismatch discovered here.
+            if (complete || (placedThisTick==0 && firstPending>=0)) {
+                // Finish-pass inspection also recovers missing supports if they prevent the first
+                // pass progressing. Only still-unfinished authority can enter this automatic rewind.
                 int verifiedPrefix = placements.size();
-                for (int verifyIndex = 0; verifyIndex < placements.size(); verifyIndex++) {
+                int verifyEnd=complete ? placements.size() : Math.min(project.materializedBlocks,placements.size());
+                for (int verifyIndex = 0; verifyIndex < verifyEnd; verifyIndex++) {
                     Placement placement = placements.get(verifyIndex);
-                    if (placement.isTrail() || placement.isCosmetic()) {
-                        continue;
+                    if (placement.isTrail() || (placement.isCosmetic()
+                            && !ConstructionOwnership.owned(level,placementTarget(level,origin,placement),placement.state))) {
+                        continue; // Best-effort decorations that were never supplied are not new repair work.
                     }
                     if (!placementColumnLoaded(level, origin, placement)) {
                         complete = false;
@@ -974,33 +1192,46 @@ public final class VillageProsperityManager {
                 }
                 if (completionDamaged) {
                     ProjectBounds currentBounds = bounds(origin, placements);
-                    economy.requireManualVillageProjectRepair(
-                            village.villageId,
-                            project.projectId,
-                            verifiedPrefix,
-                            placements.size(),
-                            currentBounds.minimum.asLong(),
-                            currentBounds.maximum.asLong());
+                    if(verifiedPrefix<handoverFloor) {
+                        economy.requireManualVillageProjectRepair(village.villageId,project.projectId,verifiedPrefix,
+                                placements.size(),currentBounds.minimum.asLong(),currentBounds.maximum.asLong());
+                    } else economy.queueUnfinishedVillageProjectRepair(
+                            village.villageId,project.projectId,verifiedPrefix,placements.size(),
+                            currentBounds.minimum.asLong(),currentBounds.maximum.asLong());
+                    index=verifiedPrefix;
+                    ConstructionDiagnostics.record(village.villageId+"/"+project.projectId,
+                            verifiedPrefix<handoverFloor ? "manual_repair" : "repairing",
+                            verifiedPrefix,placements.size(),gameTime,
+                            (verifiedPrefix<handoverFloor ? "Previously handed-over structure changed at " : "Finishing repairs at ")
+                                    +placementTarget(level,origin,placements.get(verifiedPrefix)).toShortString());
                     DebugFlightRecorder.recordConstruction(
                             level,
                             village.villageId,
                             project.projectId,
                             project.type.name(),
-                            "completion_modified",
+                            verifiedPrefix<handoverFloor ? "completed_structure_modified" : "automatic_repair",
                             origin,
                             verifiedPrefix,
                             placements.size(),
-                            "Player changes were preserved; the authored building remains unsafe");
+                            verifiedPrefix<handoverFloor ? "Completed prefix preserved; no regeneration authority"
+                                    : "Unfinished site damage queued for builders; no player materials or account charge");
                 }
             }
+            if(complete && !ownership.prepareHandover(level,ownershipJob,VillageStructureLoot.table(project.type))) {
+                complete=false; blocked=true;
+            }
             if (!completionDamaged && (index > project.materializedBlocks || complete)) {
-                economy.updateVillageProjectMaterialization(
+                boolean savedCompletion=economy.updateVillageProjectMaterialization(
                         village.villageId,
                         project.projectId,
                         index,
                         placements.size(),
                         complete,
                         false);
+                if(complete&&savedCompletion) {
+                    ownership.grantHandoverLoot(level,ownershipJob,VillageStructureLoot.table(project.type));
+                    ownership.completeProject(ownershipJob,index);
+                }
                 DebugFlightRecorder.recordConstruction(
                         level,
                         village.villageId,
@@ -1034,12 +1265,19 @@ public final class VillageProsperityManager {
                         village.villageId, project.projectId, gameTime,
                         unloaded || project.constructionStarted || project.materializationFailures < 2);
             }
-            if (entityWait) ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
-                    "waiting_for_entities",index,placements.size(),gameTime,"Living entity occupies this cell or its supporting floor");
-            if (!blocked && !entityWait) ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
-                    complete ? "complete" : index >= constructionTarget ? "economic_work" : "building",
-                    index, placements.size(), gameTime, "");
+            if (entityWait && !completionDamaged) ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
+                    placedThisTick>0 ? "building" : "waiting_for_entities",index,placements.size(),gameTime,
+                    "Waiting for an occupant or its footing at "
+                            +occupiedAt.toShortString()
+                            +(placedThisTick>0 ? "; other safe work continues" : "; leave this cell clear"));
+            if (!blocked && !entityWait && !completionDamaged) ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
+                    complete ? "complete" : firstPending>=0 && placedThisTick==0 ? "waiting_for_support"
+                            : index >= constructionTarget ? "economic_work" : "building",
+                    index, placements.size(), gameTime, firstPending>=0 ? supportWaitReason
+                            +(placedThisTick>0 ? "; other safe work continues" : "")
+                            : waivedDressing>0 ? "Skipped "+waivedDressing+" unsupported optional decorations; required work continues" : "");
             if (placedThisTick > 0) {
+                ConstructionDiagnostics.progressed(village.villageId + "/" + project.projectId);
                 if (!entityWait && !blocked) ConstructionWorkStatus.progressed(economy,village.villageId,project.projectId);
                 double x = origin.getX() + 0.5;
                 double y = origin.getY() + 1.5;
@@ -1064,6 +1302,12 @@ public final class VillageProsperityManager {
         }
         return new MaterializationBudget(
                 1, Integer.MAX_VALUE);
+    }
+
+    private static MaterializationBudget materializeDevelopment(
+            ServerLevel level, EconomyService economy, EmeraldConfig config, long gameTime,
+            MaterializationBudget budget) {
+        return materializeDevelopment(level,economy,config,gameTime,budget,null);
     }
 
     /** Terrain supports stay bottom-up, followed by enough authored blocks to show the worksite. */
@@ -1308,6 +1552,91 @@ public final class VillageProsperityManager {
             }
         }
         return placed;
+    }
+
+    /** One loaded-only connectivity job per dimension pulse, including existing completed trails. */
+    private static int materializeOneWalkwayConnection(ServerLevel level, EconomyState.VillageRecord village,
+            List<EconomyService.VillageProjectLot> lots, List<Long> banks, long gameTime, int budget) {
+        var ledger=WalkwayConnectionLedger.get(level);
+        var candidates=village.projects.stream().filter(p -> walkwayReady(village,p)
+                && !ledger.job(WalkwayConnectionLedger.key(village.villageId,p.projectId,p.originPos)).done()
+                && ledger.job(WalkwayConnectionLedger.key(village.villageId,p.projectId,p.originPos)).retry()<=gameTime).toList();
+        if(candidates.isEmpty()||budget<=0||!WalkwayConnections.acquire(level,gameTime))return 0;
+        int ordinal=ledger.rotation.getOrDefault(village.villageId,0);
+        ledger.rotation.put(village.villageId,ordinal==Integer.MAX_VALUE?0:ordinal+1);
+        var project=candidates.get(Math.floorMod(ordinal,candidates.size()));
+        return WalkwayConnections.advance(level,walkwayRequest(village,project,lots,banks),gameTime,budget);
+    }
+
+    static boolean walkwayReady(EconomyState.VillageRecord village,EconomyState.VillageProject p) {
+        return walkwayEligible(p) && (p.trailMaterializedComplete
+                || managedProjectTrail(BlockPos.of(p.originPos),village,p).isEmpty());
+    }
+
+    private static boolean walkwayEligible(EconomyState.VillageProject p) {
+        return VillageArchitecture.isManagedStructureSchema(p.designSchema) && p.economicComplete
+                && p.materializedComplete && p.originPos!=0L
+                && p.trailAnchorSet && !p.manualRepairRequired && !p.abstractOnly && !p.blocked && !p.relocationPending;
+    }
+
+    static WalkwayConnections.Request walkwayRequest(EconomyState.VillageRecord village,
+            EconomyState.VillageProject project,List<EconomyService.VillageProjectLot> lots,List<Long> banks) {
+        BlockPos origin=BlockPos.of(project.originPos),start=projectEntrance(origin,project);
+        var branch=village.projects.stream().filter(p -> p.projectId<project.projectId && walkwayEligible(p))
+                .min(Comparator.<EconomyState.VillageProject>comparingDouble(p ->
+                        projectEntrance(BlockPos.of(p.originPos),p).distSqr(start))
+                        .thenComparingLong(p -> p.projectId)).orElse(null);
+        BlockPos destination=branch==null ? BlockPos.of(village.centerPos)
+                : projectEntrance(BlockPos.of(branch.originPos),branch);
+        var oldColumns=managedProjectTrail(origin,village,project).stream()
+                .filter(p -> p.role==PlacementRole.TRAIL_PRIMARY)
+                .map(p -> WalkwayConnections.column(origin.offset(p.dx,0,p.dz)))
+                .collect(java.util.stream.Collectors.toSet());
+        return new WalkwayConnections.Request(village.villageId,project.projectId,project.originPos,
+                start.below(),destination.below(),branch==null,oldColumns,lots,banks,
+                isDesertTrailPalette(managedProjectPalette(village,project)));
+    }
+
+    private static String walkwayLampKey(ServerLevel level,EconomyState.VillageRecord village,
+            EconomyState.VillageProject project) {
+        String key=WalkwayLightingLedger.key(village.villageId,project.projectId,project.originPos);
+        var oldJob=WalkwayLightingLedger.get(level).jobs.get(key);
+        if(oldJob!=null&&!oldJob.pending().isEmpty())return key;
+        return WalkwayConnectionLedger.get(level).job(key).done() ? key+"/connection-v1" : key;
+    }
+
+    /** Independent finishing pass also lights already-completed saved paths without rewriting their cursors. */
+    private static int materializeOneWalkwayLamp(ServerLevel level, EconomyState.VillageRecord village,
+            List<EconomyService.VillageProjectLot> lots, List<Long> banks, long gameTime, int budget) {
+        var ledger = WalkwayLightingLedger.get(level);
+        List<EconomyState.VillageProject> candidates = village.projects.stream()
+                .filter(project -> VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                        && project.economicComplete && project.materializedComplete
+                        && (project.trailMaterializedComplete || WalkwayConnectionLedger.get(level).job(
+                                WalkwayConnectionLedger.key(village.villageId,project.projectId,project.originPos)).done())
+                        && !project.manualRepairRequired && !project.abstractOnly && project.trailAnchorSet
+                        && project.originPos != 0L && !ledger.done(walkwayLampKey(level,village,project)))
+                .toList();
+        if (candidates.isEmpty() || !WalkwayLighting.acquire(level, gameTime)) return 0;
+        int ordinal = ledger.rotation.getOrDefault(village.villageId, 0);
+        ledger.rotation.put(village.villageId, ordinal == Integer.MAX_VALUE ? 0 : ordinal + 1);
+        var project = candidates.get(Math.floorMod(ordinal, candidates.size()));
+        BlockPos origin = BlockPos.of(project.originPos);
+        String lampKey=walkwayLampKey(level,village,project);
+        List<BlockPos> route=lampKey.endsWith("/connection-v1")
+                ? WalkwayConnectionLedger.get(level).route(WalkwayConnectionLedger.key(
+                        village.villageId,project.projectId,project.originPos))
+                : managedProjectTrail(origin,village,project).stream()
+                    .filter(p -> p.role==PlacementRole.TRAIL_PRIMARY)
+                    .map(p -> origin.offset(p.dx,0,p.dz)).toList();
+        var character = VillageArchitecture.Character.fromId(village.architectureCharacter);
+        var dialect = VillageArchitecture.BiomeDialect.fromId(village.architectureDialect);
+        var materials = isBlueprint(project) ? AuthoredVillageStructures.plan(project.type,
+                project.designTemplateId, project.designTemplateRevision, project.designPaletteId,
+                project.designDressingId, character, dialect).materials()
+                : AuthoredVillageStructures.walkwayMaterials(character, dialect);
+        return WalkwayLighting.advance(level, village.villageId, project.projectId, lampKey,
+                route, materials, lots, banks, budget);
     }
 
     /** Keeps the persisted historical plan order while ensuring no new center cell emits coarse dirt. */
@@ -1783,83 +2112,13 @@ public final class VillageProsperityManager {
     /** Displays bounded worker theatre without creating persistent AI or economic authority. */
 
     private static void spawnPendingSettler(
-            ServerLevel level,
-            EconomyService economy,
-            EconomyState.VillageRecord village,
-            EmeraldConfig config,
-            long gameTime) {
-        if (village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
-                || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT
-                || (village.population <= 0 && !village.districtFounding
-                        && village.lifecycle != VillageProsperityEngine.Lifecycle.RECOVERING)) {
-            return;
-        }
+            ServerLevel level, EconomyService economy, EconomyState.VillageRecord village,
+            EmeraldConfig config, long gameTime) {
         Long previousAttempt = LAST_SETTLER_TICK.get(village.villageId);
         if (!VillageMaterializationPolicy.settlerAttemptDue(
-                gameTime, previousAttempt, config.villageSettlerSpawnIntervalTicks())) {
-            return;
-        }
-        BlockPos center = BlockPos.of(village.centerPos);
-        if (!positionColumnLoaded(level, center)) {
-            return;
-        }
-        // Pace the attempt itself, not only successful spawns. Otherwise an ineligible village
-        // repeats the entity, bed, food, and threat scans on every construction pulse.
+                gameTime, previousAttempt, config.villageSettlerSpawnIntervalTicks())) return;
         LAST_SETTLER_TICK.put(village.villageId, gameTime);
-        AABB area = new AABB(center).inflate(48.0, 24.0, 48.0);
-        int living = level.getEntitiesOfClass(
-                        Villager.class,
-                        area,
-                        villager -> villager.isAlive()
-                                && (village.villageId.equals(villageId(villager))
-                                        || village.residents.containsKey(villager.getUUID())))
-                .size();
-        int targetPopulation = Math.min(
-                VillageProsperityEngine.MAX_ABSTRACT_POPULATION,
-                Math.max(village.population, village.observedPopulation + village.pendingSettlers));
-        boolean reconciliationNeeded = living < targetPopulation;
-        if (village.pendingSettlers <= 0 && !reconciliationNeeded) {
-            return;
-        }
-        int usableBeds = countBeds(level, center, 24, 6);
-        if (VillageProsperityEngine.effectiveHousingCapacity(village) <= living
-                || usableBeds <= living
-                || village.foodSupply < Math.max(12.0, (living + 1) * 6.0)) {
-            return;
-        }
-        List<Monster> threats = level.getEntitiesOfClass(
-                Monster.class, new AABB(center).inflate(24.0, 12.0, 24.0), LivingEntity::isAlive);
-        if (!threats.isEmpty()) {
-            return;
-        }
-        BlockPos spawn = findSettlerSpawn(level, center);
-        if (spawn == null) {
-            return;
-        }
-        Villager settler = EntityTypes.VILLAGER.create(level, EntitySpawnReason.NATURAL);
-        if (settler == null) {
-            return;
-        }
-        settler.teleportTo(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
-        settler.setPersistenceRequired();
-        settler.setHomeTo(
-                center,
-                VillageMaterializationPolicy.settlerHomeRadius(
-                        config.villageDevelopmentRadius()));
-        assignVillage(settler, village.villageId);
-        if (!level.noCollision(settler)) {
-            settler.discard();
-            return;
-        }
-        if (level.addFreshEntity(settler)) {
-            DebugFlightRecorder.recordSettler(
-                    level, village.villageId, settler.getUUID(), settler.blockPosition());
-            // The next loaded-world census is the sole authority that consumes the queue. Doing
-            // so here as well would count one arrival twice and could collapse a two-settler
-            // recovery into one.
-        } else {
-            settler.discard();
-        }
+        VillagePopulationEnvironment.attemptArrival(level, economy, village);
     }
 
     private static BlockPos findSettlerSpawn(ServerLevel level, BlockPos center) {
@@ -1910,10 +2169,11 @@ public final class VillageProsperityManager {
         if (village == null || village.projects.isEmpty()) {
             return;
         }
-        if (!positionColumnLoaded(level, BlockPos.of(village.centerPos))) {
+        if (!villageWorkAreaAvailable(level, village)) {
             return;
         }
-        long interval = Math.max(1L, config.villageConstructionIntervalTicks());
+        if (gameTime % 20L != 0L) return;
+        long interval = 20L; // Audit cadence is independent of the selected construction speed.
         long auditPulses = Math.max(1L, 2_400L / interval);
         long pulse = gameTime / interval;
         long staggeredPulse = pulse + village.villageId.hashCode();
@@ -1957,6 +2217,7 @@ public final class VillageProsperityManager {
                                 desiredModularStage,
                                 pendingQualityMigration)
                         : projectTemplate(level, origin, village, project);
+        expected = constructionTemplate(expected, project);
         ProjectBounds expectedBounds = bounds(origin, expected);
         boolean templateExpanded = project.totalBlocks > 0
                 && project.totalBlocks < expected.size();
@@ -2218,6 +2479,12 @@ public final class VillageProsperityManager {
                             + ", persistedQualityStage="
                             + project.designQualityStage);
             return;
+        }
+        if(queuedTemplateUpgrade) {
+            var receipt=ConstructionOwnership.get(level);
+            String job=ConstructionOwnership.project(village.villageId,project.projectId,project.originPos);
+            receipt.begin(economy,job,village.villageId,project.projectId,project.originPos,false);
+            receipt.protectPrefix(job,priorTemplateSize);
         }
         // This object is a snapshot. Mirror the persisted demotion so the repair queue can act in
         // the same pulse instead of waiting for another proximity snapshot.
@@ -2592,6 +2859,11 @@ public final class VillageProsperityManager {
                 || state.is(Blocks.COARSE_DIRT);
     }
 
+    private static boolean villageWorkAreaAvailable(ServerLevel level, EconomyState.VillageRecord village) {
+        return positionColumnLoaded(level, BlockPos.of(village.centerPos))
+                || (village.organicTerritory && !village.architectureDialect.isBlank());
+    }
+
     private static ProjectSiteSearch findProjectOrigin(
             ServerLevel level,
             EconomyService economy,
@@ -2601,9 +2873,12 @@ public final class VillageProsperityManager {
             List<Long> managedBankLots) {
         BlockPos center = BlockPos.of(village.centerPos);
         List<VillageMaterializationPolicy.SiteOffset> offsets =
-                VillageNeighborhoodPlan.offsets(
-                        project.materializationFailures, village.villageId);
-        int start = Math.floorMod(
+                village.organicTerritory ? com.chedidandrew.emeraldstandard.core.VillageTerritory
+                        .candidates(village,project.materializationFailures).stream()
+                        .map(p->new VillageMaterializationPolicy.SiteOffset((int)p[0]-center.getX(),(int)p[1]-center.getZ())).toList()
+                        : VillageNeighborhoodPlan.offsets(project.materializationFailures, village.villageId);
+        if(offsets.isEmpty()) return new ProjectSiteSearch(null,VillageMaterializationPolicy.SiteAvailability.UNSAFE);
+        int start = village.organicTerritory ? 0 : Math.floorMod(
                 (int) (project.projectId ^ village.villageId.hashCode()), offsets.size());
         int testedCandidates = Math.min(project.siteSearchCursor, offsets.size());
         boolean sawUnloadedCandidate = project.siteSearchSawUnloadedCandidate;
@@ -2656,6 +2931,12 @@ public final class VillageProsperityManager {
                     centerZ,
                     siteSize,
                     authoritativeGroundContact);
+            if (originSearch.availability != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
+                observeSiteCandidate(level, village, project, testedCandidates, offsets.size(),
+                        originSearch.checked == null ? new BlockPos(centerX, 0, centerZ) : originSearch.checked,
+                        originSearch.rejection == null ? SiteSearchDiagnostics.Reason.GROUND_OR_TERRAIN : originSearch.rejection,
+                        originSearch.detail);
+            }
             if (originSearch.availability
                     == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
                 sawUnloadedCandidate = true;
@@ -2675,6 +2956,8 @@ public final class VillageProsperityManager {
             }
             if (village.bankAnchorPos != 0L
                     && origin.distSqr(BlockPos.of(village.bankAnchorPos)) < 18.0 * 18.0) {
+                observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                        SiteSearchDiagnostics.Reason.BANK_SPACING, "Within 18 blocks of district Bank anchor");
                 village.architectureDialect = persistedDialect;
                 checkpointProjectSiteSearch(
                         economy, village, project, testedCandidates, sawUnloadedCandidate);
@@ -2690,6 +2973,8 @@ public final class VillageProsperityManager {
                         level, origin, village, planningProject);
                 if (entranceApproach.availability
                         == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
+                    observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                            SiteSearchDiagnostics.Reason.ENTRANCE_UNLOADED, "Required entrance approach crosses unloaded columns");
                     sawUnloadedCandidate = true;
                     village.architectureDialect = persistedDialect;
                     checkpointProjectSiteSearch(
@@ -2698,6 +2983,8 @@ public final class VillageProsperityManager {
                 }
                 if (entranceApproach.availability
                         != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
+                    observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                            SiteSearchDiagnostics.Reason.ENTRANCE_UNSAFE, "No supported clear entrance approach within its limits");
                     village.architectureDialect = persistedDialect;
                     checkpointProjectSiteSearch(
                             economy, village, project, testedCandidates, sawUnloadedCandidate);
@@ -2718,6 +3005,8 @@ public final class VillageProsperityManager {
                     level, village.villageId, project.projectId, origin, planned);
             if (siteAvailability
                     == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
+                observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                        SiteSearchDiagnostics.Reason.TEMPLATE_UNLOADED, "Required template columns are not fully loaded");
                 sawUnloadedCandidate = true;
                 village.architectureDialect = persistedDialect;
                 checkpointProjectSiteSearch(
@@ -2725,17 +3014,28 @@ public final class VillageProsperityManager {
                 continue;
             }
             if (siteAvailability != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
+                observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                        SiteSearchDiagnostics.Reason.TEMPLATE_OBSTRUCTION, "Template clearance/protection check rejected this origin");
                 village.architectureDialect = persistedDialect;
                 checkpointProjectSiteSearch(
                         economy, village, project, testedCandidates, sawUnloadedCandidate);
                 continue;
             }
             ProjectBounds candidateBounds = bounds(origin, planned);
+            if(village.organicTerritory && !economy.mayReserveTerritory(village.villageId,
+                    candidateBounds.minimum.asLong(),candidateBounds.maximum.asLong())) {
+                observeSiteCandidate(level,village,project,testedCandidates,offsets.size(),origin,
+                        SiteSearchDiagnostics.Reason.PROTECTED_AREA,"Outside connected village territory or across a neighboring village boundary");
+                checkpointProjectSiteSearch(economy,village,project,testedCandidates,sawUnloadedCandidate);
+                continue;
+            }
             boolean overlaps = village.projects.stream()
                     .filter(other -> other.originPos != 0L && other.projectId != project.projectId)
                     .map(VillageProsperityManager::projectBounds)
                     .anyMatch(other -> overlaps(candidateBounds, other, 2));
-            boolean overlapsExcludedProjectSite = excludedProjectLots.stream()
+            var candidateExclusions = village.organicTerritory
+                    ? economy.villageProjectLotExclusionsNear(dimensionKey(level),origin.asLong(),1024) : excludedProjectLots;
+            boolean overlapsExcludedProjectSite = candidateExclusions.stream()
                     .map(VillageProsperityManager::excludedProjectBounds)
                     .anyMatch(other -> overlapsHorizontally(candidateBounds, other, 4));
             boolean overlapsManagedBank = managedBankLots.stream().anyMatch(anchor ->
@@ -2746,10 +3046,27 @@ public final class VillageProsperityManager {
                             candidateBounds.minimum.getZ(),
                             candidateBounds.maximum.getZ(),
                             4));
-            if (!overlaps && !overlapsExcludedProjectSite && !overlapsManagedBank
-                    && !DevelopmentLandProtection.excludes(level,candidateBounds.minimum,candidateBounds.maximum)) {
+            boolean protectedArea = DevelopmentLandProtection.excludes(level,candidateBounds.minimum,candidateBounds.maximum);
+            if (overlaps || overlapsExcludedProjectSite || overlapsManagedBank || protectedArea) {
+                observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                        protectedArea ? SiteSearchDiagnostics.Reason.PROTECTED_AREA
+                            : overlaps ? SiteSearchDiagnostics.Reason.PROJECT_OVERLAP
+                            : overlapsExcludedProjectSite ? SiteSearchDiagnostics.Reason.RESERVED_SITE_OVERLAP
+                            : SiteSearchDiagnostics.Reason.BANK_OVERLAP,
+                        "Bounds "+candidateBounds.minimum+" to "+candidateBounds.maximum
+                            +"; project="+overlaps+", reserved="+overlapsExcludedProjectSite
+                            +", Bank="+overlapsManagedBank+", protected="+protectedArea);
+            }
+            if (!overlaps && !overlapsExcludedProjectSite && !overlapsManagedBank && !protectedArea) {
                 var preparation = prepareProjectSitePlan(level, origin, village, planningProject, planned);
-                if (preparation == null) continue;
+                if (preparation == null) {
+                    observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                            SiteSearchDiagnostics.Reason.PREPARATION_UNSAFE, "Terrain preparation could not freeze a safe plan");
+                    checkpointProjectSiteSearch(economy, village, project, testedCandidates, sawUnloadedCandidate);
+                    continue;
+                }
+                observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
+                        SiteSearchDiagnostics.Reason.AVAILABLE, "Candidate accepted; entrance steps="+entranceApproach.stepCount);
                 ProjectSiteSearch available = new ProjectSiteSearch(
                         origin,
                         candidateTrailAnchor,
@@ -2779,6 +3096,17 @@ public final class VillageProsperityManager {
                 null,
                 VillageMaterializationPolicy.completedSiteSearch(
                         false, sawUnloadedCandidate));
+    }
+
+    private static void observeSiteCandidate(ServerLevel level, EconomyState.VillageRecord village,
+            EconomyState.VillageProject project, int candidate, int total, BlockPos checked,
+            SiteSearchDiagnostics.Reason reason, String detail) {
+        SiteSearchDiagnostics.record(village.villageId+"/"+project.projectId, new SiteSearchDiagnostics.Trial(
+                level.getGameTime(), project.materializationFailures, candidate, total, project.designRotation,
+                checked.getX(), checked.getY(), checked.getZ(), reason, detail));
+        DebugFlightRecorder.recordConstruction(level, village.villageId, project.projectId, project.type.name(),
+                "site_candidate", checked, candidate, total,
+                reason+"; rotation="+project.designRotation+"; sweep="+project.materializationFailures+"; "+detail);
     }
 
     private static void checkpointProjectSiteSearch(
@@ -2926,24 +3254,29 @@ public final class VillageProsperityManager {
         int maximumZ = terrainColumns.stream().mapToInt(TerrainFoundationPlan.Column::z)
                 .max().orElse(originZ + size.depth);
         if (!areaColumnsLoaded(level, minimumX, maximumX, minimumZ, maximumZ)) {
-            return new ProjectSiteSearch(
-                    null,
-                    VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED);
+            return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED,
+                    SiteSearchDiagnostics.Reason.UNLOADED_FOOTPRINT,
+                    "Required X/Z envelope ["+minimumX+","+minimumZ+"] to ["+maximumX+","+maximumZ+"] includes unloaded chunks",
+                    new BlockPos(centerX, 0, centerZ));
         }
         var survey = new VillageSitePreparation.Survey(level);
         List<Integer> surfaces = new ArrayList<>();
         for (TerrainFoundationPlan.Column column : terrainColumns) {
             Integer surface = survey.surface(column.x(), column.z());
             if (surface == null) {
-                return new ProjectSiteSearch(
-                        null, VillageMaterializationPolicy.SiteAvailability.UNSAFE);
+                return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
+                        SiteSearchDiagnostics.Reason.GROUND_OR_TERRAIN,
+                        "Column has no admissible dry natural ground (water, protected/crafted ground or unremovable vegetation may reject it)",
+                        new BlockPos(column.x(), 0, column.z()));
             }
             surfaces.add(surface);
         }
         var floor = TerrainFoundationPlan.levelledFloor(surfaces);
         if (floor.isEmpty()) {
-            return new ProjectSiteSearch(
-                    null, VillageMaterializationPolicy.SiteAvailability.UNSAFE);
+            return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
+                    SiteSearchDiagnostics.Reason.TERRAIN_HEIGHT,
+                    "Ground height range "+java.util.Collections.min(surfaces)+".."+java.util.Collections.max(surfaces)+" exceeds cut/fill limits",
+                    new BlockPos(centerX, 0, centerZ));
         }
         // Existing support geometry stays frozen; bounded cutting adds hillside tolerance without
         // changing any saved template hash or introducing giant stilts.
@@ -2955,8 +3288,9 @@ public final class VillageProsperityManager {
             for (int y = 0; y <= size.height; y++) {
                 BlockPos target = new BlockPos(column.x(), floor.getAsInt() + y, column.z());
                 if (!survey.available(target, floor.getAsInt())) {
-                    return new ProjectSiteSearch(
-                            null, VillageMaterializationPolicy.SiteAvailability.UNSAFE);
+                    return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
+                            SiteSearchDiagnostics.Reason.BLOCKED_VOLUME,
+                            "Required volume cannot safely clear "+level.getBlockState(target), target);
                 }
             }
         }
@@ -3107,12 +3441,46 @@ public final class VillageProsperityManager {
      * Builds an append-only, save-stable project plan. The legacy template is always the exact
      * prefix so projects from older saves can enter the existing guarded upgrade queue.
      */
+    private record ConstructionSequenceKey(List<Placement> cells, List<Integer> cuts) { }
+    private record ConstructionSchedule(List<Placement> ordered, Map<BlockPos,List<SupportedConstructionOrder.Cell>> supports,
+            Set<BlockPos> disconnected) { }
+    private static final Map<ConstructionSequenceKey,ConstructionSchedule> CONSTRUCTION_SEQUENCES = new LinkedHashMap<>();
+    private static List<Placement> constructionTemplate(List<Placement> canonical, EconomyState.VillageProject project) {
+        if (project.constructionOrderCuts.isEmpty()) return canonical;
+        return constructionSchedule(canonical,project).ordered();
+    }
+    private static ConstructionSchedule constructionSchedule(List<Placement> canonical, EconomyState.VillageProject project) {
+        var key = new ConstructionSequenceKey(canonical,List.copyOf(project.constructionOrderCuts));
+        var cached = CONSTRUCTION_SEQUENCES.get(key); if(cached!=null) return cached;
+        var cells = canonical.stream().map(p -> new SupportedConstructionOrder.Cell(
+                new BlockPos(p.dx,p.dy,p.dz),p.state,p.constructionPhase)).toList();
+        var sequence = SupportedConstructionOrder.sequence(cells,key.cuts());
+        var ordered = sequence.indices().stream().map(canonical::get).toList();
+        var supports=SupportedConstructionOrder.supportPalette(cells);
+        Set<BlockPos> disconnected=sequence.disconnected().stream().map(i->cells.get(i).pos()).collect(java.util.stream.Collectors.toSet());
+        var schedule=new ConstructionSchedule(ordered,Map.copyOf(supports),Set.copyOf(disconnected));
+        if(CONSTRUCTION_SEQUENCES.size()>=32) CONSTRUCTION_SEQUENCES.remove(CONSTRUCTION_SEQUENCES.keySet().iterator().next());
+        CONSTRUCTION_SEQUENCES.put(key,schedule); return schedule;
+    }
+
     private static List<Placement> projectTemplate(
             ServerLevel level,
             BlockPos origin,
             EconomyState.VillageRecord village,
             EconomyState.VillageProject project) {
         if (isBlueprint(project)) {
+            if (EmeraldConfig.current().forcedVillageDevelopment()) {
+                var key = List.<Object>of(village.villageId,project.projectId,origin.asLong(),
+                        project.designRotation,project.designMirrored,project.designStage,village.developmentTier,
+                        project.designSeed,project.designTemplateId,project.designTemplateRevision,
+                        project.designPaletteId,project.designDressingId,village.architectureCharacter,
+                        village.architectureDialect,project.designPlanHash);
+                var cached = FORCED_TEMPLATES.get(key);
+                if (cached != null) return cached;
+                var computed = blueprintProjectTemplate(level,origin,village,project);
+                FORCED_TEMPLATES.put(key,computed);
+                return computed;
+            }
             return blueprintProjectTemplate(level, origin, village, project);
         }
         if (isModular(project)) {
@@ -3731,7 +4099,8 @@ public final class VillageProsperityManager {
                     cell.z(),
                     cell.state(),
                     persistedRole,
-                    requiredSafetyFixtures.contains(position)));
+                    requiredSafetyFixtures.contains(position),
+                    cell.phase().ordinal()));
         }
         // DECOR is the final authored phase and is otherwise already in stable placement order.
         // Put chain runs top-down before hanging lamps so the attachment exists when vanilla
@@ -3942,7 +4311,7 @@ public final class VillageProsperityManager {
                         placement.dz,
                         placement.state.mirror(Mirror.FRONT_BACK),
                         placement.role,
-                        placement.requiredSafetyFixture))
+                        placement.requiredSafetyFixture, placement.constructionPhase))
                 .toList();
     }
 
@@ -6198,7 +6567,7 @@ public final class VillageProsperityManager {
                 position.getZ(),
                 placement.state.rotate(rotation),
                 placement.role,
-                placement.requiredSafetyFixture);
+                placement.requiredSafetyFixture, placement.constructionPhase);
     }
 
     private static VillageArchitecture.BiomeDialect biomeDialect(
@@ -6220,7 +6589,7 @@ public final class VillageProsperityManager {
     }
 
     private static BlockPos stableCenter(
-            ServerLevel level, List<Villager> villagers, BlockPos fallback) {
+            ServerLevel level, List<Villager> villagers, BlockPos fallback, Set<Long> bankBells) {
         BlockPos approximate = centerOf(villagers, fallback);
         BlockPos bestBell = null;
         double bestDistance = Double.MAX_VALUE;
@@ -6233,7 +6602,7 @@ public final class VillageProsperityManager {
                 }
                 for (int y = approximate.getY() - vertical; y <= approximate.getY() + vertical; y++) {
                     BlockPos candidate = new BlockPos(x, y, z);
-                    if (!level.getBlockState(candidate).is(Blocks.BELL)) {
+                    if (bankBells.contains(candidate.asLong()) || !level.getBlockState(candidate).is(Blocks.BELL)) {
                         continue;
                     }
                     double distance = candidate.distSqr(approximate);
@@ -6244,7 +6613,19 @@ public final class VillageProsperityManager {
                 }
             }
         }
-        return bestBell == null ? approximate : bestBell;
+        // A Bank's jobs/Bankers alone do not establish a settlement.
+        return bestBell != null ? bestBell : villagers.isEmpty() ? null : approximate;
+    }
+
+    static boolean censusChunksLoaded(ServerLevel level, BlockPos center, int radius) {
+        for (int x = Math.floorDiv(center.getX() - radius, 16);
+                x <= Math.floorDiv(center.getX() + radius, 16); x++) {
+            for (int z = Math.floorDiv(center.getZ() - radius, 16);
+                    z <= Math.floorDiv(center.getZ() + radius, 16); z++) {
+                if (!level.hasChunk(x, z)) return false;
+            }
+        }
+        return true;
     }
 
     private static Entity responsibleEntity(DamageSource source) {
@@ -6280,10 +6661,10 @@ public final class VillageProsperityManager {
         return victim.getLastHurtByPlayer() instanceof ServerPlayer player ? player : null;
     }
 
-    private static UUID preferredTaggedVillage(List<Villager> villagers) {
+    private static UUID preferredTaggedVillage(List<Villager> villagers, EconomyService economy) {
         Map<UUID, Integer> counts = new HashMap<>();
         for (Villager villager : villagers) {
-            UUID tagged = villageId(villager);
+            UUID tagged = economy.canonicalVillageId(villageId(villager));
             if (tagged != null) {
                 counts.merge(tagged, 1, Integer::sum);
             }
@@ -6376,7 +6757,7 @@ public final class VillageProsperityManager {
         return (beds + 1) / 2;
     }
 
-    private static void assignVillage(Villager villager, UUID villageId) {
+    static void assignVillage(Villager villager, UUID villageId) {
         for (String tag : List.copyOf(villager.entityTags())) {
             if (tag.startsWith(VILLAGE_TAG_PREFIX)) {
                 villager.removeTag(tag);
@@ -6449,7 +6830,11 @@ public final class VillageProsperityManager {
             int dz,
             BlockState state,
             PlacementRole role,
-            boolean requiredSafetyFixture) {
+            boolean requiredSafetyFixture,
+            int constructionPhase) {
+        private Placement(int dx, int dy, int dz, BlockState state, PlacementRole role, boolean requiredSafetyFixture) {
+            this(dx,dy,dz,state,role,requiredSafetyFixture,-1);
+        }
         private Placement(int dx, int dy, int dz, BlockState state) {
             this(dx, dy, dz, state, PlacementRole.STRUCTURE, false);
         }
@@ -6599,7 +6984,17 @@ public final class VillageProsperityManager {
             int entranceApproachStepCount,
             int entranceApproachTotalCells,
             VillageMaterializationPolicy.SiteAvailability availability,
-            com.chedidandrew.emeraldstandard.core.SitePreparationPlan preparation) {
+            com.chedidandrew.emeraldstandard.core.SitePreparationPlan preparation,
+            SiteSearchDiagnostics.Reason rejection, String detail, BlockPos checked) {
+        private ProjectSiteSearch(BlockPos origin, BlockPos trailAnchor, int steps, int cells,
+                VillageMaterializationPolicy.SiteAvailability availability,
+                com.chedidandrew.emeraldstandard.core.SitePreparationPlan preparation) {
+            this(origin, trailAnchor, steps, cells, availability, preparation, null, "", null);
+        }
+        private ProjectSiteSearch(BlockPos origin, VillageMaterializationPolicy.SiteAvailability availability,
+                SiteSearchDiagnostics.Reason rejection, String detail, BlockPos checked) {
+            this(origin, null, 0, 0, availability, null, rejection, detail, checked);
+        }
         private ProjectSiteSearch(BlockPos origin, BlockPos trailAnchor, int steps, int cells,
                 VillageMaterializationPolicy.SiteAvailability availability) {
             this(origin, trailAnchor, steps, cells, availability, null);

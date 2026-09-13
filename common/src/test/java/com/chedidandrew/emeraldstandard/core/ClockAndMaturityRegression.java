@@ -34,11 +34,13 @@ final class ClockAndMaturityRegression {
         double rate = service.snapshot().account(PLAYER).cdAnnualRate;
         require(service.tickAt(90L * EconomyService.TICKS_PER_MINECRAFT_DAY, 10_000L),
                 "CD maturity tick failed");
+        drain(service,90L*EconomyService.TICKS_PER_MINECRAFT_DAY,10_000L);
         long maturedValue = service.snapshot().account(PLAYER).cdValueMicro;
         require(maturedValue > 100L * EconomyState.MICRO, "CD earned no interest");
         require(service.snapshot().account(PLAYER).cdAnnualRate == rate, "CD rate changed");
         require(service.tickAt(120L * EconomyService.TICKS_PER_MINECRAFT_DAY, 10_000L),
                 "Post-maturity tick failed");
+        drain(service,120L*EconomyService.TICKS_PER_MINECRAFT_DAY,10_000L);
         require(service.snapshot().account(PLAYER).cdValueMicro == maturedValue,
                 "Mature CD kept accruing");
         require(service.closeCd(PLAYER).matured(), "Mature CD did not close");
@@ -46,6 +48,7 @@ final class ClockAndMaturityRegression {
         require(service.fundLoan(PLAYER, 200L, 180), "Loan funding failed");
         require(service.tickAt(300L * EconomyService.TICKS_PER_MINECRAFT_DAY, 10_000L),
                 "Loan maturity tick failed");
+        drain(service,300L*EconomyService.TICKS_PER_MINECRAFT_DAY,10_000L);
         EconomyState.Account loan = service.snapshot().account(PLAYER);
         require(loan.loanResolved && loan.loanValueMicro >= 0L,
                 "Loan maturity failed or created debt");
@@ -324,7 +327,7 @@ final class ClockAndMaturityRegression {
                 * EconomyService.MILLIS_PER_MINECRAFT_DAY;
         EconomyService reloaded = new EconomyService();
         reloaded.startWithSeed(directory, 999L, farFuture, 0L);
-        require(reloaded.snapshot().economicDay == 2_000L,
+        require(reloaded.snapshot().economicDay > 0L && reloaded.snapshot().economicDay <= 200L,
                 "Startup catch-up was not bounded");
         require(!reloaded.deposit(PLAYER, 1L),
                 "Banking was allowed during incomplete catch-up");
@@ -343,7 +346,7 @@ final class ClockAndMaturityRegression {
                                 .lifetimeReceivedMicro() == 0L,
                 "Rejected catch-up contribution changed persisted balances");
         int passes = 0;
-        while (reloaded.catchUpDaysRemaining() > 0L && passes++ < 200) {
+        while (reloaded.catchUpDaysRemaining() > 0L && passes++ < 2000) {
             require(reloaded.tickAt(0L, farFuture), "Background catch-up failed");
         }
         require(reloaded.catchUpDaysRemaining() == 0L, "Catch-up never completed");
@@ -361,6 +364,12 @@ final class ClockAndMaturityRegression {
                 "Backward clock advanced the economy");
         require(second.snapshot().lastWallClockMs >= original,
                 "Backward clock lowered trusted time");
+    }
+
+    private static void drain(EconomyService service,long ticks,long now){
+        int batches=0;
+        while(service.catchUpDaysRemaining()>0&&batches++<2000)require(service.tickAt(ticks,now),"catch-up batch failed");
+        require(service.catchUpDaysRemaining()==0,"catch-up never completed");
     }
 
     private static void requireThrows(Runnable action, String message) {

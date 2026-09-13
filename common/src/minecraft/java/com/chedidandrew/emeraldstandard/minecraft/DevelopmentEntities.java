@@ -13,7 +13,8 @@ public final class DevelopmentEntities {
     private DevelopmentEntities() { }
     public static void reset() { INDEX.clear(); INITIALIZED.clear(); }
     public static void loaded(Entity entity, ServerLevel level) {
-        if (entity instanceof Villager || entity instanceof Display)
+        if (entity instanceof Villager || entity instanceof net.minecraft.world.entity.monster.zombie.ZombieVillager
+                || entity instanceof Display || entity instanceof ConstructionBuilder)
             INDEX.computeIfAbsent(level,k->new LinkedHashMap<>()).put(entity.getUUID(),entity);
     }
     public static void unloaded(Entity entity,ServerLevel level) {

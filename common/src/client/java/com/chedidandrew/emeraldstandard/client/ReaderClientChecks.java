@@ -58,6 +58,32 @@ final class ReaderClientChecks {
             if (chapter < 15) press(reader, "Next");
         }
         check(longChapter, "real-font scrolling was not exercised");
+        var desk = HandbookRecipes.load("recipe_desk");
+        var book = HandbookRecipes.load("recipe_book");
+        var fence = HandbookRecipes.load("recipe_fence");
+        check(fence.size() == 1 && !fence.getFirst().shapeless(), "missing fence visual");
+        check(fence.getFirst().frame(0)[1].is(net.minecraft.world.item.Items.DYE.yellow())
+                && fence.getFirst().frame(0)[4].is(net.minecraft.world.item.Items.DYE.black())
+                && fence.getFirst().frame(0)[6].isEmpty()
+                && fence.getFirst().result(0).getCount() == 4, "wrong fence recipe diagram");
+        check(desk.size() == 1 && !desk.getFirst().shapeless(), "missing desk visual");
+        check(desk.getFirst().variants() >= 10, "plank alternatives did not resolve");
+        check(desk.getFirst().frame(0)[1].is(net.minecraft.world.item.Items.EMERALD), "wrong emerald slot");
+        check(desk.getFirst().frame(0)[4].is(net.minecraft.world.item.Items.BOOK), "wrong book slot");
+        check(!desk.getFirst().frame(0)[6].is(desk.getFirst().frame(1)[6].getItem()), "planks do not cycle");
+        check(book.size() == 1 && book.getFirst().shapeless(), "missing shapeless visual");
+        check(book.getFirst().frame(0)[1].is(net.minecraft.world.item.Items.EMERALD)
+                && book.getFirst().frame(1)[2].is(net.minecraft.world.item.Items.EMERALD), "shapeless slots do not cycle");
+        press(reader, "Previous"); press(reader, "Previous");
+        check(reader.recipeCardCount() == 4, "crafting chapter must contain all four cards");
+        var newspaper=HandbookRecipes.load("recipe_newspaper");
+        check(newspaper.size()==1&&newspaper.getFirst().shapeless()
+                &&newspaper.getFirst().result(0).getItem() instanceof com.chedidandrew.emeraldstandard.minecraft.NewspaperItem,
+                "missing newspaper visual");
+        press(reader, "Pause recipes");
+        check(reader.recipesPaused(), "recipe pause did not apply");
+        press(reader, "Resume recipes");
+        check(!reader.recipesPaused(), "recipe resume did not apply");
         press(reader, "Settings");
         EmeraldSettingsScreen settings = (EmeraldSettingsScreen) game.gui.screen();
         check(!button(settings, "Apply").active, "title screen can write unopened world");
@@ -87,6 +113,49 @@ final class ReaderClientChecks {
                 new net.minecraft.client.input.MouseButtonInfo(GLFW.GLFW_MOUSE_BUTTON_LEFT, 0));
         check(screen.mouseClicked(click, false), "click was not handled: " + label);
         screen.mouseReleased(click);
+    }
+    static HandbookScreen craftingFixture(Minecraft game) {
+        HandbookScreen reader = new HandbookScreen(null);
+        game.gui.setScreen(reader);
+        for (int i = 0; i < 13; i++) press(reader, "Next");
+        check(reader.recipeCardCount() == 4, "crafting cards missing at GUI scale");
+        check(reader.recipeCardsFitViewport(), "complete recipe and title do not fit the viewport");
+        return reader;
+    }
+    static HandbookScreen guideFixture(Minecraft game, int chapter) {
+        HandbookScreen reader = new HandbookScreen(null);
+        game.gui.setScreen(reader);
+        for (int i = 0; i < chapter; i++) press(reader, "Next");
+        check(reader.textFitsBody(), "Long-form text exceeds its body width");
+        return reader;
+    }
+    static void verifyLongForm(Minecraft game) throws Exception {
+        for (int percent : new int[] {80, 120}) {
+            ReaderPreferences.save(HandbookScreen.preferencesPath(), percent);
+            HandbookScreen reader = guideFixture(game, 0);
+            for (int chapter = 0; chapter < HandbookChapters.ALL.size(); chapter++) {
+                check(reader.textFitsBody(), "Long-form text overflows chapter " + chapter + " at " + percent);
+                reader.setFocused(null);
+                key(reader, GLFW.GLFW_KEY_END);
+                check(reader.scrollPosition() == reader.scrollLimit(), "Long chapter end unreachable");
+                key(reader, GLFW.GLFW_KEY_HOME);
+                check(reader.scrollPosition() == 0, "Long chapter Home failed");
+                if (chapter + 1 < HandbookChapters.ALL.size()) press(reader, "Next");
+            }
+        }
+        HandbookScreen reader = guideFixture(game, 0);
+        EditBox search = reader.children().stream().filter(EditBox.class::isInstance)
+                .map(EditBox.class::cast).findFirst().orElseThrow();
+        search.setValue("Security:");
+        check(reader.matchingChapters() == 1, "Detailed purpose not found by search");
+        Button result = reader.children().stream().filter(Button.class::isInstance)
+                .map(Button.class::cast).filter(b -> b.getMessage().getString().startsWith("The Village"))
+                .findFirst().orElseThrow();
+        press(reader, result.getMessage().getString());
+        check(reader.selectedChapter() == 10 && reader.scrollPosition() > 0,
+                "Purpose search must jump inside the Fund chapter");
+        check(reader.textFitsBody(), "Search landing text overflows");
+        System.out.println("PASS long-form handbook real-font wrapping, all chapter ends, 80/120 text and topic search");
     }
     private static Button button(Screen screen, String label) {
         return screen.children().stream().filter(Button.class::isInstance).map(Button.class::cast)

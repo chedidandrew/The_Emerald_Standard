@@ -1,0 +1,1 @@
+{"parent":"minecraft:recipes/root","criteria":{"has_paper":{"trigger":"minecraft:inventory_changed","conditions":{"items":[{"items":"minecraft:paper"}]}},"has_the_recipe":{"trigger":"minecraft:recipe_unlocked","conditions":{"recipe":"the_emerald_standard:newspaper"}}},"requirements":[["has_paper","has_the_recipe"]],"rewards":{"recipes":["the_emerald_standard:newspaper"]}}

@@ -9,7 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.Tooltip;
+
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -28,6 +28,17 @@ public final class EmeraldSettingsScreen extends Screen {
     private String status = "";
     private boolean error;
     private Button apply;
+    private boolean preview;
+
+    /** Disposable smoke preview only: exercises the actual widgets without opening a world. */
+    static EmeraldSettingsScreen preview(EmeraldConfig config) {
+        if (!Boolean.getBoolean("the_emerald_standard.clientSmoke"))
+            throw new IllegalStateException("Settings preview is smoke-only");
+        EmeraldSettingsScreen screen = new EmeraldSettingsScreen(null);
+        screen.snapshot = config;
+        screen.preview = true;
+        return screen;
+    }
 
     public EmeraldSettingsScreen(Screen parent) {
         super(Component.literal("The Emerald Standard Settings"));
@@ -51,7 +62,7 @@ public final class EmeraldSettingsScreen extends Screen {
         button("Read handbook", x + panelWidth - 112, y + 35, 102,
                 () -> minecraft.gui.setScreen(new HandbookScreen(this)));
         rows = Math.max(1, (panelHeight - 151) / 27);
-        if (worldEditable()) {
+        if (showWorldSettings()) {
             List<String> keys = new ArrayList<>(snapshot.values().keySet());
             page = Math.max(0, Math.min(page, (keys.size() - 1) / rows));
             for (int row = 0; row < rows && page * rows + row < keys.size(); row++) {
@@ -65,20 +76,16 @@ public final class EmeraldSettingsScreen extends Screen {
                             x + panelWidth - 94, rowY, 82, () -> {
                                 boolean next = !Boolean.parseBoolean(edits.getOrDefault(key,
                                         snapshot.values().get(key)));
-                                edits.put(key, Boolean.toString(next));
-                                rebuildWidgets();
+                                changeToggle(key, next);
                             });
                     toggle.active = !saving;
-                    toggle.setTooltip(Tooltip.create(Component.literal(key)));
+                    toggle.setTooltip(GuiTooltips.widget(Component.literal(SettingsHelp.description(key))));
                 } else {
                     EditBox input = new EditBox(font, x + panelWidth - 94, rowY, 82, 20,
                             Component.literal(label(key)));
-                    boolean fixedPace = EmeraldConfig.isFixedConstructionKey(key);
-                    input.setMaxLength(12); input.setValue(value); input.setEditable(!saving && !fixedPace);
+                    input.setMaxLength(12); input.setValue(value); input.setEditable(!saving);
                     input.setResponder(v -> edits.put(key, v));
-                    input.setTooltip(Tooltip.create(Component.literal(fixedPace
-                            ? "Fixed construction pace: 2 blocks per second per site at 20 TPS."
-                            : key + "; enter a whole number.")));
+                    input.setTooltip(GuiTooltips.widget(Component.literal(SettingsHelp.description(key))));
                     addRenderableWidget(input);
                 }
             }
@@ -87,19 +94,67 @@ public final class EmeraldSettingsScreen extends Screen {
             button(">", x + 42, footerY, 28, () -> { page++; rebuildWidgets(); })
                     .active = (page + 1) * rows < keys.size() && !saving;
         }
-        apply = button("Apply", x + panelWidth - 162, y + panelHeight - 31, 72, this::save);
+        int actionWidth = Math.min(72, (panelWidth - 126) / 3 - 6);
+        int doneX = x + panelWidth - 12 - actionWidth;
+        Button reset = button("Reset", doneX - 2 * (actionWidth + 6),
+                y + panelHeight - 31, actionWidth, this::resetDefaults);
+        reset.active = !saving;
+        reset.setTooltip(GuiTooltips.widget(Component.literal(worldEditable()
+                ? "Restore ALL pages to mod defaults, then Apply to save this world. Reader size resets immediately on this computer."
+                : "Reset local reader size. Server/world settings cannot be changed here.")));
+        apply = button("Apply", doneX - actionWidth - 6, y + panelHeight - 31, actionWidth, this::save);
         apply.active = worldEditable() && !saving;
-        button("Done", x + panelWidth - 84, y + panelHeight - 31, 72, this::onClose);
+        button("Done", doneX, y + panelHeight - 31, actionWidth, this::onClose);
     }
     private Button button(String name, int x, int y, int w, Runnable action) {
         return addRenderableWidget(Button.builder(Component.literal(name), b -> action.run())
                 .bounds(x, y, w, 20).build());
     }
     private boolean worldEditable() {
-        return server != null && Minecraft.getInstance().getSingleplayerServer() == server
+        return !preview && server != null && Minecraft.getInstance().getSingleplayerServer() == server
                 && snapshot != null;
     }
+    private boolean showWorldSettings() { return preview || worldEditable(); }
+    Map<String, String> draftValues() {
+        Map<String, String> values = new LinkedHashMap<>(snapshot.values());
+        values.putAll(edits);
+        return Map.copyOf(values);
+    }
+    String settingAt(double mouseX, double mouseY) {
+        if (!showWorldSettings() || mouseX < x + 10 || mouseX >= x + panelWidth - 104) return null;
+        List<String> keys = new ArrayList<>(snapshot.values().keySet());
+        for (int row = 0; row < rows && page * rows + row < keys.size(); row++) {
+            int rowY = y + 93 + row * 27;
+            if (mouseY >= rowY && mouseY < rowY + 20) return keys.get(page * rows + row);
+        }
+        return null;
+    }
     int textPercent() { return percent; }
+    void changeToggle(String key, boolean next) {
+        if (saving) return;
+        if (next && key.equals(EmeraldConfig.FORCED_DEVELOPMENT_KEY)) {
+            minecraft.gui.setScreen(new ForcedDevelopmentConfirmationScreen(this, () -> {
+                edits.put(key, "true");
+                status = "Debug mode confirmed in draft. Apply to enable; changes cannot be undone automatically.";
+                minecraft.gui.setScreen(this);
+            }));
+        } else {
+            edits.put(key, Boolean.toString(next));
+            rebuildWidgets();
+        }
+    }
+    void resetDefaults() {
+        if (saving) return;
+        setPercent(ReaderPreferences.DEFAULT_PERCENT);
+        if (showWorldSettings()) {
+            edits.clear();
+            edits.putAll(EmeraldConfig.defaults().values());
+            if (!error) status = "All pages reset. Apply to save world defaults; Done discards world edits.";
+        } else if (!error) {
+            status = "Reader size reset. No world or server settings changed.";
+        }
+        rebuildWidgets();
+    }
     private void setPercent(int requested) {
         try {
             ReaderPreferences.save(HandbookScreen.preferencesPath(), requested);
@@ -134,7 +189,11 @@ public final class EmeraldSettingsScreen extends Screen {
         rebuildWidgets();
     }
     private static String label(String key) {
+        if (key.equals(EmeraldConfig.FORCED_DEVELOPMENT_KEY)) return "DEBUG: forced instant development";
+        if (key.equals("village_prosperity.construction_blocks_per_second"))
+            return "Village: blocks per second per site";
         String text = key.replace("village_prosperity.", "Village: ")
+                .replace("compat.guard_villagers.", "Guard Villagers: ")
                 .replace("village_banks.", "Bank: ").replace("economic_clock.", "Clock: ")
                 .replace("onboarding.join_hint_enabled", "Starting book and discovery hint")
                 .replace("banker.", "Banker: ").replace("transactions.", "Transactions: ")
@@ -152,18 +211,20 @@ public final class EmeraldSettingsScreen extends Screen {
         super.extractRenderState(g, mx, my, delta);
         g.text(font, font.plainSubstrByWidth(title.getString(), panelWidth - 20), x + 10, y + 10, 0xFFFFFFFF, false);
         g.text(font, "Reader text: " + percent + "%", x + 10, y + 42, 0xFFE7EDDF, false);
-        String scope = worldEditable() ? "CURRENT WORLD (not global defaults)"
+        String scope = preview ? "SETTINGS PREVIEW (no world writes)" : worldEditable() ? "CURRENT WORLD (not global defaults)"
                 : "World settings belong to the server";
         g.text(font, font.plainSubstrByWidth(scope, panelWidth - 20), x + 10, y + 66, 0xFFE3C579, false);
-        if (worldEditable()) {
+        if (showWorldSettings()) {
             List<String> keys = new ArrayList<>(snapshot.values().keySet());
             for (int row = 0; row < rows && page * rows + row < keys.size(); row++) {
                 String key = keys.get(page * rows + row);
                 String name = label(key);
                 int rowY = y + 99 + row * 27;
                 g.text(font, font.plainSubstrByWidth(name, panelWidth - 112), x + 10, rowY, 0xFFF0F1E6, false);
+                if (key.equals(settingAt(mx, my)))
+                    GuiTooltips.show(g,font,Component.literal(SettingsHelp.description(key)),mx,my);
             }
-            g.text(font, "Page " + (page + 1) + "/" + ((keys.size() + rows - 1) / rows),
+            g.text(font, (panelWidth < 440 ? "" : "Page ") + (page + 1) + "/" + ((keys.size() + rows - 1) / rows),
                     x + 77, y + panelHeight - 25, 0xFFE7EDDF, false);
         } else {
             Component explanation = Component.literal(server == null && minecraft.player != null
@@ -176,11 +237,15 @@ public final class EmeraldSettingsScreen extends Screen {
                 g.text(font, line, x + 14, lineY, 0xFFE7EDDF, false); lineY += 13;
             }
         }
+        if (mx >= x + 10 && mx < x + 110 && my >= y + 35 && my < y + 55)
+            GuiTooltips.show(g,font, Component.literal(
+                    "Local handbook text size. Larger text shows fewer lines. Saves immediately on this computer. Default: "
+                            + ReaderPreferences.DEFAULT_PERCENT + "%."), mx, my);
         if (!status.isEmpty()) {
             String shortStatus = font.plainSubstrByWidth(status, panelWidth - 24);
             g.text(font, shortStatus, x + 12, y + panelHeight - 49, error ? 0xFFFFAC93 : 0xFFBBEAB5, false);
             if (my >= y + panelHeight - 53 && my <= y + panelHeight - 36)
-                g.setTooltipForNextFrame(font, Component.literal(status), mx, my);
+                GuiTooltips.show(g,font,Component.literal(status),mx,my);
         }
     }
     @Override

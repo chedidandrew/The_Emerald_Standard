@@ -33,10 +33,10 @@ final class ConstructionWorkStatus {
         if (server.overworld().getGameTime()%20 != 0) return;
         for (var entry : List.copyOf(WAITING.entrySet())) {
             var key=entry.getKey(); var wait=entry.getValue();
-            var snapshot=economy.villageSnapshot(key.village);
+            var snapshot=economy.developmentVillageSnapshot(key.village);
             var p=snapshot==null?null:snapshot.village().projects.stream().filter(v->v.projectId==key.project).findFirst().orElse(null);
             if (p==null || p.originPos!=wait.origin || p.materializedComplete || p.manualRepairRequired) { WAITING.remove(key); continue; }
-            if (!VillageConstructionPolicy.eligible(snapshot.village(),p)
+            if ((!economy.forcedVillageDevelopment() && !VillageConstructionPolicy.eligible(snapshot.village(),p))
                     || !wait.level.hasChunk(wait.pos.getX()>>4,wait.pos.getZ()>>4)) continue;
             if (!wait.level.getBlockState(wait.pos).equals(wait.obstruction)) { progressed(economy,key.village,key.project); continue; }
             if (wait.occupiedAfter != null) {

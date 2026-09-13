@@ -36,6 +36,7 @@ public final class EmeraldCommands {
                         || VillageComparisonGallery.hasCommandAccess(source))
                 .then(Commands.literal("help")
                         .executes(EmeraldCommandHandlers::help))
+                .then(NewsPropertyCommands.command())
                 .then(Commands.literal("open")
                         .executes(context -> EmeraldCommandHandlers.open(context, economy)))
                 .then(Commands.literal("market")

@@ -30,7 +30,7 @@ The simulation settings are independent.
 - `market_integration_enabled`: allows eligible villages to contribute their capped fundamental factor to assets and commodities.
 - `automatic_recovery_enabled`: allows recoverable extinct villages to enter the recovery process after their cooldown.
 
-`development_radius` controls only same-dimension horizontal activation for physical work on known settlements. It accepts 48–512 blocks, ignores vertical distance, and does not limit their data-only economic simulation, load chunks, or expand villager AI. Each eligible site's physical work has an independent one-block-per-ten-tick allowance. Entity and construction-theatre searches retain their local 48-block cap, while a spawned settler's assigned home radius is separately capped at 32 blocks. Keep the recommended 256 default unless the server already loads village chunks farther away; a larger activation radius is not a view-distance or force-loading setting.
+`development_radius` controls only same-dimension horizontal activation for physical work on known settlements. It accepts 48–512 blocks, ignores vertical distance, and does not limit their data-only economic simulation, load chunks, or expand villager AI. Each eligible site's physical work has an independent one-block-per-ten-tick allowance. Construction-theatre searches retain local limits. Resident census and housing surveys instead follow district ownership, developed coverage and registered homes; settlers receive a specific claimed HOME bed. Keep the recommended 256 default unless the server already loads village chunks farther away; a larger activation radius is not a view-distance or force-loading setting.
 
 Turning visual progression off never removes structures that already exist. Turning market integration off leaves the local village simulation intact but makes the global market ignore settlement fundamentals.
 
@@ -53,8 +53,17 @@ Residents can be:
 - Infected
 - Emigrated
 - Dead
+- Unverified (including unseen residents retained from older Away records)
 
-An unseen Active resident becomes Away after three economic days of continued village observation. A resident still absent after thirty economic days becomes Emigrated and no longer counts toward productive abstract population.
+An unseen Active or legacy Away resident becomes Unverified on the next census. Absence never implies emigration or a casualty. UUID records and their population commitment survive unloaded chunks and long offline absences. Confirmed death, infection and a loaded villager's confirmed home transfer provide separate evidence; merely crossing a district boundary does not change ownership. No deficit-based replacement settlers are created.
+
+Housing surveys cover exclusive natural-village parcels and associated homes at every world height; legacy districts retain their developed survey rectangles. Work is round-robin and budgeted to 2,048 inspected cells per tick (reduced under load); empty/non-bed sections are skipped. Only complete loaded chunk observations replace saved bed-head lists. Missing chunks retain prior evidence. New villages use parcel ownership, with nearest original center and UUID tie-breaking; legacy overlapping surveys retain registered-home priority. Bed cache limits are 4,096 positions/chunks, with 1,024 resident identities per district. Real observed populations may exceed the simulation bound (512 for new natural villages, 64 for legacy districts) without increasing simulated production indefinitely.
+
+Immigration accumulates fractional progress once per economic day. At perfect conditions, an 8-resident district earns about 1.18 arrivals/day and a 48-resident district about 3.18; Peaceful multiplies by 1.15, capped at four approvals/day. Recovery and upkeep strain slow progress. Lifecycle, Safety 45+, housing and enough food for the proposed committed population still gate growth. At most eight settlers wait for physical placement, and a full queue or ineligible district cannot bank a multi-day burst.
+
+Each physical arrival needs a surveyed, intact, unoccupied and unclaimed bed, loaded blocks, solid safe footing and a path from its nearby landing to that bed. A living monster within 12 blocks blocks that landing only when an unobstructed collision ray connects it to the landing; walls and underground terrain can shelter it. No arrival check force-loads chunks. Attempts share the configured default 600-tick cadence. A pending identity and bed are journaled before insertion; definite insertion failure returns the approval, while an ambiguous crash leaves the claim Unverified, not automatically respawned. This conservatively prevents replay duplicates but cannot provide a distributed atomic transaction with Minecraft's separate entity save.
+
+Town's progress report and /emerald debug expose queued and unverified residents, saved immigration fraction, physical bed survey and the latest arrival status. The combined city total includes all associated districts; the headline distinguishes actual/known commitments from the economic production cap.
 
 Loaded zombie villagers are recorded as Infected when a persisted village tag, an already-known resident match, or a nearby known resident identifies the conversion. Infection removes that resident from productive population without recording a death. Repeated zombie observations are idempotent. When a living villager later appears near the infection location, the stale infected record is reconciled to the cured resident and productive population can recover; this reconciliation does not assume Minecraft preserved the entity UUID.
 
@@ -121,19 +130,20 @@ See [exact tuning and structure loot](PEACEFUL_GROWTH_AND_LOOT.md).
 
 A village's **functional tier can now rise or fall** as population and prosperity change. Completed physical structures are never automatically removed when the functional tier falls.
 
-### Bounded districts, open-ended cities
+### One natural village, one growing territory
 
-The simulation caps each district at **tier 5**, **64 economic residents including pending settlers**,
-and **12 prosperity projects**, including at most **six housing projects**. Utilities are unique, and
-need-driven selection may stop before the project cap. The separate Village Bank is not one of these
-12 projects. Tier 5 requires at least 28 economic residents, 75 prosperity and six operational projects;
-100 prosperity is the maximum, not a requirement for tier 5. These limits also apply on Peaceful.
+New natural villages retain one district and one Bank while connected, non-overlapping
+16-block parcels extend their territory. They support **512 simulated residents** and
+**512 project records**, without the old six-home restriction. Population-scaled Granaries,
+Warehouses, Markets and Guard Posts support larger settlements. Need-driven selection may
+stop before those ceilings. Legacy districts retain the 64-resident/12-project bounds.
+Tier remains 0–5: tier 5 requires 28 residents, 75 prosperity and six operational projects.
 
 Population needs spare functional housing, adequate food and safety. Resource production finances
 need-driven projects, which add housing or services and can lift the tier. Approved buildings and
 settlers materialize only near players in already-loaded chunks. The development radius controls
-when this work runs. Automatic city expansion now adds additional districts without a fixed city-size
-cap, subject to sustainable supplies, rising upkeep and safe loaded land. See
+when this work runs. Expansion now reserves connected infill/frontier land for that same
+natural village, subject to economic needs and safe loaded land; it does not create child districts. See
 [city expansion and lighting](CITY_EXPANSION.md) for controls and balance. Player construction and ordinary
 Minecraft breeding are separate; the mod does not delete excess villagers to enforce an entity cap.
 
@@ -159,7 +169,7 @@ Projects require population, resources, treasury, prosperity, safety, and develo
 The materializer preserves real builds while allowing routine new-site preparation:
 
 - No forced chunk loading
-- The first deterministic search tests 64 project candidates through 84 blocks. A fully failed sweep persists backoff and unlocks another bounded 24-site ring, up to 256 candidates through 276 blocks; due projects rotate between pulses so a difficult lot or low-view-distance frontier cannot starve later projects
+- Natural villages search up to 128 rotating infill candidates then 128 adjacent frontier candidates per sweep, extending connected territory only on reservation. Legacy sites retain their bounded expanding-ring search. Due projects rotate between pulses.
 - No placement when a required chunk is unloaded. An unreserved frontier is backed off before a later expanded sweep, while an existing reservation is retained and delayed rather than discarded on incomplete world information
 - No replacement of block entities
 - New reservations may clear ordinary torches and recognizable natural tree remnants in a bounded,
@@ -192,9 +202,9 @@ Each project receives one of three deterministic presets derived from the stable
 
 Cottages, Houses, and Inns include real beds. Physical settler reconciliation requires actual available beds, keeping visible population tied to usable village housing.
 
-Default construction speed is intentionally slower than beta.1: two blocks every ten server ticks. Servers may tune the values in configuration.
+Normal construction defaults to two blocks per second per active site at 20 TPS, configurable from 1–100. The per-site pace is distinct from globally bounded catch-up/debug budgets. Terrain preparation and the temporary perimeter precede structural work; unsafe or occupied work cells can pause a site.
 
-While blocks are successfully advancing, at most two nearby residents within the fixed local 48-block entity search range periodically receive one low-speed navigation request toward a safe exterior waypoint, look toward the site, swing an arm, and emit a small project-appropriate particle. Profession matching affects which villagers are preferred. These are bounded visual cues only; they do not install a persistent villager goal, inherit the wider development radius, force chunks, or become an authority for project completion. A materialized settler's assigned home radius is a different limit and never exceeds 32 blocks.
+While blocks are successfully advancing, at most two nearby residents within the fixed local 48-block entity search range periodically receive one low-speed navigation request toward a safe exterior waypoint, look toward the site, swing an arm, and emit a small project-appropriate particle. Profession matching affects which villagers are preferred. These are bounded visual cues only; they do not install a persistent villager goal, inherit the wider development radius, force chunks, or become an authority for project completion. Arriving settlers receive a specific claimed HOME bed; resident census coverage is separate from worker-theatre range.
 
 ## Population reconciliation
 
@@ -202,11 +212,11 @@ When visual progression is enabled, a simulated birth or migration creates a com
 
 Recovery behaves differently depending on configuration:
 
-- **Simulation + visuals:** recovery approval queues two settlers, but the special zero-population recovery path stays economically inactive until those entities actually spawn and the census observes them.
+- **Simulation + visuals:** recovery approval queues two settlers. An arrival is counted only when its durable identity is claimed for physical insertion; the next census confirms the UUID. No missing-resident replacement queue is inferred.
 - **Simulation only:** there is intentionally no physical population to wait for, so a recoverable settlement can resume abstractly.
 - **Automatic recovery off:** extinct settlements remain extinct until players or existing villagers restore them through other gameplay.
 
-A physical settler is only spawned when the destination is loaded, the village has enough stored food, an available real bed, no nearby hostile blocks settlement, a supported dry collision-free spawn is found, and the spawn interval has elapsed. Its local entity and spawn checks remain bounded to the existing 48-block range rather than expanding with `development_radius`, and its assigned home radius is capped separately at 32 blocks. Spawning does not immediately consume the queue; a later loaded-world census confirms the real villager and performs that reconciliation once.
+Physical arrivals follow the bed/landing and durable identity checks described under Resident states above. The saved queue is consumed once at claim time, not again by a later census. A villager added by a player or breeding is an external resident, not evidence that a queued settler has materialized.
 
 ## Village lifecycle
 

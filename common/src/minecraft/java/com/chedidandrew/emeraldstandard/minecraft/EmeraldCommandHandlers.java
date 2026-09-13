@@ -282,44 +282,12 @@ final class EmeraldCommandHandlers {
             return failure(context, "Not enough emeralds in your inventory.");
         }
 
-        long creditMicro = amount * EconomyState.MICRO;
-        EconomyState.PendingInventoryTransaction transaction =
-                economy.prepareInventoryCredit(
-                        player.getUUID(),
-                        EconomyState.InventoryTransactionKind.DEPOSIT,
-                        "emerald",
-                        amount,
-                        inventoryBefore,
-                        creditMicro);
-        if (transaction == null) {
-            return failure(context, "Could not prepare the deposit. " + errorSuffix(economy));
-        }
-
-        if (!BankInventory.removeItems(player, Items.EMERALD, amount)) {
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
-            return failure(context, "The deposit was canceled before any bank credit was applied.");
-        }
-        if (!economy.commitPreparedInventoryCredit(
-                player.getUUID(), transaction.transactionId)) {
-            int remainder = BankInventory.restoreItems(player, Items.EMERALD, amount);
-            if (remainder == 0) {
-                economy.cancelPreparedInventoryTransaction(
-                        player.getUUID(), transaction.transactionId);
-            }
-            return failure(context,
-                    remainder == 0
-                            ? "Deposit failed and your emeralds were restored. " + errorSuffix(economy)
-                            : "Deposit failed; " + remainder
-                                    + " emerald(s) remain protected by recovery until inventory space is available.");
-        }
-        if (!BankTransactionCoordinator.savePlayerAndComplete(
-                player, economy, transaction.transactionId)) {
-            return success(context,
-                    "Deposited " + amount
-                            + " emeralds. A recovery journal remains until player data is saved.");
-        }
-        return success(context, "Deposited " + amount + " emeralds.");
+        return BankTransactionCoordinator.creditInventory(player, economy,
+                EconomyState.InventoryTransactionKind.DEPOSIT, "emerald", amount,
+                amount * EconomyState.MICRO)
+                ? success(context, "Deposited " + amount + " emeralds.")
+                : failure(context, "Deposit did not finish. Any pending transfer remains protected by recovery. "
+                        + errorSuffix(economy));
     }
 
     static int withdraw(
@@ -330,45 +298,12 @@ final class EmeraldCommandHandlers {
             return 0;
         }
         int requested = IntegerArgumentType.getInteger(context, "amount");
-        int inventoryBefore = BankInventory.countItems(player, Items.EMERALD);
-        EconomyState.PendingInventoryTransaction transaction =
-                economy.beginInventoryWithdrawal(
-                        player.getUUID(), requested, inventoryBefore);
-        if (transaction == null) {
-            return failure(context,
-                    "Insufficient bank cash or the withdrawal could not be journaled. "
-                            + errorSuffix(economy));
-        }
-
-        int remainder = BankInventory.insertItems(player, Items.EMERALD, requested);
-        int delivered = requested - remainder;
-        if (remainder > 0
-                && !economy.reducePendingWithdrawal(
-                        player.getUUID(), transaction.transactionId, remainder)) {
-            return success(context,
-                    "Withdrew " + delivered
-                            + " emeralds. The recovery journal will deliver or refund the remaining "
-                            + remainder + " after relogging.");
-        }
-
-        EconomyState.PendingInventoryTransaction adjusted =
-                economy.pendingInventoryTransaction(player.getUUID());
-        if (adjusted == null) {
-            return delivered == 0
-                    ? failure(context, "Your inventory had no room, so nothing was withdrawn.")
-                    : success(context, "Withdrew " + delivered + " emeralds.");
-        }
-        if (!BankTransactionCoordinator.savePlayerAndComplete(
-                player, economy, adjusted.transactionId)) {
-            return success(context,
-                    "Withdrew " + delivered
-                            + " emeralds. A recovery journal remains until player data is saved.");
-        }
-        return remainder == 0
-                ? success(context, "Withdrew " + delivered + " emeralds.")
-                : success(context,
-                        "Withdrew " + delivered + " emeralds. " + remainder
-                                + " remained in bank cash because your inventory was full.");
+        int delivered = BankTransactionCoordinator.withdrawInventory(player, economy, requested);
+        return delivered < 0
+                ? failure(context, "Withdrawal did not finish. Check bank cash or pending recovery. " + errorSuffix(economy))
+                : delivered == 0
+                        ? failure(context, "No inventory room; nothing was withdrawn.")
+                        : success(context, "Withdrew " + delivered + " emeralds. Undelivered items remain in Bank Cash.");
     }
 
     static int savings(
@@ -622,48 +557,12 @@ final class EmeraldCommandHandlers {
             return failure(context, "Not enough matching resources in your inventory.");
         }
 
-        EconomyState.PendingInventoryTransaction transaction =
-                economy.prepareInventoryCredit(
-                        player.getUUID(),
-                        EconomyState.InventoryTransactionKind.EXCHANGE,
-                        resource.journalKey(),
-                        count,
-                        inventoryBefore,
-                        proceeds);
-        if (transaction == null) {
-            return failure(context, "Could not prepare the exchange. " + errorSuffix(economy));
-        }
-        if (!BankInventory.removeItems(player, resource.item(), count)) {
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
-            return failure(context, "The exchange was canceled before bank credit was applied.");
-        }
-        if (!economy.commitPreparedInventoryCredit(
-                player.getUUID(), transaction.transactionId)) {
-            int remainder = BankInventory.restoreItems(player, resource.item(), count);
-            if (remainder == 0) {
-                economy.cancelPreparedInventoryTransaction(
-                        player.getUUID(), transaction.transactionId);
-            }
-            return failure(context,
-                    remainder == 0
-                            ? "Exchange failed and your resources were restored. " + errorSuffix(economy)
-                            : "Exchange failed; " + remainder
-                                    + " item(s) remain protected by recovery until inventory space is available.");
-        }
-        if (!BankTransactionCoordinator.savePlayerAndComplete(
-                player, economy, transaction.transactionId)) {
-            return success(context, String.format(
-                    Locale.ROOT,
-                    "Exchanged %d item(s) for %.3f emeralds. A recovery journal remains until player data is saved.",
-                    count,
-                    emeralds(proceeds)));
-        }
-        return success(context, String.format(
-                Locale.ROOT,
-                "Exchanged %d item(s) for %.3f emeralds in bank cash.",
-                count,
-                emeralds(proceeds)));
+        return BankTransactionCoordinator.creditInventory(player, economy,
+                EconomyState.InventoryTransactionKind.EXCHANGE, resource.journalKey(), count, proceeds)
+                ? success(context, String.format(Locale.ROOT,
+                        "Exchanged %d ordinary item(s) for %.3f emeralds in Bank Cash.", count, emeralds(proceeds)))
+                : failure(context, "Exchange did not finish. Any pending transfer remains protected by recovery. "
+                        + errorSuffix(economy));
     }
 
     private static boolean preparePlayerForBanking(

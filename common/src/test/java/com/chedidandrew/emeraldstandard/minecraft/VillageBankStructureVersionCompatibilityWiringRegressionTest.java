@@ -176,7 +176,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && dialects.contains("validateBankDialectPaletteContract(false);")
                         && dialectMatrix.contains("VillageArchitecture.BiomeDialect.values()")
                         && dialectMatrix.contains("validateCurrentBankBlueprint(")
-                        && exact.contains("validateBankV6Skyline(authored, palette);")
+                        && exact.contains("validateBankV10Skyline(authored, palette);")
                         && exact.contains("validateBankV7ExteriorGardens(authored, palette);")
                         && exact.contains("validateBankInteriorZoning(")
                         && exact.contains("validateBankInteriorLighting(authored, snapshotId);")
@@ -213,7 +213,9 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && source.contains(
                                 "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V6 = 6;")
                         && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V8 = 8;")
-                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 9;"),
+                        && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V9 = 9;")
+                        && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V10 = 10;")
+                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 11;"),
                 "Village Bank structure-version constants drifted from the v2-v9 contract");
 
         String attempt = methodBody(source, "private static BankBuildAttempt attemptBankBuild(");
@@ -300,8 +302,14 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && versionSeven.contains("legacyBankPlanV6(origin, palette)")
                         && versionSeven.contains("appendBankV7ExteriorGardens("),
                 "Frozen v7 construction lost its isolated material/planting composition");
-        require(methodBody(source, "private static List<BankPlacement> bankPlan(").contains("legacyBankPlanV8(origin, legacyPalette)")
+        require(methodBody(source, "private static List<BankPlacement> legacyBankPlanV9(").contains("legacyBankPlanV8(origin, legacyPalette)")
                         && source.contains("? legacyBankPlanV8(origin, palette)"), "version eight is frozen, version nine sets back the doorway runner");
+        require(methodBody(source, "private static List<BankPlacement> legacyBankPlanV10(").contains("legacyBankPlanV9(origin, legacyPalette)")
+                        && integrity.contains("? legacyBankPlanV9(origin, palette)"), "v9 must remain frozen under the v10 roof correction");
+        require(methodBody(source, "private static List<BankPlacement> bankPlan(").contains("legacyBankPlanV10(origin, legacyPalette)")
+                        && integrity.contains("structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V10")
+                        && integrity.contains("? legacyBankPlanV10(origin, palette)"),
+                "v10 must remain frozen under the v11 bench correction");
         String versionEight = methodBody(source, "private static List<BankPlacement> legacyBankPlanV8(");
         require(versionEight.contains("legacyBankPlanV7(origin, legacyPalette)")
                         && versionEight.contains("Blocks.BRICK_WALL.defaultBlockState()"),

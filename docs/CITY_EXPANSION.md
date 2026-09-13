@@ -1,156 +1,79 @@
-# Automatic city expansion
+# One natural village, one growing territory
 
-Unreleased beta.5 adds open-ended cities built from bounded districts. This is a
-local source candidate, not a published release or a claim of unlimited performance.
-Back up the world before upgrading: economy saves now use **format 26**, including food observations, progressive Bank plans and loot receipts, frozen project terrain work and loaded obstruction recovery evidence.
+Beta.29 replaces automatic child-district charters with a connected territory for each
+natural village. A fresh test world is recommended. The save format is **38**.
 
-Built-in [no-build areas](DEVELOPMENT_PROTECTION.md) protect player-selected land without a claim
-mod. A blocked founding home may receive one funded replacement while its old partial lot remains
-protected; after a persistent physical obstruction, it no longer stalls every other district's
-expansion. Ordinary food, upkeep, prosperity and placement requirements still apply.
+## Discovery and ownership
 
-## What happens automatically
+The server reads already-loaded structure starts/references tagged as villages.
+A dimension-and-start-chunk identity stays stable as residents wander. Building a
+mod house or Bank bell cannot found another natural village. Two nearby natural
+structures keep distinct identities rather than merging by a distance threshold.
+Unknown or unloaded structure starts wait for normal discovery; they are never force-loaded.
 
-Existing and new settlements default to **Automatic**. No expansion directions or
-player-drawn no-build zones are required. When an established town can afford it,
-the server looks for a nearby, connected, loaded district site, reserves the first
-home, and commits its funding and identity together before touching world blocks.
-Four settlers queue for the new district; they become real villagers only when a
-physical home, actual beds, food and a safe spawn are available. A funded founding
-crew can build that first home even though the district has no residents yet.
+A new district starts with its original generated structure-piece footprints and rounded
+center coverage, joined by connected 16-block parcels. Site search
+tries a bounded rotating infill batch, followed by adjacent frontier candidates.
+Reserving a valid building site adds its footprint and a short connecting chain;
+failed or unloaded candidates claim nothing. Extensions can connect across at most
+four parcels, rather than claiming an isolated outpost. The resulting outline follows
+where sites fit, not a continually enlarged square.
 
-Each district keeps the existing tier-5, 64-economic-resident and 12-project bounds
-(including up to six housing projects). The **city has no fixed district-count cap**.
-New districts inherit the city's architecture character and biome dialect and use
-the existing detailed templates, needs-based projects and modest one-shot storage loot.
-District organic construction labor is four times the otherwise equivalent rate.
-Other Easy/Normal/Hard district production/population rules remain the shared baseline.
+Each parcel has one eligible natural-village owner: the nearest original village
+center, with a stable UUID tie-break. This watershed clips boundaries even when a
+neighbor is discovered later. Neither structures nor their terrain-clearance plans
+can be newly reserved across that boundary. The map renders the actual saved parcel
+outline, including gaps and irregular edges, without drawing internal parcel borders.
+Farm and housing observations use the same exclusive ownership. This is a development
+boundary, not a new permission system for player mining or building.
 
-### Starting balance
+## Growth and Banks
 
-| Requirement | Easy / Normal / Hard | Peaceful |
-|---|---:|---:|
-| Parent town tier | 3+ | 3+ |
-| Sustained prosperity | 70+ for 3 economic days | 65+ for 2 economic days |
-| Sustained safety | 45+ | 45+ |
-| Time since last charter | 6 economic days | 3 economic days |
-| New district endowment | 200 food, 400 materials, 80 treasury | Same |
-| Supplies left in parent | 5 food units per committed resident, 40 materials, 20 treasury minimum | Same |
+New districts support up to 512 project records and 512 simulated residents. The old
+six-housing-project cap is removed for them. Warehouses, Markets, Granaries and Guard
+Posts can recur as population grows. Tier remains 0–5. Immigration, food, ordinary
+project funding, upkeep, safe placement and the small work backlog still constrain
+normal growth; these are ceilings, not population targets or guaranteed performance.
 
-The newest founding district must finish its first physical home before another is
-chartered. A projected maintenance reserve is also required. These are modest
-starting gates, not a requirement for a perfect tier-5/100-prosperity city.
-Economic days use the existing configured economic clock; the default is about
-20 real minutes. This is not a guarantee of a new district every cooldown.
+The village keeps its original identity, architecture character and biome palette.
+Extending territory does not create another Bank. Existing Bank upgrade/replacement
+and inventory-protection rules remain; a second independently generated Bank for the
+same natural district is rejected.
 
-## Sustainable growth and upkeep
+**Automatic** permits safe connected extensions. **Approval required** consumes one
+approval when a project needs new parcels, not for infill. **Paused** pauses development.
+The owning single-player user/server operators control these settings.
+Forced development bypasses the economic/mode gates, but not boundary, occupant,
+property, loaded-chunk or foundation safety. It admits at most two unfinished
+projects in a new district so one obstructed site does not block independent work.
 
-For a city with N districts, each district pays additional daily administration:
+## Construction near completion
 
-`0.065 * (N - 1)^1.18` treasury on Easy/Normal/Hard, or
-`0.035 * (N - 1)^1.18` on Peaceful.
+The reported Cottage stopped at operation 944 of 948: a final flowerpot depended
+on a missing decorative base. The earlier Inn stopped at a structural-support wait.
+Native fixtures replay both frozen templates through the production materializer.
+Required supports must still be built or repaired safely. Never-built optional
+dressing may be omitted when its support is unavailable; it must not strand an
+otherwise valid building or create a floating decoration. Previously owned blocks
+follow the existing repair/no-drop rules, and completed buildings never regenerate loot.
 
-Existing building upkeep and food consumption remain. Thus total city administration
-eventually grows faster than the output of simply adding more equally sized districts.
-Districts share municipal surplus through the parent treasury, keeping local reserves.
-Sharing conserves supplies and rotates priority by economic day; it never touches
-player account balances or pulls money directly from earmarked donation/endowment pools.
-Donations first follow the existing Fund spending rules.
+Use Town's Progress report and `/emerald debug` for the actual latest blocker.
+A screenshot percentage alone cannot distinguish occupants, unloaded work cells,
+protected property, an incompatible blueprint or a missing support.
 
-After three consecutive unpaid-upkeep days in any district, new city charters wait.
-The underfunded district also stops approving extra projects/settlers and loses
-prosperity while the shortfall lasts. Already-paid projects can finish. Existing
-buildings are **not demolished**, accounts never become negative, and clearing the
-shortfall allows recovery. There is no permanent failure/city-size lock.
+## Limits and old saves
 
-## How to help manually
+No existing districts, blocks, inventories or resident identities are automatically
+merged/deleted. Legacy multi-district saves stay readable and retain their old record
+limits and identity links, but the runtime no longer creates artificial child charters.
+This intentionally prioritizes clean new-world testing over a risky migration.
 
-Villages produce abstract food and materials automatically. Nearby growing crops and living
-farm animals now increase that food production; harvesting fields or removing livestock
-reduces the bonus. Plant, replant and breed animals to help without spending emeralds. See
-[farms and livestock](VILLAGE_FOOD_SOURCES.md) for supported sources, range and balance.
-Filling a normal chest
-with bread is **not** a food donation mechanism. In **Banker > Fund**, donate emeralds:
+Search and physical work remain budgeted and loaded-only. A district stores at most
+16,384 parcels; a map packet carries at most 384 markers, with pagination for larger
+outlines/site lists. Village-wide surveys use a broad-phase bounding box but apply
+parcel ownership to individual observations. Very large settlements still cost memory,
+entity ticks and full-state checkpoint time; these changes do not promise constant cost.
 
-- **Food** converts spending into food reserves.
-- **Infrastructure / Housing** provides materials and development.
-- **General / Trade** supports municipal treasury and development/trade.
-- **Security** supplies materials and development for defenses; it is not an instant
-  safety-score purchase. Guard projects and avoiding actual hostile casualties help.
-
-Illuminate streets and entrances with torches, lanterns or other block-light sources.
-Every loaded census samples a distributed 7x7 outdoor grid within 18 blocks of the
-district center. Dry sampled surfaces with block light at least 4 count as covered.
-Daylight does not count. After the normal incident stabilization window, full recent
-coverage adds at most **0.20 safety per economic day**, on top of normal recovery.
-The observation fades to zero over seven economic days without a new loaded census.
-Stacking torches at one coordinate cannot exceed full coverage or the bonus cap.
-The dashboard shows sampled outdoor coverage, not a guarantee that every interior
-or every spawnable surface is safe.
-
-## Controls and status
-
-Open **Banker > Village > City expansion** to see district count, the current reason
-for waiting, city administration cost, local outdoor light coverage and the food-source bonus.
-
-- **Automatic** is the default, including migrated villages.
-- **Approval required** lets the world owner/server operator approve one charter.
-  Approval does not bypass resource, safety, loading or protection checks.
-- **Paused** stops new expansion, physical construction and settler spawning.
-  Ordinary upkeep, resource production and maintenance observations continue.
-
-The owning single-player user and server operators can change these controls;
-ordinary multiplayer visitors can inspect status but cannot pause someone else's city.
-This check is server-side, not just a disabled client button.
-
-## Automatic site protection
-
-New Banks and projects tolerate ordinary torches, natural leaves, flowers, common bushes,
-tall trunks and connected branches. New hillside lots may combine up to four blocks of
-cutting and four of supported filling; deep shafts and cliffs still fail the support proof.
-Storage, furnaces, crafting tables, stripped timber, standalone horizontal framing,
-player-placed persistent leaves, fluids and protection vetoes remain excluded.
-
-New reservations freeze exact preparation cells and their original states before changing
-the world. Clearing consumes the same per-site two-operations-per-second allowance as
-construction, rechecks loaded chunks and protection, and preserves changed non-vegetation
-blocks. Natural age/leaf-distance changes do not stall the same approved plant. Ordinary
-chests are never emptied or moved. Existing buildings and legacy reservations do not gain
-retroactive excavation permission. See [terrain development](TERRAIN_DEVELOPMENT.md).
-
-This is a contextual heuristic, **not perfect ownership detection**. Bare player-made
-floating raw logs can be indistinguishable from tree debris. Deep shafts, lava,
-large cliff drops and uncertain built sites are still skipped. Claim mods can use
-the existing cooperative placement-guard API; this change does not invent a universal
-integration for every third-party claim mod.
-
-## Performance, saves and verification
-
-- At most one charter per global census, with up to two eligible city attempts per
-  dimension; deterministic search cursors revisit the connected frontier.
-- No runtime forced chunk loading. Moving around the outskirts reveals more land.
-- Each site places one block per ten ticks (two/second at 20 TPS), independent of other sites.
-  Legacy speed keys normalize to this fixed rate. Settler attempts default to 600 ticks;
-  other explicit settings remain unchanged. See [progressive construction](PROGRESSIVE_CONSTRUCTION.md).
-- Bounded per-district records and build queues
-  remain. Whole-economy persistence is still a full-state save, not an incremental
-  database; sufficiently large cities can cost memory, save time and entity ticks.
-- Format 19 introduced district links, modes, approvals, stable serials, cooldown/health
-  history, upkeep shortfalls, lighting observations and new-lot preparation progress.
-  Format 20 adds observed crops/livestock and their freshness date.
-  Format 21 added frozen progressive Bank construction plans; format 22 adds project clearance plans;
-  format 23 adds original/final terrain states for graded paths and retaining courses.
-  Format 24 adds durable project-start evidence for safe background reservation recovery.
-  Old architecture revisions are not rerolled. Older binaries must not open a format-23
-  save; use the pre-upgrade backup to downgrade.
-
-Automated checks cover city scaling beyond the old single-village caps, reserve
-gates, supply conservation, upkeep tapering, founding crews, duplicate/failed-save
-charters, old-format defaults, restart/pause behavior and bounded/stale lighting.
-Opt-in isolated server checks exercise real torches, storage, workstations, house
-walls, shallow craters, natural tree remnants, persistent leaf landscaping and claim
-vetoes. A second isolated fixture commits a funded charter, advances economic labor,
-prepares a torch-covered lot, builds the actual starter home through the production
-materializer, spawns an actual villager after housing exists, and reloads the completed
-project from disk. Extended survival play, subjective pacing and huge-city entity load still
-need human gameplay review; no existing user world is modified by these checks.
+See [forced development](FORCED_DEVELOPMENT.md),
+[construction](PROGRESSIVE_CONSTRUCTION.md) and
+[development protection](DEVELOPMENT_PROTECTION.md).

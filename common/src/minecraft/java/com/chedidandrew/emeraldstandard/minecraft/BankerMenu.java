@@ -1,5 +1,7 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
+import com.chedidandrew.emeraldstandard.core.VillageDistrictMap;
+
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
@@ -32,7 +34,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int BUTTON_ACTIVITY_OLDER = 7;
     public static final int BUTTON_CD_POSITION = 8;
     public static final int BUTTON_LENDING_POSITION = 9;
-    public static final int BUTTON_ASSET_BASE = 10;
+    // Separate from resources (30+) and actions (100+); the listing catalog can grow.
+    public static final int BUTTON_ASSET_BASE = 200;
     public static final int BUTTON_RESOURCE_BASE = 30;
     public static final int BUTTON_AMOUNT_BASE = 60;
     public static final int BUTTON_CUSTOM_AMOUNT_BASE = BankerAmountSelection.BUTTON_BASE;
@@ -45,6 +48,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int BUTTON_FUND_PURPOSE = 98;
     public static final int BUTTON_HISTORY_RANGE = 99;
     public static final int BUTTON_ACTIVITY_FILTER = 120;
+    public static final int BUTTON_NEWSPAPER = 125;
 
     public static final int ACTION_DEPOSIT = 100;
     public static final int ACTION_WITHDRAW = 101;
@@ -72,7 +76,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int FUND_ENDOWMENT_FLAG = 1 << 1;
     private static final int FUND_SPONSORSHIP_FLAG = 1 << 2;
     private static final int FUND_TARGETED_FLAG = 1 << 3;
-    public static final int[] HISTORY_RANGES = {30, 90, 365, Integer.MAX_VALUE};
+    public static final int[] HISTORY_RANGES = com.chedidandrew.emeraldstandard.client.MarketDisplay.RANGES;
     public static final int[] TERMS = {30, 90, 180, 365};
     public static final List<String> RESOURCE_NAMES = BankInventory.exchangeResourceNames();
     public static final int HISTORY_POINTS = 60;
@@ -173,9 +177,10 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_LENDING_ACTIVE = 38;
     private static final int DATA_MARKET_EVENT = 39;
     private static final int DATA_MARKET_EVENT_AGE = 40;
-    private static final int DATA_ASSET_PRICE_BASE = 41;
-    private static final int DATA_ASSET_HOLDING_BASE = DATA_ASSET_PRICE_BASE + 9;
-    private static final int DATA_HISTORY_COUNT = DATA_ASSET_HOLDING_BASE + 9;
+    static final int DATA_ASSET_PRICE_BASE = 41;
+    static final int DATA_ASSET_HOLDING_BASE = DATA_ASSET_PRICE_BASE + 2*EconomyEngine.ASSETS.size();
+    static final int DATA_ASSET_OWNED_BASE = DATA_ASSET_HOLDING_BASE + 2 * EconomyEngine.ASSETS.size();
+    static final int DATA_HISTORY_COUNT = DATA_ASSET_OWNED_BASE + EconomyEngine.ASSETS.size();
     private static final int DATA_HISTORY_BASE = DATA_HISTORY_COUNT + 1;
     private static final int DATA_VILLAGE_PRESENT = DATA_HISTORY_BASE + HISTORY_POINTS;
     private static final int DATA_VILLAGE_LIFECYCLE = DATA_VILLAGE_PRESENT + 1;
@@ -292,7 +297,147 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_ACTIVITY_TOTAL_COUNT = DATA_ACTIVITY_PAGE_COUNT + 2;
     private static final int DATA_ACTIVITY_FILTER = DATA_ACTIVITY_TOTAL_COUNT + 1;
     private static final int DATA_EXPANSION = DATA_ACTIVITY_FILTER + 1;
-    public static final int DATA_COUNT = DATA_EXPANSION + 10;
+    public static final int DATA_DISTRICT_MAP = DATA_EXPANSION + 10;
+    private static final int DATA_GUARD_COUNT = DATA_DISTRICT_MAP + VillageDistrictMap.DATA_SIZE;
+    private static final int DATA_GUARD_BONUS = DATA_GUARD_COUNT + 1;
+    public static final int DATA_COUNT = DATA_GUARD_BONUS + 1;
+    public static final int BUTTON_TOWN_REPORT = 126, BUTTON_FUND_PREVIEW = 127,
+            BUTTON_REPORT_CLOSE = 128, BUTTON_FUND_RECEIPT = 129;
+    private final net.minecraft.world.SimpleContainer briefingDocument = new net.minecraft.world.SimpleContainer(1);
+    private final net.minecraft.world.SimpleContainer marketDocument = new net.minecraft.world.SimpleContainer(1);
+    public static final int BUTTON_COMPARE_LEFT=300, BUTTON_COMPARE_RIGHT=350;
+    public static final int BUTTON_HISTORY_SESSION=130;
+    private boolean historyYesterday;
+    public boolean historyYesterday(){var s=marketDisplay();return s!=null&&s.yesterday();}
+    private int compareLeft,compareRight=1;
+    private List<String> publishedMarket=List.of();
+    private long publishedMarketDay=-1;
+    private int publishedMarketSlot=-1;
+    private int publishedCompareLeft=-1,publishedCompareRight=-1,publishedAsset=-1;
+    private boolean publishedYesterday;
+    private Map<String,Double> publishedQuotes=Map.of();
+    private net.minecraft.world.item.component.WrittenBookContent seenMarketBook;
+    private com.chedidandrew.emeraldstandard.client.MarketDisplay.Snapshot marketDisplay;
+    public com.chedidandrew.emeraldstandard.client.MarketDisplay.Snapshot marketDisplay() {
+        var book=marketDocument.getItem(0).get(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT);
+        if(book!=seenMarketBook) {
+            seenMarketBook=book;marketDisplay=null;
+            if(book!=null&&book.title().raw().equals("TES:market:2"))try {
+                marketDisplay=com.chedidandrew.emeraldstandard.client.MarketDisplay.parse(
+                        book.getPages(false).stream().map(net.minecraft.network.chat.Component::getString).toList());
+            }catch(IllegalArgumentException invalid){ /* No stale or partial chart. */ }
+        }
+        return marketDisplay;
+    }
+    private void publishMarket(long day,Map<String,Double> prices,Map<String,List<Double>> histories) {
+        int slot=economy.marketSlot();
+        if(day==publishedMarketDay&&slot==publishedMarketSlot&&compareLeft==publishedCompareLeft&&compareRight==publishedCompareRight
+                &&selectedAssetIndex==publishedAsset&&historyYesterday==publishedYesterday&&prices.equals(publishedQuotes))return;
+        publishedMarketDay=day;publishedMarketSlot=slot;publishedCompareLeft=compareLeft;publishedCompareRight=compareRight;
+        publishedAsset=selectedAssetIndex;publishedYesterday=historyYesterday;
+        publishedQuotes=Map.copyOf(prices);
+        var snapshot=economy.marketDisplay(EconomyEngine.ASSETS.get(selectedAssetIndex).ticker(),
+                EconomyEngine.ASSETS.get(compareLeft).ticker(),EconomyEngine.ASSETS.get(compareRight).ticker(),historyYesterday);
+        var pages=snapshot.pages();if(pages.equals(publishedMarket))return;
+        publishedMarket=pages;
+        ItemStack book=new ItemStack(Items.WRITTEN_BOOK);
+        book.set(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT,
+                new net.minecraft.world.item.component.WrittenBookContent(
+                    net.minecraft.server.network.Filterable.passThrough("TES:market:2"),"Exchange",0,
+                    pages.stream().map(net.minecraft.network.chat.Component::literal)
+                        .map(c->net.minecraft.server.network.Filterable.passThrough((net.minecraft.network.chat.Component)c)).toList(),true));
+        marketDocument.setItem(0,book);
+    }
+    private int briefingMode;
+    private boolean briefingPending;
+    private long lastBriefingTick = Long.MIN_VALUE;
+    private List<net.minecraft.network.chat.Component> contributionReceipt = List.of();
+    private List<net.minecraft.network.chat.Component> publishedBriefing = List.of();
+    private int publishedBriefingMode = -1;
+
+    public List<net.minecraft.network.chat.Component> briefingPages(int mode) {
+        var book = briefingDocument.getItem(0).get(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT);
+        return book == null || !book.title().raw().equals("TES:brief:"+mode)
+                ? List.of() : book.getPages(false);
+    }
+
+    void acceptFundReceipt(EconomyService.VillageFundContributionResult result, long reserveAdded,
+            com.chedidandrew.emeraldstandard.core.SpendingFunds.Payment payment) {
+        contributionReceipt = BankerBriefings.receipt(result, reserveAdded, payment, day);
+        briefingMode = BUTTON_FUND_RECEIPT;
+        invalidateBriefing();
+    }
+
+    private void invalidateBriefing() {
+        briefingPending = true;
+        publishedBriefingMode = -1;
+        briefingDocument.setItem(0, ItemStack.EMPTY); // Never present an earlier gift as the newest receipt.
+    }
+
+    private void refreshBriefing() {
+        if (serverPlayer == null || economy == null || briefingMode == 0) return;
+        lastBriefingTick = serverPlayer.level().getGameTime();
+        List<net.minecraft.network.chat.Component> pages = switch (briefingMode) {
+            case BUTTON_TOWN_REPORT -> BankerBriefings.town(economy, villageId, serverPlayer);
+            case BUTTON_FUND_PREVIEW -> {
+                var portfolio = economy.portfolioSnapshot(serverPlayer.getUUID());
+                yield BankerBriefings.fund(economy, villageId, donationDraft,
+                    selectedFundType(), selectedFundPurpose(), portfolio == null ? null :
+                    com.chedidandrew.emeraldstandard.core.SpendingFunds.plan(portfolio.account().cashMicro,
+                        BankInventory.countItems(serverPlayer, Items.EMERALD), donationDraft));
+            }
+            case BUTTON_FUND_RECEIPT -> contributionReceipt.isEmpty()
+                    ? List.of(net.minecraft.network.chat.Component.literal("No contribution receipt in this Desk visit. Older gifts remain in Activity."))
+                    : contributionReceipt;
+            default -> List.of();
+        };
+        if (pages.size() > 64) {
+            pages = new java.util.ArrayList<>(pages.subList(0,63));
+            pages.add(net.minecraft.network.chat.Component.literal("More projects omitted. Inspect the district map for other sites."));
+        }
+        briefingPending = false;
+        if (publishedBriefingMode == briefingMode && pages.equals(publishedBriefing)) return;
+        publishedBriefing = List.copyOf(pages); publishedBriefingMode = briefingMode;
+        var item = new ItemStack(Items.WRITTEN_BOOK);
+        item.set(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT,
+                new net.minecraft.world.item.component.WrittenBookContent(
+                    net.minecraft.server.network.Filterable.passThrough("TES:brief:"+briefingMode), "Village Office", 0,
+                    pages.stream().map(net.minecraft.server.network.Filterable::passThrough).toList(), true));
+        briefingDocument.setItem(0, item);
+    }
+
+    @Override public void clicked(int slot, int button, net.minecraft.world.inventory.ContainerInput input, Player player) {
+        // The sole slot is a transport document, never an obtainable item or an inventory.
+    }
+
+    private int observedGuards, guardBonusCenti;
+    public int observedGuards() { return data.get(DATA_GUARD_COUNT); }
+    public double guardSafetyBonus() { return data.get(DATA_GUARD_BONUS) / 100.0; }
+    public static final int BUTTON_MAP_OPEN = 121, BUTTON_MAP_CLOSE = 122,
+            BUTTON_MAP_PREVIOUS = 123, BUTTON_MAP_NEXT = 124;
+    private boolean mapOpen;
+    private int mapPage, mapRevision;
+    private long lastMapTick = Long.MIN_VALUE;
+    private int[] mapData = new int[VillageDistrictMap.DATA_SIZE];
+    private VillageDistrictMap.Page clientMap = VillageDistrictMap.EMPTY;
+    private int clientMapRevision;
+
+    public VillageDistrictMap.Page districtMap() {
+        int revision = data.get(DATA_DISTRICT_MAP);
+        if (revision != clientMapRevision) {
+            var next = VillageDistrictMap.decode(i -> data.get(DATA_DISTRICT_MAP + i));
+            if (next != null) { clientMap = next; clientMapRevision = revision; }
+        }
+        return clientMap;
+    }
+
+    private void refreshDistrictMap(long now) {
+        var page = villageId == null ? VillageDistrictMap.EMPTY : economy.districtMap(villageId, mapPage);
+        mapPage = page.number();
+        if (++mapRevision == 0) mapRevision++;
+        mapData = VillageDistrictMap.encode(page, mapRevision);
+        lastMapTick = now;
+    }
 
     private final Inventory inventory;
     private final EconomyService economy;
@@ -310,7 +455,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int donationDraft;
     private int fundTypeIndex;
     private int fundPurposeIndex;
-    private int historyRangeIndex = 2;
+    private int historyRangeIndex = 0;
     private int selectedCdPositionIndex;
     private int selectedLendingPositionIndex;
     private long selectedCdPositionId;
@@ -320,6 +465,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int statusCode = BankingOperations.READY;
     private int statusRevision;
     private int confirmationAction = -1;
+    private ActionConfirmation confirmedAction;
+    private record ActionConfirmation(int action, String target, long value, long terms) {}
     private long confirmationExpiresAtTick;
     private FundConfirmationFingerprint confirmedFundContribution;
     private long lastServerSnapshotTick = Long.MIN_VALUE;
@@ -351,8 +498,9 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int lendingActive;
     private int marketEventOrdinal;
     private int marketEventAge;
-    private final int[] assetPricesCenti = new int[9];
-    private final int[] assetHoldingsCenti = new int[9];
+    private final long[] assetPricesMicro = new long[EconomyEngine.ASSETS.size()];
+    private final long[] assetHoldingsCenti = new long[EconomyEngine.ASSETS.size()];
+    private final boolean[] assetOwned = new boolean[EconomyEngine.ASSETS.size()];
     private final int[] historyCenti = new int[HISTORY_POINTS];
     private int historyCount;
     private int historySpanDays;
@@ -455,12 +603,62 @@ public final class BankerMenu extends AbstractContainerMenu {
         this.data = economy == null
                 ? new SimpleContainerData(DATA_COUNT)
                 : new BankerContainerData(this);
+        addSlot(new net.minecraft.world.inventory.Slot(briefingDocument,0,-10000,-10000) {
+            @Override public boolean mayPickup(Player p) { return false; }
+            @Override public boolean mayPlace(ItemStack stack) { return false; }
+        });
+        addSlot(new net.minecraft.world.inventory.Slot(marketDocument,0,-10000,-10000) {
+            @Override public boolean mayPickup(Player p){return false;}
+            @Override public boolean mayPlace(ItemStack s){return false;}
+        });
         addDataSlots(new ShortPackedContainerData(this.data));
         refreshServerSnapshot();
     }
 
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
+        if (!player.level().isClientSide() && (player != serverPlayer || economy == null
+                || player.containerMenu != this || !stillValid(player))) return false;
+        if(buttonId>=BUTTON_COMPARE_LEFT&&buttonId<BUTTON_COMPARE_LEFT+EconomyEngine.ASSETS.size()) {
+            if(!player.level().isClientSide())compareLeft=buttonId-BUTTON_COMPARE_LEFT;
+            return true;
+        }
+        if(buttonId>=BUTTON_COMPARE_RIGHT&&buttonId<BUTTON_COMPARE_RIGHT+EconomyEngine.ASSETS.size()) {
+            if(!player.level().isClientSide())compareRight=buttonId-BUTTON_COMPARE_RIGHT;
+            return true;
+        }
+        if (buttonId >= BUTTON_TOWN_REPORT && buttonId <= BUTTON_FUND_RECEIPT) {
+            if (player.level().isClientSide()) return true;
+            long now = player.level().getGameTime();
+            if (buttonId == BUTTON_REPORT_CLOSE) { briefingMode = 0; briefingPending = false; return true; }
+            briefingMode = buttonId;
+            invalidateBriefing();
+            if (lastBriefingTick != Long.MIN_VALUE && now >= lastBriefingTick && now-lastBriefingTick < 5) {
+                super.broadcastChanges();
+                return true;
+            }
+            refreshServerSnapshot(); refreshBriefing(); super.broadcastChanges(); return true;
+        }
+        if(buttonId==BUTTON_NEWSPAPER) {
+            if(player instanceof ServerPlayer p) NewsRuntime.open(p,true);
+            return true;
+        }
+        if (buttonId >= BUTTON_MAP_OPEN && buttonId <= BUTTON_MAP_NEXT) {
+            if (player.level().isClientSide()) return true;
+            if (buttonId == BUTTON_MAP_CLOSE) { mapOpen = false; return true; }
+            long now = serverPlayer.level().getGameTime();
+            if (lastMapTick != Long.MIN_VALUE && now >= lastMapTick && now - lastMapTick < 10) {
+                if (buttonId == BUTTON_MAP_OPEN) mapOpen = true;
+                return true;
+            }
+            if (buttonId == BUTTON_MAP_OPEN) { mapOpen = true; mapPage = 0; }
+            else if (!mapOpen) return false;
+            else if (buttonId == BUTTON_MAP_PREVIOUS) mapPage = Math.max(0, mapPage - 1);
+            else mapPage = Math.min(mapPage + 1, Math.max(0, (mapData[2] - 1) / VillageDistrictMap.PAGE_SIZE));
+            refreshDistrictMap(now);
+            broadcastChanges();
+            return true;
+        }
         if (buttonId >= ACTION_EXPANSION_AUTOMATIC && buttonId <= ACTION_EXPANSION_APPROVE_ONCE) {
             if (player.level().isClientSide()) return true;
             if (serverPlayer == null || economy == null || player != serverPlayer || !stillValid(player)
@@ -606,6 +804,9 @@ public final class BankerMenu extends AbstractContainerMenu {
             broadcastChanges();
             return true;
         }
+        if(buttonId==BUTTON_HISTORY_SESSION){
+            historyYesterday=!historyYesterday;refreshServerSnapshot();broadcastChanges();return true;
+        }
         if (buttonId == BUTTON_HISTORY_RANGE) {
             cancelConfirmation();
             historyRangeIndex = (historyRangeIndex() + 1) % HISTORY_RANGES.length;
@@ -621,7 +822,7 @@ public final class BankerMenu extends AbstractContainerMenu {
             return false;
         }
 
-        if (buttonId == ACTION_SUPPORT_VILLAGE) {
+        if (requiresServerConfirmation(buttonId)) {
             // Re-resolve configuration, village association, and the active project immediately
             // before confirmation so a stale/forged packet cannot authorize different terms.
             refreshServerSnapshot();
@@ -651,9 +852,12 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (requiresServerConfirmation(buttonId)) {
             if (confirmationAction != buttonId
                     || (buttonId == ACTION_SUPPORT_VILLAGE
-                            && !fundConfirmationMatchesCurrent())) {
+                            && !fundConfirmationMatchesCurrent())
+                    || (buttonId != ACTION_SUPPORT_VILLAGE
+                            && !java.util.Objects.equals(confirmedAction, currentActionConfirmation(buttonId)))) {
                 confirmationAction = buttonId;
                 confirmationExpiresAtTick = now + 100L;
+                confirmedAction = currentActionConfirmation(buttonId);
                 if (buttonId == ACTION_SUPPORT_VILLAGE) {
                     bindFundConfirmation();
                 }
@@ -680,7 +884,23 @@ public final class BankerMenu extends AbstractContainerMenu {
         int requested = buttonId == ACTION_SUPPORT_VILLAGE
                 ? donationDraft
                 : selectedAmount();
-        statusCode = switch (buttonId) {
+        boolean exactAmountUnavailable = customAmount > 0 && buttonId != ACTION_SUPPORT_VILLAGE
+                && switch (buttonId) {
+                    case ACTION_BUY, ACTION_OPEN_CD, ACTION_FUND_LENDING, ACTION_SAVINGS_DEPOSIT ->
+                            com.chedidandrew.emeraldstandard.core.SpendingFunds.plan(
+                                    economy.portfolioSnapshot(serverPlayer.getUUID()).account().cashMicro,
+                                    BankInventory.countItems(serverPlayer, Items.EMERALD), requested) == null;
+                    case ACTION_SAVINGS_WITHDRAW -> requested >
+                            economy.portfolioSnapshot(serverPlayer.getUUID()).account().savingsMicro / EconomyState.MICRO;
+                    case ACTION_WITHDRAW -> requested > EconomyService.MAX_INVENTORY_ITEM_TRANSACTION || requested >
+                            economy.portfolioSnapshot(serverPlayer.getUUID()).account().cashMicro / EconomyState.MICRO;
+                    case ACTION_DEPOSIT -> requested > EconomyService.MAX_INVENTORY_ITEM_TRANSACTION
+                            || requested > BankInventory.countItems(serverPlayer, Items.EMERALD);
+                    case ACTION_EXCHANGE -> requested > EconomyService.MAX_INVENTORY_ITEM_TRANSACTION
+                            || requested > BankInventory.countItems(serverPlayer, selectedExchangeResource().item());
+                    default -> false;
+                };
+        statusCode = exactAmountUnavailable ? BankingOperations.INSUFFICIENT : switch (buttonId) {
             case ACTION_DEPOSIT -> BankingOperations.deposit(serverPlayer, economy, requested);
             case ACTION_WITHDRAW -> BankingOperations.withdraw(serverPlayer, economy, requested);
             case ACTION_SAVINGS_DEPOSIT -> BankingOperations.moveSavings(
@@ -747,9 +967,10 @@ public final class BankerMenu extends AbstractContainerMenu {
                 Math.min(BankerAmountSelection.MAX_AMOUNT, requestedAmount));
         if (player.level().isClientSide()) {
             int available = saturatingInt(Math.min(
-                    Math.max(0L, (long) Math.floor(cash())),
+                    Math.max(0L, (long) Math.floor(spendingPower())),
                     EconomyService.MAX_WHOLE_EMERALD_TRANSACTION));
-            setClientSelection(DATA_DONATION_DRAFT, Math.min(boundedRequest, available));
+            if (action.equals("draft_all") || boundedRequest <= available)
+                setClientSelection(DATA_DONATION_DRAFT, Math.min(boundedRequest, available));
             return true;
         }
         if (serverPlayer == null || economy == null || player != serverPlayer) {
@@ -768,10 +989,11 @@ public final class BankerMenu extends AbstractContainerMenu {
 
         int previousDraft = donationDraft;
         long available = Math.min(
-                Math.max(0L, cashMicro / EconomyState.MICRO),
+                BankingOperations.spendingMicro(serverPlayer, cashMicro) / EconomyState.MICRO,
                 EconomyService.MAX_WHOLE_EMERALD_TRANSACTION);
-        donationDraft = saturatingInt(Math.min(boundedRequest, available));
-        statusCode = BankingOperations.READY;
+        boolean affordable = action.equals("draft_all") || boundedRequest <= available;
+        if (affordable) donationDraft = saturatingInt(Math.min(boundedRequest, available));
+        statusCode = affordable ? BankingOperations.READY : BankingOperations.INSUFFICIENT;
         statusRevision++;
         DebugFlightRecorder.recordFundDraft(
                 serverPlayer,
@@ -800,6 +1022,10 @@ public final class BankerMenu extends AbstractContainerMenu {
                         || now - lastServerSnapshotTick >= 20L)) {
             refreshServerSnapshot();
         }
+        if (serverPlayer != null && mapOpen && (lastMapTick == Long.MIN_VALUE
+                || now < lastMapTick || now - lastMapTick >= 100)) refreshDistrictMap(now);
+        if (serverPlayer != null && briefingMode != 0 && (lastBriefingTick == Long.MIN_VALUE
+                || now < lastBriefingTick || now-lastBriefingTick >= (briefingPending ? 5 : 100))) refreshBriefing();
         super.broadcastChanges();
     }
 
@@ -914,6 +1140,22 @@ public final class BankerMenu extends AbstractContainerMenu {
         return readLong(DATA_CASH_LOW, DATA_CASH_HIGH) / (double) EconomyState.MICRO;
     }
 
+    /** Spendable cash + ordinary loose emeralds; savings and nested containers are excluded. */
+    public double spendingPower() {
+        return com.chedidandrew.emeraldstandard.core.SpendingFunds.availableMicro(
+                readLong(DATA_CASH_LOW, DATA_CASH_HIGH), physicalEmeralds()) / (double) EconomyState.MICRO;
+    }
+
+    public com.chedidandrew.emeraldstandard.core.SpendingFunds.Payment paymentPlan(int amount) {
+        return com.chedidandrew.emeraldstandard.core.SpendingFunds.plan(
+                readLong(DATA_CASH_LOW, DATA_CASH_HIGH), physicalEmeralds(), amount);
+    }
+
+    public double bankCashAfterSpending(int amount) {
+        var payment = paymentPlan(amount);
+        return payment == null ? cash() : payment.bankCashAfterMicro() / (double) EconomyState.MICRO;
+    }
+
     public double savings() {
         return readLong(DATA_SAVINGS_LOW, DATA_SAVINGS_HIGH) / (double) EconomyState.MICRO;
     }
@@ -982,7 +1224,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     public double selectedAssetPrice() {
-        return Math.max(0, data.get(DATA_SELECTED_PRICE_CENTI)) / 100.0;
+        return assetPrice(selectedAssetIndex());
     }
 
     public double selectedHoldingValue() {
@@ -994,17 +1236,27 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     public double selectedChangePercent() {
+        var s=marketDisplay();
+        if(s!=null&&s.selected().equals(selectedAsset().ticker())){
+            var v=s.series().get(historyRangeIndex()).values();
+            return v.isEmpty()?0:100*(v.getLast()/v.getFirst()-1);
+        }
         return data.get(DATA_SELECTED_CHANGE_BPS) / 100.0;
     }
 
     public double assetPrice(int index) {
         int safe = clampIndex(index, EconomyEngine.ASSETS.size());
-        return Math.max(0, data.get(DATA_ASSET_PRICE_BASE + safe)) / 100.0;
+        return Math.max(0L, readLong(DATA_ASSET_PRICE_BASE + 2*safe, DATA_ASSET_PRICE_BASE + 2*safe+1)) / (double) EconomyState.MICRO;
     }
 
     public double assetHoldingValue(int index) {
         int safe = clampIndex(index, EconomyEngine.ASSETS.size());
-        return Math.max(0, data.get(DATA_ASSET_HOLDING_BASE + safe)) / 100.0;
+        return Math.max(0L, readLong(DATA_ASSET_HOLDING_BASE + 2*safe, DATA_ASSET_HOLDING_BASE + 2*safe + 1)) / 100.0;
+    }
+
+    /** Ownership is independent of rounded display value, including tiny residual shares. */
+    public boolean ownsAsset(int index) {
+        return index >= 0 && index < EconomyEngine.ASSETS.size() && data.get(DATA_ASSET_OWNED_BASE + index) != 0;
     }
 
     public int[] historyPointsCenti() {
@@ -1627,7 +1879,12 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (!fundAvailable()) {
             return BankingOperations.UNSUPPORTED;
         }
-        if (donationDraft <= 0) {
+        if (economy != null) {
+            var eligibility = FundContributionChecks.assess(EmeraldConfig.current(), economy.villageSnapshot(villageId),
+                    selectedFundType(), selectedFundPurpose());
+            if (!eligibility.allowed()) return eligibility.status();
+        }
+        if (donationDraft <= 0 || paymentPlan(donationDraft) == null) {
             return BankingOperations.INSUFFICIENT;
         }
         if (selectedFundType() == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
@@ -1658,8 +1915,27 @@ public final class BankerMenu extends AbstractContainerMenu {
                 fundableProjectId);
     }
 
+    /** Bind risky actions to actual server targets, not a list index or rounded display value. */
+    private ActionConfirmation currentActionConfirmation(int action) {
+        if (economy == null || serverPlayer == null || action == ACTION_SUPPORT_VILLAGE) return null;
+        var account = economy.portfolioSnapshot(serverPlayer.getUUID()).account();
+        return switch (action) {
+            case ACTION_CLOSE_CD -> new ActionConfirmation(action, "CD", selectedCdPositionId, 0);
+            case ACTION_SELL_ALL -> new ActionConfirmation(action, selectedAsset().ticker(),
+                    Double.doubleToLongBits(account.shares.getOrDefault(selectedAsset().ticker(), 0.0)),
+                    Double.doubleToLongBits(economy.marketSnapshot().prices().getOrDefault(selectedAsset().ticker(), 0.0)));
+            case ACTION_FUND_LENDING -> new ActionConfirmation(action, "LENDING",
+                    Math.min(selectedAmount(), Math.min(EconomyService.MAX_WHOLE_EMERALD_TRANSACTION,
+                            com.chedidandrew.emeraldstandard.core.SpendingFunds.availableMicro(account.cashMicro,
+                                    BankInventory.countItems(serverPlayer, net.minecraft.world.item.Items.EMERALD)) / EconomyState.MICRO)),
+                    selectedLendingTerm());
+            default -> null;
+        };
+    }
+
     private void cancelConfirmation() {
         confirmationAction = -1;
+        confirmedAction = null;
         confirmationExpiresAtTick = 0L;
         confirmedFundContribution = null;
         setClientSelection(DATA_CONFIRMATION_ACTION, -1);
@@ -1700,10 +1976,9 @@ public final class BankerMenu extends AbstractContainerMenu {
         catchUpDays = saturatingInt(market.catchUpDaysRemaining());
         physicalEmeralds = BankInventory.countItems(serverPlayer, Items.EMERALD);
         cashMicro = account.cashMicro;
-        donationDraft = saturatingInt(Math.min(
-                donationDraft,
-                Math.min(account.cashMicro / EconomyState.MICRO,
-                        EconomyService.MAX_WHOLE_EMERALD_TRANSACTION)));
+        // Keep the agreed gift amount stable if funds move; reject insufficiency, never silently
+        // shrink an already confirmed contribution.
+        donationDraft = Math.min(donationDraft, (int) EconomyService.MAX_WHOLE_EMERALD_TRANSACTION);
         savingsMicro = account.savingsMicro;
         cdValueMicro = account.totalCdValueMicro();
         lendingValueMicro = account.totalLoanValueMicro();
@@ -1779,11 +2054,13 @@ public final class BankerMenu extends AbstractContainerMenu {
         for (int index = 0; index < EconomyEngine.ASSETS.size(); index++) {
             String ticker = EconomyEngine.ASSETS.get(index).ticker();
             double price = market.prices().getOrDefault(ticker, 0.0);
-            assetPricesCenti[index] = centiInt(price);
+            assetPricesMicro[index] = safeScaledLong(price, EconomyState.MICRO);
             double shares = account.shares.getOrDefault(ticker, 0.0);
-            assetHoldingsCenti[index] = centiInt(shares * price);
+            assetHoldingsCenti[index] = centi(shares * price);
+            assetOwned[index] = Double.isFinite(shares) && shares > 0.0;
         }
 
+        publishMarket(market.economicDay(),market.prices(),market.priceHistory());
         EconomyEngine.Asset selected = EconomyEngine.ASSETS.get(selectedAssetIndex);
         double selectedPrice = market.prices().getOrDefault(selected.ticker(), 0.0);
         double shares = account.shares.getOrDefault(selected.ticker(), 0.0);
@@ -1891,12 +2168,14 @@ public final class BankerMenu extends AbstractContainerMenu {
             villagePresent = 1;
             villageLifecycle = village.lifecycle.ordinal();
             villagePopulation = com.chedidandrew.emeraldstandard.core.VillageProsperityEngine
-                    .economicPopulation(village);
+                    .knownResidentCount(village) + village.pendingSettlers;
             villageHousing = com.chedidandrew.emeraldstandard.core.VillageProsperityEngine
                     .effectiveHousingCapacity(village);
             villageTier = village.developmentTier;
             villageProsperityBps = basisPoints(village.prosperity / 100.0);
-            villageSafetyBps = basisPoints(village.safety / 100.0);
+            villageSafetyBps = basisPoints(com.chedidandrew.emeraldstandard.core.VillageGuardSecurity.effectiveSafety(village) / 100.0);
+            observedGuards = village.observedGuards;
+            guardBonusCenti = (int) Math.round(village.guardSafetyBonus * 100);
             villageFoodCenti = centiInt(village.foodSupply);
             villageMaterialCenti = centiInt(village.materialSupply);
             villageTreasuryCenti = centi(village.treasury);
@@ -1945,6 +2224,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     private void clearVillageSnapshot() {
+        observedGuards = 0; guardBonusCenti = 0;
         java.util.Arrays.fill(expansionData, 0);
         villageId = null;
         villagePresent = 0;
@@ -1977,7 +2257,10 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     private int dataValue(int index) {
-        if (index >= DATA_EXPANSION && index < DATA_COUNT) return expansionData[index - DATA_EXPANSION];
+        if (index == DATA_GUARD_COUNT) return observedGuards;
+        if (index == DATA_GUARD_BONUS) return guardBonusCenti;
+        if (index >= DATA_DISTRICT_MAP && index < DATA_GUARD_COUNT) return mapData[index - DATA_DISTRICT_MAP];
+        if (index >= DATA_EXPANSION && index < DATA_DISTRICT_MAP) return expansionData[index - DATA_EXPANSION];
         if (index == DATA_DAY) return (int) Math.min(Integer.MAX_VALUE, day);
         if (index == DATA_REGIME) return regimeOrdinal;
         if (index == DATA_SELECTED_ASSET) return selectedAssetIndex;
@@ -2019,12 +2302,16 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (index == DATA_LENDING_ACTIVE) return lendingActive;
         if (index == DATA_MARKET_EVENT) return marketEventOrdinal;
         if (index == DATA_MARKET_EVENT_AGE) return marketEventAge;
-        if (index >= DATA_ASSET_PRICE_BASE && index < DATA_ASSET_PRICE_BASE + 9) {
-            return assetPricesCenti[index - DATA_ASSET_PRICE_BASE];
+        if (index >= DATA_ASSET_PRICE_BASE && index < DATA_ASSET_PRICE_BASE + 2*assetPricesMicro.length) {
+            int offset = index - DATA_ASSET_PRICE_BASE;
+            return (offset & 1) == 0 ? low(assetPricesMicro[offset / 2]) : high(assetPricesMicro[offset / 2]);
         }
-        if (index >= DATA_ASSET_HOLDING_BASE && index < DATA_ASSET_HOLDING_BASE + 9) {
-            return assetHoldingsCenti[index - DATA_ASSET_HOLDING_BASE];
+        if (index >= DATA_ASSET_HOLDING_BASE && index < DATA_ASSET_HOLDING_BASE + 2*assetHoldingsCenti.length) {
+            int offset = index - DATA_ASSET_HOLDING_BASE;
+            return offset % 2 == 0 ? low(assetHoldingsCenti[offset/2]) : high(assetHoldingsCenti[offset/2]);
         }
+        if (index >= DATA_ASSET_OWNED_BASE && index < DATA_ASSET_OWNED_BASE + assetOwned.length)
+            return assetOwned[index - DATA_ASSET_OWNED_BASE] ? 1 : 0;
         if (index == DATA_HISTORY_COUNT) return historyCount;
         if (index >= DATA_HISTORY_BASE && index < DATA_HISTORY_BASE + HISTORY_POINTS) {
             return historyCenti[index - DATA_HISTORY_BASE];

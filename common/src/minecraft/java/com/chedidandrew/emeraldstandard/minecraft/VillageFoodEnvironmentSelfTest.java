@@ -65,6 +65,9 @@ final class VillageFoodEnvironmentSelfTest {
             require(close(scan(level, village, List.of(village)).crops - expandedBaseline, 1), "full-height distant field is scanned");
             set(level, before, distant, Blocks.AIR.defaultBlockState()); village.projects.clear();
 
+            // The distant-farm fixture loads another chunk and its generated animals.
+            // Take the livestock baseline after all fixture chunk loads, not before them.
+            animalBaseline = scan(level, village, List.of(village)).livestock();
             Animal cow = EntityTypes.COW.create(level, EntitySpawnReason.COMMAND);
             Animal secondCow = EntityTypes.COW.create(level, EntitySpawnReason.COMMAND);
             Animal calf = EntityTypes.COW.create(level, EntitySpawnReason.COMMAND);
@@ -78,7 +81,7 @@ final class VillageFoodEnvironmentSelfTest {
                 require(level.addFreshEntity(animal), "fixture animal added");
             }
             var living = scan(level, village, List.of(village));
-            require(close(living.livestock() - animalBaseline, 3.25), "food livestock counted, babies discounted, pets excluded");
+            require(close(living.livestock() - animalBaseline, 3.25), "food livestock counted, babies discounted, pets excluded: " + (living.livestock() - animalBaseline));
             cow.setHealth(0);
             require(close(living.livestock() - animalBaseline, 2.25), "dead animals stop contributing");
             pig.setPos(center.getX() + 100, center.getY(), center.getZ());

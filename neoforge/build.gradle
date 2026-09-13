@@ -17,6 +17,7 @@ sourceSets.main.java.srcDir('../common/src/main/java')
 sourceSets.main.java.srcDir('../common/src/minecraft/java')
 sourceSets.main.java.srcDir('../common/src/client/java')
 sourceSets.main.resources.srcDir('../common/src/main/resources')
+apply from: '../scripts/build-identity.gradle'
 sourceSets.main.resources.srcDir('src/generated/resources')
 neoForge {
     version = neo_version
@@ -79,7 +80,14 @@ tasks.register('verifyReaderSettings', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ReaderSettingsSelfTest'
 }
+tasks.register('verifyConstructionFenceModels', JavaExec) {
+    group = 'verification'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ConstructionFenceModelSelfTest'
+}
 tasks.named('check') {
+    dependsOn tasks.named('verifyConstructionFenceModels')
     dependsOn tasks.named('verifyBankerMenuPacket')
     dependsOn tasks.named('verifyAuthoredVillageStructures')
     dependsOn tasks.named('verifyReaderSettings')

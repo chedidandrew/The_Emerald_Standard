@@ -16,4 +16,5 @@ final class BackgroundSurveyBudget {
     static int cells(MinecraftServer server,int normal) {
         return current==server && tickMillis>65?Math.max(256,normal/4):normal;
     }
+    static boolean lagging(MinecraftServer server) { return current == server && tickMillis > 65; }
 }

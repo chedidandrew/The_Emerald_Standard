@@ -83,13 +83,14 @@ public final class VillageExpansion {
         v.expansionUpkeepShortfalls = deficit ? Math.min(30, v.expansionUpkeepShortfalls + 1) : 0;
         if (deficit) v.prosperity = Math.max(0, v.prosperity - 2.5);
         if (v.population > 0) v.districtFounding = false;
-        boolean healthy = v.prosperity >= (peaceful ? 65 : 70) && v.safety >= 45
+        boolean healthy = v.prosperity >= (peaceful ? 65 : 70) && VillageGuardSecurity.effectiveSafety(v) >= 45
                 && v.foodSupply >= Math.max(40, VillageProsperityEngine.economicPopulation(v) * 5.0) && !deficit;
         v.expansionHealthyDays = healthy ? Math.min(30, v.expansionHealthyDays + 1) : 0;
     }
 
     public static Reason reason(EconomyState.VillageRecord v, long day, boolean peaceful) {
         if (v.expansionMode == Mode.PAUSED) return Reason.PAUSED;
+        if (v.organicTerritory) return v.expansionMode == Mode.APPROVAL && !v.expansionApproved ? Reason.APPROVAL : Reason.READY;
         if (v.cityUpkeepDeficit) return Reason.UPKEEP;
         if (v.developmentTier < 3 || v.expansionHealthyDays < (peaceful ? 2 : 3)) return Reason.MATURING;
         if (day - v.lastExpansionDay < (peaceful ? 3 : 6)) return Reason.STABILIZING;
@@ -106,6 +107,11 @@ public final class VillageExpansion {
 
     public static EconomyState.VillageRecord draft(EconomyState.VillageRecord root,
             long center, long seed, long day, boolean physical) {
+        return draft(root, center, seed, day, physical, false);
+    }
+
+    static EconomyState.VillageRecord draft(EconomyState.VillageRecord root,
+            long center, long seed, long day, boolean physical, boolean forced) {
         if (root.expansionSerial == Long.MAX_VALUE) throw new IllegalStateException("District identity exhausted");
         var v = new EconomyState.VillageRecord();
         v.villageId = UUID.nameUUIDFromBytes((root.villageId + ":district:" + (root.expansionSerial + 1))
@@ -129,7 +135,8 @@ public final class VillageExpansion {
         v.architectureCharacter = root.architectureCharacter;
         v.architectureDialect = root.architectureDialect;
         v.expansionMode = root.expansionMode;
-        VillageProsperityEngine.approveInitialDistrictHome(v, seed, day, physical);
+        if (forced) VillageProsperityEngine.forceDevelopment(v, day);
+        else VillageProsperityEngine.approveInitialDistrictHome(v, seed, day, physical);
         return v;
     }
 }

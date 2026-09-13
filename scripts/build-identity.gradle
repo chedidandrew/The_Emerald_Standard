@@ -1,0 +1,26 @@
+// Shared canonical input manifest. Normalize before ordinal sorting on every OS.
+def tesRoot = projectDir.parentFile
+def tesManifest = new File(tesRoot, 'scripts/build-inputs.json')
+def tesSpec = new groovy.json.JsonSlurper().parse(tesManifest)
+def tesInputs = files(tesSpec.directories.collect { fileTree(new File(tesRoot,it)) },
+        tesSpec.files.collect { new File(tesRoot,it) })
+def tesRelative = { f -> tesRoot.toPath().relativize(f.toPath()).toString().replace('\\','/') }
+def tesIdentityDir = layout.buildDirectory.dir('generated/tesIdentity')
+def tesIdentity = tasks.register('generateTesBuildIdentity') {
+    inputs.files(tesInputs)
+    inputs.property('version', project.version.toString())
+    outputs.dir(tesIdentityDir)
+    doLast {
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        tesInputs.files.findAll { it.isFile() }.sort { a,b -> tesRelative(a).compareTo(tesRelative(b)) }.each { f ->
+            digest.update(tesRelative(f).getBytes('UTF-8'))
+            digest.update((byte)0)
+            digest.update(f.bytes)
+            digest.update((byte)0)
+        }
+        def target = tesIdentityDir.get().file('tes-build.properties').asFile
+        target.parentFile.mkdirs()
+        target.setText("version=${project.version}\nsourceSha256=${digest.digest().encodeHex()}\n", 'UTF-8')
+    }
+}
+sourceSets.main.resources.srcDir(tesIdentity)

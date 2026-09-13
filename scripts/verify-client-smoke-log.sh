@@ -34,7 +34,7 @@ if ! grep -Fq "The Emerald Standard client initialized" "$LOG_FILE"; then
     exit 1
 fi
 
-if ! grep -Fq "Emerald Handbook page layout verified for 46 pages" "$LOG_FILE"; then
+if ! grep -Fq "Emerald Handbook page layout verified for 61 pages" "$LOG_FILE"; then
     echo "$LOADER client did not verify every localized handbook page" >&2
     cat "$LOG_FILE" >&2
     exit 1
@@ -49,7 +49,11 @@ fi
 for marker in \
     "The Emerald Standard standard cursor platform probe passed" \
     "The Emerald Standard reader navigation and persistence checks passed" \
-    "The Emerald Standard reader and settings screen smoke checks passed"; do
+    "The Emerald Standard animated recipe render, variant, hover and layout checks passed" \
+    "The Emerald Standard reader and settings screen smoke checks passed" \
+    "The Emerald Standard settings all-page reset and speed editor checks passed" \
+    "The Emerald Standard dashboard render and text-fit checks passed" \
+    "The Emerald Standard construction crew render and animation checks passed"; do
     if [[ $(grep -Fc "$marker" "$LOG_FILE") -ne 2 ]]; then
         echo "$LOADER missing successful first-launch/restart evidence: $marker" >&2
         cat "$LOG_FILE" >&2

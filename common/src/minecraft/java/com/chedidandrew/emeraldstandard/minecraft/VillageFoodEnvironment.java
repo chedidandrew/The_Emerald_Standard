@@ -51,36 +51,18 @@ final class VillageFoodEnvironment {
         if (!economy.villageProsperitySimulationEnabled()) { reset(); return; }
         var first = PENDING.entrySet().iterator().next();
         UUID id = first.getKey(); Scan scan = first.getValue(); PENDING.remove(id);
-        if (scan.level.getServer() != server || economy.villageSnapshot(id) == null) return;
+        if (scan.level.getServer() != server || !economy.hasVillage(id)) return;
         int budget=BackgroundSurveyBudget.cells(server,CELLS_PER_TICK);
+        scan.observationDay = economy.economicDay();
         if (!scan.advance(budget)) { PENDING.put(id, scan); return; }
         economy.observeVillageFoodChunks(id,scan.completedChunks);
     }
 
     /** The complete developed rectangle, including intervening land and a farm/pen margin. */
     static Coverage coverage(EconomyState.VillageRecord village) {
-        BlockPos center = BlockPos.of(village.centerPos);
-        int minX = center.getX() - STARTER_RADIUS, maxX = center.getX() + STARTER_RADIUS;
-        int minZ = center.getZ() - STARTER_RADIUS, maxZ = center.getZ() + STARTER_RADIUS;
-        for (var project : village.projects) {
-            if (project.originPos == 0 || (project.materializedBlocks == 0 && !project.materializedComplete)) continue;
-            BlockPos low = BlockPos.of(project.boundsMinPos), high = BlockPos.of(project.boundsMaxPos);
-            if (project.boundsMinPos == 0 && project.boundsMaxPos == 0) {
-                // Pre-bounds legacy saves must not accidentally claim the world-origin corridor.
-                low = BlockPos.of(project.originPos).offset(-24, 0, -24);
-                high = BlockPos.of(project.originPos).offset(24, 0, 24);
-            }
-            minX = Math.min(minX, low.getX() - FARM_MARGIN); maxX = Math.max(maxX, high.getX() + FARM_MARGIN);
-            minZ = Math.min(minZ, low.getZ() - FARM_MARGIN); maxZ = Math.max(maxZ, high.getZ() + FARM_MARGIN);
-        }
-        if (village.bankAnchorPos != 0) {
-            BlockPos bank = BlockPos.of(village.bankAnchorPos);
-            minX = Math.min(minX, bank.getX() - 8 - FARM_MARGIN);
-            maxX = Math.max(maxX, bank.getX() + 8 + FARM_MARGIN);
-            minZ = Math.min(minZ, bank.getZ() - 14 - FARM_MARGIN);
-            maxZ = Math.max(maxZ, bank.getZ() + 3 + FARM_MARGIN);
-        }
-        return new Coverage(village.villageId, center, minX, maxX, minZ, maxZ);
+        var bounds = com.chedidandrew.emeraldstandard.core.VillageDistrictCoverage.of(village);
+        return new Coverage(village.villageId, BlockPos.of(village.centerPos),
+                bounds.minX(), bounds.maxX(), bounds.minZ(), bounds.maxZ());
     }
 
     record Coverage(UUID id, BlockPos center, int minX, int maxX, int minZ, int maxZ) {
@@ -123,9 +105,12 @@ final class VillageFoodEnvironment {
     static final class Scan {
         final ServerLevel level;
         final Coverage territory;
+        final EconomyState.VillageRecord village;
+        final List<EconomyState.VillageRecord> villages;
         final List<Coverage> neighbors;
         final int minChunkX, minChunkZ, chunksWide, chunksDeep, sectionCount;
         long chunkCursor;
+        long observationDay;
         int sectionCursor, cellCursor, loadedColumns;
         double crops;
         double chunkCrops;
@@ -133,6 +118,8 @@ final class VillageFoodEnvironment {
 
         Scan(ServerLevel level, EconomyState.VillageRecord village, List<EconomyState.VillageRecord> neighbors) {
             this.level = level;
+            this.village = village;
+            this.villages = List.copyOf(neighbors);
             territory = coverage(village);
             this.neighbors = neighbors.stream().map(VillageFoodEnvironment::coverage)
                     .filter(territory::overlaps).toList();
@@ -144,6 +131,11 @@ final class VillageFoodEnvironment {
 
         boolean owns(BlockPos position) {
             if (!territory.contains(position)) return false;
+            if (village.organicTerritory) {
+                return com.chedidandrew.emeraldstandard.core.VillageTerritory.contains(village, position.getX(), position.getZ())
+                        && com.chedidandrew.emeraldstandard.core.VillageTerritory.mayOwn(village, villages,
+                                com.chedidandrew.emeraldstandard.core.VillageTerritory.parcel(position.asLong()));
+            }
             UUID owner = territory.id;
             double nearest = territory.distance(position);
             for (Coverage other : neighbors) {
@@ -188,7 +180,7 @@ final class VillageFoodEnvironment {
                 BlockPos pos=animal.blockPosition();
                 if((pos.getX()>>4)==cx && (pos.getZ()>>4)==cz && owns(pos)) animals+=animalUnits(animal);
             }
-            completedChunks.put(((long)cx<<32)|(cz&0xffffffffL),new VillageFoodSupply.ChunkObservation(Math.min(1_000_000,chunkCrops),Math.min(1_000_000,animals)));
+            completedChunks.put(((long)cx<<32)|(cz&0xffffffffL),new VillageFoodSupply.ChunkObservation(Math.min(1_000_000,chunkCrops),Math.min(1_000_000,animals), observationDay));
             nextChunk();
         }
 

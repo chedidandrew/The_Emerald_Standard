@@ -48,11 +48,16 @@ public final class EmeraldStandardFabric implements ModInitializer {
     @Override
     public void onInitialize() {
         BankerProfessionFabric.register();
+        ConstructionContentFabric.register();
+        EmeraldCreativeFabric.register();
         MenuType<BankerMenu> bankerMenu = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(MOD_ID, "banker"),
                 new MenuType<>(BankerMenu::new, FeatureFlagSet.of()));
         BankerMenus.setType(bankerMenu);
+        com.chedidandrew.emeraldstandard.minecraft.NewspaperMenu.TYPE=Registry.register(BuiltInRegistries.MENU,
+                Identifier.fromNamespaceAndPath(MOD_ID,"newspaper"),
+                new MenuType<>(com.chedidandrew.emeraldstandard.minecraft.NewspaperMenu::new,FeatureFlagSet.of()));
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
@@ -69,11 +74,15 @@ public final class EmeraldStandardFabric implements ModInitializer {
                         server.overworld().getGameTime(),
                         server.overworld().getOverworldClockTime());
                 VillageBankManager.beginServerSession(server, ECONOMY);
+                com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.start(server,ECONOMY);
+                com.chedidandrew.emeraldstandard.minecraft.ConstructionOwnership.start(server,ECONOMY);
+                com.chedidandrew.emeraldstandard.minecraft.MarketTimeRuntime.start(server,ECONOMY);
                 LOGGER.info(
                         "The Emerald Standard economy started with {} catch-up day(s) remaining",
                         ECONOMY.catchUpDaysRemaining());
                 DebugFlightRecorder.initialize(server);
                 if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
+                    com.chedidandrew.emeraldstandard.minecraft.MarketTimeCommandSelfTest.run(server,ECONOMY);
                     BankerIntegrationSelfTest.run(server.overworld());
                     LOGGER.info("The Emerald Standard Banker integration self-test passed");
                 }
@@ -86,6 +95,9 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.stop(server);
+            com.chedidandrew.emeraldstandard.minecraft.ConstructionOwnership.stop(server);
+            com.chedidandrew.emeraldstandard.minecraft.MarketTimeRuntime.stop(server);
             DebugFlightRecorder.stopForShutdown(server, ECONOMY);
             if (!VillageBankManager.flushPendingLifecycleForShutdown(server, ECONOMY)) {
                 LOGGER.error("Could not flush pending Banker lifecycle state before shutdown: {}",
@@ -102,6 +114,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.tick(server);
             com.chedidandrew.emeraldstandard.minecraft.DevelopmentLandProtection.tick(server);
             ECONOMY.setPeacefulVillageGrowth(server.getWorldData().getDifficulty()
                     == net.minecraft.world.Difficulty.PEACEFUL);
@@ -154,6 +167,8 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
+            if (com.chedidandrew.emeraldstandard.minecraft.ExchangeDeskInteraction.placingBlock(player))
+                return InteractionResult.PASS;
             if (hand != InteractionHand.MAIN_HAND || level.isClientSide()) {
                 return InteractionResult.PASS;
             }
@@ -168,13 +183,15 @@ public final class EmeraldStandardFabric implements ModInitializer {
                     return InteractionResult.SUCCESS_SERVER;
                 }
                 if (access.decision().warnsUnsafeBank()) {
+                    serverPlayer.sendSystemMessage(Component.literal(
+                            VillageBankManager.bankOperationProblem(serverLevel, ECONOMY, access.bankRegionKey())));
                     serverPlayer.sendSystemMessage(Component.translatable(
                             access.decision().opensDashboard()
                                     ? "message.the_emerald_standard.bank_desk_personal_fallback"
                                     : "message.the_emerald_standard.bank_unsafe"));
                 }
                 if (access.decision().opensDashboard()) {
-                    if (BankerAccess.openAt(serverPlayer, ECONOMY, access.accessPoint())) {
+                    if (BankerAccess.openAt(serverPlayer, ECONOMY, access.accessPoint(), access.bankRegionKey())) {
                         return InteractionResult.SUCCESS_SERVER;
                     }
                     serverPlayer.sendSystemMessage(Component.translatable(

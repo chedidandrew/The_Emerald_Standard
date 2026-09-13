@@ -1,0 +1,18 @@
+{
+  "directories": [
+    "common/src/main",
+    "common/src/minecraft",
+    "common/src/client",
+    "fabric/src/main",
+    "neoforge/src/main",
+    "neoforge/src/generated/resources"
+  ],
+  "files": [
+    "fabric/build.gradle",
+    "neoforge/build.gradle",
+    "fabric/gradle.properties",
+    "neoforge/gradle.properties",
+    "scripts/build-identity.gradle",
+    "scripts/build-inputs.json"
+  ]
+}

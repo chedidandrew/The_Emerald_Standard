@@ -95,7 +95,7 @@ final class AuthoredApproachRefinementsSelfTest {
         require(AuthoredApproachRefinements.finish(incomplete, metadata(3), materials)
                         == Outcome.NO_COMPLETE_STRIP && previous.equals(incomplete.values()),
                 "Incomplete three-wide strip must not acquire a partial stair transition");
-        for (int revision : new int[] {1, 2, 10}) {
+        for (int revision : new int[] {1, 2, 11}) {
             Builder frozen = strip(-4, -2, revision, Set.of());
             previous = frozen.values();
             require(AuthoredApproachRefinements.finish(frozen, metadata(revision), materials)

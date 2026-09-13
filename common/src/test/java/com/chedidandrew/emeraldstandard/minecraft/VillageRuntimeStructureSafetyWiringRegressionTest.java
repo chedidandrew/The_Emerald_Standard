@@ -129,7 +129,8 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
                         && materialization.contains("gameTime, true"),
                 "An unloaded low-view-distance frontier can still hot-loop and starve later work");
         require(materialization.contains("for (Long selectedProjectId : dueProjects)")
-                        && materialization.contains("remainingBlockBudget = 1;")
+                        && materialization.contains("remainingBlockBudget = ConstructionTimeRuntime.allowance(")
+                        && materialization.contains("selectedProjectId, gameTime, config)")
                         && materialization.contains("retryAfterGameTick <= Math.max(0L, gameTime)"),
                 "Each due project must receive one independent placement allowance");
         require(search.contains("bestSite") && search.contains("entranceApproach.stepCount == 0"),

@@ -105,10 +105,10 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
     }
 
     private static void verifyAllActiveMastersUseRoleDoodads(String source) {
-        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*9\\s*;")
+        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*10\\s*;")
                         .matcher(source)
                         .find(),
-                "The active authored gold masters are not revision 7");
+                "The active authored gold masters are not revision 10");
 
         String plan = methodBody(source, "static Blueprint plan(");
         for (MasterExpectation master : expectedMasters()) {

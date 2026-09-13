@@ -317,6 +317,8 @@ public final class AuthoredVillageStructureLightingWiringRegressionTest {
                 "Bank lighting bounds no longer include the complete authored projection");
 
         String current = methodBody(source, "private static List<BankPlacement> bankPlan(");
+        String versionTen = methodBody(source, "private static List<BankPlacement> legacyBankPlanV10(");
+        String versionNine = methodBody(source, "private static List<BankPlacement> legacyBankPlanV9(");
         String versionEight = methodBody(source, "private static List<BankPlacement> legacyBankPlanV8(");
         String versionSeven = methodBody(
                 source, "private static List<BankPlacement> legacyBankPlanV7(");
@@ -328,7 +330,9 @@ public final class AuthoredVillageStructureLightingWiringRegressionTest {
                 source, "private static List<BankPlacement> legacyBankPlanV4(");
         String inherited = methodBody(
                 source, "private static List<BankPlacement> legacyBankPlanV3(");
-        require(current.contains("legacyBankPlanV8(origin, legacyPalette)")
+        require(current.contains("legacyBankPlanV10(origin, legacyPalette)")
+                        && versionTen.contains("legacyBankPlanV9(origin, legacyPalette)")
+                        && versionNine.contains("legacyBankPlanV8(origin, legacyPalette)")
                         && versionEight.contains("legacyBankPlanV7(origin, legacyPalette)")
                         && versionSeven.contains("legacyBankPlanV6(origin, palette)")
                         && versionSix.contains("legacyBankPlanV5(origin, palette)")

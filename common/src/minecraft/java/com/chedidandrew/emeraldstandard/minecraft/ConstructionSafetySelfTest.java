@@ -43,22 +43,32 @@ final class ConstructionSafetySelfTest {
                     new BankConstruction.Cell(blocked.asLong(), "minecraft:air", "minecraft:stone")));
             set(level, before, blocked, Blocks.CHEST.defaultBlockState());
             require(economy.reserveBankConstruction(879, plan), "loot Bank reserved");
+            VillageConstructionActivitySelfTest.prepareFences(level,economy,VillageConstructionActivity.bankTag(879,plan.origin()));
             require(VillageBankManager.advanceBankConstruction(level, economy, 879, plan) == 1,
                     "new Bank chest placed");
             var storage = storage(level, chestPos);
-            require(storage.getLootTable() != null
+            require(storage.getLootTable() == null && storage.isEmpty()
                     && economy.pendingBankConstructionsSnapshot().get(879L).handledStorage().contains(chestPos.asLong()),
-                    "generated loot is backed by a saved receipt");
+                    "construction storage is empty until handover, with saved ownership");
+            require(!storage.canOpen(null)&&!storage.canPlaceItem(0,new ItemStack(Items.APPLE))
+                    &&net.minecraft.world.level.block.entity.HopperBlockEntity.getContainerAt(level,chestPos)==null,
+                    "construction storage rejects menus and automation without consuming supplied items");
+            require(Block.getDrops(level.getBlockState(chestPos),level,chestPos,storage).isEmpty(),
+                    "construction chest block has no loot drops");
+            require(!net.minecraft.world.level.block.piston.PistonBaseBlock.isPushable(
+                    level.getBlockState(chestPos),level,chestPos,net.minecraft.core.Direction.EAST,true,net.minecraft.core.Direction.EAST),
+                    "construction cells cannot be exported with pistons");
             storage.getItem(0); // Resolve the loot as opening the chest would.
             storage.clearContent();
             require(VillageBankManager.advanceBankConstruction(level, economy, 879, plan) == 0
                     && storage.getLootTable() == null && storage.isEmpty(), "emptied chest cannot refill");
             set(level, before, chestPos, Blocks.AIR.defaultBlockState());
-            require(VillageBankManager.advanceBankConstruction(level, economy, 879, plan) == 0
-                    && level.getBlockState(chestPos).isAir(), "broken chest cannot regenerate while another cell is blocked");
+            require(VillageBankManager.advanceBankConstruction(level, economy, 879, plan) == 1
+                    && storage(level,chestPos).getLootTable()==null && storage(level,chestPos).isEmpty(),
+                    "broken construction chest is repaired empty while another cell is blocked");
             var restarted = new EconomyService(); restarted.start(dir, 891, 0); economy = restarted;
             require(VillageBankManager.advanceBankConstruction(level, economy, 879, plan) == 0
-                    && level.getBlockState(chestPos).isAir(), "restart and stale caller plan cannot regenerate issued chest");
+                    && storage(level,chestPos).getLootTable()==null, "restart and stale caller preserve empty pending storage");
             set(level, before, chestPos, Blocks.CHEST.defaultBlockState());
             storage(level, chestPos).setItem(0, new ItemStack(Items.APPLE, 3));
             require(VillageBankManager.advanceBankConstruction(level, economy, 879, plan) == 0
@@ -70,14 +80,18 @@ final class ConstructionSafetySelfTest {
                     new BankConstruction.Cell(legacyPos.asLong(), "minecraft:air", "minecraft:barrel"),
                     new BankConstruction.Cell(blocked.asLong(), "minecraft:air", "minecraft:stone")), Set.of(), true);
             require(economy.reserveBankConstruction(880, legacy), "legacy Bank fixture reserved");
+            VillageConstructionActivitySelfTest.prepareFences(level,economy,VillageConstructionActivity.bankTag(880,legacy.origin()));
             require(VillageBankManager.advanceBankConstruction(level, economy, 880, legacy) == 1
                     && storage(level, legacyPos).getLootTable() == null && storage(level, legacyPos).isEmpty(),
                     "legacy unknown storage finishes empty, without a fresh loot roll");
             set(level, before, legacyPos, Blocks.AIR.defaultBlockState());
-            require(VillageBankManager.advanceBankConstruction(level, economy, 880, legacy) == 0
-                    && level.getBlockState(legacyPos).isAir(), "legacy storage is also recorded and not recreated");
+            require(VillageBankManager.advanceBankConstruction(level, economy, 880, legacy) == 1
+                    && storage(level,legacyPos).getLootTable()==null, "legacy issued storage repairs without another loot roll");
 
-            BlockPos work = origin.south(2);
+            // Keep target cells away from earlier fixtures' tape and in the tracked fixture chunk.
+            BlockPos work = origin.east(2).south(2);
+            require(level.getBlockState(work).isAir() && level.getBlockState(work.east(2)).isAir(),
+                    "occupancy fixture starts clear of other worksite fences");
             LivingEntity cow = EntityTypes.COW.create(level, EntitySpawnReason.COMMAND);
             LivingEntity villager = EntityTypes.VILLAGER.create(level, EntitySpawnReason.COMMAND);
             require(cow != null && villager != null, "living fixture factories");
@@ -97,6 +111,12 @@ final class ConstructionSafetySelfTest {
                         Blocks.STONE.defaultBlockState()), "adjacent safe cells remain buildable");
                 actor.setPos(work.getX() + 9, work.getY(), work.getZ());
             }
+            var occupiedPlan = new BankConstruction(work.asLong(), work.asLong(), null, 8, List.of(
+                    new BankConstruction.Cell(work.asLong(), "minecraft:air", "minecraft:stone"),
+                    new BankConstruction.Cell(work.east(2).asLong(), "minecraft:air", "minecraft:stone")));
+            require(economy.reserveBankConstruction(881, occupiedPlan), "occupied Bank reserved");
+            // Complete fixture chunk/setup work before installing the unconnected test player.
+            VillageConstructionActivitySelfTest.prepareFences(level,economy,VillageConstructionActivity.bankTag(881,occupiedPlan.origin()));
             player = new ServerPlayer(level.getServer(), level, new GameProfile(UUID.randomUUID(), "WorksiteFixture"),
                     ClientInformation.createDefault());
             player.setPos(work.getX() + .5, work.getY(), work.getZ() + .5);
@@ -105,13 +125,11 @@ final class ConstructionSafetySelfTest {
                     Blocks.STONE.defaultBlockState()), "player occupancy is protected during tracking transitions");
             require(!VillageConstructionOccupancy.mayChange(level, work, Blocks.AIR.defaultBlockState(),
                     Blocks.WATER.defaultBlockState()), "water cannot be placed into an occupied cell");
-            var occupiedPlan = new BankConstruction(work.asLong(), work.asLong(), null, 8, List.of(
-                    new BankConstruction.Cell(work.asLong(), "minecraft:air", "minecraft:stone"),
-                    new BankConstruction.Cell(work.east(2).asLong(), "minecraft:air", "minecraft:stone")));
-            require(economy.reserveBankConstruction(881, occupiedPlan), "occupied Bank reserved");
             require(VillageBankManager.advanceBankConstruction(level, economy, 881, occupiedPlan) == 1
                     && level.getBlockState(work).isAir() && level.getBlockState(work.east(2)).is(Blocks.STONE),
-                    "Bank defers occupied cell and works on another safe cell");
+                    "Bank defers occupied cell and works on another safe cell: occupied="+level.getBlockState(work)
+                            +", adjacent="+level.getBlockState(work.east(2))+", player="+player.position()
+                            +", alive="+player.isAlive()+", tracked="+level.players().contains(player));
             require(VillageBankManager.advanceBankConstruction(level, economy, 881, occupiedPlan) == 0
                     && economy.pendingBankConstructionsSnapshot().containsKey(881L), "occupied site retains its reservation");
             player.setPos(work.getX() + 12, work.getY(), work.getZ());
@@ -119,9 +137,15 @@ final class ConstructionSafetySelfTest {
             require(level.addFreshEntity(item), "dropped item fixture added");
             require(VillageBankManager.advanceBankConstruction(level, economy, 881, occupiedPlan) == 1
                     && level.getBlockState(work).is(Blocks.STONE), "Bank resumes after player moves; item drops do not stall it");
-            System.out.println("PASS ConstructionSafetySelfTest: Bank loot receipts, emptied/broken/replaced storage, reload, legacy storage, player/villager/animal occupancy, footing, safe neighboring work and resume");
+            // Handover releases exact receipts; no future regeneration after the saved Bank authority.
+            require(VillageBankManager.advanceBankConstruction(level,economy,881,occupiedPlan)==0
+                    &&economy.hasGeneratedBankRegion(881),"safe Bank handover");
+            require(!ConstructionOwnership.owned(level,work,Blocks.STONE.defaultBlockState()),
+                    "completed blocks immediately lose construction protection");
+            System.out.println("PASS ConstructionSafetySelfTest: empty locked storage, no drops, repairs, legacy contents, handover, player/villager/animal occupancy, footing and safe neighboring work");
         } catch (Exception ex) { throw new IllegalStateException("Construction safety runtime regression failed", ex); }
         finally {
+            VillageConstructionActivitySelfTest.cleanupCrews(level);
             if (player != null) level.players().remove(player);
             if (item != null) item.discard();
             actors.forEach(LivingEntity::discard);

@@ -470,6 +470,8 @@ public final class BankerAccess {
                 && player.level() instanceof ServerLevel level
                 && !VillageBankManager.isManagedBankOperational(
                         level, economy, regionKey, banker.blockPosition())) {
+            player.sendSystemMessage(Component.literal(
+                    VillageBankManager.bankOperationProblem(level, economy, regionKey)));
             player.sendSystemMessage(Component.translatable(
                     "message.the_emerald_standard.bank_unsafe"));
             return false;
@@ -500,7 +502,7 @@ public final class BankerAccess {
         return openAt(player, economy, accessPoint, regionKey);
     }
 
-    private static boolean openAt(
+    public static boolean openAt(
             ServerPlayer player,
             EconomyService economy,
             BlockPos accessPoint,

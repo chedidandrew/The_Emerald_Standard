@@ -17,6 +17,6 @@ public final class VillageBankStructureSelfTest {
         VillageBankVersionSevenSelfTest.run();
         VillageBankManager.validateBankV6MaterialRefinement();
         VillageBankManager.validateHeadlessBankDialectStructureContract();
-        System.out.println("PASS Village Bank v7 structure self-test (all five dialects)");
+        System.out.println("PASS Village Bank v11 structure self-test (all five dialects)");
     }
 }

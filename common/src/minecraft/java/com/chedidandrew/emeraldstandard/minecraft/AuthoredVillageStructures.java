@@ -74,7 +74,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 9;
+    static final int LATEST_TEMPLATE_REVISION = 10;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
     private static final Map<String, Object> LIGHTING_COMPOSITION_LOCKS =
@@ -272,6 +272,9 @@ final class AuthoredVillageStructures {
                     List.of(base.values(), stageOne.values(), stageTwo.values()));
         }
 
+        if (templateRevision >= 10) {
+            AuthoredStairRefinements.apply(base, templateId);
+        }
         Blueprint blueprint = new Blueprint(
                 templateId,
                 templateRevision,
@@ -10077,6 +10080,31 @@ final class AuthoredVillageStructures {
         stage.put(Phase.FOUNDATION, x, 0, z, foundation.defaultBlockState());
         stage.put(Phase.DECOR, x, 1, z, prop.defaultBlockState());
         return true;
+    }
+
+    /** The same refined yard lamp, rotated so its arm faces a public walkway. */
+    static List<Cell> walkwayLamp(Materials materials, Direction facing) {
+        if (facing.getAxis().isVertical()) throw new IllegalArgumentException("Horizontal lamp facing required");
+        Builder stage = new Builder(Set.of());
+        stage.templateRevision = 3;
+        if (!tryDressingLamp(stage, 0, 0, materials)) throw new IllegalStateException("Empty lamp stage");
+        net.minecraft.world.level.block.Rotation rotation = switch (facing) {
+            case WEST -> net.minecraft.world.level.block.Rotation.NONE;
+            case NORTH -> net.minecraft.world.level.block.Rotation.CLOCKWISE_90;
+            case EAST -> net.minecraft.world.level.block.Rotation.CLOCKWISE_180;
+            default -> net.minecraft.world.level.block.Rotation.COUNTERCLOCKWISE_90;
+        };
+        return stage.values().stream().map(cell -> {
+            BlockPos pos = new BlockPos(cell.x(), cell.y(), cell.z()).rotate(rotation);
+            return new Cell(pos.getX(), pos.getY(), pos.getZ(), cell.state().rotate(rotation), cell.phase());
+        }).sorted(Comparator.comparingInt((Cell cell) -> cell.state().is(Blocks.LANTERN) ? 2
+                        : cell.state().is(Blocks.IRON_CHAIN) ? 1 : 0)
+                .thenComparingInt(Cell::y).thenComparingInt(Cell::z).thenComparingInt(Cell::x)).toList();
+    }
+
+    static Materials walkwayMaterials(VillageArchitecture.Character character,
+            VillageArchitecture.BiomeDialect dialect) {
+        return materials(character, dialect, 4);
     }
 
     private static boolean tryDressingLamp(Builder stage, int x, int z, Materials p) {

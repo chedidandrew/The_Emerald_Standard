@@ -177,6 +177,7 @@ public final class ScalingAndSpatialIndexRegressionTest {
     private static void runMatureStatePersistenceScale() throws Exception {
         EconomyState state = EconomyState.fresh(0x4D41545552454CL, 10_000L, 20_000L);
         state.economicDay = MATURE_HISTORY_DAYS;
+        state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
 
         EconomyState.VillageRecord village = new EconomyState.VillageRecord();
         village.villageId = villageId(10_000);

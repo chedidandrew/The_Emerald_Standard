@@ -54,15 +54,30 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        DebugPerformanceSelfTest.verify(level);
+        NaturalVillageIdentitySelfTest.run(level);
+        ConstructionFinishSelfTest.verify(level);
+        ConstructionSupportRecoverySelfTest.verify(level);
+        GuardVillagersCompatSelfTest.verify(level);
         DevelopmentProtectionSelfTest.verify(level);
         VillageStructureLootSelfTest.verify(level);
         VillageExpansionSelfTest.verify(level);
         VillageFoodEnvironmentSelfTest.verify(level);
+        VillagePopulationSelfTest.verify(level);
+        NewspaperItemSelfTest.verify(level);
         BankConstructionSelfTest.verify(level);
+        ConstructionPacingSelfTest.verify();
         ConstructionSafetySelfTest.verify(level);
+        ConstructionOwnershipSelfTest.verify(level);
+        WalkwayLightingSelfTest.verify(level);
+        WalkwayConnectionsSelfTest.verify(level);
+        CreativeContentSelfTest.verify(level);
+        DistrictMapInteractionSelfTest.verify(level);
+        NewsRuntime.verifyForSmoke(level);
         BankerMenuPacketCodecSelfTest.verify();
         BankerMenuPacketCodecSelfTest.verifyExchangeResourceVisualMapping();
         verifyInventoryPersistenceGuard();
+        UnifiedFundsSelfTest.run(level);
         require(BankerProfessionSupport.exchangeDeskOrLectern() != Blocks.LECTERN,
                 "The Exchange Desk block was not registered before server startup");
         require(BankerProfessionSupport.registeredBanker().isPresent(),

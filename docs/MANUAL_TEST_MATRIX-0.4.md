@@ -16,10 +16,25 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Field | Fabric | NeoForge |
 | --- | --- | --- |
 | Commit | Unverified | Unverified |
-| Mod version | 0.4.0-beta.3 development candidate | 0.4.0-beta.3 development candidate |
+| Mod version | 0.4.0-beta.15 development candidate | 0.4.0-beta.15 development candidate |
+| Source fingerprint | Record report footer / debug capture | Record report footer / debug capture |
 | Loader version | Unverified | Unverified |
 | Tester | Unverified | Unverified |
 | Date | Unverified | Unverified |
+
+## Live market and clock commands (beta.15)
+
+Automated/native fixture results are in [the candidate review](reviews/2026-09-12-beta15-live-market.md).
+The following extended human-play checks remain separate; do not infer a pass from those fixtures.
+
+| Test | Fabric | NeoForge | Required evidence |
+| --- | --- | --- | --- |
+| Two real clients observe the same live quote and execution price (allowing screen latency and spread) | Not run | Not run | Both screenshots, order receipt and debug ZIP |
+| Today grows across a normal session; Yesterday remains the completed prior session | Not run | Not run | Session-start/end screenshots |
+| Day 23 midnight reset to zero advances to economic Day 24 dawn; repeat causes no extra day | Not run | Not run | Clock/market before and after commands |
+| Named day/night, numeric add, sleep and rapid command-block sequences never rewind the economy | Not run | Not run | Command sequence and debug ZIP |
+| Ten-year and All views clearly distinguish retained/sampled history and new-listing limits | Not run | Not run | Copied long-running test world, screenshots |
+| Migration/restart preserves cash, holdings, current quote and partial session | Not run | Not run | Backup, before/after balances and history |
 
 ## Critical financial and persistence checks
 

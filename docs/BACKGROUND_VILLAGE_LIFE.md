@@ -44,25 +44,20 @@ before upgrading and use that backup to downgrade; older binaries must not open 
 
 ## Recognizable construction
 
-Up to two suitable adult residents retain each worksite's assignment using saved native entity
-tags. A villager is not assigned to multiple loaded jobs. The same builders are reused, with
-replacement candidates for missing/dead/unavailable assignments. Bankers and children are not
-recruited. Sleeping, trading and recently attacked residents are not steered. Professions,
-inventories and normal economic output are unchanged, and a missing worker never stalls growth.
-Paused, abandoned, repair-required and completed jobs release their assignments. Temporarily
-blocked sites stop deliveries while awaiting retry. Cleanup removes only a route that this mod
-installed; it does not erase an unrelated walk target or interrupt unrelated navigation.
+The latest beta.5 pass supersedes the earlier resident-assignment and display-only delivery props
+with dedicated visiting builder mobs and real temporary caution fences. Sites receive one to four
+hard-hatted workers based on footprint, using actual walking and independently articulated hammer
+arms. They do not recruit existing residents or alter population, inventory, production or build
+speed. Temporary blockages stop hammering and send workers outside the footprint so a worker cannot
+permanently occupy the next construction cell. Finished/retired jobs send crews away.
 
-Builders make short staging-to-site delivery trips. A small display-only load accompanies the
-delivery leg. Ground-supported scaffolding and a material pile are also vanilla block-display
-entities, not real blocks: they cannot drop items, block access, or become a resource exploit.
-The scaffolding is visual, not climbable. There is no custom unfolding-arm animation. This is
-construction theatre backed by the existing abstract economy, not physical item logistics.
-
-Only tagged mod-owned displays and assignments are cleaned up when a site ends, moves, or visual
-progression is disabled. Loaded entities are reconciled periodically, including after their chunks
-return; no chunks are forced to load for cleanup. Real player blocks and unrelated entities are
-untouched. Displays are skipped when their ground support, clearance or protection check fails.
+Fence receipts restore displaced low plants/snow when their owned blocks are removed after work.
+Player replacements and deliberately broken barriers remain untouched. Ordinary chunk reload
+retains crew assignments and fence receipts; unloaded cleanup waits for the chunks to return.
+Arrival/departure visibility uses a best-effort server-side camera/obstruction check. See
+[construction crews](CONSTRUCTION_CREWS.md) for placement rules, restoration, save boundaries and
+third-person/freecam limitations. Old tagged display props and assignment tags are cleaned up
+without deleting residents or unrelated entities. Physical item delivery logistics are not simulated.
 
 ## Neighborhoods
 

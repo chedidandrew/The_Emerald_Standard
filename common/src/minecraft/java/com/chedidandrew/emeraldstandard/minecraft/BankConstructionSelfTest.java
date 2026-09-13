@@ -55,6 +55,14 @@ final class BankConstructionSelfTest {
                     playerStorage.after(), false).blockState();
             set(level, before, playerStoragePos, playerStorageState);
             require(!economy.hasGeneratedBankRegion(777), "reservation does not instantly complete Bank");
+            Map<BlockPos,BlockState> initial=new HashMap<>();
+            for(var cell:plan.cells()) initial.put(BlockPos.of(cell.position()),level.getBlockState(BlockPos.of(cell.position())));
+            require(VillageBankManager.advanceBankConstruction(level,economy,777,plan)==0
+                    && initial.entrySet().stream().allMatch(e->level.getBlockState(e.getKey()).equals(e.getValue())),
+                    "Bank cannot change even one authored cell before perimeter preparation");
+            require(ConstructionDiagnostics.preparingFence("bank:777") && !ConstructionDiagnostics.waiting("bank:777"),
+                    "fence preparation is not a paused Bank, so the preparation scheduler can proceed");
+            VillageConstructionActivitySelfTest.prepareFences(level,economy,VillageConstructionActivity.bankTag(777,plan.origin()));
             require(VillageBankManager.advanceBankConstruction(level, economy, 777, plan) == 1, "one first block");
             var reload = new EconomyService(); reload.start(dir, 774, 0); economy = reload;
             require(plan.equals(economy.pendingBankConstructionsSnapshot().get(777L)), "partial Bank resumes frozen plan");
@@ -66,6 +74,7 @@ final class BankConstructionSelfTest {
                     new BankConstruction.Cell(second.asLong(), "minecraft:air", "minecraft:stone"),
                     new BankConstruction.Cell(second.above().asLong(), "minecraft:air", "minecraft:stone")));
             require(economy.reserveBankConstruction(778, other), "simultaneous site reserved");
+            VillageConstructionActivitySelfTest.prepareFences(level,economy,VillageConstructionActivity.bankTag(778,other.origin()));
             require(VillageBankManager.advanceBankConstruction(level, economy, 777, plan) == 1
                     && VillageBankManager.advanceBankConstruction(level, economy, 778, other) == 1,
                     "two simultaneous sites each get one block, not a shared budget");
@@ -73,6 +82,27 @@ final class BankConstructionSelfTest {
             require(VillageBankManager.advanceBankConstruction(level, economy, 778, other) == 0
                     && level.getBlockState(second.above()).is(Blocks.CHEST), "player storage blocks construction, never overwritten");
             int pulses = 0;
+            // Drive the real placement path with the shared night scheduler, without changing
+            // the disposable server's clock. Both managers observing the same wake-up is safe.
+            try {
+                var config = EmeraldConfig.current();
+                ConstructionTimeRuntime.observe(13_000, 13_000, config);
+                ConstructionTimeRuntime.allowance("bank:777", 13_000, config);
+                ConstructionTimeRuntime.observe(13_001, 24_000, config);
+                ConstructionTimeRuntime.observe(13_001, 24_000, config);
+                ConstructionTimeRuntime.observe(13_010, 24_009, config);
+                int allowance = ConstructionTimeRuntime.allowance("bank:777", 13_010, config);
+                require(allowance == config.constructionAllowance(13_010) + 8,
+                        "sleep grants a bounded extra allowance to the same active Bank");
+                int changed = 0;
+                for (int i = 0; i < allowance; i++) {
+                    if (changed >= config.constructionAllowance(13_010) && !ConstructionTimeRuntime.hasTime()) break;
+                    changed += VillageBankManager.advanceBankConstruction(level, economy, 777, plan);
+                }
+                require(changed > config.constructionAllowance(13_010) && changed <= allowance,
+                        "waking produces real extra Bank blocks within its bounded allowance");
+                System.out.println("PASS live sleep catch-up: " + changed + " Bank cells within " + allowance + " allowance");
+            } finally { ConstructionTimeRuntime.reset(); }
             while (economy.pendingBankConstructionsSnapshot().containsKey(777L) && pulses++ < plan.cells().size() + 20) {
                 int placed = VillageBankManager.advanceBankConstruction(level, economy, 777, plan);
                 require(placed >= 0 && placed <= 1, "per-pulse placement cap");
@@ -92,12 +122,15 @@ final class BankConstructionSelfTest {
                 require(level.getBlockState(BlockPos.of(cell.position())).is(expected.getBlock()),
                         "completion neighbor updates must preserve the authored cell at " + BlockPos.of(cell.position()));
             }
+            BankVillageOwnershipSelfTest.verify(level, economy, origin);
             var completed = new EconomyService(); completed.start(dir, 774, 0);
             require(completed.hasGeneratedBankRegion(777)
                     && !completed.pendingBankConstructionsSnapshot().containsKey(777L), "completed marker survives restart");
-            System.out.println("PASS BankConstructionSelfTest: wooded hillside Bank, frozen tree/cut work, one-cell pacing, concurrent sites, restart, protected storage, completion");
+            System.out.println("PASS BankConstructionSelfTest: wooded hillside Bank, frozen tree/cut work, one-cell pacing, concurrent sites, restart, protected storage, completion; "
+                    + plan.cells().size() + " planned cells, " + pulses + " single-cell completion pulses after sleep batch");
         } catch (Exception ex) { throw new IllegalStateException("Progressive Bank runtime test failed", ex); }
         finally {
+            VillageConstructionActivitySelfTest.cleanupCrews(level);
             level.getEntitiesOfClass(Villager.class, new AABB(origin).inflate(24),
                     v -> BankerAccess.isBankerForRegion(v, 777)).forEach(Villager::discard);
             before.forEach((pos, state) -> level.setBlock(pos, state, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE));

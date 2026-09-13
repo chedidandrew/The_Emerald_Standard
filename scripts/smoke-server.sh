@@ -18,6 +18,12 @@ printf 'eula=true\n' > "$RUN_DIR/eula.txt"
 # Exhaustive opt-in catalog checks run synchronously during startup. Allow a bounded three minutes
 # in this fresh smoke world under constrained CI/parallel review; ordinary server settings are untouched.
 printf 'online-mode=false\nserver-port=0\nmax-tick-time=180000\n' > "$RUN_DIR/server.properties"
+if [[ -n "${TES_GUARD_COMPAT_JAR:-}" ]]; then
+    [[ -f "$TES_GUARD_COMPAT_JAR" ]] || { echo "Missing Guard Villagers test JAR" >&2; exit 1; }
+    mkdir -p "$RUN_DIR/mods"
+    cp -- "$TES_GUARD_COMPAT_JAR" "$RUN_DIR/mods/"
+    export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.expectGuards=true"
+fi
 
 command=(
     bash "$ROOT/$LOADER/gradlew"
@@ -72,6 +78,11 @@ for _ in $(seq 1 360); do
             | grep -Ev 'HkeyPerformanceDataUtil[^:]*:?[[:space:]]*Unable to locate English counter names' \
             || true
     )"
+    # Opt-in exception for the verified upstream NeoForge 4.0.3 recruitment advancement bug.
+    # Keep the original error in the log and report it below. No other external errors are ignored.
+    if [[ "$LOADER" == "neoforge" && -n "${TES_GUARD_COMPAT_JAR:-}" && "${TES_ALLOW_GUARD_ADVANCEMENT_ERROR:-0}" == "1" ]]; then
+        unexpected_errors="$(printf '%s\n' "$unexpected_errors" | grep -Fv "[minecraft/SimpleJsonResourceReloadListener]: Couldn't parse data file 'guardvillagers:adventure/recruit_guard' from 'guardvillagers:advancement/adventure/recruit_guard.json': DataResult.Error['Unknown registry key in ResourceKey[minecraft:root / minecraft:entity_sub_predicate_type]: minecraft:type;" || true)"
+    fi
     if [[ -n "$unexpected_errors" ]] \
             || grep -Eq 'Exception in thread|A fatal error has been detected|Failed to start the minecraft server' "$LOG_FILE"; then
         echo "$LOADER server logged a fatal startup error" >&2
@@ -85,6 +96,9 @@ for _ in $(seq 1 360); do
             && grep -Fq "The Emerald Standard Banker integration self-test passed" "$LOG_FILE" \
             && grep -Eq 'Done \([^)]*s\)!' "$LOG_FILE"; then
         echo "PASS $LOADER dedicated-server smoke test"
+        if grep -Fq "Couldn't parse data file 'guardvillagers:adventure/recruit_guard'" "$LOG_FILE"; then
+            echo "KNOWN UPSTREAM ERROR retained: Guard Villagers recruitment advancement; guard integration checks still required."
+        fi
         tail -n 100 "$LOG_FILE"
         exit 0
     fi

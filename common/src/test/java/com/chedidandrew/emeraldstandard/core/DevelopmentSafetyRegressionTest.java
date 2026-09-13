@@ -6,8 +6,30 @@ import java.util.*;
 public final class DevelopmentSafetyRegressionTest {
     private static final UUID OWNER=new UUID(10,20);
     public static void main(String[] args) throws Exception {
-        zonesAndJournal(); recoveryAndFood(); checkpointEpochs();
+        zonesAndJournal(); recoveryAndFood(); checkpointEpochs(); presentationIndex();
         System.out.println("PASS DevelopmentSafetyRegressionTest: zones, ownership, torn journals, durable district updates, funded one-shot recovery, partial food census");
+    }
+    private static void presentationIndex() {
+        var state = EconomyState.fresh(1, 0, 0); var v = state.village(OWNER);
+        v.dimensionKey = "minecraft:overworld"; v.population = 4;
+        for (int i = 1; i <= 10000; i++) {
+            var p = new EconomyState.VillageProject(); p.projectId = i; p.originPos = pack(i, 64, 0);
+            p.materializedComplete = i != 10000; v.projects.add(p);
+        }
+        var index = new VillageConstructionSites();
+        var sites = index.collect(state, v.dimensionKey);
+        require(sites.size() == 1 && sites.getFirst().working(), "only unfinished site presented");
+        v.expansionMode = VillageExpansion.Mode.PAUSED;
+        require(!index.collect(state, v.dimensionKey).getFirst().working(), "paused site stays known without workers hammering");
+        v.projects.getLast().materializedComplete = true; index.changed(OWNER);
+        require(index.collect(state, v.dimensionKey).isEmpty(), "completed site removed after incremental invalidation");
+        // Historical entries may not be traversed on an unchanged presentation pass.
+        var historical = v.projects.set(0, null);
+        require(index.collect(state, v.dimensionKey).isEmpty(), "cached presentation avoids historical projects");
+        v.projects.set(0, historical);
+        var added = new EconomyState.VillageProject(); added.projectId = 10001; added.originPos = pack(100,64,100);
+        v.projects.add(added);
+        require(index.collect(state, v.dimensionKey).size() == 1, "direct project admission invalidates metadata cache");
     }
     private static void zonesAndJournal() throws Exception {
         Path directory=Files.createTempDirectory("tes-development-land-");

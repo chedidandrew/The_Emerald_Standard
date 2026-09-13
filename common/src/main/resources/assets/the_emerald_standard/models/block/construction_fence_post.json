@@ -1,0 +1,76 @@
+{
+  "textures": {
+    "wood": "minecraft:block/stripped_spruce_log",
+    "yellow": "minecraft:block/yellow_concrete",
+    "black": "minecraft:block/black_concrete",
+    "particle": "minecraft:block/yellow_concrete"
+  },
+  "elements": [
+    {
+      "from": [6.5, 2, 6.5],
+      "to": [9.5, 14, 9.5],
+      "faces": {
+        "north": {
+          "texture": "#wood"
+        },
+        "south": {
+          "texture": "#wood"
+        },
+        "east": {
+          "texture": "#wood"
+        },
+        "west": {
+          "texture": "#wood"
+        }
+      }
+    },
+    {
+      "from": [5.5, 0, 5.5],
+      "to": [10.5, 2, 10.5],
+      "faces": {
+        "north": {
+          "texture": "#black"
+        },
+        "south": {
+          "texture": "#black"
+        },
+        "east": {
+          "texture": "#black"
+        },
+        "west": {
+          "texture": "#black"
+        },
+        "up": {
+          "texture": "#black"
+        },
+        "down": {
+          "texture": "#black"
+        }
+      }
+    },
+    {
+      "from": [6, 14, 6],
+      "to": [10, 16, 10],
+      "faces": {
+        "north": {
+          "texture": "#yellow"
+        },
+        "south": {
+          "texture": "#yellow"
+        },
+        "east": {
+          "texture": "#yellow"
+        },
+        "west": {
+          "texture": "#yellow"
+        },
+        "up": {
+          "texture": "#yellow"
+        },
+        "down": {
+          "texture": "#yellow"
+        }
+      }
+    }
+  ]
+}

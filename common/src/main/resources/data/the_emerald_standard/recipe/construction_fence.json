@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": ["SYS", "SBS"],
+  "key": {
+    "S": "minecraft:stick",
+    "Y": "minecraft:yellow_dye",
+    "B": "minecraft:black_dye"
+  },
+  "result": {
+    "id": "the_emerald_standard:construction_fence",
+    "count": 4
+  },
+  "show_notification": true
+}
