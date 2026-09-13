@@ -63,15 +63,19 @@ final class ForcedDevelopmentSchedulingSelfTest {
             VillageBankManager.beginServerSession(level.getServer(), economy);
             VillageProsperityManager.resetRuntimeState();
             // Normal work first; the two existing sites must already be partially constructed.
-            clock.setGameTime(1010);
-            VillageDevelopmentRuntime.tick(level.getServer(), economy);
+            for (int tick=980;tick<=1010;tick++) {
+                clock.setGameTime(tick);
+                VillageDevelopmentRuntime.tick(level.getServer(), economy);
+            }
             require(stones(level, origin) > 0 && stones(level, origin.east(48)) > 0, "normal partial Banks");
             int partial = stones(level, origin);
 
             // A fence wait immediately before changing mode must not survive as a 200-tick hold.
             properties.setProperty("village_prosperity.visual_progression_enabled", "true");
             configField.set(null, EmeraldConfig.parse(properties));
-            clock.setGameTime(1020); VillageDevelopmentRuntime.tick(level.getServer(), economy);
+            for (int tick=1011;tick<=1020;tick++) {
+                clock.setGameTime(tick); VillageDevelopmentRuntime.tick(level.getServer(), economy);
+            }
             require(ConstructionDiagnostics.preparingFence("bank:9100"), "normal fence wait captured");
             properties.setProperty(EmeraldConfig.FORCED_DEVELOPMENT_KEY, "true");
             configField.set(null, EmeraldConfig.parse(properties));
@@ -111,7 +115,9 @@ final class ForcedDevelopmentSchedulingSelfTest {
                     && frozen.equals(economy.pendingBankConstructionsSnapshot().get(9101L)),
                     "disable preserves blocked plan");
             set(level, before, blocked, Blocks.AIR.defaultBlockState());
-            clock.setGameTime(1290); VillageDevelopmentRuntime.tick(level.getServer(), economy);
+            for (int tick=1290;tick<=1291;tick++) {
+                clock.setGameTime(tick); VillageDevelopmentRuntime.tick(level.getServer(), economy);
+            }
             require(stones(level, origin.east(48)) == 48, "ordinary construction resumes after obstacle removed");
             properties.setProperty(EmeraldConfig.FORCED_DEVELOPMENT_KEY, "true");
             configField.set(null, EmeraldConfig.parse(properties));

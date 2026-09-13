@@ -311,7 +311,7 @@ Map<String, String> values = new LinkedHashMap<>();
     public int villageDevelopmentRadius() { return villageDevelopmentRadius; }
     public int villageConstructionBlocksPerSecond() { return villageConstructionBlocksPerSecond; }
 
-    /** Independent normal pace for EACH site; skipped-night bonus work is budgeted separately. */
+    /** Desired per-site pace; shared server admission can reduce the observed rate. */
     public int constructionAllowance(long gameTime) {
         int phase = (int) Math.floorMod(gameTime - 1L, 20L);
         return ((phase + 1) * villageConstructionBlocksPerSecond) / 20

@@ -6,7 +6,7 @@ The badge reports **main only**. Development candidates require their own exact-
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current source status: **unreleased `0.4.0-beta.40` development candidate**, not a stable release. See the [beta.40 Smithy-repair validation](docs/reviews/2026-09-13-beta40-smithy-repair.md) for current results and artifact fingerprints; older review records do not certify this build. The broader human gameplay matrix is not certified. See [the five-priority upgrade](docs/FIVE_PRIORITIES.md) for the current UI, test harness and build-identity changes.
+> Current source status: **unreleased `0.4.0-beta.45` development candidate**, not a stable release. See the [beta.45 vanilla-construction validation](docs/reviews/2026-09-13-beta45-vanilla-construction.md) for current results and artifact fingerprints; older review records do not certify this build. The broader human gameplay matrix is not certified. See [the five-priority upgrade](docs/FIVE_PRIORITIES.md) for the current UI, test harness and build-identity changes.
 
 ## Core rule
 
@@ -23,24 +23,25 @@ New in this source candidate: [automatic city expansion, sustainable upkeep and 
 New natural villages keep one district and one Bank, extending connected, non-overlapping territory as sites are reserved. Open **Banker > Village > City expansion**
 for status and optional owner/operator controls. Nearby [farms and livestock](docs/VILLAGE_FOOD_SOURCES.md)
 now boost food production automatically across developed district footprints. Banks build progressively,
-and each active site defaults to up to two blocks per second independently, configurable from 1–100 in Settings. See [construction and entrances](docs/PROGRESSIVE_CONSTRUCTION.md).
+and each active site targets up to two blocks per second, configurable from 1–100 in Settings. Normal Banks, projects and finishing jobs share a bounded, fair server work allowance; busy worlds may build more slowly. See [construction and entrances](docs/PROGRESSIVE_CONSTRUCTION.md).
+Expansion also includes [matching default Minecraft buildings](docs/VANILLA_CONSTRUCTION.md), with saved designs, actual bed capacity and no free template loot or residents. Optional modded-village expansion remains a later step.
 Walkways can now share [village-themed footbridges](docs/VILLAGE_FOOTBRIDGES.md), with three-wide decks, inward-facing lamps and saved, bounded Infrastructure work.
 The latest [background village life](docs/BACKGROUND_VILLAGE_LIFE.md) pass adds saved builder assignments,
 cosmetic deliveries, neighborhood gathering spaces, upkeep advice and automatic retry diagnostics.
 See the [beta.5 background-life validation record](docs/reviews/2026-09-10-beta5-background-village-life-validation.md)
 for tested behavior, exact local JAR hashes and remaining gameplay-review limits.
-Upgrading writes economy **format 38** and per-dimension construction ownership receipts; keep a
+Upgrading writes economy **format 39** and per-dimension construction ownership receipts; keep a
 pre-upgrade world backup and do not downgrade that save to an older binary.
 
 1. Back up the world before installing or upgrading this beta.
-2. To test this source candidate, build or obtain exactly one `0.4.0-beta.37` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
+2. To test this source candidate, build or obtain exactly one `0.4.0-beta.45` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
 3. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
 4. Right-click the Banker or an Exchange Desk to open the eight-page dashboard.
 5. Choose an amount and spend Bank Cash or ordinary loose inventory emeralds directly; deposits are optional. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk. See [combined spending and recovery](docs/UNIFIED_SPENDING.md).
 
 With `onboarding.join_hint_enabled=true`, each player receives one **Starter Handbook** in each world alongside the one-time first-join discovery hint. The handbook is placed in the player's inventory without opening itself, so joining is never interrupted. Delivery is recorded only after the inventory accepts the book; if the inventory is full, nothing is dropped and the mod retries on that player's next join.
 
-Using the handbook opens a wide, responsive **16-chapter reader** with topic search, scrolling, Previous/Next navigation and keyboard controls. A-/A+ sets local reader text from **80% to 120%**, default **90%**, without changing Minecraft GUI scale. Existing handbook items still work; lecterns use the 61-page compact vanilla rendering, and other written books are unaffected. It covers deposits, dashboard pages, investments, commodities, Village Prosperity, safety, construction, recovery and a finance glossary. A lost copy can be replaced with the shapeless **Book + Emerald** recipe. The first successful Banker visit still awards **The Emerald Standard** and a deposit/risk explanation.
+Using the handbook opens a wide, responsive **16-chapter reader** with topic search, scrolling, Previous/Next navigation and keyboard controls. A-/A+ sets local reader text from **80% to 120%**, default **90%**, without changing Minecraft GUI scale. Existing handbook items still work; lecterns use the 64-page compact vanilla rendering, and other written books are unaffected. It covers deposits, dashboard pages, investments, commodities, Village Prosperity, safety, construction, recovery and a finance glossary. A lost copy can be replaced with the shapeless **Book + Emerald** recipe. The first successful Banker visit still awards **The Emerald Standard** and a deposit/risk explanation.
 
 Craft **Paper + Ink Sac** to make a reusable **Village Newspaper**. It opens **The Emerald Wire**
 from anywhere; the Desk's News tab opens the same reader. A front page, section filters,

@@ -17,10 +17,11 @@ final class SupportedConstructionOrder {
     static int phase(Cell cell) {
         var s=cell.state(); int y=cell.pos().getY();
         if (s.isAir()) return 0;
+        if (cell.phase() == 7) return 7; // Imported fluids wait until their containing structure is installed.
         if (s.getLightEmission()>0 || s.is(Blocks.IRON_CHAIN)) return 6;
         if (s.hasBlockEntity() || s.is(BlockTags.BEDS) || s.getBlock() instanceof FlowerPotBlock) return 5;
         if (y<=0) return 0;
-        if (cell.phase()>=0) return cell.phase()==0 ? 1 : cell.phase(); // Upper floors are not ground foundations.
+        if (cell.phase()>=0 && cell.phase()!=8) return cell.phase()==0 ? 1 : cell.phase(); // Upper floors are not ground foundations.
         if (s.is(BlockTags.LOGS)) return 1;
         if (s.is(BlockTags.DOORS) || s.getBlock() instanceof StainedGlassPaneBlock
                 || s.is(Blocks.GLASS_PANE) || s.is(Blocks.GLASS)) return 4;
@@ -100,6 +101,9 @@ final class SupportedConstructionOrder {
     private static BlockPos attachment(Cell c) {
         var s=c.state(); var p=c.pos();
         if (s.is(Blocks.IRON_CHAIN)) return p.above();
+        // Marker 8 identifies the new frozen vanilla schema. Never reorder older TES prefixes.
+        if (c.phase()==8 && s.getBlock() instanceof WallBannerBlock)
+            return p.relative(s.getValue(HorizontalDirectionalBlock.FACING).getOpposite());
         if (s.getBlock() instanceof BellBlock) return switch(s.getValue(BellBlock.ATTACHMENT)) {
             case CEILING -> p.above();
             case FLOOR -> p.below();

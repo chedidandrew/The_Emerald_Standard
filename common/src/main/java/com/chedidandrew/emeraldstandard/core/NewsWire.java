@@ -8,16 +8,20 @@ public final class NewsWire {
     public static final int LIMIT = 256;
     public static final List<String> OUTLETS = List.of("The Emerald Ledger", "The Redstone Wire",
             "The Nether Post", "The Overworld Observer", "The Daily Gravel");
-    public enum Kind { MARKET, FOLLOW_UP, ROUNDUP, FOOD_REMOVED, CROPS, DAMAGE, DONATION, REPLANTED, VIOLENCE, FOOD_RETURNED }
+    public enum Kind { MARKET, FOLLOW_UP, ROUNDUP, FOOD_REMOVED, CROPS, DAMAGE, DONATION, REPLANTED, VIOLENCE, FOOD_RETURNED, CIVIC, FEATURE }
     public record Article(long id, long day, Kind kind, String family, String outlet, String village,
-            String actor, int quantity, String headline, String detail) {
+            String actor, int quantity, String headline, String detail, String subject, long sourceId) {
+        public Article(long id,long day,Kind kind,String family,String outlet,String village,String actor,int quantity,String headline,String detail) {
+            this(id,day,kind,family,outlet,village,actor,quantity,headline,detail,"",0);
+        }
         public Article(long day, Kind kind, String family, String outlet, String village,
                 String actor, int quantity, String headline, String detail) {
-            this(0,day,kind,family,outlet,village,actor,quantity,headline,detail);
+            this(0,day,kind,family,outlet,village,actor,quantity,headline,detail,"",0);
         }
-        public Article withId(long value) { return new Article(value,day,kind,family,outlet,village,actor,quantity,headline,detail); }
+        public Article withId(long value) { return new Article(value,day,kind,family,outlet,village,actor,quantity,headline,detail,subject,sourceId); }
         public Article {
             Objects.requireNonNull(kind);
+            if (subject==null||subject.length()>160||!subject.matches("[A-Za-z0-9:_-]*")||sourceId<0) throw new IllegalArgumentException("Invalid story link");
             if (id < 0 || day < 0 || quantity < 0 || !OUTLETS.contains(outlet)) throw new IllegalArgumentException("Invalid news");
             for (String s : List.of(family, village, actor, headline))
                 if (s.length() > 2000 || s.indexOf('\0') >= 0) throw new IllegalArgumentException("Invalid news text");
@@ -33,15 +37,17 @@ public final class NewsWire {
     }
     public static void day(EconomyState state, EconomyEngine.MarketEvent event, Map<String, Double> before) {
         long day = state.economicDay;
+        NewsCivic.day(state);
+        NewsFeatures.day(state);
+        NewsEditorial.followups(state);
         if (event != EconomyEngine.MarketEvent.NONE) {
             String family = event.name();
             String headline = choose(state, family, eventHeadlines(event));
             String publisher = NewsEditorial.outlet(state, family);
             append(state, new Article(day, Kind.MARKET, family, publisher, "", "", 0,
-                    headline, NewsNarrative.market(state,family,publisher,moves(state,before))));
+                    headline, NewsNarrative.market(state,family,publisher,headline,moves(state,before))));
             NewsEditorial.trackMarket(state, state.news.getLast(), before);
         }
-        NewsEditorial.followups(state);
         if (event == EconomyEngine.MarketEvent.NONE && (day % 2 == 0 || state.news.isEmpty())) {
             String direction = state.prices.get("VILX") >= before.get("VILX") ? "UP" : "DOWN";
             String family = "ROUNDUP_" + direction;
@@ -62,33 +68,55 @@ public final class NewsWire {
     private static String quote(String ticker, EconomyState state, Map<String,Double> before) {
         return String.format(Locale.ROOT,"%s: %+.2f%% today",ticker,change(state.prices.get(ticker),before.get(ticker)));
     }
-    public static boolean player(EconomyState state, Kind kind, UUID villageId, UUID playerId, String actor, int quantity) {
-        var village = state.existingVillage(villageId);
-        if (!state.editor.playerReports || village == null || playerId == null || quantity <= 0 || kind.ordinal() < Kind.FOOD_REMOVED.ordinal()) return false;
-        String name = cleanName(actor);
-        String place = villageId.toString();
-        String family = "PLAYER_" + kind + "_" + playerId;
-        // A bounded daily developing report per actor/place/category; stable ID survives updates.
-        for (int i=state.news.size()-1;i>=0;i--) {
+    public static boolean isPlayer(Kind kind) {
+        return switch(kind) {
+            case FOOD_REMOVED,CROPS,DAMAGE,DONATION,REPLANTED,VIOLENCE,FOOD_RETURNED -> true;
+            default -> false;
+        };
+    }
+    public static boolean player(EconomyState state,Kind kind,UUID villageId,UUID playerId,String actor,int quantity) {
+        return player(state,kind,villageId,playerId,actor,quantity,"");
+    }
+    public static boolean player(EconomyState state,Kind kind,UUID villageId,UUID playerId,String actor,int quantity,String subject) {
+        var village=state.existingVillage(villageId);
+        if(!state.editor.playerReports||village==null||playerId==null||quantity<=0||!isPlayer(kind))return false;
+        if(subject==null||subject.length()>160||!subject.matches("[A-Za-z0-9:_-]*"))return false;
+        String name=cleanName(actor),place=villageId.toString(),family="PLAYER_"+kind+"_"+playerId;
+        Article previous=null;
+        if(!subject.isEmpty()) {
+            Kind earlier=kind==Kind.REPLANTED?Kind.CROPS:kind==Kind.FOOD_RETURNED?Kind.FOOD_REMOVED:null;
+            for(int i=state.news.size()-1;i>=0;i--) {
+                var a=state.news.get(i);
+                if(a.kind==earlier&&a.village.equals(place)&&a.subject.equals(subject)) {previous=a;break;}
+            }
+        }
+        String development=previous==null?"":"Returning to “"+previous.headline+"” (Day "+previous.day+"). "
+                +(kind==Kind.REPLANTED?"New planting has now been observed at the same crop position. Other fields have their own stories."
+                :"Food has now been added to the same store. This delivery does not establish where it came from or settle the earlier withdrawal.");
+        for(int i=state.news.size()-1;i>=0;i--) {
             Article old=state.news.get(i);
-            if (state.economicDay-old.day > 0) break;
-            if (old.kind==kind && old.village.equals(place) && old.family.equals(family)) {
+            if(state.economicDay-old.day>0)continue;
+            if(old.kind==kind&&old.village.equals(place)&&old.family.equals(family)&&old.subject.equals(subject)) {
                 int total=(int)Math.min(Integer.MAX_VALUE,(long)old.quantity+quantity);
                 state.news.remove(i);
-                append(state, playerArticle(state,kind,family,place,name,total,old.headline).withId(old.id));
+                append(state,playerArticle(state,kind,family,place,name,total,old.headline,subject,
+                        previous==null?old.sourceId:previous.id,development).withId(old.id));
                 return true;
             }
         }
-        append(state,playerArticle(state,kind,family,place,name,quantity,choose(state,family,playerHeadlines(kind))));
+        append(state,playerArticle(state,kind,family,place,name,quantity,
+                choose(state,family,playerHeadlines(kind)),subject,previous==null?0:previous.id,development));
         return true;
     }
-    private static Article playerArticle(EconomyState state, Kind kind, String family, String place,
-            String actor, int quantity, String headline) {
+    private static Article playerArticle(EconomyState state,Kind kind,String family,String place,
+            String actor,int quantity,String headline,String subject,long sourceId,String development) {
         var v=state.existingVillage(UUID.fromString(place));
-        String development=NewsEditorial.localDevelopment(state,kind,place,quantity);
-        return new Article(state.economicDay,kind,family,"The Overworld Observer",place,actor,quantity,headline,
+        return new Article(0,state.economicDay,kind,family,OUTLETS.get(3),place,actor,quantity,headline,
                 NewsNarrative.local(kind,quantity,state.seed,state.economicDay,family,
-                    "District near X "+unpackX(v.centerPos)+", Z "+unpackZ(v.centerPos)+".",development));
+                    location(v),development),subject,sourceId);
+    }
+    static String location(EconomyState.VillageRecord v) {
+        return "District near X "+unpackX(v.centerPos)+", Z "+unpackZ(v.centerPos)+".";
     }
     private static int unpackX(long p) { return (int)(p >> 38); }
     private static int unpackZ(long p) { return (int)(p << 26 >> 38); }
@@ -96,16 +124,19 @@ public final class NewsWire {
         String cleaned=value==null?"":value.replaceAll("[^A-Za-z0-9_ .-]","");
         return cleaned.substring(0,Math.min(32,cleaned.length()));
     }
-    private static String choose(EconomyState state,String family,List<String> choices) {
-        choices=state.editor.templates.getOrDefault(family.startsWith("PLAYER_") ? family.substring(0,family.lastIndexOf('_')) : family, choices);
+    static String choose(EconomyState state,String family,List<String> defaults) {
+        String key=family.startsWith("PLAYER_")?family.substring(0,family.lastIndexOf('_')):family;
+        var choices=state.editor.templates.getOrDefault(key,defaults);
         int start=(int)(InvestmentGrowth.unit(state.seed,state.economicDay,family)*choices.size());
+        Map<String,Integer> latest=new HashMap<>();
+        for(int i=0;i<state.news.size();i++)latest.put(state.news.get(i).headline(),i);
+        String best=choices.get(start);int oldest=Integer.MAX_VALUE;
         for(int j=0;j<choices.size();j++) {
             String candidate=choices.get((start+j)%choices.size());
-            if(state.news.stream().noneMatch(a -> state.economicDay-a.day < 90 && a.headline.equals(candidate))) return candidate;
+            int seen=latest.getOrDefault(candidate,-1);
+            if(seen<oldest){best=candidate;oldest=seen;}
         }
-        // Exhausted finite pool: use least recently published wording, not an unbounded archive.
-        for(Article old:state.news) if(choices.contains(old.headline)) return old.headline;
-        return choices.get(start);
+        return best;
     }
     public static void write(EconomyState state, Properties p) {
         NewsEditorial.write(state,p);
@@ -115,6 +146,7 @@ public final class NewsWire {
             p.setProperty(k+"id",""+a.id); p.setProperty(k+"day",""+a.day); p.setProperty(k+"kind",a.kind.name());
             p.setProperty(k+"family",a.family); p.setProperty(k+"outlet",a.outlet);
             p.setProperty(k+"village",a.village); p.setProperty(k+"actor",a.actor);
+            p.setProperty(k+"subject",a.subject);p.setProperty(k+"source",""+a.sourceId);
             p.setProperty(k+"quantity",""+a.quantity); p.setProperty(k+"headline",a.headline); p.setProperty(k+"detail",a.detail);
         }
     }
@@ -127,7 +159,7 @@ public final class NewsWire {
                 Article a=new Article(Integer.parseInt(p.getProperty("format"))>=32 ? Long.parseLong(required(p,k+"id")) : i+1,
                     Long.parseLong(required(p,k+"day")),Kind.valueOf(required(p,k+"kind")),
                     required(p,k+"family"),required(p,k+"outlet"),required(p,k+"village"),required(p,k+"actor"),
-                    Integer.parseInt(required(p,k+"quantity")),required(p,k+"headline"),required(p,k+"detail"));
+                    Integer.parseInt(required(p,k+"quantity")),required(p,k+"headline"),required(p,k+"detail"),p.getProperty(k+"subject",""),Integer.parseInt(p.getProperty("format"))>=32?Long.parseLong(p.getProperty(k+"source","0")):0);
                 if(a.day>state.economicDay) throw new IllegalArgumentException("Future news");
                 state.news.add(a);
             }

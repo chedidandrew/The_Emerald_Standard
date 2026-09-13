@@ -4,6 +4,7 @@ import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageArchitecture;
+import com.chedidandrew.emeraldstandard.core.VanillaBuildingCatalog;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.debug.DebugCapturePolicy;
 import com.chedidandrew.emeraldstandard.debug.DebugReportFiles;
@@ -864,9 +865,14 @@ public final class DebugFlightRecorder {
                 "present", true,
                 "currentServerGameTick", gameTick,
                 "infrastructureBridges",bridgeReport(server,village),
+                "vanillaCatalog",fields("available",VanillaBuildingCatalog.plans().size(),
+                        "rejected",VanillaVillageBuildings.diagnostics(),"naturalStyle",village.naturalVillageStyle),
                 "bankWalkwayConnections",bankWalkwayReport(server,village),
                 "projects", village.projects.stream().map(p -> fields(
-                        "projectId", p.projectId, "type", p.type, "template", p.designTemplateId,
+                        "projectId", p.projectId, "type", p.type, "template", p.vanillaPlan == null ? p.designTemplateId : p.vanillaPlan.templateId(),
+                        "vanillaPlan",p.vanillaPlan == null ? Map.of() : fields("hash",p.vanillaPlan.hash(),
+                                "style",p.vanillaPlan.style(),"role",p.vanillaPlan.role(),"beds",p.vanillaPlan.beds(),
+                                "cells",p.vanillaPlan.cells().size()),
                         "frozenDesign", fields("schema",p.designSchema,"revision",p.designTemplateRevision,
                                 "palette",p.designPaletteId,"dressing",p.designDressingId,"seed",p.designSeed,
                                 "stage",p.designStage,"rotation",p.designRotation,"mirrored",p.designMirrored,

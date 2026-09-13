@@ -61,7 +61,8 @@ final class NewsRuntimeSelfTest {
             }
             require(evidence.pending.size()==1&&evidence.pending.values().iterator().next().count()==4,"native mixin aggregates damage");
             expire(evidence);NewsRuntime.process(level);
-            require(service.newspaper().getLast().kind()==NewsWire.Kind.DAMAGE,"damage report");
+            require(service.newspaper().getLast().kind()==NewsWire.Kind.DAMAGE
+                &&service.newspaper().getLast().subject().equals("project:1:"+origin.asLong()),"damage report retains project identity");
             BlockPos crop=origin.west();
             level.setBlock(crop.below(),Blocks.FARMLAND.defaultBlockState(),18);
             level.setBlock(crop,Blocks.WHEAT.defaultBlockState(),18);
@@ -72,7 +73,8 @@ final class NewsRuntimeSelfTest {
             NewsRuntime.placed(level,crop,Blocks.WHEAT.defaultBlockState(),other);
             expire(evidence);NewsRuntime.process(level);
             require(service.newspaper().getLast().kind()==NewsWire.Kind.REPLANTED
-                &&service.newspaper().getLast().actor().equals("Replanter"),"replant credits actual player");
+                &&service.newspaper().getLast().actor().equals("Replanter")
+                &&service.newspaper().getLast().subject().equals("crop:"+crop.asLong()),"replant credits actual player and crop");
             BlockPos chestPos=origin.west(3);
             level.setBlock(chestPos,Blocks.CHEST.defaultBlockState(),18);
             var chest=(ChestBlockEntity)level.getBlockEntity(chestPos);
@@ -86,7 +88,19 @@ final class NewsRuntimeSelfTest {
             chestMenu.clicked(0,0,ContainerInput.QUICK_MOVE,p);
             expire(evidence);NewsRuntime.process(level);
             require(service.newspaper().getLast().kind()==NewsWire.Kind.FOOD_REMOVED
-                &&service.newspaper().getLast().quantity()==16,"native shift-click food");
+                &&service.newspaper().getLast().quantity()==16
+                &&service.newspaper().getLast().subject().equals("store:"+chestPos.asLong()),"native shift-click food retains store identity");
+            BlockPos secondPos=chestPos.west();level.setBlock(secondPos,Blocks.CHEST.defaultBlockState(),18);
+            var secondChest=(ChestBlockEntity)level.getBlockEntity(secondPos);
+            BlockPos canonical=chestPos.asLong()<secondPos.asLong()?chestPos:secondPos;
+            for(boolean reversed:new boolean[]{false,true}) {
+                var pair=reversed?new net.minecraft.world.CompoundContainer(secondChest,chest)
+                        :new net.minecraft.world.CompoundContainer(chest,secondChest);
+                var pairMenu=ChestMenu.sixRows(4,p.getInventory(),pair);
+                var observedStore=NewsRuntime.beforeClick(pairMenu,p);
+                require(observedStore.size()==1&&observedStore.getFirst().pos().equals(canonical),
+                        "double-chest identity depends on half order");
+            }
             NewsRuntime.placed(level,chestPos,Blocks.CHEST.defaultBlockState(),p);
             require(NewsRuntime.owner(level,chestPos)==null,"player property excluded");
             p.getAbilities().instabuild=true;
@@ -107,6 +121,7 @@ final class NewsRuntimeSelfTest {
             evidence.pending.put("ready",new NewsEvidence.Pending(village.toString(),p.getUUID().toString(),"NewsFixture","FOOD_RETURNED",origin.asLong(),0,8));
             NewsRuntime.process(level);NewsRuntime.process(level);
             require(!evidence.pending.containsKey("ready"),"unloaded entries starved ready news");
+            evidence.pending.put("identified",new NewsEvidence.Pending(village.toString(),p.getUUID().toString(),"NewsFixture","CROPS",crop.asLong(),999,1,"crop:"+crop.asLong()));
             var encoded=NewsEvidence.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE,evidence).getOrThrow();
             var decoded=NewsEvidence.CODEC.parse(net.minecraft.nbt.NbtOps.INSTANCE,encoded).getOrThrow();
             require(decoded.pending.equals(evidence.pending)&&decoded.touched.equals(evidence.touched)
@@ -130,7 +145,7 @@ final class NewsRuntimeSelfTest {
                     require(content.equals(source.get(DataComponents.WRITTEN_BOOK_CONTENT)),"long articles and art survive packet codec");
                     for(var page:content.getPages(false)) {
                         var entry=com.chedidandrew.emeraldstandard.client.NewsReader.Entry.parse(page.getString());
-                        require(entry.text().length()>1200&&!entry.text().contains("Headlines are satire"),"developed in-world native article");
+                        require(entry.text().split("\\s+").length>=80&&entry.text().split("\\s+").length<=260&&!entry.text().contains("Headlines are satire"),"developed in-world native article");
                     }
                 } finally {buffer.release();}
             }
@@ -155,7 +170,7 @@ final class NewsRuntimeSelfTest {
         }
     }
     private static void expire(NewsEvidence e) {
-        e.pending.replaceAll((k,p)->new NewsEvidence.Pending(p.village(),p.player(),p.name(),p.kind(),p.pos(),0,p.count()));
+        e.pending.replaceAll((k,p)->new NewsEvidence.Pending(p.village(),p.player(),p.name(),p.kind(),p.pos(),0,p.count(),p.subject()));
     }
     private static void require(boolean ok,String why){if(!ok)throw new IllegalStateException(why);}
 }

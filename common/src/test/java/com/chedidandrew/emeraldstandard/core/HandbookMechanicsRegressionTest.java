@@ -15,7 +15,7 @@ public final class HandbookMechanicsRegressionTest {
             throw new AssertionError("Guided and compact help must include Bank walkway backfill");
         if (!language.contains("Automatic Bank construction uses Village: development radius")
                 || !language.contains("256 horizontal blocks of the original village center")
-                || !language.contains("Development radius\\nalso starts Banks.")
+                || !language.contains("Build range: 256\\nblocks by default.")
                 || language.contains("Within 192 blocks"))
             throw new AssertionError("Guided and compact Bank help must explain the configured activation radius");
         if (!language.contains("Both continue their saved plans and share bounded construction time fairly")

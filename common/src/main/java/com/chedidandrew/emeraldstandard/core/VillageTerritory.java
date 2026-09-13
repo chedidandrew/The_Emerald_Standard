@@ -108,7 +108,7 @@ public final class VillageTerritory {
         List<Long> inside=new ArrayList<>(held); inside.sort(Comparator.comparingLong(c->distance(v.centerPos,cx(c)*16+8,cz(c)*16+8)));
         List<Long> outside=new ArrayList<>(frontier);
         List<long[]> out=new ArrayList<>();
-        append(out,inside,failures,128); append(out,outside,failures,128);
+        append(out,inside,failures,24); append(out,outside,failures,24);
         return out;
     }
     /** Compact row fills and merged outer edges; no internal parcel grid is drawn. */
@@ -142,7 +142,16 @@ public final class VillageTerritory {
         if(cells.isEmpty()) return;
         int start=(int)Math.floorMod((long)sweep*limit,cells.size());
         for(int i=0;i<Math.min(limit,cells.size());i++) {
-            long c=cells.get((start+i)%cells.size()); out.add(new long[]{cx(c)*16L+8,cz(c)*16L+8});
+            long c=cells.get((start+i)%cells.size());
+            int x=cx(c)*16+8,z=cz(c)*16+8;
+            // Ownership stays parcel based; physical origins need not land on a 16-block grid.
+            // Five deterministic micro-sites, still one bounded native preflight per pulse.
+            int[][] offsets={{0,0},{-4,0},{4,0},{0,-4},{0,4}};
+            int rotation=Math.floorMod(Long.hashCode(c),4);
+            for(int n=0;n<5;n++) {
+                int[] offset=n==4?offsets[0]:offsets[1+(n+rotation)%4];
+                out.add(new long[]{(long)x+offset[0],(long)z+offset[1]});
+            }
         }
     }
 }

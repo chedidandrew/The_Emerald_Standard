@@ -1,15 +1,15 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.ConstructionCatchUp;
+import com.chedidandrew.emeraldstandard.core.ConstructionWorkBudget;
 import net.minecraft.server.MinecraftServer;
 
 /** Both physical builders share one night observer and one bounded extra-work allowance. */
 final class ConstructionTimeRuntime {
     private static final ConstructionCatchUp CATCH_UP = new ConstructionCatchUp();
-    private static long pulseTick = Long.MIN_VALUE;
-    private static long deadline;
+    private static final ConstructionWorkBudget WORK = new ConstructionWorkBudget();
 
-    static void reset() { CATCH_UP.reset(); pulseTick = Long.MIN_VALUE; deadline = 0; }
+    static void reset() { CATCH_UP.reset(); WORK.reset(); }
 
     static void tick(MinecraftServer server, EmeraldConfig config) {
         long game = server.overworld().getGameTime();
@@ -17,7 +17,7 @@ final class ConstructionTimeRuntime {
     }
 
     static void observe(long game, long daylight, EmeraldConfig config) {
-        if (game != pulseTick) { pulseTick = game; deadline = 0; }
+        WORK.begin(game, !config.forcedVillageDevelopment() && config.constructionAllowance(game) > 0);
         CATCH_UP.observe(game, daylight, config.villageConstructionBlocksPerSecond(),
                 !config.forcedVillageDevelopment()
                         && (config.villageBanksEnabled() || config.villageVisualProgressionEnabled()),
@@ -28,14 +28,15 @@ final class ConstructionTimeRuntime {
         int normal = config.constructionAllowance(game);
         if (normal <= 0) return 0;
         int extra = CATCH_UP.claim(site, game);
-        if (extra == 0) return normal;
-        return normal + (deadline == 0 || System.nanoTime() < deadline ? extra : 0);
+        return WORK.claim(normal + extra, System.nanoTime());
     }
 
-    static boolean hasTime() {
-        // Start after ordinary preflight/base placement, so expensive template validation
-        // cannot consume every site's bonus before its first extra cell is attempted.
-        if (deadline == 0) deadline = System.nanoTime() + 3_000_000L;
-        return System.nanoTime() < deadline;
+    static void runQueues(Runnable villages, Runnable banks) {
+        // Dispatch the preferred family first so two cheap queues can both work this pulse,
+        // instead of needlessly denying the caller that happened to run first.
+        if (WORK.preferred() == ConstructionWorkBudget.Lane.BANK) { banks.run(); villages.run(); }
+        else { villages.run(); banks.run(); }
     }
+    static boolean enter(ConstructionWorkBudget.Lane lane) { return WORK.enter(lane, System.nanoTime()); }
+    static boolean hasTime() { return WORK.hasTime(System.nanoTime()); }
 }

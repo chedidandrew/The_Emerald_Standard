@@ -76,7 +76,14 @@ tasks.register('verifyConstructionFenceModels', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ConstructionFenceModelSelfTest'
 }
+tasks.register('verifyVanillaVillageBuildings', JavaExec) {
+    group = 'verification'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.VanillaVillageBuildingsSelfTest'
+}
 tasks.named('check') {
+    dependsOn tasks.named('verifyVanillaVillageBuildings')
     dependsOn tasks.named('verifyConstructionFenceModels')
     dependsOn tasks.named('verifyBankerMenuPacket')
     dependsOn tasks.named('verifyVillageBankStructure')

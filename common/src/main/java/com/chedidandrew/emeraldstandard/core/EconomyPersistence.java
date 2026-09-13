@@ -400,6 +400,7 @@ final class EconomyPersistence {
                 Long.toString(village.visualProjectSelectionCursor));
         properties.setProperty(prefix + "architecture.character", village.architectureCharacter);
         properties.setProperty(prefix + "architecture.dialect", village.architectureDialect);
+        properties.setProperty(prefix + "architecture.natural_style", village.naturalVillageStyle);
         writeProsperityFund(properties, prefix + "fund.", village.prosperityFund);
 
         village.residents.forEach((residentId, resident) -> {
@@ -443,6 +444,8 @@ final class EconomyPersistence {
             }
             properties.setProperty(projectPrefix + "abstract_only", Boolean.toString(project.abstractOnly));
             properties.setProperty(projectPrefix + "design.schema", project.designSchema);
+            if (project.vanillaPlan != null)
+                properties.setProperty(projectPrefix + "design.vanilla_plan", project.vanillaPlan.encode());
             properties.setProperty(projectPrefix + "design.seed", Long.toString(project.designSeed));
             properties.setProperty(projectPrefix + "design.silhouette", Integer.toString(project.designSilhouette));
             properties.setProperty(projectPrefix + "design.roof", Integer.toString(project.designRoof));
@@ -1266,6 +1269,7 @@ final class EconomyPersistence {
                     village.visualProjectSelectionCursor = Long.parseLong(value);
             case "architecture.character" -> village.architectureCharacter = value;
             case "architecture.dialect" -> village.architectureDialect = value;
+            case "architecture.natural_style" -> village.naturalVillageStyle = value;
             default -> {
                 // Ignore unknown fields from this supported format.
             }
@@ -1427,6 +1431,7 @@ final class EconomyPersistence {
             }
             case "abstract_only" -> project.abstractOnly = Boolean.parseBoolean(value);
             case "design.schema" -> project.designSchema = value;
+            case "design.vanilla_plan" -> project.vanillaPlan = VanillaConstructionPlan.decode(value);
             case "design.seed" -> project.designSeed = Long.parseLong(value);
             case "design.silhouette" -> project.designSilhouette = Integer.parseInt(value);
             case "design.roof" -> project.designRoof = Integer.parseInt(value);

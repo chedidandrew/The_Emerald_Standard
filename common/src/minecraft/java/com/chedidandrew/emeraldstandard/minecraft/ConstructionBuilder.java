@@ -15,6 +15,7 @@ import net.minecraft.world.level.storage.ValueOutput;
 public final class ConstructionBuilder extends PathfinderMob {
     private static final EntityDataAccessor<Boolean> HAMMERING = SynchedEntityData.defineId(ConstructionBuilder.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<String> CLOTHING = SynchedEntityData.defineId(ConstructionBuilder.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<Boolean> INSPECTING = SynchedEntityData.defineId(ConstructionBuilder.class, EntityDataSerializers.BOOLEAN);
     private boolean clothingChosen;
     public static final java.util.List<String> CLOTHING_STYLES = java.util.List.of("plains","taiga","desert","savanna","snow","jungle","swamp");
     String job = "";
@@ -65,8 +66,9 @@ public final class ConstructionBuilder extends PathfinderMob {
         };
     }
     @Override protected void defineSynchedData(SynchedEntityData.Builder data) {
-        super.defineSynchedData(data); data.define(HAMMERING, false); data.define(CLOTHING,"plains");
+        super.defineSynchedData(data); data.define(HAMMERING, false); data.define(INSPECTING, false); data.define(CLOTHING,"plains");
     }
+    public boolean inspecting() { return entityData.get(INSPECTING); }
     public boolean hammering() { return entityData.get(HAMMERING); }
     public String clothing() {return entityData.get(CLOTHING);}
     public static String validClothing(String style) {return style!=null && CLOTHING_STYLES.contains(style)?style:"plains";}
@@ -97,6 +99,7 @@ public final class ConstructionBuilder extends PathfinderMob {
     }
     @Override protected void customServerAiStep(ServerLevel level) {
         super.customServerAiStep(level);
+        entityData.set(INSPECTING, false);
         chooseClothing(level,job.isEmpty()?blockPosition():focus);
         if (job.isEmpty()) { entityData.set(HAMMERING,false); return; } // Manual creative/summoned visitor.
         Boolean active = ConstructionSitePresentation.active(level, job);
@@ -124,12 +127,16 @@ public final class ConstructionBuilder extends PathfinderMob {
         }
         double distance = distanceToSqr(net.minecraft.world.phys.Vec3.atBottomCenterOf(destination));
         boolean work = !leaving && allowedToWork && atWorkSpot() && !isInWater() && !isPanicking();
-        entityData.set(HAMMERING, work);
+        var cue = ConstructionWorkCue.recent(job, level.getGameTime());
+        boolean inspecting = work && cue != null && cue.finishing() && Math.floorMod(tickCount + getId(), 100) < 20;
+        entityData.set(INSPECTING, inspecting);
+        entityData.set(HAMMERING, work && !inspecting);
         if (work) {
             stuckTicks = 0;
             getNavigation().stop();
             getLookControl().setLookAt(focus.getX() + .5, focus.getY() + .5, focus.getZ() + .5, 30, 30);
-            if ((tickCount + getId()) % 20 == 0) playSound(SoundEvents.STONE_HIT, .22F, .85F + random.nextFloat() * .3F);
+            if (!inspecting && (tickCount + getId()) % 20 == 0)
+                playSound(cue == null ? SoundEvents.STONE_HIT : cue.hit(), .22F, .85F + random.nextFloat() * .3F);
             return;
         }
         if (!leaving && atWorkSpot()) { getNavigation().stop(); return; }

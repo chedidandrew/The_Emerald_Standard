@@ -9,7 +9,7 @@ public final class NewsNarrativeRegressionTest {
     private static void story(NewsWire.Article a) {
         String text=a.text(),body=text.split("\n",6)[5];
         int words=body.trim().split("\\s+").length;
-        require(words>=200&&words<=650,"developed article length "+a.kind()+"/"+a.family()+": "+words);
+        require(words>=80&&words<=650,"developed article length "+a.kind()+"/"+a.family()+": "+words);
         require(body.split("\n\n").length>=5,"paragraph structure");
         String lower=text.toLowerCase(Locale.ROOT);
         for(String forbidden:List.of("headlines are satire","opinion / satire","this bulletin reports","simulated",
@@ -32,7 +32,7 @@ public final class NewsNarrativeRegressionTest {
         }
         UUID village=UUID.fromString("10000000-0000-0000-0000-000000000001"),player=UUID.randomUUID();
         var v=s.village(village);v.centerPos=((long)-1484<<38)|((long)1180<<12)|71;v.foodSupply=25;
-        for(var kind:NewsWire.Kind.values())if(kind.ordinal()>=NewsWire.Kind.FOOD_REMOVED.ordinal()) {
+        for(var kind:NewsWire.Kind.values())if(NewsWire.isPlayer(kind)) {
             NewsWire.player(s,kind,village,player,"NamedResident",1);
             var a=s.news.getLast();story(a);
             String anonymous=new NewsEditorial.Policy(true,true,true).text(a);

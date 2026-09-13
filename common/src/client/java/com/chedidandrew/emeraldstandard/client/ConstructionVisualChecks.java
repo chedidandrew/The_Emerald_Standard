@@ -22,14 +22,14 @@ final class ConstructionVisualChecks extends Screen {
             var s=new ConstructionBuilderRenderer.State(); s.entityType=ConstructionContent.builder;
             s.scale=1; s.ageScale=1; s.pose=Pose.STANDING; s.boundingBoxHeight=1.95F; s.boundingBoxWidth=.6F;
             s.clothing=styles.get(i%styles.size()); s.bodyRot=i==7?90:155;
-            s.ageInTicks=frame; s.hammering=frame>0 && frame!=12;
+            s.ageInTicks=frame; s.inspecting=frame==15; s.hammering=frame>0 && frame!=12 && !s.inspecting;
             s.walkAnimationPos=frame; s.walkAnimationSpeed=frame==12?.65F:0;
             int x=i%4*cellWidth,y=24+i/4*cellHeight;
             g.entity(s,(cellHeight-24)*.43F,new Vector3f(0,1,0),new Quaternionf().rotateZ((float)Math.PI),null,
                     x+2,y,x+cellWidth-2,y+cellHeight-16);
             g.text(font,i==7?"Hammer profile":s.clothing,x+8,y+cellHeight-12,0xffeeeecc,false);
         }
-        g.text(font,frame==0?"Idle / biome clothing":frame==12?"Walking / articulated arms":"Working / fore-aft hammer strike",12,height-12,0xffeeeecc,false);
+        g.text(font,frame==15?"Finishing / inspection":frame==0?"Idle / biome clothing":frame==12?"Walking / articulated arms":"Working / fore-aft hammer strike",12,height-12,0xffeeeecc,false);
     }
     private void fence(GuiGraphicsExtractor g) {
         g.text(font,"Temporary construction caution fence",12,12,0xfff4ce56,false);
@@ -71,7 +71,15 @@ final class ConstructionVisualChecks extends Screen {
         }
         s.hammerPhase=7; model.setupAnim(s);
         if(Math.abs(first-model.rightArm.xRot)<.2F) throw new IllegalStateException("Crew hammer phases synchronized");
-        s.hammering=false; s.walkAnimationSpeed=0; model.setupAnim(s);
+        s.hammering=false; s.inspecting=true; model.setupAnim(s);
+        if(Math.abs(model.rightArm.xRot+.35F)>.001F || Math.abs(model.leftArm.xRot+.85F)>.001F)
+            throw new IllegalStateException("Finishing inspection pose missing");
+        for(int kind=1;kind<=ConstructionBuilderRenderer.HAMMER;kind++) {
+            var layer=new ConstructionBuilderRenderer.Model(kind);layer.setupAnim(s);
+            if(Math.abs(layer.rightArm.xRot-model.rightArm.xRot)>.001F)
+                throw new IllegalStateException("Inspection tool layer detached");
+        }
+        s.inspecting=false; s.walkAnimationSpeed=0; model.setupAnim(s);
         if(Math.abs(model.rightArm.xRot)>.001F || Math.abs(model.leftArm.zRot)>.001F)
             throw new IllegalStateException("Paused worker retained a hammer pose");
     }

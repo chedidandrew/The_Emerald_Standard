@@ -20,6 +20,7 @@ public final class NewspaperMenu extends AbstractContainerMenu {
     private final SimpleContainer document=new SimpleContainer(DOCUMENTS);
     private final SimpleContainerData metadata=new SimpleContainerData(4);
     private Player readingPlayer;
+    private final Player readerPlayer;
     private ItemStack readingStack=ItemStack.EMPTY;
     private EconomyService economy;
     private long lastRefresh=Long.MIN_VALUE;
@@ -29,7 +30,7 @@ public final class NewspaperMenu extends AbstractContainerMenu {
     private List<NewsReader.Entry> cachedReports=List.of(),published=List.of();
     private int publishedPolicy=-1;
     public NewspaperMenu(int id, Inventory inventory) {
-        super(TYPE,id);
+        super(TYPE,id);readerPlayer=inventory.player;
         for(int i=0;i<DOCUMENTS;i++)addSlot(new Slot(document,i,-10000,-10000) {
             @Override public boolean mayPickup(Player p) { return false; }
             @Override public boolean mayPlace(ItemStack s) { return false; }
@@ -114,6 +115,8 @@ public final class NewspaperMenu extends AbstractContainerMenu {
             case FOLLOW_UP -> 50;
             case DONATION, REPLANTED, FOOD_RETURNED -> 40;
             case ROUNDUP -> 20;
+            case CIVIC -> a.family().endsWith("OPEN")||a.family().endsWith("RESTORED")?65:45;
+            case FEATURE -> 10;
         };
         return Math.min(100,base+(int)Math.min(15,Math.log1p(a.quantity())*2));
     }
@@ -122,9 +125,15 @@ public final class NewspaperMenu extends AbstractContainerMenu {
         var policy=EmeraldConfig.current().newsPolicy();
         List<NewsReader.Entry> entries=new ArrayList<>();
         var all=economy.newspaper();
+        UUID focus=readerPlayer==null?null:economy.territoryVillageId(readerPlayer.level().dimension().identifier().toString(),readerPlayer.blockPosition().asLong());
+        Set<Long> visibleIds=new HashSet<>();
+        for(var a:all)if(policy.visible(a))visibleIds.add(a.id());
         for(int i=all.size()-1;i>=0;i--) {
             var a=all.get(i);String visible=policy.text(a);
-            if(visible!=null)entries.add(new NewsReader.Entry(a.id(),NewsEditorial.section(a),visible,a.day(),importance(a),com.chedidandrew.emeraldstandard.client.NewsIllustration.forArticle(a)));
+            if(visible!=null)entries.add(new NewsReader.Entry(a.id(),NewsEditorial.section(a),visible,a.day(),importance(a),com.chedidandrew.emeraldstandard.client.NewsIllustration.forArticle(a),
+                    NewsEditorial.topic(a),
+                    visibleIds.contains(a.sourceId())?a.sourceId():0,
+                    focus!=null&&a.village().equals(focus.toString()),a.kind()==NewsWire.Kind.FEATURE));
         }
         if(entries.equals(published)&&publishedPolicy==policy.flags())return;
         published=List.copyOf(entries);publishedPolicy=policy.flags();generation++;

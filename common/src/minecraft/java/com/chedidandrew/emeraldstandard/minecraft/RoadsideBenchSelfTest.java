@@ -12,6 +12,26 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /** Uses real roadside plans on the construction fixture's flat patch, without editing its terrain. */
 final class RoadsideBenchSelfTest {
+    /** Standalone disposable-server fixture for checking roadside and Bank terrace seats together. */
+    static void verify(ServerLevel level) throws Exception {
+        BlockPos origin = new BlockPos(2300, level.getMaxY() - 35, 2300);
+        Map<BlockPos, BlockState> before = new LinkedHashMap<>();
+        try {
+            for (int x = -20; x <= 20; x++) for (int z = -20; z <= 20; z++) {
+                level.getChunk(origin.offset(x, 0, z));
+                for (int y = -3; y <= 3; y++) {
+                    BlockPos pos = origin.offset(x, y, z);
+                    before.put(pos, level.getBlockState(pos));
+                    level.setBlock(pos, (y < -1 ? Blocks.STONE
+                            : y == -1 ? Blocks.GRASS_BLOCK : Blocks.AIR).defaultBlockState(), 18);
+                }
+            }
+            verify(level, origin, new UUID(0, 41));
+        } finally {
+            before.forEach((pos, state) -> level.setBlock(pos, state, 18));
+        }
+    }
+
     static void verify(ServerLevel level, BlockPos origin, UUID village) throws Exception {
         int seats = 0, gardens = 0;
         // Banks use an eight-cell approach; project streets can run longer.

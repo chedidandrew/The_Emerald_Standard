@@ -818,6 +818,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private Component mapMarkerTitle(VillageDistrictMap.Marker m) {
         if (m.kind() == VillageDistrictMap.DISTRICT) return tr("map.district", m.district());
         if (m.kind() == VillageDistrictMap.BANK) return tr("map.bank");
+        var imported = com.chedidandrew.emeraldstandard.core.VanillaConstructionPlan.labelKind(m.extra());
+        if (imported != null) return tr("village.vanilla." + imported.name().toLowerCase(Locale.ROOT));
         var types = VillageProsperityEngine.ProjectType.values();
         return m.extra() >= 0 && m.extra() < types.length ? projectLabel(types[m.extra()]) : tr("map.site");
     }
@@ -2032,12 +2034,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 TEXT,
                 false);
         int projectOrdinal = menu.villageProjectTypeOrdinal();
-        Component project = projectOrdinal < 0
-                || projectOrdinal >= VillageProsperityEngine.ProjectType.values().length
-                ? tr("village.project.none")
-                : tr("village.project."
-                        + VillageProsperityEngine.ProjectType.values()[projectOrdinal]
-                                .name().toLowerCase(Locale.ROOT));
+        Component project = activeProjectLabel();
         drawTextWithin(graphics,
                 tr("village.project", project),
                 BankerScreenLayout.VILLAGE_RIGHT_TEXT_X,
@@ -2224,7 +2221,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case HOUSING -> tr("news.local.housing.headline");
             case PROJECT -> tr(
                     "news.local.project.headline",
-                    projectLabel(snapshot.projectType()));
+                    activeProjectLabel());
             case DEVELOPMENT_PAUSED -> tr("news.local.development_paused.headline");
             case PROSPERITY -> tr("news.local.prosperity.headline");
             case STEADY -> tr("news.local.steady.headline");
@@ -2275,14 +2272,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     snapshot.projectPlanning()
                             ? "news.local.project.article_planning"
                             : "news.local.project.article_building",
-                    projectLabel(snapshot.projectType()),
+                    activeProjectLabel(),
                     decimal(snapshot.projectProgressPercent()),
                     snapshot.projectBacklog());
             case DEVELOPMENT_PAUSED -> tr(
                     snapshot.projectPlanning()
                             ? "news.local.development_paused.article_planning"
                             : "news.local.development_paused.article_building",
-                    projectLabel(snapshot.projectType()),
+                    activeProjectLabel(),
                     decimal(snapshot.projectProgressPercent()));
             case PROSPERITY -> tr(
                     "news.local.prosperity.article",
@@ -2324,7 +2321,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     decimal(VillageDashboardPolicy.GROWTH_SAFETY_THRESHOLD));
             case SPONSOR_PROJECT -> tr(
                     "news.tip.prosperity.sponsor",
-                    projectLabel(snapshot.projectType()));
+                    activeProjectLabel());
             case SUPPORT_FOUNDATIONS -> tr("news.tip.prosperity.foundations");
             case SUPPORT_FOUNDATIONS_UNTARGETED ->
                     tr("news.tip.prosperity.foundations_untargeted");
@@ -2397,6 +2394,12 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private static VillageProsperityEngine.ProjectType villageProjectType(int ordinal) {
         return ordinal < 0 || ordinal >= VillageProsperityEngine.ProjectType.values().length
                 ? null : VillageProsperityEngine.ProjectType.values()[ordinal];
+    }
+
+    private Component activeProjectLabel() {
+        var imported = com.chedidandrew.emeraldstandard.core.VanillaConstructionPlan.labelKind(menu.villageProjectLabelCode());
+        return imported == null ? projectLabel(menu.villageProjectTypeOrdinal())
+                : tr("village.vanilla." + imported.name().toLowerCase(Locale.ROOT));
     }
 
     private static Component projectLabel(VillageProsperityEngine.ProjectType type) {
@@ -2955,7 +2958,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 String.format(Locale.ROOT, "%.1f",
                                         menu.villageMaterials()),
                                 money(menu.villageTreasury()),
-                                projectLabel(menu.villageProjectTypeOrdinal()),
+                                activeProjectLabel(),
                                 villageProjectStageLabel(),
                                 menu.villageProjectBacklog(),
                                 villageProjectStageDetail()));

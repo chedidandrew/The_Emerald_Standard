@@ -149,7 +149,7 @@ final class WalkwayConnectionsSelfTest {
             for(int i=0;i<150&&!decoded.job(entrance.key()).done();i++)WalkwayConnections.advance(level,entrance,91000+i*20L,2);
             require(decoded.job(entrance.key()).done()&&level.getBlockState(stair).is(Blocks.STONE_BRICK_STAIRS),
                     "entrance steps were not preserved by connection pass");
-            managerEndpoints(origin);
+            managerEndpoints(level,origin);
             System.out.println("PASS walkway connections: truncated-road detour, real endpoint, trees, water, claims, chest, edits,"
                     +" grades, lots, occupancy, budgets, partial reload, no regeneration, unloaded chunks and manager endpoints");
             chest.clearContent();
@@ -160,7 +160,7 @@ final class WalkwayConnectionsSelfTest {
             before.forEach((p,s)->level.setBlock(p,s,18));
         }
     }
-    private static void managerEndpoints(BlockPos origin) {
+    private static void managerEndpoints(ServerLevel level,BlockPos origin) {
         var village=new EconomyState.VillageRecord();village.villageId=UUID.randomUUID();village.centerPos=origin.east(60).asLong();
         village.architectureCharacter=VillageArchitecture.Character.RUSTIC.id();
         village.architectureDialect=VillageArchitecture.BiomeDialect.PLAINS.id();
@@ -168,11 +168,15 @@ final class WalkwayConnectionsSelfTest {
         a.type=VillageProsperityEngine.ProjectType.HOUSE;a.designSchema=VillageArchitecture.MODULAR_SCHEMA;
         a.economicComplete=a.materializedComplete=a.trailMaterializedComplete=a.trailAnchorSet=true;
         a.trailAnchorPos=origin.east(14).asLong();village.projects.add(a);
-        var request=VillageProsperityManager.walkwayRequest(village,a,List.of(),List.of());
+        var request=VillageProsperityManager.walkwayRequest(level,village,a,List.of(),List.of());
         require(request.streetGoal()&&request.destination().equals(BlockPos.of(village.centerPos).below()),
                 "first project still uses arbitrary outskirts anchor");
         var b=a.copy();b.projectId=2;b.originPos=origin.east(35).asLong();village.projects.add(b);
-        var branch=VillageProsperityManager.walkwayRequest(village,b,List.of(),List.of());
+        var unconnected=VillageProsperityManager.walkwayRequest(level,village,b,List.of(),List.of());
+        require(unconnected.streetGoal(),"finished house with no verified walkway must not become a destination");
+        WalkwayConnectionLedger.get(level).put(request.key(),
+                new WalkwayConnectionLedger.Job(List.of(),0,0,Set.of(),true,0,"Connected"));
+        var branch=VillageProsperityManager.walkwayRequest(level,village,b,List.of(),List.of());
         require(!branch.streetGoal()&&branch.destination().equals(request.start()),"later house lacks entrance connection");
         b.trailMaterializedComplete=false;b.trailAnchorPos=BlockPos.of(b.originPos).north(800).asLong();
         require(VillageProsperityManager.walkwayReady(village,b),"empty overlong legacy trail stranded the connectivity pass");

@@ -17,7 +17,7 @@ public final class ConstructionBuilderRenderer extends MobRenderer<ConstructionB
     static final Identifier BASE=Identifier.withDefaultNamespace("textures/entity/villager/villager.png");
     static final Identifier WORK_APRON=Identifier.withDefaultNamespace("textures/entity/villager/profession/toolsmith.png");
     public static final class State extends LivingEntityRenderState {
-        public boolean hammering;
+        public boolean hammering, inspecting;
         public float hammerPhase;
         public String clothing="plains";
     }
@@ -32,7 +32,7 @@ public final class ConstructionBuilderRenderer extends MobRenderer<ConstructionB
     @Override public Identifier getTextureLocation(State state) {return BASE;}
     @Override public void extractRenderState(ConstructionBuilder entity,State state,float partialTicks) {
         super.extractRenderState(entity,state,partialTicks);
-        state.hammering=entity.hammering();state.hammerPhase=Math.floorMod(entity.getUUID().hashCode(),20);
+        state.inspecting=entity.inspecting();state.hammering=entity.hammering();state.hammerPhase=Math.floorMod(entity.getUUID().hashCode(),20);
         state.clothing=entity.clothing();
     }
     static Identifier clothingTexture(String style) {
@@ -106,6 +106,10 @@ public final class ConstructionBuilderRenderer extends MobRenderer<ConstructionB
             head.yRot=state.yRot*(float)Math.PI/180;head.xRot=state.xRot*(float)Math.PI/180;
             float stride=(float)Math.cos(state.walkAnimationPos*.6662)*state.walkAnimationSpeed;
             rightLeg.xRot=stride;leftLeg.xRot=-stride;rightArm.xRot=-stride;leftArm.xRot=stride;
+            if(state.inspecting) {
+                rightArm.xRot=-.35F;leftArm.xRot=-.85F;head.xRot=.32F;
+                head.yRot += .18F*(float)Math.sin(state.ageInTicks*.08F);
+            }
             if(state.hammering) {
                 rightArm.xRot=-1.45F+.65F*(float)Math.sin((state.ageInTicks+state.hammerPhase)*.65F);
                 leftArm.xRot=-.55F;leftArm.zRot=-.16F;head.xRot=.25F;

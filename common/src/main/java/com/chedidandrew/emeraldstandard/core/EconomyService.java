@@ -498,7 +498,10 @@ public final class EconomyService {
         return state == null ? List.of() : List.copyOf(state.news);
     }
     public synchronized boolean reportPlayerNews(NewsWire.Kind kind, UUID village, UUID player, String actor, int quantity) {
-        if (state == null || !NewsWire.player(state,kind,canonicalVillageId(village),player,actor,quantity)) return false;
+        return reportPlayerNews(kind,village,player,actor,quantity,"");
+    }
+    public synchronized boolean reportPlayerNews(NewsWire.Kind kind, UUID village, UUID player, String actor, int quantity, String subject) {
+        if (state == null || !NewsWire.player(state,kind,canonicalVillageId(village),player,actor,quantity,subject)) return false;
         dirty = true;
         return true;
     }
@@ -1674,6 +1677,17 @@ public final class EconomyService {
         }
         return observeVillage(structureId, observation, true, naturalParcels);
     }
+    /** Only discovery with verified default-worldgen evidence may enable vanilla imports. */
+    public synchronized void observeVanillaVillageStyle(UUID villageId, String style) {
+        if (!VillageArchitecture.isKnownDialect(style)) return;
+        EconomyState.VillageRecord village = state == null ? null : state.existingVillage(villageId);
+        if (village == null || !village.organicTerritory || !village.naturalVillageStyle.isBlank()) return;
+        // Never recolor an already established settlement or reinterpret a frozen project.
+        if (!village.architectureDialect.isBlank() && !village.architectureDialect.equals(style)) return;
+        village.naturalVillageStyle = style;
+        village.architectureDialect = style;
+        dirty = true;
+    }
     private VillageSnapshot observeVillage(UUID preferredVillageId, VillageObservation observation, boolean natural) {
         return observeVillage(preferredVillageId, observation, natural, java.util.Set.of());
     }
@@ -2018,7 +2032,16 @@ public final class EconomyService {
         return villageSpatialIndex.nearAny(state.villages, dimension, positions, radius).stream().map(v -> v.villageId).toList();
     }
 
-    public record NewsOwnership(UUID villageId, boolean completedBuilding) {}
+    /** Admission metadata only: an empty village cannot reserve the construction family's turn. */
+    public synchronized boolean hasDevelopmentWork(UUID id) {
+        var v = state == null ? null : state.existingVillage(id);
+        return v != null && v.expansionMode != VillageExpansion.Mode.PAUSED
+                && (v.bankAnchorPos != 0 || v.pendingSettlers > 0 || !v.projects.isEmpty());
+    }
+
+    public record NewsOwnership(UUID villageId, boolean completedBuilding, String subject) {
+        public NewsOwnership(UUID villageId,boolean completedBuilding) {this(villageId,completedBuilding,"");}
+    }
     /** Compact bounded action-path lookup; no financial aggregates or full village copies. */
     public synchronized NewsOwnership newsOwnership(String dimension, long position) {
         if(state==null) return null;
@@ -2032,7 +2055,7 @@ public final class EconomyService {
             long a=p.boundsMinPos,b=p.boundsMaxPos;
             if(x>=(int)(a>>38)&&x<=(int)(b>>38)&&z>=(int)(a<<26>>38)&&z<=(int)(b<<26>>38)
                     &&y>=(int)(a<<52>>52)&&y<=(int)(b<<52>>52))
-                return new NewsOwnership(village.villageId,true);
+                return new NewsOwnership(village.villageId,true,"project:"+p.projectId+":"+p.originPos);
         }
         return new NewsOwnership(village.villageId,false);
     }

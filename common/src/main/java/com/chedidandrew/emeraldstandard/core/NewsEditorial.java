@@ -7,26 +7,41 @@ import java.util.*;
 public final class NewsEditorial {
     public enum Section { MARKETS, LOCAL, PLAYERS, COMMUNITY }
     public record Story(long source, long day, String family, String headline, String outlet,
-                        String village, String ticker, double baseline, int stage) {}
+                        String village, String ticker, double baseline, int stage, double lastChange) {
+        public Story(long source,long day,String family,String headline,String outlet,String village,String ticker,double baseline,int stage) {
+            this(source,day,family,headline,outlet,village,ticker,baseline,stage,0);
+        }
+    }
     public static final class Editor {
         public long nextId=1;
         public boolean playerReports=true;
         public final Map<Long,Story> stories=new LinkedHashMap<>();
         public Map<String,List<String>> templates=Map.of();
+        public final Map<String,NewsCivic.Watch> civic=new LinkedHashMap<>();
         public Editor copy() {
             var e=new Editor();e.nextId=nextId;e.playerReports=playerReports;
-            e.stories.putAll(stories);e.templates=templates;return e;
+            e.civic.putAll(civic);e.stories.putAll(stories);e.templates=templates;return e;
         }
     }
     public record Policy(boolean publicPlayers, boolean anonymous, boolean approximate) {
         public int flags() { return (publicPlayers?1:0)|(anonymous?2:0)|(approximate?4:0); }
+        public boolean visible(NewsWire.Article a) {
+            return publicPlayers||!NewsWire.isPlayer(a.kind())&&(a.kind()!=NewsWire.Kind.FOLLOW_UP||a.village().isEmpty());
+        }
         public String text(NewsWire.Article a) {
-            if(!a.village().isEmpty()&&!publicPlayers) return null;
+            if(!visible(a))return null;
             return NewsNarrative.text(a,anonymous,approximate);
         }
     }
+    public static String topic(NewsWire.Article a) {
+        String key=a.kind()==NewsWire.Kind.ROUNDUP?"CLOSING":a.family().startsWith("PLAYER_")?a.kind().name():a.family();
+        key=key.replaceAll("[^A-Za-z0-9:_-]","_");
+        return key.isEmpty()?a.kind().name():key.substring(0,Math.min(100,key.length()));
+    }
     private NewsEditorial() {}
     public static Section section(NewsWire.Article a) {
+        if(a.kind()==NewsWire.Kind.FEATURE)return Section.COMMUNITY;
+        if(a.kind()==NewsWire.Kind.CIVIC)return Section.LOCAL;
         if(a.village().isEmpty()) return Section.MARKETS;
         return switch(a.kind()) {
             case DONATION, REPLANTED, FOOD_RETURNED -> Section.COMMUNITY;
@@ -85,7 +100,7 @@ public final class NewsEditorial {
             String key=entry.getKey();
             boolean known=key.matches("VOICE_[0-4]")||key.equals("ROUNDUP_UP")||key.equals("ROUNDUP_DOWN");
             for(var e:EconomyEngine.MarketEvent.values())known|=e!=EconomyEngine.MarketEvent.NONE&&key.equals(e.name());
-            for(var k:NewsWire.Kind.values())known|=key.equals("PLAYER_"+k.name());
+            for(var k:NewsWire.Kind.values())known|=NewsWire.isPlayer(k)&&key.equals("PLAYER_"+k.name());
             if(!known||entry.getValue()==null||entry.getValue().isEmpty()||entry.getValue().size()>32)
                 throw new IllegalArgumentException("Invalid template group: "+key);
             for(String value:entry.getValue())if(value==null||value.isBlank()||value.length()>300
@@ -116,53 +131,33 @@ public final class NewsEditorial {
         };
         track(s,new Story(a.id(),a.day(),a.family(),a.headline(),a.outlet(),"",ticker,before.get(ticker),0));
     }
-    public static String localDevelopment(EconomyState s,NewsWire.Kind kind,String village,int quantity) {
-        var previous=s.editor.stories.values().stream().filter(v->v.village().equals(village)).findFirst().orElse(null);
-        if(kind==NewsWire.Kind.FOOD_REMOVED||kind==NewsWire.Kind.CROPS||kind==NewsWire.Kind.DAMAGE) {
-            if(previous==null) {
-                var v=s.existingVillage(UUID.fromString(village));
-                // Independent stable story ID: a daily bulletin can be updated without allocating a new article.
-                track(s,new Story(s.editor.nextId++,s.economicDay,kind.name(),"Village activity follow-up",
-                        NewsWire.OUTLETS.get(3),village,"FOOD",v.foodSupply,0));
-            }
-        } else if(previous!=null&&(kind==NewsWire.Kind.FOOD_RETURNED||kind==NewsWire.Kind.REPLANTED)) {
-            return "This follows the village report of Day "+previous.day()
-                    +". The new "+(kind==NewsWire.Kind.REPLANTED?"planting":"delivery")
-                    +" gives that earlier account another chapter: practical help has now joined the story. "
-                    +"The work of keeping the village supplied continues around it.";
-        }
-        return "";
-    }
     public static void followups(EconomyState s) {
         for(Story story:List.copyOf(s.editor.stories.values())) {
             long age=s.economicDay-story.day();
+            // Legacy local trackers lack incident evidence. Never infer repairs from food scores.
+            if(!story.village().isEmpty()||age>14) {s.editor.stories.remove(story.source());continue;}
             if(age<2||story.stage()==1&&age<7)continue;
-            String detail,headline=story.headline();
-            if(story.village().isEmpty()) {
-                double change=100*(s.prices.get(story.ticker())/story.baseline()-1);
-                detail=NewsNarrative.marketFollowup(s,story,change);
-            } else {
-                if(!s.editor.playerReports){s.editor.stories.remove(story.source());continue;}
-                var v=s.existingVillage(UUID.fromString(story.village()));
-                if(v==null){s.editor.stories.remove(story.source());continue;}
-                double delta=v.foodSupply-story.baseline();
-                headline=delta>1?"Village food estimate improves after earlier activity report":"Village follow-up: checking the food outlook";
-                detail=NewsNarrative.localFollowup(story,v.foodSupply,delta,s.economicDay);
-            }
-            append(s,new NewsWire.Article(s.economicDay,NewsWire.Kind.FOLLOW_UP,story.family(),story.outlet(),
-                    story.village(),"",0,"Follow-up: "+headline,detail));
+            double change=100*(s.prices.get(story.ticker())/story.baseline()-1);
+            if(Math.abs(change-story.lastChange())<3)continue;
+            String headline=NewsWire.choose(s,"FOLLOW_"+story.family(),List.of(
+                story.ticker()+": a new turn after “"+story.headline()+"”",
+                "After the headline: "+story.ticker()+" moves again",
+                "The next chapter in "+story.ticker()+"'s account"));
+            append(s,new NewsWire.Article(0,s.economicDay,NewsWire.Kind.FOLLOW_UP,story.family(),story.outlet(),
+                    "","",0,headline,NewsNarrative.marketFollowup(s,story,change),"",story.source()));
             if(age>=7)s.editor.stories.remove(story.source());
             else s.editor.stories.put(story.source(),new Story(story.source(),story.day(),story.family(),story.headline(),
-                    story.outlet(),story.village(),story.ticker(),story.baseline(),1));
+                    story.outlet(),"",story.ticker(),story.baseline(),1,change));
         }
     }
     public static void write(EconomyState s,Properties p) {
+        NewsCivic.write(s,p);
         p.setProperty("news.next_id",""+s.editor.nextId);p.setProperty("news.stories",""+s.editor.stories.size());
         int i=0;for(var v:s.editor.stories.values()) {
             String k="news.story."+(i++)+".";
             p.setProperty(k+"id",""+v.source());p.setProperty(k+"day",""+v.day());p.setProperty(k+"family",v.family());
             p.setProperty(k+"headline",v.headline());p.setProperty(k+"outlet",v.outlet());p.setProperty(k+"village",v.village());
-            p.setProperty(k+"ticker",v.ticker());p.setProperty(k+"baseline",""+v.baseline());p.setProperty(k+"stage",""+v.stage());
+            p.setProperty(k+"ticker",v.ticker());p.setProperty(k+"baseline",""+v.baseline());p.setProperty(k+"stage",""+v.stage());p.setProperty(k+"last_change",""+v.lastChange());
         }
     }
     private static String need(Properties p,String k){return Objects.requireNonNull(p.getProperty(k),k);}
@@ -172,23 +167,25 @@ public final class NewsEditorial {
             // Older articles lack pre-event baselines. Never fabricate them during migration.
             return;
         }
+        NewsCivic.read(s,p);
         s.editor.nextId=Long.parseLong(need(p,"news.next_id"));
         int count=Integer.parseInt(need(p,"news.stories"));if(count<0||count>64)throw new IOException("Story limit");
         for(int i=0;i<count;i++) {
             String k="news.story."+i+".";
             var v=new Story(Long.parseLong(need(p,k+"id")),Long.parseLong(need(p,k+"day")),need(p,k+"family"),
                     need(p,k+"headline"),need(p,k+"outlet"),need(p,k+"village"),need(p,k+"ticker"),
-                    Double.parseDouble(need(p,k+"baseline")),Integer.parseInt(need(p,k+"stage")));
+                    Double.parseDouble(need(p,k+"baseline")),Integer.parseInt(need(p,k+"stage")),Double.parseDouble(p.getProperty(k+"last_change","0")));
             if(s.editor.stories.put(v.source(),v)!=null)throw new IOException("Duplicate story");
         }
         validate(s);
     }
     public static void validate(EconomyState s) throws IOException {
+        NewsCivic.validate(s);
         if(s.editor.nextId<1||s.editor.stories.size()>64)throw new IOException("Invalid news editor");
         Set<Long> ids=new HashSet<>();
-        for(var a:s.news)if(a.id()<1||a.id()>=s.editor.nextId||!ids.add(a.id()))throw new IOException("Invalid article ID");
+        for(var a:s.news)if(a.id()<1||a.id()>=s.editor.nextId||a.sourceId()>=s.editor.nextId||a.sourceId()==a.id()||!ids.add(a.id()))throw new IOException("Invalid article ID");
         for(var v:s.editor.stories.values())if(v.source()<1||v.source()>=s.editor.nextId||v.day()<0||v.day()>s.economicDay
-                ||!Double.isFinite(v.baseline())||v.baseline()<0||v.stage()<0||v.stage()>1
+                ||!Double.isFinite(v.lastChange())||!Double.isFinite(v.baseline())||v.baseline()<0||v.stage()<0||v.stage()>1
                 ||!NewsWire.OUTLETS.contains(v.outlet())||v.headline().length()>2000||v.family().length()>100
                 ||v.village().isEmpty()&&(!s.prices.containsKey(v.ticker())||v.baseline()<=0)
                 ||!v.village().isEmpty()&&!v.village().matches("[0-9a-f-]{36}"))throw new IOException("Invalid developing story");

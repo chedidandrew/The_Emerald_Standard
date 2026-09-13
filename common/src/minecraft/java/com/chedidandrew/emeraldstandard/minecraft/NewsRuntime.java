@@ -22,8 +22,8 @@ public final class NewsRuntime {
     private static MinecraftServer server;
     private static EconomyService economy;
     private static final Map<UUID,Long> lastOpen=new HashMap<>();
-    public record BreakEvidence(UUID village,BlockPos pos,boolean crop,BlockState original) {}
-    public record ContainerBefore(Container container,UUID village,int count) {}
+    public record BreakEvidence(UUID village,BlockPos pos,boolean crop,BlockState original,String subject) {}
+    public record ContainerBefore(Container container,UUID village,int count,BlockPos pos) {}
     private NewsRuntime() {}
     public static void start(MinecraftServer s,EconomyService e) {
         server=s;economy=e;lastOpen.clear();
@@ -65,7 +65,7 @@ public final class NewsRuntime {
         boolean crop=state.getBlock() instanceof CropBlock;
         if(!crop&&!state.isSolidRender()&&!state.hasBlockEntity()) return null;
         UUID village=owner(level,pos);
-        return village==null?null:new BreakEvidence(village,pos.immutable(),crop,state);
+        return village==null?null:new BreakEvidence(village,pos.immutable(),crop,state,subject(level,pos,crop));
     }
     public static void afterBreak(ServerPlayer p,BreakEvidence observation,boolean success) {
         if(!success||observation==null||!enabled(p)) return;
@@ -73,11 +73,11 @@ public final class NewsRuntime {
         if(level.getBlockState(observation.pos).equals(observation.original)) return;
         NewsEvidence data=NewsEvidence.get(level);
         String key=observation.crop?"crop:"+observation.pos.asLong():
-                "damage:"+p.getUUID()+":"+observation.village;
+                "damage:"+p.getUUID()+":"+observation.village+":"+observation.subject;
         int count=observation.crop?1:1+Optional.ofNullable(data.pending.get(key)).map(NewsEvidence.Pending::count).orElse(0);
         queue(data,key,new NewsEvidence.Pending(observation.village.toString(),p.getUUID().toString(),
                 p.getName().getString(),observation.crop?"CROPS":"DAMAGE",observation.pos.asLong(),
-                level.getGameTime()+(observation.crop?2400:200),Math.min(count,1000000)));
+                level.getGameTime()+(observation.crop?2400:200),Math.min(count,1000000),observation.subject));
     }
     public static void placed(ServerLevel level,BlockPos pos,BlockState expected,Player player) {
         if(server!=level.getServer()) return;
@@ -88,9 +88,14 @@ public final class NewsRuntime {
         if(expected.getBlock() instanceof CropBlock && crop!=null) {
             if(player instanceof ServerPlayer p&&enabled(p))
                 queue(data,key,new NewsEvidence.Pending(crop.village(),p.getUUID().toString(),p.getName().getString(),
-                        "REPLANTED",pos.asLong(),crop.due(),1));
+                        "REPLANTED",pos.asLong(),crop.due(),1,crop.subject()));
             else { data.pending.remove(key); data.setDirty(); }
             return;
+        }
+        if(expected.getBlock() instanceof CropBlock&&player instanceof ServerPlayer p&&enabled(p)) {
+            UUID village=owner(level,pos);
+            if(village!=null)queue(data,key,new NewsEvidence.Pending(village.toString(),p.getUUID().toString(),
+                    p.getName().getString(),"REPLANTED",pos.asLong(),level.getGameTime()+100,1,"crop:"+pos.asLong()));
         }
         data.touched(pos.asLong());
     }
@@ -108,7 +113,7 @@ public final class NewsRuntime {
             BlockPos pos=containerPos(p,c);
             if(pos==null) continue;
             UUID village=owner((ServerLevel)p.level(),pos);
-            if(village!=null) result.add(new ContainerBefore(c,village,food(c)));
+            if(village!=null) result.add(new ContainerBefore(c,village,food(c),pos));
             if(result.size()>=2) break;
         }
         return result;
@@ -119,11 +124,11 @@ public final class NewsRuntime {
         for(var b:before) {
             int delta=b.count-food(b.container);
             if(delta==0) continue;
-            String key="food:"+p.getUUID()+":"+b.village;
+            String key="food:"+p.getUUID()+":"+b.village+":"+b.pos.asLong();
             var old=data.pending.get(key);
             int count=Math.max(-1000000,Math.min(1000000,(old==null?0:old.count())+delta));
             queue(data,key,new NewsEvidence.Pending(b.village.toString(),p.getUUID().toString(),p.getName().getString(),
-                    "FOOD_REMOVED",p.blockPosition().asLong(),old==null?level.getGameTime()+200:old.due(),count));
+                    "FOOD_REMOVED",b.pos.asLong(),old==null?level.getGameTime()+200:old.due(),count,"store:"+b.pos.asLong()));
         }
     }
     static int food(Container c) {
@@ -148,7 +153,8 @@ public final class NewsRuntime {
         }
         if(halves.size()!=2) return null;
         UUID a=owner(level,halves.getFirst()),b=owner(level,halves.getLast());
-        return a!=null&&a.equals(b)?halves.getFirst():null;
+        // A double chest has one identity even if chunk/container iteration reverses its halves.
+        return a!=null&&a.equals(b)?halves.stream().min(Comparator.comparingLong(BlockPos::asLong)).orElseThrow():null;
     }
     static UUID owner(ServerLevel level,BlockPos pos) {
         if(economy==null||server!=level.getServer()||level.getChunkSource().getChunkNow(pos.getX()>>4,pos.getZ()>>4)==null) return null;
@@ -184,6 +190,14 @@ public final class NewsRuntime {
             }
         }
         return null;
+    }
+    private static String subject(ServerLevel level,BlockPos pos,boolean crop) {
+        if(crop)return "crop:"+pos.asLong();
+        var site=economy.newsOwnership(level.dimension().identifier().toString(),pos.asLong());
+        if(site!=null&&!site.subject().isEmpty())return site.subject();
+        // Natural/explicit property without a managed project has only area-level evidence.
+        // It cannot be used to claim restoration of a particular building.
+        return "area:"+(pos.getX()>>4)+":"+(pos.getZ()>>4);
     }
     private static boolean inside(BlockPos p,BlockPos a,BlockPos b) {
         return p.getX()>=a.getX()&&p.getX()<=b.getX()&&p.getY()>=a.getY()&&p.getY()<=b.getY()
@@ -226,7 +240,7 @@ public final class NewsRuntime {
                     }
                     if(quantity>0 && ((kind!=NewsWire.Kind.FOOD_REMOVED&&kind!=NewsWire.Kind.FOOD_RETURNED)||quantity>=8)
                             && (kind!=NewsWire.Kind.DAMAGE||quantity>=4))
-                        economy.reportPlayerNews(kind,UUID.fromString(p.village()),UUID.fromString(p.player()),p.name(),quantity);
+                        economy.reportPlayerNews(kind,UUID.fromString(p.village()),UUID.fromString(p.player()),p.name(),quantity,p.subject());
                 } catch(IllegalArgumentException invalid) { /* Invalid old evidence cannot name an offender. */ }
                 done.add(entry.getKey());
             }

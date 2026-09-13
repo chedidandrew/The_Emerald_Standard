@@ -9,27 +9,28 @@ public final class NewsEditorialRegressionTest {
     public static void main(String[] args) throws Exception {
         var s=EconomyState.fresh(53,0,0);UUID village=UUID.randomUUID(),player=UUID.randomUUID();
         var v=s.village(village);v.centerPos=((long)1484<<38)|((long)1180<<12)|71;v.foodSupply=25;
-        NewsWire.player(s,NewsWire.Kind.CROPS,village,player,"OriginalName",8);
+        NewsWire.player(s,NewsWire.Kind.CROPS,village,player,"OriginalName",8,"crop:91");
         long id=s.news.getLast().id();
-        NewsWire.player(s,NewsWire.Kind.CROPS,village,player,"Renamed",2);
+        NewsWire.player(s,NewsWire.Kind.CROPS,village,player,"Renamed",2,"crop:91");
         require(s.news.size()==1&&s.news.getLast().id()==id&&s.news.getLast().quantity()==10,"daily stable ID aggregation");
         String anonymized=new NewsEditorial.Policy(true,true,true).text(s.news.getLast());
         require(!anonymized.contains("Renamed")&&!anonymized.contains("1484")&&!anonymized.contains("1180"),"server privacy");
         require(new NewsEditorial.Policy(false,false,false).text(s.news.getLast())==null,"public reports disabled");
-        NewsWire.player(s,NewsWire.Kind.REPLANTED,village,UUID.randomUUID(),"Gardener",3);
-        require(s.news.getLast().detail().contains("report of Day 0")&&s.news.getLast().text().contains("replanted 3 crop positions"),"factual local sequel");
+        NewsWire.player(s,NewsWire.Kind.REPLANTED,village,UUID.randomUUID(),"Gardener",3,"crop:91");
+        require(s.news.getLast().detail().contains("(Day 0)")&&s.news.getLast().text().contains("replanted 3 crop positions"),"factual local sequel");
         s.economicDay=1;NewsWire.player(s,NewsWire.Kind.CROPS,village,player,"Renamed",1);
         require(s.news.getLast().id()!=id,"new daily bulletin");
         NewsWire.day(s,EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS,Map.copyOf(s.prices));
         long market=s.news.getLast().id();
         for(int i=0;i<600;i++)NewsWire.player(s,NewsWire.Kind.DONATION,village,UUID.randomUUID(),"Donor",64);
         require(s.news.size()==256&&s.news.stream().anyMatch(a->a.id()==market),"reserved market history");
-        s.news.clear();s.economicDay=3;NewsEditorial.followups(s);
+        s.news.clear();s.prices.put("NETH",s.prices.get("NETH")*1.08);s.economicDay=3;NewsEditorial.followups(s);
         require(s.news.stream().anyMatch(a->a.kind()==NewsWire.Kind.FOLLOW_UP&&a.village().isEmpty()),"eviction cannot cancel scheduled follow-up");
         require(s.news.stream().anyMatch(a->a.detail().contains("pre-event")),"follow-up measures since event, not just today");
-        s.economicDay=8;v.foodSupply=40;NewsEditorial.followups(s);
-        require(s.news.stream().anyMatch(a->a.detail().contains("food outlook stands at 40.0")&&a.detail().contains("+15.0 points")),"local food observation not invented repairs");
+        s.economicDay=8;v.foodSupply=40;s.prices.put("NETH",s.prices.get("NETH")*.9);NewsEditorial.followups(s);
+        require(s.news.stream().noneMatch(a->a.kind()==NewsWire.Kind.FOLLOW_UP&&!a.village().isEmpty()),"unverified local food sequels withheld");
         require(s.editor.stories.isEmpty(),"developing state expires");
+        s.commodityPrices.put("netherite",s.prices.get("NETH"));
         s.liveMarket=LiveMarket.adopt(s); // News fixture deliberately advances only its editorial date.
         s.validate();
 
@@ -67,6 +68,7 @@ public final class NewsEditorialRegressionTest {
             RegressionTestSupport.refreshChecksum(legacy);RegressionTestSupport.writeProperties(path,legacy);
             var upgraded=EconomyState.load(path,0,0,0);
             require(upgraded.news.size()==s.news.size()&&upgraded.news.getFirst().headline().equals(s.news.getFirst().headline()),"format31 text preserved");
+            require(upgraded.news.stream().allMatch(a->a.sourceId()==0),"pre-ID archives must not retain links to reassigned IDs");
             require(upgraded.editor.nextId==upgraded.news.size()+1&&upgraded.editor.stories.isEmpty(),"migration does not invent baseline");
         } finally {RegressionTestSupport.deleteTree(root);}
         System.out.println("PASS NewsEditorialRegressionTest: stable editions, privacy, reserved history, factual follow-ups, templates and format31 migration");

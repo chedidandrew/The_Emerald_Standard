@@ -494,6 +494,15 @@ public final class VillageProsperityEngine {
         } else {
             character = VillageArchitecture.Character.fromId(village.architectureCharacter);
         }
+        VanillaConstructionPlan imported = requirePhysicalWorld
+                ? VanillaBuildingCatalog.choose(village, desired, project.projectId) : null;
+        if (imported != null) {
+            project.designSchema = VanillaConstructionPlan.SCHEMA;
+            project.vanillaPlan = imported;
+            project.totalBlocks = imported.cells().size();
+            village.projects.add(project);
+            return;
+        }
         List<VillageArchitecture.ExistingBlueprint> existingBlueprints = village.projects.stream()
                 .filter(existing -> VillageArchitecture.BLUEPRINT_SCHEMA.equals(
                         existing.designSchema))
@@ -641,7 +650,7 @@ public final class VillageProsperityEngine {
         project.completedDay = day;
         village.housingCapacity = (int) Math.min(
                 Integer.MAX_VALUE,
-                (long) village.housingCapacity + Math.max(0, project.type.housingGain()));
+                (long) village.housingCapacity + Math.max(0, project.housingGain()));
         // Economic completion is authoritative while the guarded block queue catches up.
         project.abstractOnly = !requirePhysicalWorld;
     }
@@ -660,7 +669,7 @@ public final class VillageProsperityEngine {
         boolean hasWarehouse = countProjects(village, ProjectType.WAREHOUSE) >= (village.organicTerritory ? 1 + village.population/64 : 1);
         boolean hasMine = hasProject(village, ProjectType.MINE_ENTRANCE);
         boolean hasMarket = countProjects(village, ProjectType.MARKET_SQUARE) >= (village.organicTerritory ? 1 + village.population/96 : 1);
-        boolean hasSmithy = hasProject(village, ProjectType.SMITHY);
+        boolean hasSmithy = countProjects(village, ProjectType.SMITHY) >= (village.organicTerritory ? 1 + village.population/64 : 1);
         boolean hasGranary = countProjects(village, ProjectType.GRANARY) >= (village.organicTerritory ? 1 + village.population/48 : 1);
         boolean hasGuardPost = countProjects(village, ProjectType.GUARD_POST) >= (village.organicTerritory ? 1 + village.population/64 : 1);
         boolean hasExchange = hasProject(village, ProjectType.EXCHANGE_HALL);
@@ -680,9 +689,7 @@ public final class VillageProsperityEngine {
         } else if (foodDays < 18.0 && !hasGranary && committedPopulation >= 5) {
             desired = ProjectType.GRANARY;
         } else if (committedPopulation >= effectiveHousing - 1 && (village.organicTerritory || housingProjects < 6)) {
-            desired = village.developmentTier >= 3
-                    ? ProjectType.INN
-                    : village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
+            desired = residentialChoice(village, worldSeed);
         } else if (!hasWarehouse && committedPopulation >= 6 && village.prosperity >= 42.0) {
             desired = ProjectType.WAREHOUSE;
         } else if (!hasMine && committedPopulation >= 5 && village.developmentTier >= 1) {
@@ -725,7 +732,7 @@ public final class VillageProsperityEngine {
         };
         if (desired == null
                 || (isUniqueProject(desired) && !(village.organicTerritory && switch (desired) {
-                    case WAREHOUSE, MARKET_SQUARE, GRANARY, GUARD_POST -> true;
+                    case WAREHOUSE, MARKET_SQUARE, GRANARY, GUARD_POST, SMITHY -> true;
                     default -> false;
                 }) && hasProject(village, desired))
                 || village.projectSerial == Long.MAX_VALUE) {
@@ -735,6 +742,27 @@ public final class VillageProsperityEngine {
     }
 
     public record ProjectPlan(ProjectType type, double requiredDevelopment) {}
+
+    /** Stable for a proposed project: waiting another day must not reroll the requested building. */
+    static ProjectType residentialChoice(EconomyState.VillageRecord village, long seed) {
+        if (village.developmentTier < 2) return ProjectType.COTTAGE;
+        // Pre-organic districts have a hard six-residence/twelve-project lifetime ceiling.
+        // Retain their old capacity balance; the growing natural district gets the new mix.
+        if (!village.organicTerritory)
+            return village.developmentTier >= 3 ? ProjectType.INN : ProjectType.HOUSE;
+        int homes = countProjects(village, ProjectType.HOUSE) + countProjects(village, ProjectType.COTTAGE);
+        int inns = countProjects(village, ProjectType.INN);
+        // Trade/market evidence represents guest demand, not a separate simulated visitor population.
+        boolean guestDemand = village.developmentTier >= 3
+                && (village.tradeOutput >= 12.0 || hasProject(village, ProjectType.MARKET_SQUARE)
+                    || hasProject(village, ProjectType.EXCHANGE_HALL));
+        int innWeight = guestDemand && homes >= 2 && inns < (homes + 2) / 3 ? 20 : 0;
+        double roll = unit(seed, village.villageId, village.projectSerial, PROJECT_SALT ^ 0x5245534944454e54L)
+                * (100 + innWeight);
+        if (roll < 20) return ProjectType.COTTAGE;
+        if (roll < 100) return ProjectType.HOUSE;
+        return ProjectType.INN;
+    }
 
     private static void updateDevelopmentTier(EconomyState.VillageRecord village) {
         int completed = (int) village.projects.stream()
@@ -1102,7 +1130,8 @@ public final class VillageProsperityEngine {
 
     private static int countProjects(EconomyState.VillageRecord village, ProjectType type) {
         return (int) village.projects.stream()
-                .filter(project -> project != null && project.type == type)
+                .filter(project -> project != null && project.type == type
+                        && (project.vanillaPlan == null || !project.vanillaPlan.role().equals("civic")))
                 .count();
     }
 
@@ -1189,7 +1218,9 @@ public final class VillageProsperityEngine {
 
     private static int completedProjects(EconomyState.VillageRecord village, ProjectType type) {
         return (int) village.projects.stream()
-                .filter(project -> project.type == type && isProjectOperational(project))
+                .filter(project -> project.type == type && isProjectOperational(project)
+                        && (project.vanillaPlan == null || (project.materializedComplete
+                                && !project.vanillaPlan.role().equals("civic"))))
                 .count();
     }
 
@@ -1206,10 +1237,11 @@ public final class VillageProsperityEngine {
         long unavailable = village.projects.stream()
                 .filter(project -> project != null
                         && project.economicComplete
-                        && (project.manualRepairRequired || project.relocationPending))
+                        && (project.manualRepairRequired || project.relocationPending
+                                || (project.vanillaPlan != null && !project.materializedComplete)))
                 .mapToLong(project -> project.type == null
                         ? 0L
-                        : Math.max(0, project.type.housingGain()))
+                        : Math.max(0, project.housingGain()))
                 .sum();
         long projectAdjusted = Math.max(0L, (long) village.housingCapacity - unavailable);
         long effective = Math.max(village.observedHousingCapacity, projectAdjusted);
@@ -1274,7 +1306,7 @@ public final class VillageProsperityEngine {
                     || !project.economicComplete) {
                 continue;
             }
-            capacity += Math.max(0, project.type.housingGain());
+            capacity += Math.max(0, project.housingGain());
         }
         return capacity;
     }
@@ -1287,7 +1319,7 @@ public final class VillageProsperityEngine {
                     || project.type == null
                     || !project.economicComplete
                     || project.abstractOnly
-                    || project.type.housingGain() <= 0) {
+                    || project.housingGain() <= 0) {
                 continue;
             }
             int authoredSites = 0;
@@ -1314,9 +1346,10 @@ public final class VillageProsperityEngine {
             if (authoredSites <= 0) {
                 continue;
             }
-            int bedsPerSite = VillageArchitecture.isManagedStructureSchema(project.designSchema)
-                    ? Math.max(1, project.type.housingGain() / 2)
-                    : project.type.housingGain();
+            int bedsPerSite = project.vanillaPlan != null ? project.vanillaPlan.beds()
+                    : VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                    ? Math.max(1, project.housingGain() / 2)
+                    : project.housingGain();
             authoredBeds += (long) bedsPerSite * authoredSites;
         }
         return authoredBeds;
@@ -1364,7 +1397,8 @@ public final class VillageProsperityEngine {
         return project != null
                 && project.economicComplete
                 && !project.manualRepairRequired
-                && !project.relocationPending;
+                && !project.relocationPending
+                && (project.vanillaPlan == null || project.materializedComplete);
     }
 
     /**

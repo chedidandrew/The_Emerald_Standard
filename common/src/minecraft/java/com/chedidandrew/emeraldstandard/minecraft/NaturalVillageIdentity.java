@@ -9,7 +9,9 @@ import net.minecraft.tags.StructureTags;
 
 /** Reads loaded structure references only. Generated homes/Bank bells cannot found another village. */
 final class NaturalVillageIdentity {
-    record Village(UUID id, BlockPos center, Set<Long> parcels) {}
+    record Village(UUID id, BlockPos center, Set<Long> parcels, String vanillaStyle) {
+        Village(UUID id, BlockPos center, Set<Long> parcels) { this(id, center, parcels, ""); }
+    }
 
     /** Periodic discovery, not a block scan. Overlapping players share loaded-chunk probes. */
     static List<Village> withinDevelopmentRadius(ServerLevel level, Collection<BlockPos> players, int radius) {
@@ -63,8 +65,24 @@ final class NaturalVillageIdentity {
                 for (int pz = az; pz <= bz && parcels.size() < 4096; pz++)
                     parcels.add(com.chedidandrew.emeraldstandard.core.VillageTerritory.key(px, pz));
         }
-        return new Village(id, start.getBoundingBox().getCenter(), Set.copyOf(parcels));
+        String source = String.valueOf(level.registryAccess().lookupOrThrow(Registries.STRUCTURE).getKey(start.getStructure()));
+        String style = source.matches("minecraft:village_(plains|desert|savanna|taiga|snowy)")
+                ? source.substring("minecraft:village_".length()) : "";
+        // A minecraft namespace can be overridden by a datapack. Require the default definition.
+        if (!style.isBlank() && !hasDefaultFamily(level.getServer().getResourceManager(),style)) style = "";
+        return new Village(id, start.getBoundingBox().getCenter(), Set.copyOf(parcels), style);
     }
+    static boolean hasDefaultFamily(net.minecraft.server.packs.resources.ResourceManager resources,String style) {
+        if (!Set.of("plains","desert","savanna","taiga","snowy").contains(style)) return false;
+        for (String path : List.of("worldgen/structure/village_" + style + ".json",
+                "worldgen/template_pool/village/" + style + "/houses.json",
+                "worldgen/template_pool/village/" + style + "/town_centers.json")) {
+            var resource = resources.getResource(net.minecraft.resources.Identifier.parse("minecraft:" + path));
+            if (resource.isEmpty() || !resource.get().sourcePackId().equals("vanilla")) return false;
+        }
+        return true;
+    }
+
     static Village near(ServerLevel level,BlockPos position) {
         var registry=level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
         Set<Long> checked=new HashSet<>();

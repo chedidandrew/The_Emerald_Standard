@@ -8,85 +8,95 @@ final class NewsNarrative {
     private static int variant(long seed,long day,String key,int n) {
         return (int)(InvestmentGrowth.unit(seed,day,"news-prose:"+key)*n);
     }
-    private static String paragraphs(String... parts) {
+    static final String FACTS="From the notebook\n";
+    static String paragraphs(String... parts) {
         return String.join("\n\n",Arrays.stream(parts).filter(p->p!=null&&!p.isBlank()).toList());
     }
-    static String market(EconomyState s,String family,String publisher,String quotes) {
+    static String market(EconomyState s,String family,String publisher,String headline,String quotes) {
         var scene=NewsStoryCatalog.scene(family);
         int v=variant(s.seed,s.economicDay,family,3);
-        String opening=switch(v) {
-            case 1 -> scene.detail();
-            case 2 -> scene.angle();
-            default -> scene.opening();
-        };
-        String second=v==0?scene.detail():scene.opening();
-        String third=v==2?scene.detail():scene.angle();
-        return paragraphs(opening,second,quotes,third,NewsEditorial.voice(s,publisher),scene.outlook());
+        return paragraphs(scene.opening(),v==0?scene.detail():scene.angle(),
+                column(s,publisher,headline),scene.outlook(),FACTS+"World-market dispatch.\n"+quotes);
+    }
+    private static String column(EconomyState s,String publisher,String headline) {
+        String key="VOICE_"+NewsWire.OUTLETS.indexOf(publisher);
+        return s.editor.templates.containsKey(key)?NewsEditorial.voice(s,publisher):NewsColumns.column(s,publisher,headline);
     }
     static String roundup(EconomyState s,String family,String publisher,String quotes) {
         boolean up=family.endsWith("UP");
-        int v=variant(s.seed,s.economicDay,family,3);
-        String[] leads=up?new String[]{
-            "The closing bell has left the broad village index higher, giving the trading floor a reason to look pleased with itself. There is a peculiar speed to a good day's explanations: an uncertain purchase in the morning can become a carefully considered strategy by supper.",
-            "Green has returned to the broad index, and with it the considerable pleasure of having bought something before it became dearer. The day's advance gives shareholders a better closing account. It also gives yesterday's hesitant decisions a chance to acquire much more distinguished biographies.",
-            "A stronger close has put some distance between the village index and its previous mark. For a market so devoted to looking ahead, it has an impressive appetite for celebrating what has just happened. The bell has barely finished before the success begins collecting explanations."
-        }:new String[]{
-            "The broad village index has finished lower, leaving the trading desks with less to celebrate and rather more arithmetic. A falling close has a way of shortening conversations about genius. The same holdings that inspired expansive plans yesterday now invite a closer look at the bill.",
-            "The closing account is lighter at the broad index. Falling prices make a crowded trading floor feel strangely private: everyone has a particular purchase they would prefer not to discuss. By the bell, the day's business has supplied more questions than comfortable answers.",
-            "Red has taken the day's broad-index close, interrupting the agreeable notion that a portfolio can improve merely by being left under an optimistic description. The decline is entered now. Tomorrow's conversation starts from a lower mark, however affectionately anyone remembers the previous one."
+        String direction=up?"higher":"lower";
+        String lead=switch(NewsWire.OUTLETS.indexOf(publisher)) {
+            case 1 -> "The broad index closed "+direction+". Even a trading floor needs to check the output against the sales pitch. A quotation board is wonderfully responsive equipment; unlike a useful machine, it can change everybody's mood without completing a single chore.";
+            case 2 -> "The broad index ended "+direction+", adding another calculation to the freight desk's daily cargo. A merchant can revise a price in moments. Redirecting the actual load is a longer business, particularly when the convenient route is only convenient on paper.";
+            case 3 -> "The broad index finished "+direction+". At the village end of that news are familiar errands: buying materials, selling a crop and trying to leave enough for supper. An impressive arrow becomes more interesting when somebody has to carry home what it costs.";
+            case 4 -> "The broad index closed "+direction+", a development the Gravel is prepared to describe with tremendous certainty now that it has occurred. The important question is what happens next. We have reserved ample ink for an answer arriving shortly after the next closing bell.";
+            default -> "The broad index closed "+direction+". This puts a new figure beside yesterday's confident explanations. A respectable account begins with that figure and works outward; an exceptionally confident explanation sometimes prefers to start with itself and work around the account.";
         };
-        return paragraphs(leads[v],quotes,
-            "The spread between the strongest and weakest quotations is where the day's smaller stories live. A broad index can conceal a busy argument among its parts: one trade finds buyers while another searches for them. The closing sheet puts those differences beside one another, without giving either side the last word.",
-            up?"An advance is welcome to an existing holder and a higher asking price to the next buyer. That difference keeps the market from becoming a simple celebration. Every purchase still needs someone willing to sell, and the seller is not obliged to share the buyer's enthusiasm."
-              :"A decline is an uncomfortable reckoning for an existing holder and a different asking price for anyone arriving now. That difference keeps the floor in motion. The word bargain travels quickly through a falling market; deciding where it belongs takes rather longer.",
-            NewsEditorial.voice(s,publisher),
-            "Beyond the quotation board, supplies still have to reach their destinations and businesses still have to earn their next emerald. The next session will bring another set of prices to those ordinary tasks. For tonight, the ledger closes on these figures, and even the most energetic explanation must wait for fresh ink.");
+        return paragraphs(lead,column(s,publisher,""),
+                up?"Existing holders have a better closing mark; new buyers face a dearer entry. The same price offers each side a different conversation."
+                  :"Existing holders face a weaker mark; new buyers see a cheaper entry. Neither side gets tomorrow's result included in today's price.",
+                NewsColumns.closing(publisher),FACTS+"The Closing Bell\n"+quotes);
     }
     static String local(NewsWire.Kind kind,int quantity,long seed,long day,String key,String location,String development) {
-        String[] p=NewsLocalStories.passages(kind);
-        int v=variant(seed,day,key,4);
-        String beat=switch(kind) {
-            case VIOLENCE -> "The measure of a village is not only how many roofs it can raise. It is also the place it makes for the lives beneath them. A loss reaches into that quieter measure, where another building or a fuller treasury cannot supply what is missing.";
-            case DONATION -> "A settlement grows through many small commitments as well as its larger projects. The useful gift arrives among them, helping turn available resources into choices. The ledger may record the contribution in a single line, but the work ahead will occupy rather more space.";
-            case DAMAGE -> "A finished structure gathers ordinary life around it almost invisibly. Paths lead to its door, supplies find a place inside, and a familiar shape becomes part of the village. Changes to that shape matter most at the point where someone tries to use it again.";
-            case CROPS,REPLANTED -> "There is no shortcut between a field's beginning and its useful end. Light, time and a succession of small attentions do the work that a grand announcement cannot. The village's next harvest starts here, close enough to the soil to be overlooked by anyone admiring only the skyline.";
-            default -> "Food is one of the village's least patient necessities. A splendid roof cannot be eaten, and a full purse still needs somewhere to buy supper. Keeping stores useful ties the smallest errand to the larger life of the settlement, one contribution or withdrawal at a time.";
-        };
-        return paragraphs(location,NewsLocalStories.facts(kind,quantity),p[v%2],development,
-                p[2+(v/2)],beat,p[3-(v/2)],p[4+(v%2)]);
+        String[] p=NewsLocalStories.passages(kind);int v=variant(seed,day,key,4);
+        return paragraphs(NewsLocalStories.facts(kind,quantity),p[v%2],development,p[2+(v/2)],p[4+(v%2)],
+                FACTS+location+"\n"+NewsLocalStories.facts(kind,quantity));
     }
     static String marketFollowup(EconomyState s,NewsEditorial.Story story,double change) {
-        boolean late=s.economicDay-story.day()>=7;
-        String movement=change < -1?"below":change>1?"above":"close to";
+        String direction=change>story.lastChange()?"higher":"lower";
         String facts=String.format(Locale.ROOT,
-                "%s returns to the story first carried on Day %d. %s now stands %s its pre-event price: %+.2f%% against the close before that report.",
-                story.outlet(),story.day(),story.ticker(),movement,change);
-        return paragraphs(facts,
-            late?"A week gives a dramatic headline time to encounter the slower business beneath it. Orders have to be priced, holdings reconsidered and expectations brought back to the counter. The original dispatch now sits beside a longer trail of quotations, a less theatrical but increasingly useful account of what followed."
-                :"Two days on, the first reaction is no longer the whole story. Traders who met the original dispatch with urgency now have a few more quotations to consider. The price board has continued to move while the ink on the earlier edition has dried.",
-            change>1?"The higher quotation leaves holders of this position with an improvement against the earlier mark. For a buyer arriving today, the same movement means paying more. That familiar disagreement between those already inside a trade and those approaching it is still doing plenty of business."
-              :change < -1?"The lower quotation has taken some value from the earlier mark. Holders have a less comfortable comparison in front of them, while prospective buyers face a cheaper entry. The two groups can study the same figures and discover very different reasons to linger at the counter."
-              :"The quotation remains near the earlier mark. A narrow difference can seem an uneventful ending after an emphatic headline, but a market is under no obligation to provide a dramatic second act. For now, the comparison is quieter than the story that started it.",
-            NewsStoryCatalog.scene(story.family()).outlook(),
-            NewsEditorial.voice(s,story.outlet()),
-            late?"The week ends with this comparison in the ledger. There will be more trading, and the original event will share the board with newer concerns. Its place in the paper is now a continuing chapter rather than a fresh alarm at the top of the page."
-                :"The next edition will find the story a little further along. Between now and then, the interesting work belongs to buyers, sellers and the ordinary demands behind their orders. The quotation above is where this chapter closes, not where the whole affair must end.");
+                "%s: %+.2f%% against its pre-event close; %+.2f percentage points since the previous installment.",
+                story.ticker(),change,change-story.lastChange());
+        String earlier="“"+story.headline()+"” (Day "+story.day()+")";
+        String movement=story.ticker()+" is now "+direction+" than at our previous comparison.";
+        int desk=NewsWire.OUTLETS.indexOf(story.outlet());
+        String opening=switch(desk) {
+            case 1 -> "The progress chart has changed since "+earlier+". "+movement
+                    +" It is a measurable result, although not one that can be demonstrated with a flashing lamp.";
+            case 2 -> "A new quotation has reached the freight desk following "+earlier+". "+movement
+                    +" The number travelled rather more easily than the goods in our dispatches.";
+            case 3 -> "Our report "+earlier+" has another figure beside it. "+movement
+                    +" For readers concerned with everyday supplies, the useful question is what the change will eventually mean at the counter.";
+            case 4 -> "An exclusive development in the price column: "+movement
+                    +" Readers may recall "+earlier+". We have returned to the account with a fresh figure and, for once, the old clipping.";
+            default -> "The accounts have moved on from "+earlier+". "+movement
+                    +" A careful investor will want both entries on the desk before deciding which confident explanation to buy.";
+        };
+        String meaning=switch(desk) {
+            case 1 -> "Our subject remains "+subject(story.family())+". The quotation measures appetite for the trade, not the usefulness of a newly wired invention. Those tests deserve separate columns.";
+            case 2 -> "This is still the account of "+subject(story.family())+". A revised price cannot stamp a cargo manifest or clear a route. The goods will need to make their own journey.";
+            case 3 -> "The underlying story concerns "+subject(story.family())+". A market figure is worth knowing, but it cannot count the food in a cupboard or the people who need it.";
+            case 4 -> "The subject is "+subject(story.family())+", despite our opinion desk's willingness to broaden the investigation to everything. The fresh evidence concerns the price, not a newly discovered disaster.";
+            default -> "The subject remains "+subject(story.family())+". Today's quotation changes the valuation, not the facts of the earlier dispatch. A balance sheet and an explanation should still be examined separately.";
+        };
+        String closing=switch(desk) {
+            case 1 -> "We shall keep the old chart. The next demonstration may otherwise claim to have invented this one.";
+            case 2 -> "The earlier dispatch is filed beside today's quotation. Neither will be reimbursed as excess baggage.";
+            case 3 -> "The old clipping stays in the file. Village errands will provide their own verdict in due course.";
+            case 4 -> "Our headline department wanted a larger conclusion. It has been offered a larger pencil instead.";
+            default -> "Readers are advised to keep the old account: certainty is much easier to sell when nobody keeps receipts.";
+        };
+        return paragraphs(opening,meaning,column(s,story.outlet(),""),closing,
+                FACTS+facts+"\nEarlier report: Day "+story.day()+".");
     }
-    static String localFollowup(NewsEditorial.Story story,double supply,double delta,long day) {
-        return paragraphs(String.format(Locale.ROOT,
-            "Returning to the village after the report of Day %d, the food outlook stands at %.1f, a change of %+.1f points since that edition.",story.day(),supply,delta),
-            delta>1?"The improved outlook gives this return visit a more encouraging starting point. Food sits close to the center of every village's future: it shapes the confidence with which a settlement can attend to other work. More room in that account is welcome, even while the next harvest and the next meal keep their appointments."
-                :delta < -1?"The weaker outlook puts food back among the village's pressing concerns. Other ambitions are difficult to pursue on an uncertain supper. A settlement can have plans for taller roofs and busier streets while still depending on the much older business of bringing something useful back from its fields."
-                :"The outlook has changed little since the earlier edition. There is no dramatic turn to announce, only the continuing balance between producing food and needing it. In a village, an uneventful account can still represent a great deal of work carried out close to the ground.",
-            "Food arrives through several ordinary doors: a working field, a useful delivery, a store kept ready for its next visitor. It leaves through an equally ordinary demand for meals. Keeping those movements in balance is a daily task, not an occasion that ends when the newspaper moves to another headline.",
-            "The earlier report remains part of the village's recent story. Today's outlook adds another chapter beside it. The most useful changes will be the ones that last through the next round of work, when plans have to meet weather, growing time and the simple appetite of another day.",
-            day-story.day()>=7?"A week after the first report, the village continues beyond the edges of that single event. The next season will be built from smaller errands and longer commitments alike. Much of that effort will never get a headline, although the settlement depends on it more than on the headline it does get."
-                :"This early return finds the village between one edition and the next, with its food account still developing. Planting and provisioning are not especially showy occupations. They are, however, very good reasons for a community to keep looking toward tomorrow.");
+    private static String subject(String family) {
+        return switch(family) {
+            case "NETHER_SUPPLY_CRISIS","PORTAL_REOPENING" -> "the Nether freight routes";
+            case "REDSTONE_REVOLUTION","COPPER_GRID_BUILDOUT" -> "the automation trade";
+            case "GOLDEN_HARVEST","FISHERY_RECOVERY" -> "regional food supplies";
+            case "CREEPER_CATASTROPHE","REGIONAL_REBUILDING" -> "regional transport and rebuilding";
+            case "RAIL_DISRUPTION","END_EXPEDITION_BOOM" -> "freight and travel";
+            case "VILLAGER_CREDIT_SCARE","BANK_STRESS_TEST" -> "regional lending";
+            case "DEEPVEIN_DISCOVERY","COAL_SURPLUS" -> "mining and supply";
+            case "ENCHANTING_FESTIVAL","POTION_RECALL" -> "enchanting and alchemy";
+            case "LUXURY_DEMAND_SLUMP" -> "gemstone demand";
+            default -> "the trade covered by the original dispatch";
+        };
     }
     /** Render legacy copies without changing their stored facts, IDs, dates or pre-event baselines. */
     static String text(NewsWire.Article a,boolean anonymous,boolean approximate) {
         String body=a.detail();
-        if(a.kind().ordinal()>=NewsWire.Kind.FOOD_REMOVED.ordinal() && !body.contains("@{actor}")) {
+        if(NewsWire.isPlayer(a.kind()) && !body.contains("@{actor}")) {
             var location=Pattern.compile("District near X -?\\d+, Z -?\\d+\\.").matcher(body);
             body=local(a.kind(),a.quantity(),a.id(),a.day(),a.family(),
                     location.find()?location.group():"From a local village.","");
@@ -110,8 +120,8 @@ final class NewsNarrative {
         body=body.replace("@{actor}",actor);
         if(!a.village().isEmpty()&&approximate)
             body=body.replaceAll("District near X -?\\d+, Z -?\\d+\\.","From a local village.");
-        return a.outlet()+" | Day "+a.day()+"\n"+(a.village().isEmpty()?"World-market dispatch":"Local report")
-                +"\n\n"+a.headline().replace("off-screen ","")+"\n\n"+body;
+        return a.outlet()+" | Day "+a.day()+"\n"+(a.kind()==NewsWire.Kind.FEATURE?"Letters, columns & notices":a.village().isEmpty()?"World-market dispatch":"Local report")
+                +"\n\n"+a.headline().replace("off-screen ","")+"\n\n"+"By "+NewsColumns.byline(a.outlet())+"\n\n"+body;
     }
     private static String legacyExpansion(NewsWire.Article a,String facts) {
         if(a.kind()==NewsWire.Kind.MARKET) {

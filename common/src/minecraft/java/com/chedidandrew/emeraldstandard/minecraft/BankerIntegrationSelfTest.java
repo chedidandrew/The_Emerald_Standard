@@ -54,6 +54,40 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        if (Boolean.getBoolean("the_emerald_standard.vanillaConstructionSmokeOnly")) {
+            VanillaConstructionSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.districtGrowthSmokeOnly")) {
+            DistrictGrowthSelfTest.verify(level);
+            ConstructionFinishSelfTest.verify(level);
+            ConstructionSupportRecoverySelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            ConstructionOwnershipSelfTest.verify(level);
+            WalkwayEntranceSelfTest.verify(level);
+            return;
+        }
+        if(Boolean.getBoolean("the_emerald_standard.newsSmokeOnly")) {
+            NewsRuntime.verifyForSmoke(level);return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.walkwayEntranceSmokeOnly")) {
+            WalkwayEntranceSelfTest.verify(level);
+            WalkwayConnectionsSelfTest.verify(level);
+            BankConstructionSelfTest.verify(level);
+            WalkwayLightingSelfTest.verify(level);
+            VillageBridgeSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.benchSmokeOnly")) {
+            try {
+                VillageBankBenchSelfTest.run();
+                RoadsideBenchSelfTest.verify(level);
+            } catch (Exception failure) {
+                throw new IllegalStateException("Bank terrace and roadside bench regression", failure);
+            }
+            BankConstructionSelfTest.verify(level);
+            return;
+        }
         if (Boolean.getBoolean("the_emerald_standard.smithySmokeOnly")) {
             SmithyConstructionSelfTest.verify(level);
             ConstructionFinishSelfTest.verify(level);
@@ -101,6 +135,7 @@ public final class BankerIntegrationSelfTest {
         ConstructionOwnershipSelfTest.verify(level);
         WalkwayLightingSelfTest.verify(level);
         WalkwayConnectionsSelfTest.verify(level);
+        WalkwayEntranceSelfTest.verify(level);
         VillageBridgeSelfTest.verify(level);
         CreativeContentSelfTest.verify(level);
         DistrictMapInteractionSelfTest.verify(level);

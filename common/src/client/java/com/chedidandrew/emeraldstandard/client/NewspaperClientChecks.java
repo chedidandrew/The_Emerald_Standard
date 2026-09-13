@@ -17,6 +17,8 @@ final class NewspaperClientChecks {
     static void showPart(Minecraft game,String part) {
         if(part.equals("item-states")) {showItemStates(game);return;}
         if(Set.of("markets","trade","memorial").contains(part)){showIllustratedStory(game,part);return;}
+        if(part.equals("linked")){notebookAndLinks(preview,preview.getMenu());preview.openFirstForTesting();return;}
+        if(part.equals("notebook")){preview.openFirstForTesting();preview.notebookForTesting();return;}
         if(part.equals("browser-article")){preview.openFirstForTesting();return;}
         if(part.equals("contents"))ReaderClientChecks.press(preview,"Contents");
         else if(part.equals("article"))preview.openFirstForTesting();
@@ -123,6 +125,7 @@ final class NewspaperClientChecks {
         check(screen.scrollForTesting()<screen.lineCountForTesting(),"paper scroll bounded");
         ReaderClientChecks.press(screen,"Front page");
         continuousReading(game,screen,menu);
+        notebookAndLinks(screen,menu);
         publish(menu,reports,9);screen.init(game.getWindow().getGuiScaledWidth(),game.getWindow().getGuiScaledHeight());
         screen.acceptUpdatesForTesting();ReaderClientChecks.press(screen,"Front page");
         preview=screen;
@@ -197,6 +200,28 @@ final class NewspaperClientChecks {
         check(screen.matchCountForTesting()==0&&screen.selectedForTesting()==0,"privacy retained stale story");
         ReaderClientChecks.press(screen,"Contents");check(!screen.nextActiveForTesting(),"empty contents loops");
         System.out.println("PASS newspaper native continuous contents/story/text navigation, reverse/end/empty bounds, resize and edition/privacy refresh");
+    }
+    private static void notebookAndLinks(NewspaperScreen screen,NewspaperMenu menu) {
+        var original=new NewsReader.Entry(80001,NewsEditorial.Section.MARKETS,
+                "The Nether Post | Day 1\nWorld-market dispatch\n\nFreight delayed\n\nOriginal report.",1,50,
+                NewsIllustration.TRADE,"NETHER",0,false,false);
+        var sequel=new NewsReader.Entry(80002,NewsEditorial.Section.MARKETS,
+                "The Nether Post | Day 3\nWorld-market dispatch\n\nFreight's next chapter\n\nA changed quotation.\n\nFrom the notebook\nNETH: +8.00% before the first dispatch.",
+                3,70,NewsIllustration.TRADE,"NETHER",80001,false,false);
+        publish(menu,List.of(sequel,original),8);screen.acceptUpdatesForTesting();screen.openFirstForTesting();
+        var header=screen.children().stream().filter(net.minecraft.client.gui.components.Button.class::isInstance)
+                .map(net.minecraft.client.gui.components.Button.class::cast)
+                .filter(b->Set.of("Notebook","Earlier report","Up to date").contains(b.getMessage().getString())).toList();
+        for(var a:header)for(var b:header)if(a!=b)
+            check(a.getY()+a.getHeight()<=b.getY()||b.getY()+b.getHeight()<=a.getY()
+                    ||a.getX()+a.getWidth()<=b.getX()||b.getX()+b.getWidth()<=a.getX(),"article header links overlap");
+        ReaderClientChecks.press(screen,"Notebook");
+        check(screen.notebookVisibleForTesting(),"notebook button failed");
+        ReaderClientChecks.press(screen,"Read story");
+        check(!screen.notebookVisibleForTesting(),"story button failed");
+        ReaderClientChecks.press(screen,"Earlier report");
+        check(screen.selectedForTesting()==80001,"earlier report link failed");
+        System.out.println("PASS newspaper native Notebook/story toggle and retained original-report link");
     }
     private static void publish(NewspaperMenu menu,List<NewsReader.Entry> reports,int generation) {
         for(int batch=0;batch<4;batch++) {

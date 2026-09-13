@@ -1,5 +1,13 @@
 # Progressive construction and accessible entrances
 
+## Matching vanilla projects (beta.45)
+
+[Vanilla construction](VANILLA_CONSTRUCTION.md) uses the same protected placement and
+finishing pipeline with frozen block-state plans. Imported homes count their actual
+beds; their containers stay empty even at handover. No template entities are spawned.
+The five village families remain separate, and below-ground rooms are surveyed before
+excavation. This does not add automatic support for modded-village expansion.
+
 ## Breakable, no-drop construction and finishing repairs (beta.20)
 
 Exact builder-supplied cells remain breakable before physical handover. Their normal block loot
@@ -220,3 +228,33 @@ Explicit [no-build areas](DEVELOPMENT_PROTECTION.md) also suspend overlapping pe
 Workers now share construction's eligibility checks; paused, abandoned and repair-required
 projects release assignments, while temporary obstructions put deliveries on hold. A blocked
 founding home has a bounded, funded replacement path without demolishing its original site.
+
+## beta.44: ordinary shared admission and finishing queues
+
+The speed setting is a per-site target. Ordinary Banks, village projects and queued
+entrance/path work now share a server-thread admission window: at most four batches,
+64 planned operations in a construction pulse, and 16 operations in one batch. The
+cooperative time window is four milliseconds; already admitted preflight and native
+world operations are not interruptible, so this is **not** a four-millisecond tick guarantee.
+The first admitted batch can attempt one safe operation after a slow preflight.
+
+Banks and village work alternate first access when both are active. Each pulse visits
+at most two Banks and two villages, selected through rotating cursors. Within a village,
+active construction and genuinely queued finishing work take turns. Saved cursors,
+protection checks, progress, economic authority and night catch-up rules are retained.
+
+A pending finishing queue replaces whole-village copying per completed building.
+Finished historical trails receive one compatibility audit per session; remaining work
+returns through its saved flags. The queue is disposable on reload and does not grant
+permission to repair completed player-edited structures.
+
+Unreserved organic sites now have five candidate centers per selected parcel, with
+a maximum of 240 candidates in a sweep. One candidate center is preflighted per
+work pulse, including up to four rotations. Safe rotations favor easier approaches,
+fewer terrain changes and the existing connection direction. No saved blueprint is
+rerolled; automatic smaller-blueprint substitution remains deferred.
+
+The Town report gives a dominant observed waiting reason and useful next action.
+An occupied work area resumes automatically; protected land or personal storage is
+not bypassed for speed. A recorded complete placement pass awaiting handover is
+distinguished from ordinary building progress; 99 percent alone is not proof of that state.

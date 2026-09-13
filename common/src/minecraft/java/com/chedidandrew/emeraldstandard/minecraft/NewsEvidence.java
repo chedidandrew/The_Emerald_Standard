@@ -11,12 +11,16 @@ import net.minecraft.world.level.saveddata.*;
 /** Bounded durable observation windows and conservative player-property exclusions. */
 final class NewsEvidence extends SavedData {
     static final int MAX_TOUCHED=65536, MAX_PENDING=2048;
-    record Pending(String village,String player,String name,String kind,long pos,long due,int count) {
+    record Pending(String village,String player,String name,String kind,long pos,long due,int count,String subject) {
+        Pending(String village,String player,String name,String kind,long pos,long due,int count) {
+            this(village,player,name,kind,pos,due,count,"");
+        }
         static final Codec<Pending> CODEC=RecordCodecBuilder.create(i->i.group(
             Codec.STRING.fieldOf("village").forGetter(Pending::village),Codec.STRING.fieldOf("player").forGetter(Pending::player),
             Codec.STRING.fieldOf("name").forGetter(Pending::name),Codec.STRING.fieldOf("kind").forGetter(Pending::kind),
             Codec.LONG.fieldOf("pos").forGetter(Pending::pos),Codec.LONG.fieldOf("due").forGetter(Pending::due),
-            Codec.INT.fieldOf("count").forGetter(Pending::count)).apply(i,Pending::new));
+            Codec.INT.fieldOf("count").forGetter(Pending::count),
+            Codec.STRING.optionalFieldOf("subject","").forGetter(Pending::subject)).apply(i,Pending::new));
     }
     static final Codec<NewsEvidence> CODEC=RecordCodecBuilder.create(i->i.group(
             Codec.LONG.listOf(0,MAX_TOUCHED).fieldOf("touched").forGetter(s->new ArrayList<>(s.touched)),

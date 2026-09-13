@@ -1,6 +1,44 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.40
+## Unreleased: 0.4.0-beta.45
+
+- Add matching default Minecraft buildings alongside TES designs, with a curated five-family catalog, actual bed capacity, role-aware selection and limited civic spaces.
+- Lock expansion to the natural village's architectural family. Reject changed template resources; optional modded-village expansion remains deferred.
+- Save resolved block states before building, preserving designs across restarts and speed changes. Imported plans use existing protected surveys, construction budgets, ownership and walkway finishing.
+- Keep imported containers empty and suppress template entities. Preserve shallow cellar air; order fluid placement safely, support wall banners correctly and normalize buried paths to stable dirt.
+- Update both handbook formats, project labels and debug diagnostics. See the beta.45 validation record for exact coverage and exclusions.
+
+## Previous unreleased candidate: 0.4.0-beta.44
+
+- Give ordinary Banks, projects and finishing tasks shared, fair admission: up to 64 planned operations/four batches per construction pulse, max 16 per batch, with a cooperative 4 ms window. Individual native operations remain non-preemptible.
+- Resolve compact nearby IDs before copying at most two village snapshots; drain a pending finishing queue with small project contexts instead of a whole-village copy for each completed building.
+- Try five deterministic centers per organic parcel, with at most 240 candidates per sweep. Compare safe rotations by entrance grade, terrain edits and connection direction. Keep reservations and player-edit protections.
+- Growing natural districts favor Houses, retain some Cottages, and allow occasional Inns when trade/market demand and the existing residential mix justify them. Fixed-size legacy districts retain their capacity balance.
+- Builder taps reflect recently placed materials; near-complete work occasionally receives a cosmetic look-over. Town advice explains observed waits and distinguishes final inspection from remaining construction.
+- Update guided/compact handbooks and add common and native regression coverage. See the beta.44 district-growth validation record for exact scope and limitations.
+
+## Previous unreleased candidate: 0.4.0-beta.43
+
+- Fix exhausted headline pools using latest-publication rotation; keep one publisher throughout headline, prose, byline and illustration selection.
+- Give five outlets recurring correspondents and distinct notebook prose. Add 24 rotating letters, classifieds, advice, advertisements and columns, with factual notes separate from the story.
+- Replace unrelated village-food follow-ups with exact crop/store/project subjects. Market continuations require new price information and retain original-report links; never infer repairs from food or prices.
+- Cover recorded construction milestones and verified structural restoration without generating historical events on first observation.
+- Favor the reader's district and topic/outlet variety on the front page. Add Notebook/Read story and Earlier report controls while preserving full archive access, paging, privacy and stable editions.
+- Update both handbook formats and add a controlled thirty-edition editorial corpus and regression suite.
+
+## Previous unreleased candidate: 0.4.0-beta.42
+
+- Fix the compact mine's walkway rejecting its own entrance rail as blocked headroom. Cross dry, collision-free rails over recognized existing paving without removing the track or changing its support; retain claims, fluid, storage and clearance checks.
+- Stop project walkways choosing disconnected buildings as destinations. Join a verified connected building (including a newer one) or survey real village roads instead, so the market does not repeatedly target a stranded mine.
+- Keep saved structures, partial paving receipts and completed player-edited connections intact. Update both handbook formats and add the exact reported mine/market regressions.
+
+## Previous unreleased candidate: 0.4.0-beta.41
+
+- Restore the Bank's six terrace seats to their original orientation. Keep the separate roadside-nook benches facing the paving, unchanged from beta.36.
+- Use Bank blueprint v12 for new plans and gallery builds; keep v11 saved construction and completed Banks unchanged. Preserve every other Bank cell, material and placement order.
+- Update both handbook formats and verify terrace geometry, frozen plans and roadside seats together.
+
+## Previous unreleased candidate: 0.4.0-beta.40
 
 - Fix the corner Smithy repeatedly rewinding to 1,180/1,975 operations when vanilla turns a builder-supplied decorative dirt path beneath ironwork into dirt. Recognize that natural ground transition during construction and support checks in both normal and forced development.
 - Keep frozen plans and construction receipts unchanged, retain no-drop protection for the settled ground, and continue rejecting missing blocks, unrelated replacements and mismatched required floors.

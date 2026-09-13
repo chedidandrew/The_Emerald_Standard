@@ -86,7 +86,13 @@ tasks.register('verifyConstructionFenceModels', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ConstructionFenceModelSelfTest'
 }
+tasks.register('verifyVanillaVillageBuildings') {
+    group = 'verification'
+    description = 'Validates imported vanilla templates through the real NeoForge unit-test bootstrap.'
+    dependsOn tasks.named('test')
+}
 tasks.named('check') {
+    dependsOn tasks.named('verifyVanillaVillageBuildings')
     dependsOn tasks.named('verifyConstructionFenceModels')
     dependsOn tasks.named('verifyBankerMenuPacket')
     dependsOn tasks.named('verifyAuthoredVillageStructures')

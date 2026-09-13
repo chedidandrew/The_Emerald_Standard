@@ -86,7 +86,8 @@ public final class VillageBankManager {
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V8 = 8;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V9 = 9;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V10 = 10;
-    private static final int BANK_STRUCTURE_VERSION = 11;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V11 = 11;
+    private static final int BANK_STRUCTURE_VERSION = 12;
     private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
     private static final long BANK_UPGRADE_RETRY_INTERVAL_TICKS = 2_400L;
     private static final int BANKER_RECOVERY_SEARCH_RADIUS = 192;
@@ -352,6 +353,16 @@ public final class VillageBankManager {
             if (forcedDevelopment && !pendingSites.isEmpty())
                 pendingSites = new ArrayList<>(List.of(pendingSites.get(
                         CONSTRUCTION_ROTATION.next("banks", pendingSites.size()))));
+            if (!forcedDevelopment && !pendingSites.isEmpty()) {
+                if (!ConstructionTimeRuntime.enter(com.chedidandrew.emeraldstandard.core.ConstructionWorkBudget.Lane.BANK))
+                    pendingSites.clear();
+                else {
+                    var rotated = new ArrayList<>(pendingSites);
+                    int first = CONSTRUCTION_ROTATION.next("normal-banks", pendingSites.size());
+                    java.util.Collections.rotate(rotated, -first);
+                    pendingSites = new ArrayList<>(rotated.subList(0, Math.min(2, rotated.size())));
+                }
+            }
             for (var entry : pendingSites) {
                 if (CONSTRUCTION_RETRY.getOrDefault(entry.getKey(), 0L) > gameTime) continue;
                 BlockPos origin = BlockPos.of(entry.getValue().origin());
@@ -364,7 +375,7 @@ public final class VillageBankManager {
                     if (allowance == 0) continue;
                     for (; allowance > 0; allowance--) {
                         if (forcedDevelopment && changed > 0 && !ForcedDevelopmentRuntime.hasTime()) break;
-                        if (!forcedDevelopment && changed >= config.constructionAllowance(gameTime)
+                        if (!forcedDevelopment && changed > 0
                                 && !ConstructionTimeRuntime.hasTime()) break;
                         int step = advanceBankConstruction(level, economy, entry.getKey(), entry.getValue());
                         changed += step;
@@ -822,6 +833,8 @@ public final class VillageBankManager {
                 if (storage) economy.markBankStorageHandled(key,plan,cell.position().asLong());
                 ConstructionDiagnostics.record("bank:" + key, "building", matched + 1, parsed.after().size(),
                         level.getGameTime(), "automatic progressive construction");
+                ConstructionWorkCue.placed(VillageConstructionActivity.bankTag(key, plan.origin()),
+                        cell.state(), matched + 1, parsed.after().size(), level.getGameTime());
                 return 1;
             }
         }
@@ -2664,6 +2677,8 @@ public final class VillageBankManager {
         Map<BlockPos, BlockState> authored = new HashMap<>();
         List<BankPlacement> expectedPlan = structureVersion >= BANK_STRUCTURE_VERSION
                 ? bankPlan(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V11
+                        ? legacyBankPlanV11(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V10
                         ? legacyBankPlanV10(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V9
@@ -4104,7 +4119,7 @@ public final class VillageBankManager {
      * toward the Bank (+Z). Preserve every other cell, order and material in the frozen plan.
      * Never rotate arbitrary low stairs: the entrance and carved capitals are not benches.
      */
-    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette legacyPalette) {
+    private static List<BankPlacement> legacyBankPlanV11(BlockPos origin, BankPalette legacyPalette) {
         return legacyBankPlanV10(origin, legacyPalette).stream().map(placement -> {
             if (isBankForecourtSeat(placement.position().subtract(origin))) {
                 return new BankPlacement(placement.position(),
@@ -4112,6 +4127,11 @@ public final class VillageBankManager {
             }
             return placement;
         }).toList();
+    }
+
+    /** V12 restores the original terrace seating only; roadside nooks use their own generator. */
+    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette legacyPalette) {
+        return legacyBankPlanV10(origin, legacyPalette);
     }
 
     private static boolean isBankForecourtSeat(BlockPos relative) {
@@ -5232,15 +5252,15 @@ public final class VillageBankManager {
         }
     }
 
-    /** Reject backwards seats at admission, before any current Bank is placed. */
+    /** Keep the original terrace composition distinct from the inward-opening roadside nooks. */
     private static void validateBankForecourtSeats(
             Map<BlockPos, BlockState> authored, BankPalette palette) {
         for (int x : new int[] {0, 1, 3, BANK_WIDTH - 4, BANK_WIDTH - 2, BANK_WIDTH - 1}) {
             BlockPos position = new BlockPos(x, 1, -4);
             BlockState expected = palette.roofStairs().defaultBlockState()
-                    .setValue(StairBlock.FACING, Direction.SOUTH);
+                    .setValue(StairBlock.FACING, Direction.NORTH);
             if (!expected.equals(authored.get(position))) {
-                throw new IllegalStateException("Village Bank bench must open toward the front path at " + position);
+                throw new IllegalStateException("Village Bank terrace must retain its original seat direction at " + position);
             }
         }
     }

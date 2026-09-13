@@ -52,7 +52,7 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
     private int previousPolicy=-1;
     private Button updates,paperPrevious,paperNext;
     private List<NewspaperPaper.Mark> paperMarks=List.of();
-    private boolean contents,previousBrowser;
+    private boolean contents,previousBrowser,notebook;
     private final List<Button> paperLinks=new ArrayList<>();
     private int paperColumns(){return panelWidth<430?1:2;}
     private int paperTextWidth(){return paperColumns()==1?panelWidth-36:columnWidth();}
@@ -85,6 +85,7 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
             b.active=section!=i;
         }
         reflow();
+        if(selected!=0)articleLinks(false);
         if(selected==0) {
             int count=frontCount();frontPage=Math.max(0,Math.min(frontPage,Math.max(0,(matches.size()-1)/count)));
             for(int i=0;i<count&&frontPage*count+i<matches.size();i++) {
@@ -123,15 +124,35 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
                 link("Story "+(i+1)+": "+e.headline(),x+col+18,topPos+100+(i-1)*44,col,()->open(e)).setHeight(28);
             }
         }
+        if(selected!=0)articleLinks(true);
         link("Front page",x,bottom,bw,()->{selected=0;contents=false;scroll=0;rebuildWidgets();});
         link("Contents",x+bw+6,bottom,bw,()->{selected=0;contents=true;frontPage=0;rebuildWidgets();});
         paperPrevious=link("Previous",x+2*(bw+6),bottom,bw,()->navigate(-1));
         paperNext=link("Next",x+3*(bw+6),bottom,bw,()->navigate(1));
         paperPrevious.active=canTurn(-1);paperNext.active=canTurn(1);
         link("Done",x+4*(bw+6),bottom,bw,this::onClose);
-        updates=link("Up to date",leftPos+panelWidth-142,topPos+47,122,()->{
+        int statusWidth=selected==0?122:Math.min(100,(panelWidth-36)/3);
+        updates=link("Up to date",leftPos+panelWidth-18-statusWidth,topPos+47,statusWidth,()->{
             reader.accept();reflow();rebuildWidgets();
         });
+    }
+    private void articleLinks(boolean paper) {
+        var chosen=matches.stream().filter(e->e.id()==selected).findFirst().orElse(null);
+        if(chosen==null)return;
+        int x=leftPos+18,y=topPos+(paper?47:119);
+        int browserWidth=Math.max(35,Math.min(100,(panelWidth-166)/2));
+        int room=panelWidth-36-Math.min(100,(panelWidth-36)/3)-12;
+        int first=Math.min(80,(room-8)*4/9),second=Math.min(100,room-first-8);
+        if(!NewsReader.facts(chosen).isEmpty()) {
+            if(paper)link(notebook?"Read story":"Notebook",x,y,first,()->{notebook=!notebook;scroll=0;rebuildWidgets();});
+            else button(notebook?"Read story":"Notebook",leftPos+panelWidth-18-browserWidth,y,browserWidth,()->{notebook=!notebook;scroll=0;rebuildWidgets();});
+        }
+        var source=reader.edition().stream().filter(e->e.id()==chosen.sourceId()).findFirst().orElse(null);
+        if(source!=null) {
+            Runnable previousStory=()->{query="";outlet=section=0;reflow();open(source);};
+            if(paper)link("Earlier report",x+first+8,y,second,previousStory);
+            else button("Earlier report",leftPos+panelWidth-26-2*browserWidth,y,browserWidth,previousStory);
+        }
     }
     private int contentsCount(){return Math.max(1,(panelHeight-145)/24);}
     private Button button(String label,int x,int y,int w,Runnable action) {
@@ -139,7 +160,7 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
         var b=Button.builder(Component.literal(label),unused->action.run()).bounds(x,y,w,20).build();
         b.setTooltip(GuiTooltips.widget(Component.literal(label)));return addRenderableWidget(b);
     }
-    private void open(NewsReader.Entry entry) {contents=false;selected=entry.id();reader.markRead(entry);scroll=0;rebuildWidgets();}
+    private void open(NewsReader.Entry entry) {contents=false;notebook=false;selected=entry.id();reader.markRead(entry);scroll=0;rebuildWidgets();}
     private void navigate(int delta) {
         if(!menu.browserMode()){turnPaper(delta,articleCapacity());return;}
         if(selected==0){frontPage+=delta;rebuildWidgets();return;}
@@ -162,7 +183,7 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
         contents=next.story()==NewspaperPaging.CONTENTS;
         if(next.story()<0){selected=0;frontPage=contents?next.offset():0;scroll=0;}
         else {
-            var entry=matches.get(next.story());selected=entry.id();scroll=next.offset();reader.markRead(entry);
+            var entry=matches.get(next.story());if(selected!=entry.id())notebook=false;selected=entry.id();scroll=next.offset();reader.markRead(entry);
         }
         rebuildWidgets(); // Reflow clamps a previous story's end marker after native font wrapping.
     }
@@ -183,7 +204,8 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
                 &&(section==0||a.section().ordinal()==section-1)&&a.text().toLowerCase(Locale.ROOT).contains(needle)).toList():NewsReader.ranked(reader.edition());
         var chosen=matches.stream().filter(a->a.id()==selected).findFirst().orElse(null);
         if(chosen==null)selected=0;
-        String text=chosen==null?"No reports match these filters.":chosen.text();
+        String text=chosen==null?"No reports match these filters.":notebook?
+                chosen.outlet()+" | Day "+chosen.day()+"\nFrom the notebook\n\n"+chosen.headline()+"\n\n"+NewsReader.facts(chosen):NewsReader.storyText(chosen);
         if(menu.browserMode()&&chosen!=null) {
             String[] parts=text.split("\n",6);
             if(parts.length==6)text=parts[5];
@@ -250,7 +272,7 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
             var chosen=matches.get(storyIndex());
             int titleHeight=paragraph(g,chosen.headline(),leftPos+140,topPos+86,
                     Math.max(40,panelWidth-158),2,true);
-            ink(g,chosen.outlet()+" | Day "+chosen.day(),leftPos+140,topPos+90+titleHeight,
+            ink(g,chosen.outlet()+" | Day "+chosen.day(),leftPos+140,topPos+84+titleHeight,
                     Math.max(40,panelWidth-158),0xFF59564C);
             g.enableScissor(leftPos+10,topPos+144,leftPos+panelWidth-10,topPos+panelHeight-49);
             for(int i=0;i<visibleLines()&&i+scroll<lines.size();i++)
@@ -296,7 +318,7 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
     private void drawPaper(GuiGraphicsExtractor g) {
         int x=leftPos+18,y=topPos+82,w=panelWidth-36,col=paperTextWidth();
         long edition=reader.edition().stream().mapToLong(NewsReader.Entry::day).max().orElse(0);
-        ink(g,"Edition day "+edition+" | "+reader.unreadCount()+" unread",x,topPos+53,w-132,0xFF59564C);
+        if(selected==0)ink(g,"Edition day "+edition+" | "+reader.unreadCount()+" unread",x,topPos+53,w-132,0xFF59564C);
         if(selected==0&&contents) {
             ink(g,"CONTENTS",x,y,w,0xFF27251F);
             if(matches.isEmpty())ink(g,"The presses are waiting for their first report.",x,y+28,w,0xFF59564C);
@@ -305,10 +327,10 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
                     x,y,w,6,false);
             else {
                 var lead=matches.getFirst();
-                ink(g,"LEAD STORY  /  "+lead.section().name(),x,y,col,0xFF59564C);
+                ink(g,lead.local()?"YOUR VILLAGE  /  "+lead.section().name():"LEAD STORY  /  "+lead.section().name(),x,y,col,0xFF59564C);
                 int next=y+16+paragraph(g,lead.headline(),x,y+16,col,4,true);
                 ink(g,lead.outlet()+" | Day "+lead.day(),x,next+4,col,0xFF59564C);
-                String[] parts=lead.text().split("\\n",6);
+                String[] parts=NewsReader.storyText(lead).split("\\n",6);
                 String body=parts.length==6?parts[5]:"Open the story to read the full report.";
                 int room=topPos+panelHeight-78-(next+21);
                 int artHeight=Math.min(col/2+14,Math.max(0,room/2));
@@ -356,6 +378,8 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
     }
     private int storyIndex(){for(int i=0;i<matches.size();i++)if(matches.get(i).id()==selected)return i;return 0;}
 
+    void notebookForTesting(){notebook=!notebook;scroll=0;reflow();rebuildWidgets();}
+    boolean notebookVisibleForTesting(){return notebook;}
     int paperSectionForTesting(){return paperPosition().story();}
     int contentsPageForTesting(){return frontPage;}
     int contentsPagesForTesting(){return Math.max(1,(matches.size()+contentsCount()-1)/contentsCount());}

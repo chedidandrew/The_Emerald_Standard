@@ -15,6 +15,8 @@ javac --release 21 -cp "$BUILD" -d "$BUILD" \
     "$ROOT/common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/EmeraldConfig.java"
 javac --release 21 -cp "$BUILD" -d "$BUILD" "${TEST_SOURCES[@]}"
 
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VanillaConstructionRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.DistrictGrowthReviewRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageTerritoryRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.ExploredTerrainStoreRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.NewspaperPagingRegressionTest
@@ -31,6 +33,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.SpendingFundsRegressionT
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsGrowthRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsEditorialRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsNarrativeRegressionTest "$ROOT"
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsroomRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.InvestmentDiversityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.CommodityInvestmentRegressionTest

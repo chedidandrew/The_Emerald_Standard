@@ -67,13 +67,17 @@ public final class HandbookResourceRegressionTest {
         check(Files.mismatch(assets.resolve("textures/item/newspaper.png"),assets.resolve("textures/item/newspaper_open.png"))>=0,
                 "Rolled and pocket editions are distinct artwork");
         check(language.contains("rolled grey newspaper")&&language.contains("pocket gazette")
-                &&language.contains("Rolled when closed.")&&language.contains("Open while reading."),
+                &&language.contains("Rolled / open news."),
                 "Both handbook forms explain the two appearance states");
         check(language.contains("every Contents sheet")&&language.contains("arriving at the end of the preceding report")
                 &&language.contains("Faint paper fibres"),"Newspaper guided navigation and subtle paper guidance");
         check(language.contains("woodcut illustrations")&&language.contains("not a photograph")
-                &&language.contains("finite prose")&&language.contains("Illustrated news."),
+                &&language.contains("finite prose")&&language.contains("Notebook: facts."),
                 "Illustration, authorship and compact news guidance");
+        check(language.contains("Notebook: facts.")&&language.contains("linked story.")
+                &&language.contains("three percentage points")&&language.contains("same crop position")
+                &&language.contains("Civic news remains.")&&language.contains("latest publication"),
+                "Current evidence-linked newsroom and both handbook formats");
         check(language.contains("text, then stories.")&&language.contains("Previous: reverse."),"Compact newspaper route is current");
     }
 
@@ -84,12 +88,23 @@ public final class HandbookResourceRegressionTest {
         Path root = args.length == 0 ? Path.of(".") : Path.of(args[0]);
         String benchGuide = Files.readString(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/lang/en_us.json"));
+        check(benchGuide.contains("matching vanilla homes") && benchGuide.contains("actual bed count")
+                        && benchGuide.contains("imported containers remain empty")
+                        && benchGuide.contains("overhaul mods is not included")
+                        && benchGuide.contains("No free settlers.")
+                        && benchGuide.contains("village.vanilla.tannery")
+                        && benchGuide.contains("handbook.vanilla_buildings.body")
+                        && Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/EmeraldHandbook.java"))
+                                .contains("sectionPage(\"vanilla_buildings\",64"),
+                "Both handbook forms and imported building labels must describe the vanilla scope");
         check(benchGuide.contains("front terrace are decorative benches")
-                        && benchGuide.contains("raised backs toward the building")
+                        && benchGuide.contains("raised backs toward the front path")
+                        && benchGuide.contains("Banks already planned keep their saved arrangement")
+                        && benchGuide.contains("Terraces face the")
                         && benchGuide.contains("Existing completed Banks keep their original blocks")
                         && benchGuide.contains("high backs toward the grass")
                         && benchGuide.contains("Previously saved site layouts and already placed benches stay unchanged")
-                        && benchGuide.contains("paving; old stay."),
+                        && benchGuide.contains("paving. Old stay."),
                 "Handbook must explain Bank seating and the non-destructive update policy");
         String itemDefinition = compact(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/items/handbook.json"));
@@ -290,6 +305,9 @@ public final class HandbookResourceRegressionTest {
                 && language.contains("Saved one-shot receipts") && language.contains("Paths gain lamps."),
                 "Both handbook forms must explain walkway lamps, orientation and no regeneration");
         check(language.contains("Paths detour.") && language.contains("384-block endpoint-distance limit")
+                && language.contains("its walkway must also have reached the village network")
+                && language.contains("Mine entrances can have rails") && language.contains("Mine rails stay.")
+                && language.contains("A stranded older building may join a newer connected one")
                 && language.contains("arbitrary patch near the center") && language.contains("Connection receipts survive reloads")
                 && language.contains("narrow passage is better than a wide dead end"),
                 "Both handbook forms must explain loaded-only walkway connections, bounds and editing");
@@ -356,6 +374,12 @@ public final class HandbookResourceRegressionTest {
             check(words >= minimum, "A reader chapter is still only a brief summary");
         }
         check(chapterCount == 16 && sections.size() == 69, "Long-form chapter coverage changed");
+        check(entries.get(prefix+"planning_building.body").contains("64 planned operations")
+                && entries.get(prefix+"planning_building.body").contains("not a hard upper bound")
+                && entries.get(prefix+"districts.body").contains("five deterministic candidate centers")
+                && entries.get(prefix+"districts.body").contains("Old fixed-size districts")
+                && entries.get(prefix+"construction_crews.body").contains("material most recently placed"),
+                "District growth budget, safe placement, compatibility and material cues must be documented");
         check(sections.contains("bridges") && entries.get(prefix+"bridges.body").contains("active bridge crews")
                 && entries.get(prefix+"bridges.body").contains("queue without payment")
                 && entries.get(prefix+"bridges.body").contains("Completed bridges are yours to modify"),

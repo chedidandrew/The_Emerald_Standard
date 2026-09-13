@@ -70,7 +70,7 @@ public final class VillageDistrictMap {
                         : (int) Math.min(100, (long) project.materializedBlocks * 100 / project.totalBlocks);
                 out.add(new Marker(Math.min(x(min), x(max)), Math.min(z(min), z(max)),
                         Math.max(x(min), x(max)), Math.max(z(min), z(max)), PROJECT, districts.get(id),
-                        status, progress, project.type.ordinal()));
+                        status, progress, project.vanillaPlan == null ? project.type.ordinal() : project.vanillaPlan.labelCode()));
             }
         }
         int lastPage = Math.max(0, (out.total - 1) / PAGE_SIZE);

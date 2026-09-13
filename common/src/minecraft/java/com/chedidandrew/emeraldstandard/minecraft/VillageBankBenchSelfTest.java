@@ -22,8 +22,10 @@ final class VillageBankBenchSelfTest {
         int checks = 0;
         for (BiomeDialect dialect : BiomeDialect.values()) {
             Object palette = method("paletteFor", BiomeDialect.class).invoke(null, dialect);
-            Map<BlockPos, BlockState> before = plan("legacyBankPlanV10", BlockPos.ZERO, palette);
+            Map<BlockPos, BlockState> original = plan("legacyBankPlanV10", BlockPos.ZERO, palette);
+            Map<BlockPos, BlockState> before = plan("legacyBankPlanV11", BlockPos.ZERO, palette);
             Map<BlockPos, BlockState> current = plan("bankPlan", BlockPos.ZERO, palette);
+            require(original.equals(current), "Restored plan differs from the original terrace composition");
             require(List.copyOf(before.keySet()).equals(List.copyOf(current.keySet())),
                     "Bench correction changed footprint or placement order: " + dialect);
             int changed = 0;
@@ -36,9 +38,9 @@ final class VillageBankBenchSelfTest {
                     continue;
                 }
                 require(old.getBlock() instanceof StairBlock
-                                && old.getValue(StairBlock.FACING) == Direction.NORTH,
-                        "Frozen v10 seating changed");
-                require(now.equals(old.setValue(StairBlock.FACING, Direction.SOUTH)),
+                                && old.getValue(StairBlock.FACING) == Direction.SOUTH,
+                        "Frozen v11 seating changed");
+                require(now.equals(old.setValue(StairBlock.FACING, Direction.NORTH)),
                         "Bench correction must change facing only: " + dialect + "/" + pos);
                 require(current.get(pos.below()).isFaceSturdy(EmptyBlockGetter.INSTANCE,
                                 pos.below(), Direction.UP),
@@ -46,9 +48,9 @@ final class VillageBankBenchSelfTest {
                 for (Rotation rotation : Rotation.values()) {
                     for (Mirror mirror : Mirror.values()) {
                         BlockState transformed = now.mirror(mirror).rotate(rotation);
-                        Direction back = rotation.rotate(mirror.mirror(Direction.SOUTH));
+                        Direction back = rotation.rotate(mirror.mirror(Direction.NORTH));
                         require(transformed.getValue(StairBlock.FACING) == back, "Bench transform");
-                        // High back is toward the Bank; the half-height seat opens to the path.
+                        // Original terrace: high back toward the front path; seat opens toward the Bank.
                         require(occupied(transformed, back, 0.75), "Missing raised bench back");
                         require(!occupied(transformed, back.getOpposite(), 0.75), "Seat opens backwards");
                         require(occupied(transformed, back.getOpposite(), 0.25), "Missing low seat");
@@ -80,8 +82,8 @@ final class VillageBankBenchSelfTest {
                 if (!(rejected.getCause() instanceof IllegalStateException)) throw rejected;
             }
         }
-        System.out.println("PASS Bank v11 benches: six exact seats x five dialects; " + checks
-                + " native rotation/mirror seat-shape checks; old plans and all other cells unchanged");
+        System.out.println("PASS Bank v12 restored terrace benches: six exact seats x five dialects; " + checks
+                + " native rotation/mirror seat-shape checks; v10 restored, v11 frozen, all other cells unchanged");
     }
 
     private static boolean occupied(BlockState state, Direction side, double y) {

@@ -267,21 +267,22 @@ final class WalkwayConnections {
             if(!level.getWorldBorder().isWithinBounds(p)||ConstructionOwnership.reserved(level,p))continue;
             BlockState ground=level.getBlockState(p);
             if(VillageBridges.walkable(level,r.village(),p))return p;
+            boolean rail=retainedRail(level,r,p);
             // Existing clear paving can be walked through a completed lot without changing a cell.
             // No new road, plant clearance or furniture is allowed inside the excluded footprint.
             if(WalkwayLighting.excluded(p,r.lots(),r.banks()) && (!existingSurface(r,p,ground)
-                    ||!level.getBlockState(p.above()).isAir()||!level.getBlockState(p.above(2)).isAir()))continue;
+                    ||(!rail&&!level.getBlockState(p.above()).isAir())||!level.getBlockState(p.above(2)).isAir()))continue;
             if(!existingSurface(r,p,ground)&&!VillageProsperityManager.isPaveableTrailGround(ground))continue;
             if(job.supplied().contains(p.asLong())&&!road(ground))continue; // Never regenerate this pass's removed paving.
             if(!ground.getFluidState().isEmpty()||level.getBlockEntity(p)!=null
                     ||(!existingSurface(r,p,ground)
                         &&!level.getBlockState(p.below()).isFaceSturdy(level,p.below(),Direction.UP)))continue;
-            if(!clear(level.getBlockState(p.above()))||!clear(level.getBlockState(p.above(2))))continue;
+            if((!rail&&!clear(level.getBlockState(p.above())))||!clear(level.getBlockState(p.above(2))))continue;
             if(!safeChange(level,r,p,ground,existingSurface(r,p,ground)?ground:surfaceState(r,p,false)))continue;
             boolean permitted=true;
             for(int y=1;y<=2;y++) {
                 BlockPos air=p.above(y); BlockState s=level.getBlockState(air);
-                if(!s.isAir()&&!safeChange(level,r,air,s,Blocks.AIR.defaultBlockState()))permitted=false;
+                if(!s.isAir()&&!safeChange(level,r,air,s,rail&&y==1?s:Blocks.AIR.defaultBlockState()))permitted=false;
             }
             if(permitted)return p;
         }
@@ -388,7 +389,7 @@ final class WalkwayConnections {
             for(int y=2;y>=0&&writes<budget;y--) {
                 BlockPos cell=p.above(y); BlockState current=level.getBlockState(cell);
                 BlockState after=y>0?Blocks.AIR.defaultBlockState():surfaceState(r,p,!center);
-                if((y==0&&existingSurface(r,p,current))||current.equals(after))continue;
+                if((y==0&&existingSurface(r,p,current))||(y==1&&retainedRail(level,r,p))||current.equals(after))continue;
                 if(!safeChange(level,r,cell,current,after)
                         ||!VillageConstructionOccupancy.mayChange(level,cell,current,after)) {occupied=true;break;}
                 if(y==0) { supplied.add(p.asLong()); ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,false,0,"Paving")); }
@@ -399,7 +400,7 @@ final class WalkwayConnections {
                 ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,false,0,
                         "Waiting for clear path/footing at "+p.toShortString()));return writes;
             }
-            if(existingSurface(r,p,level.getBlockState(p))&&level.getBlockState(p.above()).isAir()
+            if(existingSurface(r,p,level.getBlockState(p))&&(level.getBlockState(p.above()).isAir()||retainedRail(level,r,p))
                     &&level.getBlockState(p.above(2)).isAir())cursor++;
         }
         // Verification is also budgeted. Keep its progress in the same durable cursor.
@@ -409,7 +410,8 @@ final class WalkwayConnections {
                 ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,false,0,
                         "Waiting for loaded route verification at "+p.toShortString()));return writes;
             }
-            if(!(VillageBridges.walkable(level,r.village(),p)||existingSurface(r,p,level.getBlockState(p)))||!clear(level.getBlockState(p.above()))
+            if(!(VillageBridges.walkable(level,r.village(),p)||existingSurface(r,p,level.getBlockState(p)))
+                    ||(!retainedRail(level,r,p)&&!clear(level.getBlockState(p.above())))
                     ||!clear(level.getBlockState(p.above(2)))) {
                 ledger.put(r.key(),new Job(List.of(),0,0,supplied,false,tick+100,
                         "Connection changed before verification; resurveying"));return writes;
@@ -424,6 +426,14 @@ final class WalkwayConnections {
         ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,done,0,
                 done?"Connected to village walkway":"Paving connection: "+Math.min(cursor,job.centers())+" / "+job.centers()));
         return writes;
+    }
+    /** Mine throats carry rails over their entry paving. Cross these fixtures read-only:
+     * never clear the rail, change its bearing, waive headroom, or admit an arbitrary block. */
+    private static boolean retainedRail(ServerLevel level,Request r,BlockPos p) {
+        BlockState ground=level.getBlockState(p),rail=level.getBlockState(p.above());
+        return rail.getBlock() instanceof BaseRailBlock&&rail.getFluidState().isEmpty()
+                &&level.getBlockEntity(p.above())==null&&rail.getCollisionShape(level,p.above()).isEmpty()
+                &&existingSurface(r,p,ground)&&ground.isFaceSturdy(level,p,Direction.UP);
     }
     static BlockState surfaceState(Request r,BlockPos p,boolean shoulder) {
         var surface=VillageMaterializationPolicy.plannedTrailSurface(r.desert(),shoulder,

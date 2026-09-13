@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-public static final int FORMAT_VERSION = 38;
+public static final int FORMAT_VERSION = 39;
     /** Ten complete years of daily intervals, plus the opening endpoint. */
     public static final int HISTORY_DAYS = 3_651;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -665,7 +665,10 @@ public static final int FORMAT_VERSION = 38;
         public String designDressingId = "";
         /** Versioned canonical placement hash; blank until the physical plan is first frozen. */
         public int designPlanHashVersion;
-        public String designPlanHash = "";
+public String designPlanHash = "";
+        /** Immutable resolved vanilla cells; null for all existing TES schemas. */
+        public VanillaConstructionPlan vanillaPlan;
+        public int housingGain() { return vanillaPlan == null ? type.housingGain() : vanillaPlan.beds(); }
         /** Old projects are never retroactively cleared. New reservations opt in explicitly. */
         public boolean sitePreparationComplete = true;
         public int sitePreparationCursor;
@@ -739,7 +742,8 @@ public static final int FORMAT_VERSION = 38;
             copy.designPaletteId = designPaletteId;
             copy.designDressingId = designDressingId;
             copy.designPlanHashVersion = designPlanHashVersion;
-            copy.designPlanHash = designPlanHash;
+copy.designPlanHash = designPlanHash;
+            copy.vanillaPlan = vanillaPlan;
             copy.sitePreparationComplete = sitePreparationComplete;
             copy.sitePreparationCursor = sitePreparationCursor;
             copy.sitePreparationPlan = sitePreparationPlan;
@@ -901,7 +905,9 @@ public static final int FORMAT_VERSION = 38;
         public final Map<Long,VillageFoodSupply.ChunkObservation> foodChunks = new HashMap<>();
         /** Shared authored language; biome dialect is locked when the first managed lot is reserved. */
         public String architectureCharacter = "";
-        public String architectureDialect = "";
+public String architectureDialect = "";
+        /** Positively identified vanilla structure family. Blank means no vanilla imports. */
+        public String naturalVillageStyle = "";
         public final ProsperityFund prosperityFund = new ProsperityFund();
         public final Map<UUID, ResidentRecord> residents = new LinkedHashMap<>();
         public final List<VillageProject> projects = new ArrayList<>();
@@ -1046,7 +1052,8 @@ public static final int FORMAT_VERSION = 38;
             copy.lastFoodSourcesDay = lastFoodSourcesDay;
             copy.foodChunks.putAll(foodChunks);
             copy.architectureCharacter = architectureCharacter;
-            copy.architectureDialect = architectureDialect;
+copy.architectureDialect = architectureDialect;
+            copy.naturalVillageStyle = naturalVillageStyle;
             ProsperityFund fundCopy = prosperityFund.copy();
             copy.prosperityFund.spendableMicro.putAll(fundCopy.spendableMicro);
             copy.prosperityFund.fastTrackSpendableMicro.putAll(
@@ -2339,7 +2346,7 @@ public static final int FORMAT_VERSION = 38;
             before.computeIfPresent(asset.ticker(),(ticker,value)->value/1_000.0);
             editor.stories.replaceAll((id,story)->story.ticker().equals(asset.ticker())
                     ?new NewsEditorial.Story(story.source(),story.day(),story.family(),story.headline(),story.outlet(),
-                        story.village(),story.ticker(),story.baseline()/1_000.0,story.stage()):story);
+                        story.village(),story.ticker(),story.baseline()/1_000.0,story.stage(),story.lastChange()):story);
             List<Double> history = priceHistory.get(asset.ticker());
             if (history != null) {
                 history.replaceAll(value -> value / 1_000.0);
@@ -2451,6 +2458,8 @@ public static final int FORMAT_VERSION = 38;
                 || village.observedLivestockUnits > 1_000_000
                 || village.lastFoodSourcesDay < 0 || village.lastFoodSourcesDay > economicDay
                 || village.architectureCharacter == null
+|| village.naturalVillageStyle == null
+                || (!village.naturalVillageStyle.isBlank() && !VillageArchitecture.isKnownDialect(village.naturalVillageStyle))
                 || village.architectureDialect == null
                 || (!village.architectureCharacter.isBlank()
                         && !VillageArchitecture.isKnownCharacter(village.architectureCharacter))
@@ -2534,7 +2543,10 @@ public static final int FORMAT_VERSION = 38;
             if (project == null
                     || project.type == null
                     || project.designSchema == null
-                    || !VillageArchitecture.isKnownSchema(project.designSchema)
+|| !VillageArchitecture.isKnownSchema(project.designSchema)
+                    || (VanillaConstructionPlan.SCHEMA.equals(project.designSchema) != (project.vanillaPlan != null))
+                    || (project.vanillaPlan != null && (!project.vanillaPlan.style().equals(village.architectureDialect)
+                            || !project.vanillaPlan.eligible(project.type)))
                     || project.designTemplateId == null
                     || project.designPaletteId == null
                     || project.designDressingId == null

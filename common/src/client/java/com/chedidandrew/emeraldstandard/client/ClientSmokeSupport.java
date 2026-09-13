@@ -110,7 +110,7 @@ public final class ClientSmokeSupport {
                         catch (Exception error) { throw new IllegalStateException(error); }
                         return null;
                     });
-                    for (int scale : new int[] {2,4}) for (int frame : new int[] {-1,0,3,7,12}) {
+                    for (int scale : new int[] {2,4}) for (int frame : new int[] {-1,0,3,7,12,15}) {
                         onClient(minecraft, () -> {
                             minecraft.getWindow().setWindowed(1280,1000);
                             minecraft.options.guiScale().set(scale); minecraft.resizeGui();
@@ -153,7 +153,7 @@ public final class ClientSmokeSupport {
                             NewspaperClientChecks.verify(minecraft); return null;
                         });
                         Thread.sleep(500);capture(minecraft,"newspaper-scale-"+scale+".png");
-                        for(String part:new String[]{"contents","article","browser","browser-article","markets","trade","memorial","item-states"}) {
+                        for(String part:new String[]{"contents","article","notebook","linked","browser","browser-article","markets","trade","memorial","item-states"}) {
                             onClient(minecraft,()->{NewspaperClientChecks.showPart(minecraft,part);return null;});
                             Thread.sleep(500);capture(minecraft,"newspaper-"+part+"-scale-"+scale+".png");
                         }

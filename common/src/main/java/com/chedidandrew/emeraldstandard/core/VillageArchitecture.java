@@ -791,12 +791,12 @@ public final class VillageArchitecture {
     public static boolean isKnownSchema(String schema) {
         return LEGACY_SCHEMA.equals(schema)
                 || MODULAR_SCHEMA.equals(schema)
-                || BLUEPRINT_SCHEMA.equals(schema);
+                || BLUEPRINT_SCHEMA.equals(schema) || VanillaConstructionPlan.SCHEMA.equals(schema);
     }
 
     /** Schemas that use the managed site, trail, and entrance-approach lifecycle. */
     public static boolean isManagedStructureSchema(String schema) {
-        return MODULAR_SCHEMA.equals(schema) || BLUEPRINT_SCHEMA.equals(schema);
+        return MODULAR_SCHEMA.equals(schema) || BLUEPRINT_SCHEMA.equals(schema) || VanillaConstructionPlan.SCHEMA.equals(schema);
     }
 
     /** Building families that currently have a migration-safe post-release quality layer. */

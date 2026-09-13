@@ -301,7 +301,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     private static final int DATA_GUARD_COUNT = DATA_DISTRICT_MAP + VillageDistrictMap.DATA_SIZE;
     private static final int DATA_GUARD_BONUS = DATA_GUARD_COUNT + 1;
     private static final int DATA_VILLAGE_RECOVERY_ENABLED = DATA_GUARD_BONUS + 1;
-    public static final int DATA_COUNT = DATA_VILLAGE_RECOVERY_ENABLED + 1;
+    private static final int DATA_VILLAGE_PROJECT_LABEL = DATA_VILLAGE_RECOVERY_ENABLED + 1;
+    public static final int DATA_COUNT = DATA_VILLAGE_PROJECT_LABEL + 1;
     public static final int BUTTON_TOWN_REPORT = 126, BUTTON_FUND_PREVIEW = 127,
             BUTTON_REPORT_CLOSE = 128, BUTTON_FUND_RECEIPT = 129;
     private final net.minecraft.world.SimpleContainer briefingDocument = new net.minecraft.world.SimpleContainer(1);
@@ -545,6 +546,7 @@ public final class BankerMenu extends AbstractContainerMenu {
     private int villageMaterialCenti;
     private long villageTreasuryCenti;
     private int villageProjectType = -1;
+    private int villageProjectLabel = -1;
     private int fundableProjectType = -1;
     private long fundableProjectId;
     private int villageProjectProgressBps;
@@ -1331,6 +1333,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     public double villageTreasury() {
         return readLong(DATA_VILLAGE_TREASURY_CENTI_LOW, DATA_VILLAGE_TREASURY_CENTI_HIGH) / 100.0;
     }
+
+    public int villageProjectLabelCode() { return data.get(DATA_VILLAGE_PROJECT_LABEL); }
 
     public int villageProjectTypeOrdinal() {
         return data.get(DATA_VILLAGE_PROJECT_TYPE);
@@ -2208,9 +2212,11 @@ public final class BankerMenu extends AbstractContainerMenu {
                     ? village.nextVisualProject() : fundableProject;
             if (project == null) {
                 villageProjectType = -1;
+                villageProjectLabel = -1;
                 villageProjectProgressBps = 0;
             } else {
                 villageProjectType = project.type.ordinal();
+                villageProjectLabel = project.vanillaPlan == null ? -1 : project.vanillaPlan.labelCode();
                 double progress = project.economicComplete
                         ? project.totalBlocks <= 0
                                 ? 0.0
@@ -2243,6 +2249,7 @@ public final class BankerMenu extends AbstractContainerMenu {
         villageMaterialCenti = 0;
         villageTreasuryCenti = 0L;
         villageProjectType = -1;
+        villageProjectLabel = -1;
         fundableProjectType = -1;
         fundableProjectId = 0L;
         villageProjectProgressBps = 0;
@@ -2333,6 +2340,7 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (index == DATA_VILLAGE_TREASURY_CENTI_LOW) return low(villageTreasuryCenti);
         if (index == DATA_VILLAGE_TREASURY_CENTI_HIGH) return high(villageTreasuryCenti);
         if (index == DATA_VILLAGE_PROJECT_TYPE) return villageProjectType;
+        if (index == DATA_VILLAGE_PROJECT_LABEL) return villageProjectLabel;
         if (index == DATA_VILLAGE_PROJECT_PROGRESS_BPS) return villageProjectProgressBps;
         if (index == DATA_VILLAGE_PROJECT_BACKLOG) return villageProjectBacklog;
         if (index == DATA_VILLAGE_RESTORATION_CENTI) return villageRestorationCenti;

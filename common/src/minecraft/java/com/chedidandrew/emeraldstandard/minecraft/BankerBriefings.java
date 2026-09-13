@@ -64,16 +64,10 @@ public final class BankerBriefings {
         int count = 0;
         for (var p : unfinished) {
             if (count++ >= 8) break;
-            String stage = p.manualRepairRequired ? "Repairs need your attention; inspect the damaged building."
-                    : p.relocationPending ? "Surveyors are finding a replacement site. The previous building remains."
-                    : p.abstractOnly ? "Included in the village accounts; no building is planned here."
-                    : !snapshot.visualProgressionEnabled() ? "Building work is on hold."
-                    : p.originPos == 0 ? "Surveyors are looking for a clear, accessible building plot."
-                    : !p.sitePreparationComplete ? "Crews are preparing the ground and fences."
-                    : p.blocked ? "Work is held up. Visit the site and check access."
-                    : "Building: "+(p.totalBlocks <= 0 ? "preparing"
-                        : Math.min(100, (long)p.materializedBlocks*100/p.totalBlocks)+"%")+".";
-            out.add(line("#"+p.projectId+" "+name(p.type)+" — "+stage));
+            var observation = ConstructionDiagnostics.recent(v.villageId+"/"+p.projectId, player.level().getGameTime());
+            String stage = !snapshot.visualProgressionEnabled() ? "Building work is on hold."
+                    : ConstructionGuidance.project(p, observation == null ? "" : observation.phase());
+            out.add(line("#"+p.projectId+" "+(p.vanillaPlan == null ? name(p.type) : p.vanillaPlan.kind().title())+" — "+stage));
             if (!p.economicComplete)
                 out.add(line("Planning and paid labor: "+number(100*p.economicProgress)+"%."));
             if (p.originPos != 0 && !p.abstractOnly) {
@@ -81,7 +75,7 @@ public final class BankerBriefings {
                 out.add(line("Site: X "+origin.getX()+", Z "+origin.getZ()+". Stay nearby and keep the work area clear."));
             }
             // Translate only actual recent observations. Never expose raw diagnostic reason strings.
-            appendWorkAdvice(out, v.villageId+"/"+p.projectId, player.level().getGameTime());
+            // The dominant advice is already included beside this project, without a conflicting generic warning.
         }
         if (count == 0) out.add(line("No unfinished village project."));
         if (unfinished.size() > 8) out.add(line((unfinished.size()-8)+" more projects appear on the district map."));
@@ -121,16 +115,8 @@ public final class BankerBriefings {
     private static void appendWorkAdvice(List<Component> out, String job, long now) {
         var observation = ConstructionDiagnostics.recent(job, now);
         if (observation == null) return;
-        String advice = switch (observation.phase()) {
-            case "waiting_for_entities" -> "Keep people and animals clear of the work area.";
-            case "waiting_for_support" -> "Crews need secure supports before continuing.";
-            case "preparing_fence" -> "Crews are securing the worksite fences.";
-            case "waiting_for_chunks", "waiting_for_player" -> "Stay near the site while crews work.";
-            case "protected" -> "Part of the site cannot be altered. Check the land's building permissions.";
-            case "manual_repair" -> "Repairs need your attention at the building.";
-            default -> null;
-        };
-        if (advice != null) out.add(line("Latest site report: "+advice));
+        String advice = ConstructionGuidance.advice(observation.phase());
+        if (!advice.isEmpty()) out.add(line("Latest site report: "+advice));
     }
 
     public static List<Component> fund(EconomyService economy, UUID id, long whole,
@@ -166,7 +152,7 @@ public final class BankerBriefings {
             case ENDOWMENT -> out.add(line("On acceptance: "+amount(total)+" protected principal. Annual payout rate: "
                 +number(c.prosperityFundEndowmentAnnualPayoutRate()*100)+"%. Only payouts may be spent; principal is not a project budget."));
             case PROJECT_SPONSORSHIP -> out.add(line(project == null ? "UNAVAILABLE: no project needs further paid labor."
-                : "On acceptance: "+amount(total)+" reserved for project #"+project.projectId+" "+name(project.type)+" labor. Unused funding later becomes "+name(purpose)+" capital."));
+                : "On acceptance: "+amount(total)+" reserved for project #"+project.projectId+" "+(project.vanillaPlan == null ? name(project.type) : project.vanillaPlan.kind().title())+" labor. Unused funding later becomes "+name(purpose)+" capital."));
         }
         out.add(line("HOW THIS PURPOSE HELPS"));
         out.add(line(switch(purpose) {
