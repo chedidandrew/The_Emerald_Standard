@@ -123,6 +123,7 @@ final class BankConstructionSelfTest {
                         "completion neighbor updates must preserve the authored cell at " + BlockPos.of(cell.position()));
             }
             BankVillageOwnershipSelfTest.verify(level, economy, origin);
+            BankWalkwaysSelfTest.verify(level, economy, origin);
             var completed = new EconomyService(); completed.start(dir, 774, 0);
             require(completed.hasGeneratedBankRegion(777)
                     && !completed.pendingBankConstructionsSnapshot().containsKey(777L), "completed marker survives restart");

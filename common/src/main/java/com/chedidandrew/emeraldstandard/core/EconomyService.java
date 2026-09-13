@@ -1999,6 +1999,13 @@ public final class EconomyService {
         return village == null ? null : villageSnapshot(village);
     }
 
+    /** Scalar activation lookup: no resident/project copies or market aggregate on each Bank tick. */
+    public synchronized Long villageCenterPosition(UUID villageId, String dimension) {
+        var village = state == null || villageId == null ? null
+                : state.existingVillage(canonicalVillageId(villageId));
+        return village == null || !Objects.equals(dimension, village.dimensionKey) ? null : village.centerPos;
+    }
+
     /** Physical schedulers do not need a whole-economy market aggregate on every block batch. */
     public synchronized VillageSnapshot developmentVillageSnapshot(UUID villageId) {
         var village = state == null ? null : state.existingVillage(villageId);

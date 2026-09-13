@@ -37,14 +37,20 @@ final class WalkwayConnections {
         List<BlockPos> route;
         final List<Step> plan=new ArrayList<>();
         final Set<Long> columns=new HashSet<>();
+        final List<BlockPos> streetTargets=new ArrayList<>();
+        int targetCursor;
         Search(Request r,BlockPos start,VillageBridges.Context bridges) {
             bridgeContext=bridges;
             request=r; costs.put(start,0); open.add(new Node(start,0,heuristic(r,start)));
         }
     }
-    static boolean acquire(ServerLevel level,long tick) {
+    static boolean due(ServerLevel level,long tick) {
         var ledger=get(level);
-        if(ledger.lastTick!=Long.MIN_VALUE && tick>=ledger.lastTick && tick-ledger.lastTick<20) return false;
+        return ledger.lastTick==Long.MIN_VALUE || tick<ledger.lastTick || tick-ledger.lastTick>=20;
+    }
+    static boolean acquire(ServerLevel level,long tick) {
+        if(!due(level,tick))return false;
+        var ledger=get(level);
         ledger.lastTick=tick; return true;
     }
     static long column(BlockPos p) { return new BlockPos(p.getX(),0,p.getZ()).asLong(); }
@@ -78,6 +84,20 @@ final class WalkwayConnections {
             search=new Search(r,start,bridges); searches.put(r.key(),search);
         }
         search.lastUsed=tick;
+        if(r.streetGoal() && search.targetCursor<49*49) {
+            surveyStreetTargets(level,r,job,search);
+            if(search.targetCursor>=49*49) {
+                if(search.streetTargets.isEmpty()) {
+                    searches.remove(r.key());
+                    ledger.put(r.key(),job.retry(tick,"No loaded village road found near the district center"));
+                } else {
+                    BlockPos start=search.open.peek().pos();
+                    search.open.clear();
+                    search.open.add(new Node(start,0,heuristic(search,r,start)));
+                }
+            }
+            return 0;
+        }
         if(search.route!=null) {
             if(freeze(level,r,job,search,tick,bridges))searches.remove(r.key());
             return 0;
@@ -147,7 +167,7 @@ final class WalkwayConnections {
                 if(!search.costs.containsKey(p)&&search.costs.size()>=NODE_LIMIT)continue;
                 search.costs.put(p,cost); search.parents.put(p,next.pos());
                 search.arrivals.remove(p);
-                search.open.add(new Node(p,cost,cost+heuristic(r,p)));
+                search.open.add(new Node(p,cost,cost+heuristic(search,r,p)));
             }
             if(!search.crossings.isEmpty())break;
         }
@@ -182,11 +202,47 @@ final class WalkwayConnections {
         int cost=fromCost+(plan.route().size()-1)*(shared?10:18)+(shared?0:80);
         if(cost>=search.costs.getOrDefault(end,Integer.MAX_VALUE)||search.costs.size()>=NODE_LIMIT)return;
         search.costs.put(end,cost);search.parents.put(end,from);search.arrivals.put(end,plan);
-        search.open.add(new Node(end,cost,cost+heuristic(r,end)));
+        search.open.add(new Node(end,cost,cost+heuristic(search,r,end)));
+    }
+    /** Find real target roads before spending A* nodes on empty ground near a village center.
+     * Only 32 columns per pulse; the node/memory cap and route bounds stay unchanged. */
+    private static void surveyStreetTargets(ServerLevel level,Request r,Job job,Search search) {
+        long deadline=System.nanoTime()+2_000_000L;
+        for(int n=0;n<32&&search.targetCursor<49*49;n++) {
+            if(n>0&&System.nanoTime()>=deadline)break;
+            int i=search.targetCursor++;
+            BlockPos column=r.destination().offset(i%49-24,0,i/49-24);
+            if(!loaded(level,column)) {search.sawUnloaded=true;continue;}
+            int top=level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    column.getX(),column.getZ())-1;
+            BlockPos surface=new BlockPos(column.getX(),top,column.getZ());
+            if(goal(level,r,surface,job)&&clear(level.getBlockState(surface.above()))
+                    &&clear(level.getBlockState(surface.above(2)))) search.streetTargets.add(surface);
+            else {
+                // A canopy/porch can hide a clear road from the heightmap.
+                for(int dy=-16;dy<=8;dy++) {
+                    BlockPos p=column.above(dy);
+                    if(p.getY()<level.getMinY()||p.getY()>level.getMaxY()-3)continue;
+                    if(goal(level,r,p,job)&&clear(level.getBlockState(p.above()))
+                            &&clear(level.getBlockState(p.above(2)))) {search.streetTargets.add(p);break;}
+                }
+            }
+        }
+        get(level).put(r.key(),new Job(List.of(),0,0,job.supplied(),false,0,
+                "Surveying village roads: "+search.targetCursor+" / 2401 columns"));
+    }
+    private static int heuristic(Search search,Request r,BlockPos p) {
+        if(search.streetTargets.isEmpty())return heuristic(r,p);
+        int distance=Integer.MAX_VALUE;
+        for(BlockPos target:search.streetTargets)
+            distance=Math.min(distance,Math.abs(p.getX()-target.getX())+Math.abs(p.getZ()-target.getZ()));
+        return 10*distance;
     }
     private static int heuristic(Request r,BlockPos p) {
-        int d=Math.abs(p.getX()-r.destination().getX())+Math.abs(p.getZ()-r.destination().getZ());
-        return 10*Math.max(0,d-(r.streetGoal()?48:0));
+        int dx=Math.abs(p.getX()-r.destination().getX()), dz=Math.abs(p.getZ()-r.destination().getZ());
+        // Distance to the actual 49x49 goal square, not a much larger Manhattan diamond.
+        // This remains a lower bound and saves scarce survey nodes on distant Bank routes.
+        return 10*(r.streetGoal()?Math.max(0,dx-24)+Math.max(0,dz-24):dx+dz);
     }
     private static boolean within(Request r,BlockPos p) {
         return p.getX()>=Math.min(r.start().getX(),r.destination().getX())-24

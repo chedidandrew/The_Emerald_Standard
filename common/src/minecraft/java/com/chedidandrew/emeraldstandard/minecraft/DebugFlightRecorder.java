@@ -801,6 +801,16 @@ public final class DebugFlightRecorder {
         return Map.of();
     }
 
+    private static List<Map<String,Object>> bankWalkwayReport(MinecraftServer server, EconomyState.VillageRecord village) {
+        String prefix = village.villageId + "/" + BankWalkways.PROJECT + "/";
+        for (var level : server.getAllLevels()) {
+            if (level.dimension().identifier().toString().equals(village.dimensionKey))
+                return WalkwayConnectionLedger.get(level).jobs.keySet().stream().filter(key -> key.startsWith(prefix))
+                        .sorted().limit(64).map(key -> fields("key", key, "connection", WalkwayConnections.report(level, key))).toList();
+        }
+        return List.of();
+    }
+
     private static Map<String,Object> walkwayConnectionReport(MinecraftServer server,
             EconomyState.VillageRecord village,EconomyState.VillageProject project) {
         for(var level:server.getAllLevels()) {
@@ -854,8 +864,15 @@ public final class DebugFlightRecorder {
                 "present", true,
                 "currentServerGameTick", gameTick,
                 "infrastructureBridges",bridgeReport(server,village),
+                "bankWalkwayConnections",bankWalkwayReport(server,village),
                 "projects", village.projects.stream().map(p -> fields(
                         "projectId", p.projectId, "type", p.type, "template", p.designTemplateId,
+                        "frozenDesign", fields("schema",p.designSchema,"revision",p.designTemplateRevision,
+                                "palette",p.designPaletteId,"dressing",p.designDressingId,"seed",p.designSeed,
+                                "stage",p.designStage,"rotation",p.designRotation,"mirrored",p.designMirrored,
+                                "signature",p.designSignature,"hash",p.designPlanHash,"hashVersion",p.designPlanHashVersion,
+                                "character",village.architectureCharacter,"dialect",village.architectureDialect,
+                                "orderCuts",List.copyOf(p.constructionOrderCuts)),
                         "originPacked", p.originPos, "complete", p.materializedComplete,
                         "manualRepairRequired", p.manualRepairRequired, "abstractOnly", p.abstractOnly,
                         "eligible", com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.eligible(village,p),

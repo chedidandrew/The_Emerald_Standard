@@ -295,9 +295,12 @@ public final class HandbookResourceRegressionTest {
                 "Both handbook forms must explain loaded-only walkway connections, bounds and editing");
         String manager = Files.readString(root.resolve(
                 "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java"));
-        check(manager.contains("materializeOneWalkwayLamp(level, village, excludedProjectLots")
+        check(manager.contains("materializeOneWalkwayLamp(level, economy, village, excludedProjectLots")
                 && manager.contains("WalkwayLighting.advance(level")
-                && manager.contains("project.trailMaterializedComplete"), "Completed path lighting must be wired");
+                && manager.contains("project.trailMaterializedComplete")
+                && manager.contains("BankWalkways.candidates(level, economy, village)")
+                && manager.contains("BankWalkways.materials(level, village, work.bank())")
+                && language.contains("Banks get paths."), "Completed project and Bank path lighting must be wired");
         check(language.contains("Optional yard decorations are different from required structure")
                 && language.contains("Unsafe decor skips.") && language.contains("expected nearby support"),
                 "Both handbook forms must explain optional support recovery and diagnostics");

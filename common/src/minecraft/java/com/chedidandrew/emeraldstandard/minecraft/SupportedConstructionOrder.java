@@ -63,7 +63,8 @@ final class SupportedConstructionOrder {
         if(expected==null) return !structuralOnly && !level.getBlockState(world).getCollisionShape(level,world).isEmpty();
         var actual=level.getBlockState(world);
         return expected.stream().anyMatch(c->!c.state().isAir() && (!structuralOnly || anchor(c))
-                && actual.is(c.state().getBlock()));
+                && (actual.is(c.state().getBlock())
+                    || ConstructionOwnership.settledPathGround(level,world,actual,c.state())));
     }
     static String waitReason(net.minecraft.server.level.ServerLevel level, BlockPos origin, Cell cell,
             Map<BlockPos,List<Cell>> planned) {

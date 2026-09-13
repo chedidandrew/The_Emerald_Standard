@@ -25,10 +25,14 @@ final class WalkwayLighting {
     }
 
     /** One candidate or two writes per second per dimension, regardless of city/project count. */
-    static boolean acquire(ServerLevel level, long tick) {
+    static boolean due(ServerLevel level, long tick) {
         var ledger = get(level);
-        if (ledger.lastWorkTick != Long.MIN_VALUE && tick >= ledger.lastWorkTick
-                && tick - ledger.lastWorkTick < 20) return false;
+        return ledger.lastWorkTick == Long.MIN_VALUE || tick < ledger.lastWorkTick
+                || tick - ledger.lastWorkTick >= 20;
+    }
+    static boolean acquire(ServerLevel level, long tick) {
+        if (!due(level, tick)) return false;
+        var ledger = get(level);
         ledger.lastWorkTick = tick;
         return true;
     }

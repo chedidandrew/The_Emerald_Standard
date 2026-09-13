@@ -9,10 +9,23 @@ public final class HandbookMechanicsRegressionTest {
         Path root = args.length == 0 ? Path.of(".") : Path.of(args[0]);
         String language = Files.readString(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/lang/en_us.json"));
+        if (!language.contains("Completed Banks and other buildings")
+                || !language.contains("Existing completed Banks can receive this trail too")
+                || !language.contains("Banks get paths."))
+            throw new AssertionError("Guided and compact help must include Bank walkway backfill");
+        if (!language.contains("Automatic Bank construction uses Village: development radius")
+                || !language.contains("256 horizontal blocks of the original village center")
+                || !language.contains("Development radius\\nalso starts Banks.")
+                || language.contains("Within 192 blocks"))
+            throw new AssertionError("Guided and compact Bank help must explain the configured activation radius");
         if (!language.contains("Both continue their saved plans and share bounded construction time fairly")
                 || !language.contains("resumes ordinary construction pace and eligibility rules")
                 || !language.contains("Debug: Banks and\\nprojects continue."))
             throw new AssertionError("Handbook must explain live construction mode switching");
+        if (!language.contains("Covered paths settle.")
+                || !language.contains("Builders keep that sound footing and continue")
+                || !language.contains("Missing walls, required floors and obstructed entrances still need attention"))
+            throw new AssertionError("Both handbook formats must explain settled yard paths without waiving required structure");
         verify(EconomyState.DonationPurpose.GENERAL, 0, 0, .50, .25, 0, language, "0.50 Treasury and 0.25");
         verify(EconomyState.DonationPurpose.FOOD, .75, 0, 0, 0, 0, language, "0.75 simulated Food");
         verify(EconomyState.DonationPurpose.HOUSING, 0, .50, 0, .40, 0, language, "0.50 Materials and 0.40");

@@ -152,7 +152,16 @@ public final class ConstructionOwnership extends SavedData {
     public static boolean owned(Level world,BlockPos pos,BlockState state) {
         if(!(world instanceof ServerLevel level)) return false;
         Cell c=get(level).cell(level,pos);
-        return c!=null&&c.owned&&c.block.equals(id(state));
+        return c!=null&&c.owned&&(c.block.equals(id(state))
+                // Vanilla turns a covered path into dirt. The supplied ground remains part of
+                // this unfinished site, including its no-drop rule; no new cell is enrolled.
+                || c.block.equals("minecraft:dirt_path")&&state.is(net.minecraft.world.level.block.Blocks.DIRT));
+    }
+    /** A supplied decorative path may settle into dirt without being missing construction. */
+    static boolean settledPathGround(Level world,BlockPos pos,BlockState actual,BlockState expected) {
+        return expected.is(net.minecraft.world.level.block.Blocks.DIRT_PATH)
+                &&actual.is(net.minecraft.world.level.block.Blocks.DIRT)
+                &&owned(world,pos,expected);
     }
     /** Contents supplied by an administrator/another mod are never discarded. */
     public static boolean hasStoredContents(ServerLevel level,BlockPos pos) {

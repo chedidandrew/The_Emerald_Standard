@@ -277,14 +277,29 @@ final class VillageConstructionActivitySelfTest {
     }
     /** Fixture-only driver of the real census/preparation path; explicitly loads test perimeter chunks. */
     static void prepareFences(ServerLevel level,com.chedidandrew.emeraldstandard.core.EconomyService economy,String tag) {
-        var sites=VillageConstructionActivity.sites(level,economy,true);
-        var site=sites.stream().filter(s->s.tag().equals(tag)).findFirst().orElseThrow();
-        for(BlockPos p:ConstructionSitePresentation.perimeter(site))
-            for(var d:net.minecraft.core.Direction.Plane.HORIZONTAL) level.getChunk(p.relative(d));
-        for(int i=0;i<64 && !ConstructionSitePresentation.fenceReady(level,tag);i++)
-            VillageConstructionActivity.update(level,sites);
-        require(ConstructionSitePresentation.fenceReady(level,tag),"fixture perimeter finished: "+tag);
+        var initial = VillageConstructionActivity.sites(level, economy, true).stream()
+                .filter(s -> s.tag().equals(tag)).findFirst().orElseThrow();
+        // Native activation now requires a nearby player even for perimeter preparation.
+        var observer = new net.minecraft.server.level.ServerPlayer(level.getServer(), level,
+                new com.mojang.authlib.GameProfile(UUID.randomUUID(), "FenceFixture"),
+                net.minecraft.server.level.ClientInformation.createDefault());
+        BlockPos anchor = VillageBankManager.bankActivationAnchor(level, economy, initial.village(), initial.origin());
+        observer.setPos(anchor.getX(), anchor.getY() + 40, anchor.getZ());
+        level.players().add(observer);
+        try {
+            var sites = VillageConstructionActivity.sites(level, economy, true);
+            var site = sites.stream().filter(s -> s.tag().equals(tag)).findFirst().orElseThrow();
+            for (BlockPos p : ConstructionSitePresentation.perimeter(site))
+                for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) level.getChunk(p.relative(d));
+            for (int i = 0; i < 64 && !ConstructionSitePresentation.fenceReady(level, tag); i++)
+                VillageConstructionActivity.update(level, sites);
+            require(ConstructionSitePresentation.fenceReady(level, tag), "fixture perimeter finished: " + tag);
+        } finally {
+            level.players().remove(observer);
+            observer.discard();
+        }
     }
+
     static void cleanupCrews(ServerLevel level) {
         VillageConstructionActivity.update(level,List.of());
         DevelopmentEntities.snapshot(level).stream().filter(e->e instanceof ConstructionBuilder).forEach(Entity::discard);

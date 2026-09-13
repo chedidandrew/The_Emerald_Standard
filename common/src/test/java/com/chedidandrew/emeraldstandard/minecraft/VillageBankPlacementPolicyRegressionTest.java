@@ -102,9 +102,9 @@ public final class VillageBankPlacementPolicyRegressionTest {
                 "A known village stopped retrying when the player stepped onto its outskirts");
         require(!VillageBankPlacementPolicy.shouldProbeVillage(false, false),
                 "An unrelated wilderness player triggered Village Bank work");
-        require(VillageBankPlacementPolicy.recoveryActive(0, 0, 192, 0, 192),
+        require(VillageBankPlacementPolicy.recoveryActive(0, 0, 256, 0, 256),
                 "The recovery radius excluded its boundary");
-        require(!VillageBankPlacementPolicy.recoveryActive(0, 0, 193, 0, 192),
+        require(!VillageBankPlacementPolicy.recoveryActive(0, 0, 257, 0, 256),
                 "A distant player activated fallback construction");
         require(!VillageBankPlacementPolicy.recoveryActive(0, 0, 0, 0, 0),
                 "A disabled recovery radius remained active");

@@ -1,6 +1,27 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.37
+## Unreleased: 0.4.0-beta.40
+
+- Fix the corner Smithy repeatedly rewinding to 1,180/1,975 operations when vanilla turns a builder-supplied decorative dirt path beneath ironwork into dirt. Recognize that natural ground transition during construction and support checks in both normal and forced development.
+- Keep frozen plans and construction receipts unchanged, retain no-drop protection for the settled ground, and continue rejecting missing blocks, unrelated replacements and mismatched required floors.
+- Capture frozen design metadata and precise expected/current block states for future repair investigations. Update both handbook formats and add exact-Smithy fresh/resume regressions in both modes.
+- Include the pending beta.38 Bank-activation radius and beta.39 Bank-walkway changes below.
+
+## Previous unreleased candidate: 0.4.0-beta.39
+
+- Include completed Banks, including existing saves and Bank-only villages, in the shared village walkway and lamp queues. Connect their front steps to a real village road or an already-connected expansion building.
+- Preserve the Bank forecourt and entrance steps while opening a narrow paving corridor through its own setback. Keep other Bank sites, protected land and player alterations excluded.
+- Reuse bounded detours, saved partial construction, suitable Infrastructure bridges and village-style lamps without adding another per-dimension work allowance. Keep Bank connection details in debug captures.
+- Update guided and compact handbook coverage and add a full constructed-Bank walkway regression.
+
+## Previous unreleased candidate: 0.4.0-beta.38
+
+- Use Village: development radius for first natural-village discovery, automatic Bank startup, fallback retries, perimeter preparation and continued Bank construction. Associated Banks consistently measure horizontal distance from their original village center; unassociated legacy sites use their saved anchor.
+- Discover loaded natural structure references without entering the vanilla POI boundary. Keep nearby villages and their initial residents separate, and consider all eligible settlements through a capped rotating Bank survey.
+- Retain loaded-only census/site checks, protected plots, construction budgets, saved progress and unique Bank ownership. The separate Banker entity-recovery search is unchanged.
+- Update the setting tooltip and both handbook formats, with native boundary/altitude/multiple-village/no-player/no-force-load tests and distant first-census coverage.
+
+## Previous unreleased candidate: 0.4.0-beta.37
 
 - Add shared village footbridges to the walkway route search. Compare land detours with straight water crossings and verify a complete onward connection before reserving work.
 - Build three-wide raised spans with exterior railings, capped posts, inward-facing village lamps, timber framing or modest masonry/sandstone arches, stair approaches, natural foundations and an open boat channel.

@@ -6,7 +6,7 @@ The badge reports **main only**. Development candidates require their own exact-
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current source status: **unreleased `0.4.0-beta.37` development candidate**, not a stable release. See the [beta.37 bridge validation](docs/reviews/2026-09-13-beta37-footbridges.md) for current results and artifact fingerprints; older review records do not certify this build. The broader human gameplay matrix is not certified. See [the five-priority upgrade](docs/FIVE_PRIORITIES.md) for the current UI, test harness and build-identity changes.
+> Current source status: **unreleased `0.4.0-beta.40` development candidate**, not a stable release. See the [beta.40 Smithy-repair validation](docs/reviews/2026-09-13-beta40-smithy-repair.md) for current results and artifact fingerprints; older review records do not certify this build. The broader human gameplay matrix is not certified. See [the five-priority upgrade](docs/FIVE_PRIORITIES.md) for the current UI, test harness and build-identity changes.
 
 ## Core rule
 

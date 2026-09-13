@@ -54,12 +54,38 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        if (Boolean.getBoolean("the_emerald_standard.smithySmokeOnly")) {
+            SmithyConstructionSelfTest.verify(level);
+            ConstructionFinishSelfTest.verify(level);
+            ConstructionSupportRecoverySelfTest.verify(level);
+            ForcedDevelopmentSchedulingSelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            ConstructionOwnershipSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.bankWalkwaySmokeOnly")) {
+            BankConstructionSelfTest.verify(level);
+            WalkwayConnectionsSelfTest.verify(level);
+            WalkwayLightingSelfTest.verify(level);
+            VillageBridgeSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.bankRadiusSmokeOnly")) {
+            NaturalVillageIdentitySelfTest.run(level);
+            BankActivationRadiusSelfTest.verify(level);
+            BankConstructionSelfTest.verify(level);
+            ForcedDevelopmentSchedulingSelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            return;
+        }
         if (Boolean.getBoolean("the_emerald_standard.bridgeSmokeOnly")) {
             VillageBridgeSelfTest.verify(level);return;
         }
         DebugPerformanceSelfTest.verify(level);
         NaturalVillageIdentitySelfTest.run(level);
+        BankActivationRadiusSelfTest.verify(level);
         ConstructionFinishSelfTest.verify(level);
+        SmithyConstructionSelfTest.verify(level);
         ConstructionSupportRecoverySelfTest.verify(level);
         GuardVillagersCompatSelfTest.verify(level);
         DevelopmentProtectionSelfTest.verify(level);

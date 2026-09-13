@@ -17,6 +17,18 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
             throw new IllegalArgumentException("Repository root argument is required");
         }
         String source = Files.readString(Path.of(args[0]).resolve(MANAGER));
+        String nativeRoot = "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/";
+        String nativeTests = Files.readString(Path.of(args[0]).resolve(nativeRoot + "BankerIntegrationSelfTest.java"));
+        String receipt = Files.readString(Path.of(args[0]).resolve(nativeRoot + "ConstructionOwnership.java"));
+        String support = Files.readString(Path.of(args[0]).resolve(nativeRoot + "SupportedConstructionOrder.java"));
+        String debug = Files.readString(Path.of(args[0]).resolve(nativeRoot + "DebugFlightRecorder.java"));
+        require(source.contains("placement.isCosmetic()")
+                        && source.contains("ConstructionOwnership.settledPathGround(level,target,current,placement.state)")
+                        && support.contains("ConstructionOwnership.settledPathGround(level,world,actual,c.state())")
+                        && receipt.contains("&&owned(world,pos,expected)")
+                        && nativeTests.contains("SmithyConstructionSelfTest.verify(level)")
+                        && debug.contains("frozenDesign") && debug.contains("orderCuts"),
+                "Saved Smithy path-settlement recovery, receipt gating and replay diagnostics must remain wired");
         verifyAuthoritativeTerrainFootprint(source);
         verifyRuntimeSemanticAccess(source);
         verifyRequiredSafetyFixtures(source);

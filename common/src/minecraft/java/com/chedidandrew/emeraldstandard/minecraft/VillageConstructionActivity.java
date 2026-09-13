@@ -46,7 +46,9 @@ final class VillageConstructionActivity {
                 for (var entry : economy.pendingBankConstructionsSnapshot().entrySet()) {
                     var bank = entry.getValue();
                     boolean working = enabled && EmeraldConfig.current().villageBanksEnabled()
-                            && economy.constructionVillageEligible(bank.villageId());
+                            && economy.constructionVillageEligible(bank.villageId())
+                            && VillageBankManager.bankWorkActive(level, economy, bank.villageId(),
+                                    BlockPos.of(bank.origin()), EmeraldConfig.current().villageDevelopmentRadius());
                     BlockPos origin = BlockPos.of(bank.origin()), min = origin, max = origin;
                     for (var cell : bank.cells()) if (!cell.after().equals("minecraft:air")) {
                         BlockPos p = BlockPos.of(cell.position());

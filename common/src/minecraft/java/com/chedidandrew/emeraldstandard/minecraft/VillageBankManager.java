@@ -89,7 +89,8 @@ public final class VillageBankManager {
     private static final int BANK_STRUCTURE_VERSION = 11;
     private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
     private static final long BANK_UPGRADE_RETRY_INTERVAL_TICKS = 2_400L;
-    private static final int FALLBACK_BANK_RECOVERY_RADIUS = 192;
+    private static final int BANKER_RECOVERY_SEARCH_RADIUS = 192;
+    private static final int MAX_BANK_VILLAGES_PER_SCAN = 4;
     private static final int MAX_FALLBACK_BANK_RECOVERIES_PER_SCAN = 4;
     private static final int BANKER_DEATH_RETRIES_PER_PASS = 4;
     private static final int BANKER_CONVERSION_RETRIES_PER_TICK = 1;
@@ -346,21 +347,16 @@ public final class VillageBankManager {
             pendingSites.sort(java.util.Map.Entry.comparingByKey());
             pendingSites.removeIf(entry -> CONSTRUCTION_RETRY.getOrDefault(entry.getKey(), 0L) > gameTime
                     || !isLoaded(level, BlockPos.of(entry.getValue().origin()))
-                    || level.players().stream().noneMatch(p -> {
-                        BlockPos origin = BlockPos.of(entry.getValue().origin());
-                        double dx = p.getX() - origin.getX(), dz = p.getZ() - origin.getZ();
-                        return dx * dx + dz * dz <= (double) config.villageDevelopmentRadius() * config.villageDevelopmentRadius();
-                    }));
+                    || !bankWorkActive(level, economy, entry.getValue().villageId(),
+                            BlockPos.of(entry.getValue().origin()), config.villageDevelopmentRadius()));
             if (forcedDevelopment && !pendingSites.isEmpty())
                 pendingSites = new ArrayList<>(List.of(pendingSites.get(
                         CONSTRUCTION_ROTATION.next("banks", pendingSites.size()))));
             for (var entry : pendingSites) {
                 if (CONSTRUCTION_RETRY.getOrDefault(entry.getKey(), 0L) > gameTime) continue;
                 BlockPos origin = BlockPos.of(entry.getValue().origin());
-                if (level.players().stream().anyMatch(p -> {
-                    double dx = p.getX() - origin.getX(), dz = p.getZ() - origin.getZ();
-                    return dx * dx + dz * dz <= (double) config.villageDevelopmentRadius() * config.villageDevelopmentRadius();
-                })) {
+                if (bankWorkActive(level, economy, entry.getValue().villageId(),
+                        origin, config.villageDevelopmentRadius())) {
                     int changed = 0;
                     int allowance = forcedDevelopment ? ForcedDevelopmentRuntime.claim(server)
                             : ConstructionTimeRuntime.allowance("bank:" + entry.getKey() + ":" + entry.getValue().origin(),
@@ -396,42 +392,15 @@ public final class VillageBankManager {
         Set<Long> processedBanks = new HashSet<>();
         VillageBankPlacementPolicy.UpgradeAttemptGate bankUpgradeGate =
                 new VillageBankPlacementPolicy.UpgradeAttemptGate();
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (player.level() != level) {
-                continue;
-            }
-            BlockPos playerPosition = player.blockPosition();
-            // POI village membership is height-sensitive. Project the discovery probe to the
-            // terrain so a player flying over (or testing above) a village still discovers it,
-            // and never persist an airborne fallback anchor.
-            BlockPos villageProbe = surfaceVillageProbe(level, playerPosition);
-            boolean insideVanillaVillage = level.isVillage(playerPosition)
-                    || level.isVillage(villageProbe);
-            var natural = NaturalVillageIdentity.near(level, villageProbe);
-            UUID territoryOwner = economy.territoryVillageId("minecraft:overworld", villageProbe.asLong());
-            EconomyService.VillageSnapshot village = natural != null ? economy.villageSnapshot(natural.id())
-                    : territoryOwner != null ? economy.villageSnapshot(territoryOwner)
-                    : economy.nearestVillageSnapshot("minecraft:overworld", villageProbe.asLong(),
-                            insideVanillaVillage ? 72.0 : FALLBACK_BANK_RECOVERY_RADIUS);
-            if (natural != null && village == null) continue; // Await natural-structure census, not a neighboring bank.
-            if (!VillageBankPlacementPolicy.shouldProbeVillage(
-                    insideVanillaVillage, village != null)) {
-                continue;
-            }
-            if (village == null
-                    && (config.villageProsperitySimulationEnabled()
-                            || config.villageVisualProgressionEnabled())) {
-                // Prosperity discovery owns the stable settlement center and identity. Its
-                // default census is slower than the bank scan, so wait instead of permanently
-                // keying a new bank from whichever player's position happened to be seen first.
-                continue;
-            }
-            UUID villageId = village == null ? null : village.village().villageId;
-            // The player's location is only a discovery probe. Once the prosperity system has a
-            // stable settlement identity, its persisted center owns keying and site selection.
-            BlockPos villagePosition = village == null
-                    ? villageProbe
-                    : BlockPos.of(village.village().centerPos);
+        // Bank-only worlds still need natural identity discovery, not a player's POI position.
+        if (!config.villageProsperitySimulationEnabled() && !config.villageVisualProgressionEnabled())
+            VillageProsperityManager.scanLoadedVillages(level, economy, config);
+        List<BankVillageTarget> targets = activeBankVillages(level, economy, config.villageDevelopmentRadius());
+        int firstTarget = targets.isEmpty() ? 0 : CONSTRUCTION_ROTATION.next("bank-survey", targets.size());
+        for (int i = 0; i < Math.min(MAX_BANK_VILLAGES_PER_SCAN, targets.size()); i++) {
+            BankVillageTarget target = targets.get((firstTarget + i) % targets.size());
+            UUID villageId = target.villageId();
+            BlockPos villagePosition = target.center();
             long bankKey = bankKeyForVillage(
                     economy,
                     "minecraft:overworld",
@@ -580,10 +549,12 @@ public final class VillageBankManager {
                 .stream()
                 .filter(entry -> VillageBankPlacementPolicy.shouldRetryPersistedFallback(
                         economy.isFallbackBankRegion(entry.getKey())))
-                .filter(entry -> hasNearbyRecoveryPlayer(level, BlockPos.of(entry.getValue())))
+                .filter(entry -> bankWorkActive(level, economy, economy.villageIdForBankRegion(entry.getKey()),
+                        BlockPos.of(entry.getValue()), EmeraldConfig.current().villageDevelopmentRadius()))
                 .sorted(Comparator.comparingLong(entry ->
                         nearestRecoveryPlayerDistanceSquared(
-                                level, BlockPos.of(entry.getValue()))))
+                                level, bankActivationAnchor(level, economy,
+                                        economy.villageIdForBankRegion(entry.getKey()), BlockPos.of(entry.getValue())))))
                 .toList();
         int attempts = 0;
         for (Map.Entry<Long, Long> entry : nearbyFallbacks) {
@@ -598,8 +569,8 @@ public final class VillageBankManager {
             }
 
             LAST_FALLBACK_BANK_RETRY_TICK.put(bankKey, gameTime);
-            BlockPos villageAnchor = BlockPos.of(entry.getValue());
             UUID villageId = economy.villageIdForBankRegion(bankKey);
+            BlockPos villageAnchor = bankActivationAnchor(level, economy, villageId, BlockPos.of(entry.getValue()));
             BankBuildAttempt retry = attemptBankBuild(
                     level,
                     economy,
@@ -618,9 +589,31 @@ public final class VillageBankManager {
         }
     }
 
-    private static boolean hasNearbyRecoveryPlayer(ServerLevel level, BlockPos anchor) {
-        return nearestRecoveryPlayerDistanceSquared(level, anchor)
-                <= (long) FALLBACK_BANK_RECOVERY_RADIUS * FALLBACK_BANK_RECOVERY_RADIUS;
+    record BankVillageTarget(UUID villageId, BlockPos center) {}
+
+    /** Enumerate all eligible settlements, not just the closest one to each player. */
+    static List<BankVillageTarget> activeBankVillages(ServerLevel level, EconomyService economy, int radius) {
+        var positions = level.players().stream().map(p -> p.blockPosition().asLong()).toList();
+        List<BankVillageTarget> result = new ArrayList<>();
+        for (UUID id : economy.developmentVillageIdsNear(level.dimension().identifier().toString(), positions, radius)) {
+            Long packed = economy.villageCenterPosition(id, level.dimension().identifier().toString());
+            if (packed == null) continue;
+            BlockPos center = BlockPos.of(packed);
+            if (bankWorkActive(level, economy, id, center, radius)) result.add(new BankVillageTarget(id, center));
+        }
+        result.sort(Comparator.comparing(BankVillageTarget::villageId));
+        return List.copyOf(result);
+    }
+
+    static BlockPos bankActivationAnchor(ServerLevel level, EconomyService economy, UUID villageId, BlockPos fallback) {
+        Long center = economy.villageCenterPosition(villageId, level.dimension().identifier().toString());
+        return center == null ? fallback : BlockPos.of(center);
+    }
+
+    static boolean bankWorkActive(ServerLevel level, EconomyService economy, UUID villageId, BlockPos fallback, int radius) {
+        BlockPos center = bankActivationAnchor(level, economy, villageId, fallback);
+        return level.players().stream().anyMatch(player -> VillageBankPlacementPolicy.recoveryActive(
+                center.getX(), center.getZ(), player.blockPosition().getX(), player.blockPosition().getZ(), radius));
     }
 
     private static long nearestRecoveryPlayerDistanceSquared(
@@ -636,7 +629,7 @@ public final class VillageBankManager {
                     anchor.getZ(),
                     position.getX(),
                     position.getZ(),
-                    FALLBACK_BANK_RECOVERY_RADIUS)) {
+                    EmeraldConfig.current().villageDevelopmentRadius())) {
                 continue;
             }
             long dx = (long) position.getX() - anchor.getX();
@@ -1034,10 +1027,10 @@ public final class VillageBankManager {
         // Migration and save-retry states can leave a scoped Banker loaded far from the eventual
         // safe Bank. Look broadly for that exact entity before considering an ordinary villager.
         double scopedSearchRadius = generatedStructure
-                ? FALLBACK_BANK_RECOVERY_RADIUS
+                ? BANKER_RECOVERY_SEARCH_RADIUS
                 : 48.0;
         AABB scopedSearch = new AABB(bankerAnchor).inflate(scopedSearchRadius,
-                FALLBACK_BANK_RECOVERY_RADIUS,
+                BANKER_RECOVERY_SEARCH_RADIUS,
                 scopedSearchRadius);
         Villager existing = level.getEntitiesOfClass(
                 Villager.class,
