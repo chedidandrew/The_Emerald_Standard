@@ -1,5 +1,6 @@
 package com.chedidandrew.emeraldstandard.client;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
+import com.chedidandrew.emeraldstandard.core.*;
 import java.lang.reflect.Field;
 import java.util.*;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -21,10 +22,22 @@ final class PriorityClientChecks {
             Inventory inventory=new Inventory(null,new EntityEquipment());
             List<Component> report=new ArrayList<>();
             report.add(Component.literal("TOWN: WHAT IS HAPPENING?"));
-            for(int i=0;i<18;i++)report.add(Component.literal("Project #"+i+": waiting for loaded land. Economic labor is paid, but physical construction still needs clear work cells and permission. Inspect the district map before funding more work."));
+            for(int i=0;i<18;i++)report.add(Component.literal("Project #"+i+": crews need a clear, accessible plot. Inspect the district map before funding more work."));
             BankerMenu menu=new BankerMenu(1,inventory);
             ContainerData data=(ContainerData)get(menu,"data");
             setData(data,"DATA_VILLAGE_PRESENT",1);
+            if(kind.startsWith("recovery-")) {
+                setData(data,"DATA_VILLAGE_SIMULATION_ENABLED",1);
+                setData(data,"DATA_VILLAGE_VISUAL_ENABLED",1);
+                setData(data,"DATA_VILLAGE_RECOVERY_ENABLED",kind.equals("recovery-paused")?0:1);
+                setData(data,"DATA_FUND_FEATURE_FLAGS",kind.equals("recovery-waiting")?0:1);
+                setData(data,"DATA_VILLAGE_LIFECYCLE",(kind.equals("recovery-required")
+                        ?VillageProsperityEngine.Lifecycle.ABANDONED
+                        :kind.equals("recovery-arrivals")?VillageProsperityEngine.Lifecycle.RECOVERING
+                        :VillageProsperityEngine.Lifecycle.EXTINCT).ordinal());
+                setData(data,"DATA_VILLAGE_RESTORATION_CENTI",kind.equals("recovery-funded")
+                        ||kind.equals("recovery-paused")?2500:kind.equals("recovery-required")?1000:0);
+            }
             Field base=BankerMenu.class.getDeclaredField("DATA_ASSET_PRICE_BASE");base.setAccessible(true);
             for(int i=0;i<com.chedidandrew.emeraldstandard.core.EconomyEngine.ASSETS.size();i++) {
                 long quote = (9500L+i*350)*10_000;
@@ -60,6 +73,7 @@ final class PriorityClientChecks {
                 throw new IllegalStateException("transport document obtainable");
             BankerScreen screen=new BankerScreen(menu,inventory,Component.literal("The Emerald Standard"));
             set(screen,"tab",kind.equals("browser")||kind.equals("compare")||kind.equals("live")||kind.equals("yesterday")?BankerMenu.TAB_MARKET:BankerMenu.TAB_VILLAGE);
+            if(kind.startsWith("recovery-"))set(screen,"tab",(int)get(screen,"TAB_NEWS"));
             set(screen,"watchlistLoaded",true);
             var browser=(InvestmentBrowser)get(screen,"browser");
             browser.favorites.add("VILX"); // In-memory fixture; never saved.
@@ -77,6 +91,7 @@ final class PriorityClientChecks {
             return new Screen(Component.literal("Priority dashboard render fixture")) {
                 @Override protected void init() {
                     screen.init(width,height);
+                    if(kind.startsWith("recovery-")) verifyRecovery(screen,kind);
                     BankerClientChecks.verifyTooltipWrapping(net.minecraft.client.Minecraft.getInstance());
                     if(kind.equals("town") || kind.equals("report")) verifyTownNavigation(screen,data);
                     if(kind.equals("report")) ReaderClientChecks.press(screen,"What next? Progress report");
@@ -133,6 +148,39 @@ final class PriorityClientChecks {
             };
         }catch(ReflectiveOperationException e){throw new IllegalStateException(e);}
     }
+    private static void verifyRecovery(BankerScreen screen,String kind) {
+        try {
+            var snapshotMethod=BankerScreen.class.getDeclaredMethod("villageDashboardSnapshot");
+            snapshotMethod.setAccessible(true);
+            var snapshot=(VillageDashboardPolicy.Snapshot)snapshotMethod.invoke(screen);
+            var assessment=VillageDashboardPolicy.assess(snapshot);
+            var articleMethod=BankerScreen.class.getDeclaredMethod("newsArticle",
+                    VillageDashboardPolicy.Snapshot.class,VillageDashboardPolicy.BulletinKind.class);
+            articleMethod.setAccessible(true);
+            var article=(Component)articleMethod.invoke(screen,snapshot,assessment.bulletin());
+            String expected=switch(kind) {
+                case "recovery-required" -> "15.0 more emeralds";
+                case "recovery-funded" -> "No further gift";
+                case "recovery-paused" -> "on hold";
+                case "recovery-waiting" -> "return with time";
+                case "recovery-arrivals" -> "preparing to return";
+                default -> "Giving is optional";
+            };
+            if(!article.getString().contains(expected))throw new IllegalStateException("Recovery wording: "+article.getString());
+            float scale=(float)get(screen,"interfaceScale");
+            var font=net.minecraft.client.Minecraft.getInstance().font;
+            int lines=font.split(article,BankerScreenScale.scaled(BankerScreenLayout.NEWS_TEXT_WIDTH,scale)).size();
+            if(lines>BankerScreenLayout.NEWS_ARTICLE_MAX_LINES)
+                throw new IllegalStateException("Recovery article clipped: "+kind+" "+lines+" lines at "+scale);
+            var method=BankerScreen.class.getDeclaredMethod("prosperityGuidance",
+                    VillageDashboardPolicy.Snapshot.class,VillageDashboardPolicy.ProsperityGuidance.class);
+            method.setAccessible(true);
+            var guidance=(Component)method.invoke(screen,snapshot,assessment.prosperityGuidance());
+            if(font.split(guidance,BankerScreenScale.scaled(BankerScreenLayout.NEWS_GUIDANCE_WIDTH,scale)).size()
+                    >BankerScreenLayout.NEWS_GUIDANCE_MAX_LINES)throw new IllegalStateException("Recovery advice clipped");
+        } catch(ReflectiveOperationException e) {throw new IllegalStateException(e);}
+    }
+
     private static void verifyTownNavigation(BankerScreen screen,ContainerData data) {
         ReaderClientChecks.press(screen,"Home");
         ReaderClientChecks.press(screen,"Town");

@@ -2,6 +2,18 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 /** Cooperative server-wide debug budget, independent of the number of cities/sites. */
 public final class ForcedDevelopmentWorkBudget {
+    /** Banks work on even ticks. Give them first refusal there, and projects on odd ticks.
+     * Both callbacks still run exactly once: lifecycle/discovery work must not be skipped. */
+    public static void runQueues(boolean forced, long tick, Runnable projects, Runnable banks) {
+        if (forced && Math.floorMod(tick, 2) == 0) {
+            banks.run();
+            projects.run();
+        } else {
+            projects.run();
+            banks.run();
+        }
+    }
+
     /** Independent pools must not share a tick-derived cursor (parity can starve a whole pool). */
     public static final class Rotation {
         private final java.util.Map<String, Long> cursors = new java.util.HashMap<>();

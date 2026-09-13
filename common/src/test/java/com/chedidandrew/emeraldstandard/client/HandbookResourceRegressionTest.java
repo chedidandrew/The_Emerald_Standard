@@ -71,6 +71,9 @@ public final class HandbookResourceRegressionTest {
                 "Both handbook forms explain the two appearance states");
         check(language.contains("every Contents sheet")&&language.contains("arriving at the end of the preceding report")
                 &&language.contains("Faint paper fibres"),"Newspaper guided navigation and subtle paper guidance");
+        check(language.contains("woodcut illustrations")&&language.contains("not a photograph")
+                &&language.contains("finite prose")&&language.contains("Illustrated news."),
+                "Illustration, authorship and compact news guidance");
         check(language.contains("text, then stories.")&&language.contains("Previous: reverse."),"Compact newspaper route is current");
     }
 
@@ -83,7 +86,10 @@ public final class HandbookResourceRegressionTest {
                 "common/src/main/resources/assets/the_emerald_standard/lang/en_us.json"));
         check(benchGuide.contains("front terrace are decorative benches")
                         && benchGuide.contains("raised backs toward the building")
-                        && benchGuide.contains("Existing completed Banks keep their original blocks"),
+                        && benchGuide.contains("Existing completed Banks keep their original blocks")
+                        && benchGuide.contains("high backs toward the grass")
+                        && benchGuide.contains("Previously saved site layouts and already placed benches stay unchanged")
+                        && benchGuide.contains("paving; old stay."),
                 "Handbook must explain Bank seating and the non-destructive update policy");
         String itemDefinition = compact(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/items/handbook.json"));
@@ -257,8 +263,22 @@ public final class HandbookResourceRegressionTest {
                 && language.contains("saved sequence") && language.contains("Supports before lamps."),
                 "Long and compact handbooks must explain sequencing, support dependencies and safe migration");
         check(language.contains("yellow post cap, dark foot and stepped black-and-yellow rails")
-                && language.contains("straight runs, corners and junctions") && language.contains("Striped rails."),
+                && language.contains("straight runs, corners and junctions") && language.contains("Textured stripes.")
+                && language.contains("Subtle pixel grain") && language.contains("charcoal feet"),
                 "Both handbook forms must describe the connected fence appearance");
+        for (String material : new String[] {"yellow", "black"}) {
+            var master = javax.imageio.ImageIO.read(root.resolve("art/construction-fence/" + material + "-master.png").toFile());
+            var texture = javax.imageio.ImageIO.read(root.resolve(resources
+                    + "assets/the_emerald_standard/textures/block/construction_fence_" + material + ".png").toFile());
+            check(texture != null && texture.getWidth() == 16 && texture.getHeight() == 16,
+                    "Native 16px fence material must ship");
+            for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+                int sx = (int) Math.floor((x + .5) * master.getWidth() / 16);
+                int sy = (int) Math.floor((y + .5) * master.getHeight() / 16);
+                check(texture.getRGB(x, y) == (master.getRGB(sx, sy) | 0xff000000),
+                        "Fence material preserves the approved generated swatch by nearest-neighbor import");
+            }
+        }
         for (String loader : new String[] {"fabric", "neoforge"}) {
             String build = Files.readString(root.resolve(loader + "/build.gradle"));
             check(build.contains("dependsOn tasks.named('verifyConstructionFenceModels')")
@@ -332,7 +352,11 @@ public final class HandbookResourceRegressionTest {
             int minimum = chapter.group(1).contains("\"recipe_desk\"") ? 150 : 180;
             check(words >= minimum, "A reader chapter is still only a brief summary");
         }
-        check(chapterCount == 16 && sections.size() == 68, "Long-form chapter coverage changed");
+        check(chapterCount == 16 && sections.size() == 69, "Long-form chapter coverage changed");
+        check(sections.contains("bridges") && entries.get(prefix+"bridges.body").contains("active bridge crews")
+                && entries.get(prefix+"bridges.body").contains("queue without payment")
+                && entries.get(prefix+"bridges.body").contains("Completed bridges are yours to modify"),
+                "Bridge scope, queue funding and preservation must be explained");
         check(entries.get(prefix+"construction_safety.body").contains("no normal block loot")
                 && entries.get(prefix+"construction_safety.body").contains("finishing pass")
                 && entries.get(prefix+"construction_safety.body").contains("Manual Repair"),
@@ -350,7 +374,7 @@ public final class HandbookResourceRegressionTest {
         check(entries.get(prefix + "village.body").contains("18 / 16")
                         && entries.get(prefix + "town_outputs.body").contains("F / M / T"),
                 "Town's housing and output examples must remain explained");
-        System.out.println("PASS 16 long-form handbook chapters, 68 sections and all seven funding purposes");
+        System.out.println("PASS 16 long-form handbook chapters, 69 sections and all seven funding purposes");
     }
 
     private static void requireResolvableHandbookSprites(String handbookSource) {

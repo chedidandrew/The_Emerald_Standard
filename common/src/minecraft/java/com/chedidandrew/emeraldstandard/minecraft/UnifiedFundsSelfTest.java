@@ -258,6 +258,15 @@ final class UnifiedFundsSelfTest {
                         "mandatory restoration is allowed with targeted donations off");
             String preview=BankerBriefings.fund(economy,villageId,10,EconomyState.ProsperityFundType.DIRECT_GRANT,
                     EconomyState.DonationPurpose.GENERAL,SpendingFunds.plan(0,20,10)).toString();
+            String town=BankerBriefings.town(economy,villageId,player).toString();
+            for(String forbidden:List.of("cooldown","operations","synchronized snapshot","origin chunk","Build "))
+                require(!preview.contains(forbidden)&&!town.contains(forbidden),"ordinary reports hide "+forbidden);
+            require(BankerBriefings.restoration(snapshot.village(),config).toString().contains("restoration.required.article"),
+                    "Town and Fund share the required-aid message");
+            properties.setProperty("village_prosperity.automatic_recovery_enabled","false");
+            require(BankerBriefings.restoration(snapshot.village(),EmeraldConfig.parse(properties)).toString()
+                    .contains("restoration.paused.article"),"fund preview warns about paused resettlement");
+            properties.setProperty("village_prosperity.automatic_recovery_enabled","true");
             require(preview.contains("restoration")&&!preview.contains("UNAVAILABLE"),"preview agrees with restoration payment");
             require(BankingOperations.supportVillage(player,economy,villageId,10,
                     EconomyState.ProsperityFundType.DIRECT_GRANT,EconomyState.DonationPurpose.RESTORATION)

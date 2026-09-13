@@ -251,6 +251,7 @@ final class VillageConstructionActivitySelfTest {
             require(ledger.entries.get(tag)==null,"completed ledger entry retired");
             level.setBlock(edited,Blocks.AIR.defaultBlockState(),18);
             verifyPockets(level,origin,village);
+            RoadsideBenchSelfTest.verify(level, origin.offset(25, 0, 25), village);
             verifyUnloadedPerimeter(level,village);
             System.out.println("PASS VillageConstructionActivitySelfTest: fence-first batches, occupied perimeter wait/resume, tall-plant pair restoration, legacy/readiness reload, player edits, saved crew/receipts, real walking/animation, stable spaced stations, active hammer duty, bounded pathing, blocked station recovery, pause/depart/resume/reload, view cone, departure, size scaling, pocket styles");
         } finally {

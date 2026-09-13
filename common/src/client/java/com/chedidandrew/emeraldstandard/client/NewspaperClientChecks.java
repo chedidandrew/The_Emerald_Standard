@@ -16,6 +16,8 @@ final class NewspaperClientChecks {
     private static NewspaperScreen preview;
     static void showPart(Minecraft game,String part) {
         if(part.equals("item-states")) {showItemStates(game);return;}
+        if(Set.of("markets","trade","memorial").contains(part)){showIllustratedStory(game,part);return;}
+        if(part.equals("browser-article")){preview.openFirstForTesting();return;}
         if(part.equals("contents"))ReaderClientChecks.press(preview,"Contents");
         else if(part.equals("article"))preview.openFirstForTesting();
         else if(part.equals("browser")) {
@@ -23,6 +25,21 @@ final class NewspaperClientChecks {
             preview.init(game.getWindow().getGuiScaledWidth(),game.getWindow().getGuiScaledHeight());
             ReaderClientChecks.press(preview,"Front page");
         }
+    }
+    private static void showIllustratedStory(Minecraft game,String kind) {
+        var state=EconomyState.fresh(411,0,0);
+        if(kind.equals("memorial")) {
+            var village=UUID.fromString("10000000-0000-0000-0000-000000000001");state.village(village);
+            NewsWire.player(state,NewsWire.Kind.VIOLENCE,village,UUID.randomUUID(),"AResident",2);
+        } else NewsWire.day(state,kind.equals("trade")?EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS:
+                EconomyEngine.MarketEvent.REDSTONE_REVOLUTION,Map.copyOf(state.prices));
+        var a=state.news.getLast();
+        var entry=new NewsReader.Entry(a.id(),NewsEditorial.section(a),
+                new NewsEditorial.Policy(true,true,true).text(a),a.day(),85,NewsIllustration.forArticle(a));
+        publish(preview.getMenu(),List.of(entry),20+entry.illustration().ordinal());
+        preview.getMenu().setData(2,0);
+        preview.init(game.getWindow().getGuiScaledWidth(),game.getWindow().getGuiScaledHeight());
+        preview.acceptUpdatesForTesting();preview.openFirstForTesting();
     }
     private static void showItemStates(Minecraft game) {
         var rolled=NewspaperScreen.createOpenPaperIcon();
@@ -50,6 +67,9 @@ final class NewspaperClientChecks {
         });
     }
     static void verify(Minecraft game) {
+        for(var art:NewsIllustration.values())
+            check(game.getResourceManager().getResource(net.minecraft.resources.Identifier.fromNamespaceAndPath(
+                    "the_emerald_standard",art.texture())).isPresent(),"newspaper illustration available: "+art);
         var inventory=new Inventory(null,new EntityEquipment());
         var menu=new NewspaperMenu(1,inventory);
         var state=EconomyState.fresh(112,0,0);
@@ -59,7 +79,7 @@ final class NewspaperClientChecks {
         List<NewsReader.Entry> reports=new ArrayList<>();
         for(int i=state.news.size()-1;i>=0;i--) {
             var a=state.news.get(i);
-            reports.add(new NewsReader.Entry(a.id(),NewsEditorial.section(a),a.text(),a.day(),a.kind()==NewsWire.Kind.FOOD_REMOVED?85:20));
+            reports.add(new NewsReader.Entry(a.id(),NewsEditorial.section(a),a.text(),a.day(),a.kind()==NewsWire.Kind.FOOD_REMOVED?85:20,NewsIllustration.forArticle(a)));
         }
         publish(menu,reports,1);menu.setData(2,1);
         var screen=new NewspaperScreen(menu,inventory,Component.literal("The Emerald Wire"));game.gui.setScreen(screen);
@@ -136,6 +156,7 @@ final class NewspaperClientChecks {
         }
         ReaderClientChecks.press(screen,"Next");
         check(screen.paperSectionForTesting()==0&&screen.scrollForTesting()==0,"last contents must reach first story");
+        check(screen.illustrationRowsForTesting()>0&&screen.articleCapacityForTesting()>0,"reserved illustration and readable text capacity");
         long first=screen.selectedForTesting();
         ReaderClientChecks.press(screen,"Next");
         check(screen.selectedForTesting()==first&&screen.scrollForTesting()>0,"Next skipped unread long article text");

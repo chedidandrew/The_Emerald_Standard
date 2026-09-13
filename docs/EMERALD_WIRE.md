@@ -6,7 +6,7 @@ The same reusable Newspaper item rests as a rolled grey edition with a curled en
 printed columns and paper band. Opening that held copy unfolds it into the pocket
 edition: layered sheets, folded corner, village illustration and dark printed columns.
 The sprite switches immediately, rather than playing an unrolling animation. The
-128px transparent textures preserve more detail in hand; the 16px inventory slot
+256px transparent textures preserve more detail in hand; the 16px inventory slot
 necessarily shows a smaller impression. Both main and offhand are supported.
 
 The source hand and exact server-side stack are scoped to the reader menu. Vanilla
@@ -15,6 +15,33 @@ second item, inventory exchange or persistent tag. Closing the menu, replacing o
 removing the source ends the state. Other copies and the Desk's searchable browser
 remain rolled. A display-only open-paper stamp appears in the portable reader when
 there is room; it never enters a player inventory. Newspaper recipes are unchanged.
+
+## Developed, illustrated reporting (beta.32)
+
+New articles generally run 200–350 words across several paragraphs. Each of the seventeen
+market-event families has a distinct opening, detail, angle and outlook. Roundups use
+direction-appropriate leads, actual closing figures and outlet voices. Local articles lead
+with the observed quantity, then develop the practical and human context. Fatal incidents
+use restrained prose and a memorial plate; they do not invent motives or mock victims.
+
+Four bundled sepia woodcuts cover markets, freight, community life and remembrance. They
+are editorial drawings, not screenshots or evidence of a particular village. A closed
+allowlist selects the art by event category; no image bytes or private location data are
+sent with it. The cover and both article readers display art, and native font pagination
+reserves its space without skipping text. Each asset is loaded through Minecraft's normal
+texture cache; no image generation, web calls or terrain scans happen during play.
+
+Article bodies are bounded to 6,000 characters and transport entries to 10,000. The full
+256-entry archive and four 64-report batches remain. Names and coordinates are redacted
+before synchronization, including legacy articles. The reader strips old reporting
+boilerplate and expands older reports using saved event types/quantities, never inventing
+missing historical prices. Saved article IDs, dates, actor records and facts remain intact.
+
+All prose is finite and deterministic. Headlines avoid recent reuse where possible; body
+angles, leads and outlet passages vary by world and day. This adds variety without
+changing the economic random stream or calling an external AI service. Long-running
+worlds can still encounter repeated wording. Authorship prompts and asset provenance
+are recorded in [the editorial art notes](../art/newspaper/editorial/README.md).
 
 ## Player actions become local reports
 
@@ -57,7 +84,7 @@ As with other world state, the last moments before a machine crash may not be sa
 
 Five outlets share one server-authored archive with distinct coverage and commentary:
 The Emerald Ledger covers financial analysis, The Redstone Wire technology, The Nether Post
-trade routes, and The Overworld Observer communities. The Daily Gravel labels opinion/satire.
+trade routes, and The Overworld Observer communities. The Daily Gravel uses dry humor without announcing the joke.
 These editorial voices interpret the same facts without creating new price effects.
 
 Seventeen event families cover automation, harvests, discoveries, supply crises, portal
@@ -78,8 +105,7 @@ with a 30-day per-family cooldown. A roundup appears every second economic day w
 an event. Follow-ups at two and seven days measure prices relative to the pre-event baseline,
 without claiming that price recovery proves a crisis is over. Local follow-ups report changes
 in the simulated food estimate; observed replanting/restocking can continue an earlier story
-without claiming that every loss was repaired. Event dispatches explicitly describe off-screen trade conditions,
-not invented destruction in a player's village. Disabling market events stops new shocks;
+without claiming that every loss was repaired. Event dispatches cover regional trade conditions rather than inventing destruction in a player's village. Reporting-system explanations live in the handbook, not in the articles. Disabling market events stops new shocks;
 ordinary price reporting and player news remain available.
 
 A market event and its price effect are resolved once by the economic simulation. Articles
@@ -94,15 +120,15 @@ Paper unlocks its recipe. The item is also in The Emerald Standard creative tab.
 Use it anywhere, or choose News → Read The Emerald Wire at an Exchange Desk.
 
 The portable item opens a paper-colored newspaper with a masthead, lead story, bylines and two-column
-articles. The masthead is simply The Emerald Wire; its former fixed Overworld slogan is removed.
+articles, switching to a single wider column in narrow windows or at very large GUI scales. The masthead is simply The Emerald Wire; its former fixed Overworld slogan is removed.
 Faint stable fibres and fold lines sit behind the ink, with a small corner crease and margin tear.
 Clickable Contents uses story numbers rather than pretending every article is one printed page.
 
 The portable reading path is cover -> all Contents sheets -> every story in editorial order.
 Wheel scrolling continues into the next story at the end of long text; Next first advances a full
-two-column view, then changes story. Previous/upward scrolling reverses the route and enters the
+reading view, then changes story. Previous/upward scrolling reverses the route and enters the
 previous story at its end. Only the cover/edition-end stops navigation, with disabled boundary buttons.
-Front and Contents remain direct shortcuts. The footer identifies the story and visible text range.
+Front and Contents remain direct shortcuts. The footer identifies the story and its opening, continuation or final column.
 
 Significance scores prioritize major events over routine roundups, with an eight-point-per-day
 age penalty and deterministic date/ID ties so old disasters cannot occupy the cover forever. Scores
@@ -120,7 +146,7 @@ are not mixed into an edition. Changed archives are checked approximately every 
 subscription, item consumption, remote trading or remote banking access.
 
 The item uses a flat, vanilla-paper-style silhouette with grey shading and black printed marks.
-Its dedicated 32-pixel transparent texture uses Minecraft's generated item model, including the
+Its dedicated 256-pixel transparent texture uses Minecraft's generated item model, including the
 standard held/dropped-item transforms. Resource packs can replace the item/model normally.
 
 ## Privacy, community designation and editorial capacity
@@ -154,7 +180,7 @@ Default wording lives at data/the_emerald_standard/emerald_news/templates.json. 
 replace that file, or add a JSON object under data/<namespace>/emerald_news/*.json. Each key
 is an event enum name, ROUNDUP_UP, ROUNDUP_DOWN, PLAYER_<news kind>, or VOICE_0 through
 VOICE_4 in the displayed outlet order. Values are arrays of plain single-line strings.
-Use /reload to apply future wording; published history is not regenerated.
+Use /reload to apply future wording; published facts are not regenerated.
 
 Overrides are processed in resource-ID order after Minecraft resolves pack priority for the
 same path. Validation limits: 64 files, 64 groups, 32 alternatives per group, 300 characters
@@ -195,14 +221,14 @@ Physical Trade and commodity investments retain the same underlying quote.
 
 ## Compatibility and handbook
 
-Format 33 preserves current holdings, cash, cost bases, quotes and recorded history. Format-31
-articles receive stable IDs without rewriting their text; unknown historical event baselines
+Economy format 38 preserves current holdings, cash, cost bases, quotes and recorded history. Format-31
+articles receive stable IDs without rewriting their stored facts; unknown historical event baselines
 are not invented. Older pre-news saves still begin with an empty archive.
 Older saves initialize new commodity reference values at their current quotes and begin
 with an empty newspaper archive; no synthetic history is inserted. Existing price history
 is not backfilled; denomination splits adjust price histories and follow-up baselines consistently. Back up the whole world, use matching client/server builds, and do not
 downgrade a migrated save.
 
-The handbook now has 67 long-form sections, 60 compact/lectern pages and four animated
+The handbook now has guided long-form sections, 61 compact/lectern pages and four animated
 crafting recipes. The new material explains targets versus returns, commodity volatility,
 reporting evidence, limitations, reader controls and crafting.

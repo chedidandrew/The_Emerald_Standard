@@ -201,9 +201,11 @@ final class VillageTerrainFinishing {
                         : style == 1 ? Blocks.POPPY.defaultBlockState()
                         : Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true));
                 if (v == 2 && Math.abs(u) <= 1 && style != 1) {
-                    Direction face = sx > 0 ? Direction.WEST : sx < 0 ? Direction.EAST
-                            : sz > 0 ? Direction.NORTH : Direction.SOUTH;
-                    desired.put(feet, Blocks.SPRUCE_STAIRS.defaultBlockState().setValue(StairBlock.FACING, face));
+                    // Stair FACING is its high half, i.e. the bench back, not the sitting direction.
+                    // v=2 is the outer edge: keep the back outward and the low seat toward the paving.
+                    Direction back = sx > 0 ? Direction.EAST : sx < 0 ? Direction.WEST
+                            : sz > 0 ? Direction.SOUTH : Direction.NORTH;
+                    desired.put(feet, Blocks.SPRUCE_STAIRS.defaultBlockState().setValue(StairBlock.FACING, back));
                 }
                 if (v == 0 && u == 2 && style == 2) {
                     desired.put(feet, Blocks.STONE_BRICK_WALL.defaultBlockState());

@@ -118,12 +118,22 @@ final class NewsRuntimeSelfTest {
             var menu=new NewspaperMenu(3,p.getInventory(),service);p.containerMenu=menu;
             require(menu.total()==256&&menu.articles().size()==256,"full archive");
             var document=menu.slots.getFirst().getItem().copy();
-            var buffer=RegistryFriendlyByteBuf.decorator(level.registryAccess()).apply(Unpooled.buffer());
-            try {
-                ItemStack.STREAM_CODEC.encode(buffer,document);
-                var wire=ItemStack.STREAM_CODEC.decode(buffer);
-                require(wire.get(DataComponents.WRITTEN_BOOK_CONTENT).pages().size()==64,"real item packet");
-            } finally {buffer.release();}
+            for(int batch=0;batch<NewspaperMenu.DOCUMENTS;batch++) {
+                var buffer=RegistryFriendlyByteBuf.decorator(level.registryAccess()).apply(Unpooled.buffer());
+                try {
+                    var source=menu.slots.get(batch).getItem();
+                    ItemStack.STREAM_CODEC.encode(buffer,source);
+                    require(buffer.readableBytes()<512*1024,"bounded long-story document packet");
+                    var wire=ItemStack.STREAM_CODEC.decode(buffer);
+                    var content=wire.get(DataComponents.WRITTEN_BOOK_CONTENT);
+                    require(content.pages().size()==64,"real full-archive item packet");
+                    require(content.equals(source.get(DataComponents.WRITTEN_BOOK_CONTENT)),"long articles and art survive packet codec");
+                    for(var page:content.getPages(false)) {
+                        var entry=com.chedidandrew.emeraldstandard.client.NewsReader.Entry.parse(page.getString());
+                        require(entry.text().length()>1200&&!entry.text().contains("Headlines are satire"),"developed in-world native article");
+                    }
+                } finally {buffer.release();}
+            }
             for(var input:ContainerInput.values()) for(int slot:new int[]{-999,0,1,999}) menu.clicked(slot,0,input,p);
             require(menu.getCarried().isEmpty()&&ItemStack.matches(document,menu.slots.getFirst().getItem())
                 &&menu.quickMoveStack(p,0).isEmpty(),"document cannot duplicate, drop, swap or transfer");

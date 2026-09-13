@@ -128,7 +128,8 @@ public final class ClientSmokeSupport {
                         catch(Exception e) {throw new IllegalStateException(e);}
                         return null;
                     });
-                    for(int scale:new int[]{2,4}) for(String kind:new String[]{"browser","compare","live","yesterday","report","town"}) {
+                    for(int scale:new int[]{2,4}) for(String kind:new String[]{"browser","compare","live","yesterday","report","town",
+                            "recovery-optional","recovery-required","recovery-funded","recovery-paused","recovery-waiting","recovery-arrivals"}) {
                         onClient(minecraft, () -> {
                             minecraft.getWindow().setWindowed(1280,1000);
                             minecraft.options.guiScale().set(scale);minecraft.resizeGui();
@@ -152,7 +153,7 @@ public final class ClientSmokeSupport {
                             NewspaperClientChecks.verify(minecraft); return null;
                         });
                         Thread.sleep(500);capture(minecraft,"newspaper-scale-"+scale+".png");
-                        for(String part:new String[]{"contents","article","browser","item-states"}) {
+                        for(String part:new String[]{"contents","article","browser","browser-article","markets","trade","memorial","item-states"}) {
                             onClient(minecraft,()->{NewspaperClientChecks.showPart(minecraft,part);return null;});
                             Thread.sleep(500);capture(minecraft,"newspaper-"+part+"-scale-"+scale+".png");
                         }

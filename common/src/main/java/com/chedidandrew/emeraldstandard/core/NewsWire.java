@@ -19,12 +19,12 @@ public final class NewsWire {
         public Article {
             Objects.requireNonNull(kind);
             if (id < 0 || day < 0 || quantity < 0 || !OUTLETS.contains(outlet)) throw new IllegalArgumentException("Invalid news");
-            for (String s : List.of(family, village, actor, headline, detail))
+            for (String s : List.of(family, village, actor, headline))
                 if (s.length() > 2000 || s.indexOf('\0') >= 0) throw new IllegalArgumentException("Invalid news text");
+            if(detail.length()>6000 || detail.indexOf('\0')>=0) throw new IllegalArgumentException("Invalid article body");
         }
         public String text() {
-            return outlet + " | Day " + day + "\n" + (village.isEmpty() ? "World-market dispatch" : "Local report")
-                    + "\n\n" + headline + "\n\n" + detail;
+            return NewsNarrative.text(this,false,false);
         }
     }
     private NewsWire() {}
@@ -36,23 +36,19 @@ public final class NewsWire {
         if (event != EconomyEngine.MarketEvent.NONE) {
             String family = event.name();
             String headline = choose(state, family, eventHeadlines(event));
-            String explanation = event.detail() + " This is a simulated off-screen trade event, not a report of damage to your village.";
             String publisher = NewsEditorial.outlet(state, family);
             append(state, new Article(day, Kind.MARKET, family, publisher, "", "", 0,
-                    headline, explanation + "\n\n" + moves(state, before)
-                    + "\n\n" + NewsEditorial.voice(state, publisher)
-                    + "\nPrice moves include ordinary trading and other conditions; this event is not the only influence."));
+                    headline, NewsNarrative.market(state,family,publisher,moves(state,before))));
             NewsEditorial.trackMarket(state, state.news.getLast(), before);
         }
         NewsEditorial.followups(state);
         if (event == EconomyEngine.MarketEvent.NONE && (day % 2 == 0 || state.news.isEmpty())) {
             String direction = state.prices.get("VILX") >= before.get("VILX") ? "UP" : "DOWN";
             String family = "ROUNDUP_" + direction;
-            append(state, new Article(day, Kind.ROUNDUP, family, outlet(state, family), "", "", 0,
+            String publisher=NewsEditorial.outlet(state,family);
+            append(state, new Article(day, Kind.ROUNDUP, family, publisher, "", "", 0,
                     choose(state, family, direction.equals("UP") ? UP : DOWN),
-                    "Market close: " + state.regime.name().toLowerCase(Locale.ROOT) + ".\n\n" + moves(state, before)
-                    + "\n\n" + NewsEditorial.voice(state, NewsEditorial.outlet(state, family))
-                    + "\nEditorial commentary explains uncertainty; it is not an extra price-changing event."));
+                    NewsNarrative.roundup(state,family,publisher,moves(state,before))));
         }
     }
     private static String moves(EconomyState state, Map<String, Double> before) {
@@ -89,32 +85,16 @@ public final class NewsWire {
     private static Article playerArticle(EconomyState state, Kind kind, String family, String place,
             String actor, int quantity, String headline) {
         var v=state.existingVillage(UUID.fromString(place));
-        String action=switch(kind) {
-            case FOOD_REMOVED -> "food items taken from a confirmed village container";
-            case FOOD_RETURNED -> "food items put into a confirmed village container";
-            case CROPS -> "village crop blocks removed and not replanted during the observation window";
-            case DAMAGE -> "confirmed village structure blocks removed";
-            case DONATION -> "emeralds contributed to the village fund";
-            case REPLANTED -> "village crop positions replanted";
-            case VIOLENCE -> "villager deaths attributed to this player";
-            default -> throw new IllegalArgumentException();
-        };
         String development=NewsEditorial.localDevelopment(state,kind,place,quantity);
         return new Article(state.economicDay,kind,family,"The Overworld Observer",place,actor,quantity,headline,
-                "Recorded player: " + (actor.isBlank() ? "identity unavailable" : actor) + ".\n"
-                + "District near X " + unpackX(v.centerPos) + ", Z " + unpackZ(v.centerPos) + ".\n"
-                + "Confirmed total: " + quantity + " " + action + ".\n\n"
-                + development + "This bulletin reports observed actions, not intent or permission between players. "
-                + "Headlines are satire. No automatic fine, guard hostility, or global market shock is imposed.");
+                NewsNarrative.local(kind,quantity,state.seed,state.economicDay,family,
+                    "District near X "+unpackX(v.centerPos)+", Z "+unpackZ(v.centerPos)+".",development));
     }
     private static int unpackX(long p) { return (int)(p >> 38); }
     private static int unpackZ(long p) { return (int)(p << 26 >> 38); }
     public static String cleanName(String value) {
         String cleaned=value==null?"":value.replaceAll("[^A-Za-z0-9_ .-]","");
         return cleaned.substring(0,Math.min(32,cleaned.length()));
-    }
-    private static String outlet(EconomyState state,String family) {
-        return OUTLETS.get((int)(InvestmentGrowth.unit(state.seed,state.economicDay,family+"outlet")*OUTLETS.size()));
     }
     private static String choose(EconomyState state,String family,List<String> choices) {
         choices=state.editor.templates.getOrDefault(family.startsWith("PLAYER_") ? family.substring(0,family.lastIndexOf('_')) : family, choices);
@@ -179,7 +159,7 @@ public final class NewsWire {
                 "Frontier firm reports enormous addressable emptiness");
             case CREEPER_CATASTROPHE -> List.of("Trade-route blast disrupts deliveries; relief crews mobilize",
                 "Reconstruction contracts rise after regional transport disaster","Security demand rises as merchants count the cost",
-                "Families await reopened routes after off-screen depot blast","Freight company retires slogan Nothing Can Stop Us",
+                "Families await reopened routes after regional depot blast","Freight company retires slogan Nothing Can Stop Us",
                 "Safety inspector's warning recovered from filing cabinet","Officials promise review of review into neglected defenses",
                 "Rebuilding effort draws volunteers and opportunistic consultants");
             case VILLAGER_CREDIT_SCARE -> List.of("Bank calls liquidity crisis temporary; vault contains three buckets",
@@ -193,7 +173,7 @@ public final class NewsWire {
                 "Mine expansion promises jobs, materials, and an extremely large hole","New mineral field reshapes merchants' inventories",
                 "Prospectors announce breakthrough; gemstone sellers prefer silence");
             case PORTAL_REOPENING -> List.of("Portal reopens; toll booth somehow already staffed",
-                "Nether trade resumes with complimentary safety disclaimer","Supply returns; shortage consultant extends holiday",
+                "Nether trade resumes with a fresh stack of freight orders","Supply returns; shortage consultant extends holiday",
                 "Freight queues shorten; customs celebrates solving customs");
             case RAIL_DISRUPTION -> List.of("Rail stoppage delays freight; replacement minecart also delayed",
                 "Transit firm promises on-time apology","Supply chain encounters literal missing link",
@@ -239,43 +219,30 @@ public final class NewsWire {
         "Shareholders reminded that diamond hands are not diamond armor","Closing bell rings; nobody volunteers to answer",
         "Risk department returns from lunch with an expression","Market correction declines to specify what it is correcting",
         "Losses described as unrealized; concern remains fully realized");
-    private static final List<String> COMMENTARY=List.of(
-        "The Ledger reminds readers that a positive long-run growth target is not a guaranteed return.",
-        "The Wire's technology desk notes that a useful invention and a profitable investment are different claims.",
-        "The Nether Post warns that scarce supplies can still become cheaper when demand weakens.",
-        "The Observer asks readers to distinguish local village facts from off-screen market dispatches.",
-        "The Gravel's opinion desk recommends checking facts before checking how loudly someone says them.",
-        "Treasury funds have interest-rate exposure; lower volatility does not mean zero risk.",
-        "An index spreads company-specific exposure but cannot make a market-wide slump disappear.",
-        "Commodity holdings track prices, not a promise of physical delivery or interest.",
-        "Editorial: the forecast contains uncertainty, despite the unusually confident font.",
-        "Today's movements do not establish tomorrow's direction. The crystal ball remains in technical support.",
-        "Company shares and the commodities they use are different investments with different risks.",
-        "Trading spreads still apply. Enthusiasm is not accepted as payment.");
     private static List<String> playerHeadlines(Kind k) {
         return switch(k) {
-            case FOOD_REMOVED -> List.of("Carrot caper: village stores meet aggressive inventory management",
-                "Bread reserves vanish; storage department requests a word","Village pantry reports unscheduled withdrawals",
-                "Food-store raider leaves villagers with plenty of shelf space","Potato reserves selected for private redistribution",
-                "Pantry emptied faster than committee can form");
-            case CROPS -> List.of("Local farm reclassified as dirt after unscheduled renovation",
-                "Crop losses leave farmers surveying a very open plan","Fields cleared; replanting remains conspicuously absent",
+            case FOOD_REMOVED -> List.of("Village pantry records outgoing food",
+                "Pantry ledger discovers subtraction","Village pantry reports unscheduled withdrawals",
+                "Food changes hands; village shelves request an inventory","Food stores: another entry in the outgoing column",
+                "Village food stores report net withdrawals");
+            case CROPS -> List.of("The harvest has left a question for the soil",
+                "Crop losses leave farmers surveying a very open plan","Village fields await the next green beginning",
                 "Agricultural redevelopment appears to have skipped agriculture");
-            case DAMAGE -> List.of("Self-appointed urban planner removes wall; residents question qualifications",
-                "Village architecture acquires unrequested ventilation","Demolition work begins without matching construction work",
+            case DAMAGE -> List.of("Village architecture has a subtraction to account for",
+                "Building report: not everything is where it was","Demolition work begins without matching construction work",
                 "Property report: there used to be more building here");
             case DONATION -> List.of("Village fund receives help; residents welcome practical optimism",
                 "Benefactor invests in community instead of another speculative hole","Relief fund grows; accountants briefly smile",
                 "Local generosity outperforms committee's expectations");
             case REPLANTED -> List.of("Seeds return to fields; farmers cautiously put down complaint forms",
                 "Replanting effort brings green shoots of actual recovery","Village fields receive a second chance",
-                "Harvest story ends with seeds instead of bare dirt");
-            case VIOLENCE -> List.of("Village mourns after confirmed player attack",
-                "Residents call for calm after player-caused loss","Community counts the cost of violence",
+                "Replanting gives the next harvest somewhere to start");
+            case VIOLENCE -> List.of("Village mourns after a fatal encounter",
+                "A village faces the absence of its own","Community counts the cost of violence",
                 "Local tragedy leaves an empty place at the gathering square");
-            case FOOD_RETURNED -> List.of("Bread returns to shelves; sandwich emergency downgraded",
-                "Village pantry restocked; shelves thank local contributor",
-                "Food delivery brings practical relief to village stores","Potatoes return from their unscheduled travels");
+            case FOOD_RETURNED -> List.of("Village shelves welcome a food delivery",
+                "Village pantry receives a contribution",
+                "Food delivery brings practical relief to village stores","Village food stores record incoming supplies");
             default -> throw new IllegalArgumentException("Not player news");
         };
     }

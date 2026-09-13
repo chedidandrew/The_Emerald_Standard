@@ -22,12 +22,7 @@ public final class NewsEditorial {
         public int flags() { return (publicPlayers?1:0)|(anonymous?2:0)|(approximate?4:0); }
         public String text(NewsWire.Article a) {
             if(!a.village().isEmpty()&&!publicPlayers) return null;
-            String text=a.text();
-            if(!a.village().isEmpty()) {
-                if(anonymous) text=text.replaceAll("Recorded player: [^\\n]*","Recorded player: Anonymous resident.");
-                if(approximate) text=text.replaceAll("District near X -?\\d+, Z -?\\d+\\.", "Location: a local village (coordinates withheld).");
-            }
-            return text;
+            return NewsNarrative.text(a,anonymous,approximate);
         }
     }
     private NewsEditorial() {}
@@ -64,16 +59,21 @@ public final class NewsEditorial {
     public static String voice(EconomyState s,String outlet) {
         int i=NewsWire.OUTLETS.indexOf(outlet);
         List<String> defaults=switch(i) {
-            case 1 -> List.of("Technology desk: adoption and useful output matter more than blinking lamps.",
-                    "Technology desk: the prototype works. The business model still requires a lever.");
-            case 2 -> List.of("Trade desk: watch delivery costs, available supply and routes, not just rarity.",
-                    "Trade desk: cargo is moving through a world where the floor is occasionally lava.");
-            case 3 -> List.of("Community desk: price changes do not tell us whether any particular village has enough food.",
-                    "Community desk: behind each supply chain are people who would appreciate a functioning road.");
-            case 4 -> List.of("OPINION / SATIRE: experts upgrade yesterday's guess to today's obvious conclusion.",
-                    "OPINION / SATIRE: the crystal ball has been replaced by a louder crystal ball.");
-            default -> List.of("Analysis: compare the measured move with the wider market; one headline is not a forecast.",
-                    "Analysis: a positive growth target is not a promised return. Spreads and risk still apply.");
+            default -> List.of("The Ledger's interest is in what reaches the account after the excitement has passed. Sales, costs and the price paid for a holding make less colorful company than a grand announcement. They are, however, remarkably persistent guests.",
+                    "An emerald can carry only one side of a transaction at a time. While one desk calls the day's price an opportunity, another is content to accept it and move on. The ledger has room for both signatures, but not for both to own the same coin.",
+                    "The ledger closes without an opinion on anyone's confidence. It has entered the price, the quantity and the emeralds that changed hands. In a business full of extravagant claims, the bookkeeping remains an exceptionally difficult audience.");
+            case 1 -> List.of("At the Wire, the useful question begins after the demonstration: who will keep the machine running when its inventor goes home? A lever can start a remarkable afternoon. A working workshop has to survive rather more of them.",
+                    "The technology trade has never lacked a promising diagram. Its more difficult business is turning the diagram into something worth carrying home. Somewhere between those stages, a very confident sales pitch usually meets its first maintenance bill.",
+                    "A prototype can be persuaded to look wonderful for an afternoon. A useful machine has the harder assignment of working on an ordinary morning, when the inventor is elsewhere and nobody has brought a congratulatory banner.");
+            case 2 -> List.of("Freight has an admirable indifference to speeches. It still needs a route, a load and someone prepared to take it to the other end. The Post continues to follow the part of commerce that has to leave the counter.",
+                    "A cargo's journey does not end when the order is signed. There are crossings, handling costs and the persistent difficulty of being in the wrong place with something urgently wanted elsewhere. That is where the trade desk keeps its attention.",
+                    "At either end of a freight route, time has a price. Someone is waiting for the goods, and someone else would like the cart back. Between them lies the part of the invoice that refuses to be improved by a more elegant signature.");
+            case 3 -> List.of("Behind a busy trade are the quieter tasks that make a settlement livable. A delivery matters most when it reaches someone with a use for it. The village end of a supply route is where fine commercial promises become either useful things or another wait.",
+                    "The Observer keeps one eye on the ordinary work beneath the day's bigger account. Growing, carrying and making rarely receive the grandest descriptions, but a community can live on their results. It cannot live for very long on the description.",
+                    "A village meets a changing market at its doors, fields and workbenches. The distant quotation becomes a nearby cost, a delivery or a chance to sell. That is where an impressive number finally has to explain what it is good for.");
+            case 4 -> List.of("The day's explanations are arriving with the usual confidence. They are particularly clear about what has already happened, a subject on which expertise remains impressively abundant. Tomorrow will provide the small inconvenience of something that has not.",
+                    "There is nothing quite like a closing bell to make an uncertain morning look inevitable. The Gravel advises its ink supply to prepare for another round of excellent explanations, all delivered from the exceptionally comfortable vantage point of afterward.",
+                    "The Gravel has reserved a comfortable chair for certainty. Thus far, certainty has preferred to arrive after the prices, wearing an expression that suggests it was here all along. Its account of the morning grows more impressive with every retelling.");
         };
         var choices=s.editor.templates.getOrDefault("VOICE_"+i,defaults);
         return choices.get((int)(InvestmentGrowth.unit(s.seed,s.economicDay,"voice"+i)*choices.size()));
@@ -126,9 +126,10 @@ public final class NewsEditorial {
                         NewsWire.OUTLETS.get(3),village,"FOOD",v.foodSupply,0));
             }
         } else if(previous!=null&&(kind==NewsWire.Kind.FOOD_RETURNED||kind==NewsWire.Kind.REPLANTED)) {
-            return "Developing story: after the village activity report on Day "+previous.day()
-                    +", this bulletin records "+quantity+(kind==NewsWire.Kind.REPLANTED?" replanted crop positions. ":" food items added. ")
-                    +"This is observed help, not proof that every loss was repaired.\n\n";
+            return "This follows the village report of Day "+previous.day()
+                    +". The new "+(kind==NewsWire.Kind.REPLANTED?"planting":"delivery")
+                    +" gives that earlier account another chapter: practical help has now joined the story. "
+                    +"The work of keeping the village supplied continues around it.";
         }
         return "";
     }
@@ -139,21 +140,14 @@ public final class NewsEditorial {
             String detail,headline=story.headline();
             if(story.village().isEmpty()) {
                 double change=100*(s.prices.get(story.ticker())/story.baseline()-1);
-                String trend=change < -1 ? "remains below its pre-event price" : change > 1 ? "stands above its pre-event price" : "is near its pre-event price";
-                detail=String.format(Locale.ROOT,"Developing story from Day %d. %s %s (%+.2f%% since before the event).",
-                        story.day(),story.ticker(),trend,change)
-                        +"\nThis measures the price path, not proof that a supply disruption has ended or the event alone caused the move."
-                        +"\n\n"+voice(s,story.outlet());
+                detail=NewsNarrative.marketFollowup(s,story,change);
             } else {
                 if(!s.editor.playerReports){s.editor.stories.remove(story.source());continue;}
                 var v=s.existingVillage(UUID.fromString(story.village()));
                 if(v==null){s.editor.stories.remove(story.source());continue;}
                 double delta=v.foodSupply-story.baseline();
                 headline=delta>1?"Village food estimate improves after earlier activity report":"Village follow-up: checking the food outlook";
-                detail=String.format(Locale.ROOT,"Follow-up to village activity on Day %d. Simulated food supply: %.1f, change %+.1f since that report.",
-                        story.day(),v.foodSupply,delta)
-                        +"\nThis is the town's economic estimate, not a count of replanted crops or a claim that damage has been repaired."
-                        +"\nOther residents, production and consumption also influence this estimate.";
+                detail=NewsNarrative.localFollowup(story,v.foodSupply,delta,s.economicDay);
             }
             append(s,new NewsWire.Article(s.economicDay,NewsWire.Kind.FOLLOW_UP,story.family(),story.outlet(),
                     story.village(),"",0,"Follow-up: "+headline,detail));

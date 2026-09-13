@@ -17,7 +17,7 @@ public final class NewsEditorialRegressionTest {
         require(!anonymized.contains("Renamed")&&!anonymized.contains("1484")&&!anonymized.contains("1180"),"server privacy");
         require(new NewsEditorial.Policy(false,false,false).text(s.news.getLast())==null,"public reports disabled");
         NewsWire.player(s,NewsWire.Kind.REPLANTED,village,UUID.randomUUID(),"Gardener",3);
-        require(s.news.getLast().detail().contains("Developing story")&&s.news.getLast().detail().contains("not proof"),"factual local sequel");
+        require(s.news.getLast().detail().contains("report of Day 0")&&s.news.getLast().text().contains("replanted 3 crop positions"),"factual local sequel");
         s.economicDay=1;NewsWire.player(s,NewsWire.Kind.CROPS,village,player,"Renamed",1);
         require(s.news.getLast().id()!=id,"new daily bulletin");
         NewsWire.day(s,EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS,Map.copyOf(s.prices));
@@ -28,7 +28,7 @@ public final class NewsEditorialRegressionTest {
         require(s.news.stream().anyMatch(a->a.kind()==NewsWire.Kind.FOLLOW_UP&&a.village().isEmpty()),"eviction cannot cancel scheduled follow-up");
         require(s.news.stream().anyMatch(a->a.detail().contains("pre-event")),"follow-up measures since event, not just today");
         s.economicDay=8;v.foodSupply=40;NewsEditorial.followups(s);
-        require(s.news.stream().anyMatch(a->a.detail().contains("Simulated food supply")&&a.detail().contains("not a count")),"local food observation not invented repairs");
+        require(s.news.stream().anyMatch(a->a.detail().contains("food outlook stands at 40.0")&&a.detail().contains("+15.0 points")),"local food observation not invented repairs");
         require(s.editor.stories.isEmpty(),"developing state expires");
         s.liveMarket=LiveMarket.adopt(s); // News fixture deliberately advances only its editorial date.
         s.validate();

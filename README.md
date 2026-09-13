@@ -6,7 +6,7 @@ The badge reports **main only**. Development candidates require their own exact-
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current source status: **unreleased `0.4.0-beta.31` development candidate**, not a stable release. See the [beta.31 debug-performance validation](docs/reviews/2026-09-12-beta31-debug-performance.md) for current results and artifact fingerprints; older review records do not certify this build. The broader human gameplay matrix is not certified. See [the five-priority upgrade](docs/FIVE_PRIORITIES.md) for the current UI, test harness and build-identity changes.
+> Current source status: **unreleased `0.4.0-beta.37` development candidate**, not a stable release. See the [beta.37 bridge validation](docs/reviews/2026-09-13-beta37-footbridges.md) for current results and artifact fingerprints; older review records do not certify this build. The broader human gameplay matrix is not certified. See [the five-priority upgrade](docs/FIVE_PRIORITIES.md) for the current UI, test harness and build-identity changes.
 
 ## Core rule
 
@@ -24,6 +24,7 @@ New natural villages keep one district and one Bank, extending connected, non-ov
 for status and optional owner/operator controls. Nearby [farms and livestock](docs/VILLAGE_FOOD_SOURCES.md)
 now boost food production automatically across developed district footprints. Banks build progressively,
 and each active site defaults to up to two blocks per second independently, configurable from 1–100 in Settings. See [construction and entrances](docs/PROGRESSIVE_CONSTRUCTION.md).
+Walkways can now share [village-themed footbridges](docs/VILLAGE_FOOTBRIDGES.md), with three-wide decks, inward-facing lamps and saved, bounded Infrastructure work.
 The latest [background village life](docs/BACKGROUND_VILLAGE_LIFE.md) pass adds saved builder assignments,
 cosmetic deliveries, neighborhood gathering spaces, upkeep advice and automatic retry diagnostics.
 See the [beta.5 background-life validation record](docs/reviews/2026-09-10-beta5-background-village-life-validation.md)
@@ -32,7 +33,7 @@ Upgrading writes economy **format 38** and per-dimension construction ownership 
 pre-upgrade world backup and do not downgrade that save to an older binary.
 
 1. Back up the world before installing or upgrading this beta.
-2. To test this source candidate, build or obtain exactly one `0.4.0-beta.31` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
+2. To test this source candidate, build or obtain exactly one `0.4.0-beta.37` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
 3. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
 4. Right-click the Banker or an Exchange Desk to open the eight-page dashboard.
 5. Choose an amount and spend Bank Cash or ordinary loose inventory emeralds directly; deposits are optional. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk. See [combined spending and recovery](docs/UNIFIED_SPENDING.md).

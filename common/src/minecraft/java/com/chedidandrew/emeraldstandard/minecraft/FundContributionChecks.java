@@ -14,15 +14,15 @@ final class FundContributionChecks {
         if (type == null || requested == null)
             return denied(BankingOperations.UNSUPPORTED, requested, "Choose a valid contribution type and purpose.");
         if (!snapshot.simulationEnabled() || !config.prosperityFundEnabled())
-            return denied(BankingOperations.UNSUPPORTED, requested, "World settings disable village simulation or donations.");
+            return denied(BankingOperations.UNSUPPORTED, requested, "The village is not accepting contributions.");
         if (type == EconomyState.ProsperityFundType.ENDOWMENT && !config.prosperityFundEndowmentsEnabled())
-            return denied(BankingOperations.UNSUPPORTED, requested, "World settings disable endowments.");
+            return denied(BankingOperations.UNSUPPORTED, requested, "The village is not accepting endowments.");
         if (type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP) {
             if (!config.prosperityFundProjectSponsorshipEnabled())
-                return denied(BankingOperations.UNSUPPORTED, requested, "World settings disable sponsorship.");
+                return denied(BankingOperations.UNSUPPORTED, requested, "The village is not accepting sponsorships.");
             var project = snapshot.village().projects.stream().filter(p -> !p.economicComplete).findFirst().orElse(null);
             return project == null
-                    ? denied(BankingOperations.NOT_READY, requested, "No economically unfinished project is available.")
+                    ? denied(BankingOperations.NOT_READY, requested, "No project needs further paid labor.")
                     : new Decision(BankingOperations.READY, EconomyState.donationPurposeForProject(project), project.projectId, "");
         }
         boolean restoration = type == EconomyState.ProsperityFundType.DIRECT_GRANT
@@ -31,7 +31,7 @@ final class FundContributionChecks {
         // This is mandatory routing of an otherwise ordinary grant, not an optional targeted gift.
         if (restoration) return new Decision(BankingOperations.READY, EconomyState.DonationPurpose.RESTORATION, 0, "");
         if (requested != EconomyState.DonationPurpose.GENERAL && !config.prosperityFundTargetedDonationsEnabled())
-            return denied(BankingOperations.UNSUPPORTED, requested, "World settings disable targeted donations.");
+            return denied(BankingOperations.UNSUPPORTED, requested, "Only General grants are being accepted for this settlement.");
         return new Decision(BankingOperations.READY, requested, 0, "");
     }
     private static Decision denied(int status, EconomyState.DonationPurpose purpose, String reason) {

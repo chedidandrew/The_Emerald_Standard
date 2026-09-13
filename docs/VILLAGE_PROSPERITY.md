@@ -28,7 +28,7 @@ The simulation settings are independent.
 - `simulation_enabled`: advances population, supplies, output, prosperity, safety, projects, and lifecycle data.
 - `visual_progression_enabled`: allows loaded villages to materialize approved structures and reconcile physical settlers.
 - `market_integration_enabled`: allows eligible villages to contribute their capped fundamental factor to assets and commodities.
-- `automatic_recovery_enabled`: allows recoverable extinct villages to enter the recovery process after their cooldown.
+- `automatic_recovery_enabled`: permits recovery after the waiting period. Extinct villages do not require payment; Abandoned villages need 25 E applied to restoration. Off pauses both, even when funded.
 
 `development_radius` controls only same-dimension horizontal activation for physical work on known settlements. It accepts 48–512 blocks, ignores vertical distance, and does not limit their data-only economic simulation, load chunks, or expand villager AI. Each eligible site's physical work has an independent one-block-per-ten-tick allowance. Construction-theatre searches retain local limits. Resident census and housing surveys instead follow district ownership, developed coverage and registered homes; settlers receive a specific claimed HOME bed. Keep the recommended 256 default unless the server already loads village chunks farther away; a larger activation radius is not a view-distance or force-loading setting.
 
@@ -63,7 +63,7 @@ Immigration accumulates fractional progress once per economic day. At perfect co
 
 Each physical arrival needs a surveyed, intact, unoccupied and unclaimed bed, loaded blocks, solid safe footing and a path from its nearby landing to that bed. A living monster within 12 blocks blocks that landing only when an unobstructed collision ray connects it to the landing; walls and underground terrain can shelter it. No arrival check force-loads chunks. Attempts share the configured default 600-tick cadence. A pending identity and bed are journaled before insertion; definite insertion failure returns the approval, while an ambiguous crash leaves the claim Unverified, not automatically respawned. This conservatively prevents replay duplicates but cannot provide a distributed atomic transaction with Minecraft's separate entity save.
 
-Town's progress report and /emerald debug expose queued and unverified residents, saved immigration fraction, physical bed survey and the latest arrival status. The combined city total includes all associated districts; the headline distinguishes actual/known commitments from the economic production cap.
+Town's progress report explains housing, food, Safety, pending settlers and site needs in player-facing language. Detailed census identities, unverified residents, saved immigration fractions, bed surveys and raw arrival diagnostics remain in /emerald debug.
 
 Loaded zombie villagers are recorded as Infected when a persisted village tag, an already-known resident match, or a nearby known resident identifies the conversion. Infection removes that resident from productive population without recording a death. Repeated zombie observations are idempotent. When a living villager later appears near the infection location, the stale infected record is reconciled to the cured resident and productive population can recover; this reconciliation does not assume Minecraft preserved the entity UUID.
 
@@ -258,6 +258,8 @@ Zombification is a live conversion, not replacement authority, but Minecraft 26.
 Zero health during vanilla's revivable death animation is not removal proof. The entity must be actually removed before the following entity-inclusive save may create replacement authority; a zero-health entity saved during shutdown is restaged when it loads again.
 
 ## Village Prosperity Fund and restoration
+
+The local bulletin distinguishes optional aid for Extinct villages, required aid for Abandoned villages, fully funded restoration, and paused resettlement. Extinct villages normally wait 7 days after the first collapse or 20 after the second recent collapse. Applying 25 E can shorten the existing recovery date to three days after application, never postpone it. Abandoned villages must reach 25 E as well as wait. Settlers still require safe housing and nearby activity; an accepted donation is not immediate placement. These are existing rules, not a beta.33 gameplay change.
 
 Players may voluntarily and irreversibly transfer bank cash to the associated settlement through a separate Fund page. A contribution is a gift to a village-owned balance, not a player loan, debt, guaranteed investment return, or withdrawable account. The server owns and live-bounds the applied exact amount and requires a second matching contribution action inside its confirmation window.
 

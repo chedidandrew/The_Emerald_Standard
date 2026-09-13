@@ -2,9 +2,9 @@
   "parent": "minecraft:block/block",
   "textures": {
     "wood": "minecraft:block/stripped_spruce_log",
-    "yellow": "minecraft:block/yellow_concrete",
-    "black": "minecraft:block/black_concrete",
-    "particle": "minecraft:block/yellow_concrete"
+    "yellow": "the_emerald_standard:block/construction_fence_yellow",
+    "black": "the_emerald_standard:block/construction_fence_black",
+    "particle": "the_emerald_standard:block/construction_fence_yellow"
   },
   "elements": [
     {

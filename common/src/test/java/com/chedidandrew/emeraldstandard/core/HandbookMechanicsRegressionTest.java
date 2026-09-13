@@ -9,13 +9,17 @@ public final class HandbookMechanicsRegressionTest {
         Path root = args.length == 0 ? Path.of(".") : Path.of(args[0]);
         String language = Files.readString(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/lang/en_us.json"));
+        if (!language.contains("Both continue their saved plans and share bounded construction time fairly")
+                || !language.contains("resumes ordinary construction pace and eligibility rules")
+                || !language.contains("Debug: Banks and\\nprojects continue."))
+            throw new AssertionError("Handbook must explain live construction mode switching");
         verify(EconomyState.DonationPurpose.GENERAL, 0, 0, .50, .25, 0, language, "0.50 Treasury and 0.25");
         verify(EconomyState.DonationPurpose.FOOD, .75, 0, 0, 0, 0, language, "0.75 simulated Food");
         verify(EconomyState.DonationPurpose.HOUSING, 0, .50, 0, .40, 0, language, "0.50 Materials and 0.40");
         verify(EconomyState.DonationPurpose.INFRASTRUCTURE, 0, .50, 0, .40, 0, language, "0.50 Materials and 0.40");
         verify(EconomyState.DonationPurpose.SECURITY, 0, .35, 0, .35, 0, language, "0.35 Materials and 0.35");
         verify(EconomyState.DonationPurpose.TRADE, 0, 0, .65, .15, 0, language, "0.65 Treasury and 0.15");
-        verify(EconomyState.DonationPurpose.RESTORATION, 0, 0, 0, 0, 1, language, "1 E to the recorded restoration");
+        verify(EconomyState.DonationPurpose.RESTORATION, 0, 0, 0, 0, 1, language, "Every emerald applied to Restoration adds one emerald");
         near(VillageProsperityEngine.RESTORATION_EMERALD_TARGET, 25);
         near(VillageProsperityEngine.GROWTH_FOOD_PER_RESIDENT, 10);
         near(VillageProsperityEngine.GROWTH_SAFETY_THRESHOLD, 45);

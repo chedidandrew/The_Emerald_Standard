@@ -43,7 +43,7 @@
     "Trade-route blast disrupts deliveries; relief crews mobilize",
     "Reconstruction contracts rise after regional transport disaster",
     "Security demand rises as merchants count the cost",
-    "Families await reopened routes after off-screen depot blast",
+    "Families await reopened routes after regional depot blast",
     "Freight company retires slogan Nothing Can Stop Us",
     "Safety inspector's warning recovered from filing cabinet",
     "Officials promise review of review into neglected defenses",
@@ -71,7 +71,7 @@
   ],
   "PORTAL_REOPENING": [
     "Portal reopens; toll booth somehow already staffed",
-    "Nether trade resumes with complimentary safety disclaimer",
+    "Nether trade resumes with a fresh stack of freight orders",
     "Supply returns; shortage consultant extends holiday",
     "Freight queues shorten; customs celebrates solving customs"
   ],
@@ -164,16 +164,16 @@
     "Village food stores report net withdrawals"
   ],
   "PLAYER_CROPS": [
-    "Village fields record unreplanted crop removal",
-    "Farm report: fewer crops at the checked positions",
+    "Field report finds room for new planting",
     "Crop census requests seeds, preferably in the ground",
-    "Field report finds room for new planting"
+    "Village fields await the next green beginning",
+    "The harvest has left a question for the soil"
   ],
   "PLAYER_DAMAGE": [
-    "Village architecture records structural changes",
-    "Building report: several blocks have left the meeting",
+    "Village architecture has a subtraction to account for",
+    "Building report: not everything is where it was",
     "Structure survey finds new open space",
-    "Village building ledger records removals"
+    "Village buildings face a changed outline"
   ],
   "PLAYER_DONATION": [
     "Village fund receives help; residents welcome practical optimism",
@@ -182,16 +182,16 @@
     "Local generosity outperforms committee's expectations"
   ],
   "PLAYER_REPLANTED": [
-    "Seeds return to checked village fields",
-    "Replanting report records new crop positions",
+    "Seeds return to village fields",
+    "Green shoots gain a foothold",
     "Village garden receives practical attention",
-    "Green shoots return to observed planting sites"
+    "Replanting gives the next harvest somewhere to start"
   ],
   "PLAYER_VIOLENCE": [
-    "Village mourns after confirmed player attack",
-    "Residents call for calm after player-caused loss",
     "Community counts the cost of violence",
-    "Local tragedy leaves an empty place at the gathering square"
+    "A village faces the absence of its own",
+    "Loss leaves an empty place in village life",
+    "Village mourns after a fatal encounter"
   ],
   "PLAYER_FOOD_RETURNED": [
     "Village shelves welcome a food delivery",
@@ -200,28 +200,28 @@
     "Village food stores record incoming supplies"
   ],
   "VOICE_0": [
-    "Analysis: follow the measured trend, not the loudest forecast.",
-    "Analysis: the balance sheet does not accept confidence as collateral.",
-    "Analysis: diversification reduces some risks, not every risk."
+    "The Ledger's interest is in what reaches the account after the excitement has passed. Sales, costs and the price paid for a holding make less colorful company than a grand announcement. They are, however, remarkably persistent guests.",
+    "An emerald can carry only one side of a transaction at a time. While one desk calls the day's price an opportunity, another is content to accept it and move on. The ledger has room for both signatures, but not for both to own the same coin.",
+    "The ledger closes without an opinion on anyone's confidence. It has entered the price, the quantity and the emeralds that changed hands. In a business full of extravagant claims, the bookkeeping remains an exceptionally difficult audience."
   ],
   "VOICE_1": [
-    "Technology desk: blinking lamps are not an earnings report.",
-    "Technology desk: useful machinery still needs customers.",
-    "Technology desk: the prototype works; the business plan needs a repeater."
+    "At the Wire, the useful question begins after the demonstration: who will keep the machine running when its inventor goes home? A lever can start a remarkable afternoon. A working workshop has to survive rather more of them.",
+    "The technology trade has never lacked a promising diagram. Its more difficult business is turning the diagram into something worth carrying home. Somewhere between those stages, a very confident sales pitch usually meets its first maintenance bill.",
+    "A prototype can be persuaded to look wonderful for an afternoon. A useful machine has the harder assignment of working on an ordinary morning, when the inventor is elsewhere and nobody has brought a congratulatory banner."
   ],
   "VOICE_2": [
-    "Trade desk: the delivery estimate excludes unscheduled lava.",
-    "Trade desk: scarcity and demand must be considered together.",
-    "Trade desk: stable routes matter more than heroic press releases."
+    "Freight has an admirable indifference to speeches. It still needs a route, a load and someone prepared to take it to the other end. The Post continues to follow the part of commerce that has to leave the counter.",
+    "A cargo's journey does not end when the order is signed. There are crossings, handling costs and the persistent difficulty of being in the wrong place with something urgently wanted elsewhere. That is where the trade desk keeps its attention.",
+    "At either end of a freight route, time has a price. Someone is waiting for the goods, and someone else would like the cart back. Between them lies the part of the invoice that refuses to be improved by a more elegant signature."
   ],
   "VOICE_3": [
-    "Community desk: the market quote cannot tell us who has enough bread.",
-    "Community desk: follow the observed facts, not assumptions about intent.",
-    "Community desk: a repaired road rarely needs a grand speech."
+    "Behind a busy trade are the quieter tasks that make a settlement livable. A delivery matters most when it reaches someone with a use for it. The village end of a supply route is where fine commercial promises become either useful things or another wait.",
+    "The Observer keeps one eye on the ordinary work beneath the day's bigger account. Growing, carrying and making rarely receive the grandest descriptions, but a community can live on their results. It cannot live for very long on the description.",
+    "A village meets a changing market at its doors, fields and workbenches. The distant quotation becomes a nearby cost, a delivery or a chance to sell. That is where an impressive number finally has to explain what it is good for."
   ],
   "VOICE_4": [
-    "OPINION / SATIRE: analysts upgrade yesterday's guess to today's certainty.",
-    "OPINION / SATIRE: the crystal ball requests a larger marketing budget.",
-    "OPINION / SATIRE: a confident font remains cheaper than evidence."
+    "The day's explanations are arriving with the usual confidence. They are particularly clear about what has already happened, a subject on which expertise remains impressively abundant. Tomorrow will provide the small inconvenience of something that has not.",
+    "There is nothing quite like a closing bell to make an uncertain morning look inevitable. The Gravel advises its ink supply to prepare for another round of excellent explanations, all delivered from the exceptionally comfortable vantage point of afterward.",
+    "The Gravel has reserved a comfortable chair for certainty. Thus far, certainty has preferred to arrive after the prices, wearing an expression that suggests it was here all along. Its account of the morning grows more impressive with every retelling."
   ]
 }

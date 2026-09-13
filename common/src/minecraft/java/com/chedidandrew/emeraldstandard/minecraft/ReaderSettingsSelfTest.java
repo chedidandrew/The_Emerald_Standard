@@ -37,7 +37,9 @@ public final class ReaderSettingsSelfTest {
             Path world = dir.resolve("world/data");
             EmeraldConfig original = EmeraldConfig.load(world);
             original.applyTo(new EconomyService());
-            check(original.values().size() == 34, "incomplete settings snapshot");
+            check(original.values().size() == 38, "incomplete settings snapshot");
+            check(original.bridgeSettings().equals(new EmeraldConfig.BridgeSettings(true,48,12,2)),
+                    "bridge defaults or settings snapshot drift");
             check(original.newsPolicy().approximate()&&!original.newsPolicy().anonymous()
                     &&original.newsPolicy().publicPlayers()&&!original.newsExplicitPropertyOnly(),"news privacy defaults");
             check(!original.forcedVillageDevelopment(), "debug development must be opt-in");

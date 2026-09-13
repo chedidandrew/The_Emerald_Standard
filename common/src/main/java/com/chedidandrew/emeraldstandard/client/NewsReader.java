@@ -5,22 +5,26 @@ import java.util.*;
 
 /** Stable editions: incoming stories wait for explicit acceptance; privacy changes never wait. */
 public final class NewsReader {
-    public record Entry(long id, NewsEditorial.Section section, String text, long day, int importance) {
+    public record Entry(long id, NewsEditorial.Section section, String text, long day, int importance, NewsIllustration illustration) {
+        public Entry(long id, NewsEditorial.Section section, String text, long day, int importance) {
+            this(id,section,text,day,importance,section==NewsEditorial.Section.MARKETS?NewsIllustration.MARKETS:NewsIllustration.COMMUNITY);
+        }
         public Entry(long id, NewsEditorial.Section section, String text) { this(id,section,text,0,20); }
         public Entry {
             if(id<1||text.length()>10000||day<0||importance<0||importance>100)throw new IllegalArgumentException("Invalid article");
-            Objects.requireNonNull(section);
+            Objects.requireNonNull(section);Objects.requireNonNull(illustration);
         }
         public String headline() { var lines=text.split("\n",-1);return lines.length>3?lines[3]:"Report"; }
         public String outlet() { return text.split(" \\|",2)[0]; }
-        public String wire() { return id+"|"+section.name()+"|"+day+"|"+importance+"\n"+text; }
+        public String wire() { return id+"|"+section.name()+"|"+day+"|"+importance+"|"+illustration.name()+"\n"+text; }
         public static Entry parse(String value) {
             int newline=value.indexOf('\n'),bar=value.indexOf('|');
             if(newline<0||bar<0||bar>newline)throw new IllegalArgumentException("Invalid article envelope");
             String[] fields=value.substring(0,newline).split("\\|");
-            if(fields.length!=2&&fields.length!=4)throw new IllegalArgumentException("Invalid article envelope");
-            return new Entry(Long.parseLong(fields[0]),NewsEditorial.Section.valueOf(fields[1]),value.substring(newline+1),
-                    fields.length==4?Long.parseLong(fields[2]):0,fields.length==4?Integer.parseInt(fields[3]):20);
+            if(fields.length!=2&&fields.length!=4&&fields.length!=5)throw new IllegalArgumentException("Invalid article envelope");
+            var entry=new Entry(Long.parseLong(fields[0]),NewsEditorial.Section.valueOf(fields[1]),value.substring(newline+1),
+                    fields.length>=4?Long.parseLong(fields[2]):0,fields.length>=4?Integer.parseInt(fields[3]):20);
+            return fields.length==5?new Entry(entry.id,entry.section,entry.text,entry.day,entry.importance,NewsIllustration.valueOf(fields[4])):entry;
         }
     }
     /** Recent major stories lead; old disasters cannot permanently crowd out new reporting. */

@@ -22,6 +22,11 @@ foreach ($tesLoader in @('fabric','neoforge')) {
         if ($tesIdentity.version -ne $tesVersion -or $tesIdentity.sourceSha256 -notmatch '^[0-9a-f]{64}$') {
             throw "Invalid or stale packaged identity for $tesLoader"
         }
+        foreach ($tesBridgeClass in @('VillageBridgeLedger','VillageBridgeSurvey','VillageBridges')) {
+            if ($null -eq $tesZip.GetEntry("com/chedidandrew/emeraldstandard/minecraft/$tesBridgeClass.class")) {
+                throw "Candidate is missing bridge runtime: $tesBridgeClass"
+            }
+        }
         if ($null -eq $tesZip.GetEntry('com/chedidandrew/emeraldstandard/minecraft/BankerBriefings.class')) {
             throw "Candidate is missing priority reports"
         }

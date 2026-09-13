@@ -42,6 +42,10 @@ if [[ ${#jars[@]} -ne 2 || ! -f "$jar_file" || ! -f "$sources_file" ]]; then
 fi
 
 required=(
+    'com/chedidandrew/emeraldstandard/core/VillageBridgeFunding.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageBridgeLedger.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageBridgeSurvey.class'
+    'com/chedidandrew/emeraldstandard/minecraft/VillageBridges.class'
     'com/chedidandrew/emeraldstandard/core/ProjectSiteRetry.class'
     'com/chedidandrew/emeraldstandard/minecraft/SiteSearchDiagnostics.class'
     'com/chedidandrew/emeraldstandard/client/NewspaperPaging.class'

@@ -377,6 +377,7 @@ final class EconomyPersistence {
         properties.setProperty(prefix + "restoration_funded", Boolean.toString(village.restorationFunded));
         properties.setProperty(prefix + "project_serial", Long.toString(village.projectSerial));
         properties.setProperty(prefix + "organic_territory", Boolean.toString(village.organicTerritory));
+        properties.setProperty(prefix + "bridge_funding_receipts", String.join(",", village.bridgeFundingReceipts));
         properties.setProperty(prefix + "territory_cells", village.territoryCells.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
         if (village.cityId != null) properties.setProperty(prefix + "city_id", village.cityId.toString());
         properties.setProperty(prefix + "expansion_mode", village.expansionMode.name());
@@ -1239,6 +1240,13 @@ final class EconomyPersistence {
             case "restoration_funded" -> village.restorationFunded = Boolean.parseBoolean(value);
             case "project_serial" -> village.projectSerial = Long.parseLong(value);
             case "organic_territory" -> village.organicTerritory = Boolean.parseBoolean(value);
+            case "bridge_funding_receipts" -> {
+                if (!value.isBlank()) for (String receipt : value.split(",")) {
+                    if (village.bridgeFundingReceipts.size() >= VillageBridgeFunding.MAX_RECEIPTS)
+                        throw new IllegalArgumentException("Too many bridge funding receipts");
+                    village.bridgeFundingReceipts.add(UUID.fromString(receipt).toString());
+                }
+            }
             case "territory_cells" -> { if (!value.isBlank()) for(String cell:value.split(",")) { if(village.territoryCells.size()>=VillageTerritory.MAX_CELLS) throw new IllegalArgumentException("Too many territory parcels"); village.territoryCells.add(Long.parseLong(cell)); } }
             case "city_id" -> village.cityId = UUID.fromString(value);
             case "expansion_mode" -> village.expansionMode = VillageExpansion.Mode.valueOf(value);

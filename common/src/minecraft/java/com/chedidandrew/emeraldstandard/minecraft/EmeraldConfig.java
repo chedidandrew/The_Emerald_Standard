@@ -23,11 +23,16 @@ public final class EmeraldConfig {
     public static final String GUARDS_ENABLED_KEY = "compat.guard_villagers.enabled";
     public static final String GUARDS_POINTS_KEY = "compat.guard_villagers.safety_per_guard";
     public static final String GUARDS_CAP_KEY = "compat.guard_villagers.maximum_safety_bonus";
+    public static final String BRIDGES_ENABLED = "village_prosperity.bridges_enabled";
+    public static final String BRIDGE_LENGTH = "village_prosperity.bridge_max_water_length";
+    public static final String BRIDGE_DEPTH = "village_prosperity.bridge_max_foundation_depth";
+    public static final String BRIDGE_JOBS = "village_prosperity.bridge_concurrent_jobs";
     static final int DEFAULT_VILLAGE_DEVELOPMENT_RADIUS = 256;
     static final int MIN_VILLAGE_DEVELOPMENT_RADIUS = 48;
     static final int MAX_VILLAGE_DEVELOPMENT_RADIUS = 512;
     private static final String FILE_NAME = "the_emerald_standard-config.properties";
     private static final Set<String> KNOWN_KEYS = Set.of(
+            BRIDGES_ENABLED, BRIDGE_LENGTH, BRIDGE_DEPTH, BRIDGE_JOBS,
             FORCED_DEVELOPMENT_KEY,
 GUARDS_ENABLED_KEY, GUARDS_POINTS_KEY, GUARDS_CAP_KEY,
             "news.public_player_reports", "news.anonymous_players", "news.approximate_locations", "news.explicit_property_only",
@@ -49,6 +54,9 @@ GUARDS_ENABLED_KEY, GUARDS_POINTS_KEY, GUARDS_CAP_KEY,
     private static volatile EconomyService appliedEconomy;
 
     private final boolean newsPublic, newsAnonymous, newsApproximate, newsExplicit;
+    public record BridgeSettings(boolean enabled, int length, int depth, int concurrent) {}
+    private final BridgeSettings bridgeSettings;
+    public BridgeSettings bridgeSettings() { return bridgeSettings; }
     private final boolean villageBanksEnabled;
     private final boolean guardVillagersEnabled;
     private final int guardSafetyPerGuard, guardMaximumSafetyBonus;
@@ -93,7 +101,9 @@ GUARDS_ENABLED_KEY, GUARDS_POINTS_KEY, GUARDS_CAP_KEY,
             boolean prosperityFundFastTrackCapitalEnabled, int prosperityFundEndowmentAnnualPayoutBps,
             int prosperityFundMinimumEmergencyReservePercent, int prosperityFundMaximumMonthlySpending,
 boolean guardVillagersEnabled, int guardSafetyPerGuard, int guardMaximumSafetyBonus,
-            boolean newsPublic, boolean newsAnonymous, boolean newsApproximate, boolean newsExplicit) {
+            boolean newsPublic, boolean newsAnonymous, boolean newsApproximate, boolean newsExplicit,
+            BridgeSettings bridgeSettings) {
+        this.bridgeSettings = bridgeSettings;
         this.newsPublic=newsPublic;this.newsAnonymous=newsAnonymous;this.newsApproximate=newsApproximate;this.newsExplicit=newsExplicit;
         this.guardVillagersEnabled = guardVillagersEnabled;
         this.guardSafetyPerGuard = guardSafetyPerGuard;
@@ -181,7 +191,9 @@ boolean guardVillagersEnabled, int guardSafetyPerGuard, int guardMaximumSafetyBo
                 bounded(properties, GUARDS_POINTS_KEY, 2, 0, 10),
 bounded(properties, GUARDS_CAP_KEY, 12, 0, 30),
                 bool(properties,"news.public_player_reports",true), bool(properties,"news.anonymous_players",false),
-                bool(properties,"news.approximate_locations",true), bool(properties,"news.explicit_property_only",false));
+                bool(properties,"news.approximate_locations",true), bool(properties,"news.explicit_property_only",false),
+                new BridgeSettings(bool(properties,BRIDGES_ENABLED,true),bounded(properties,BRIDGE_LENGTH,48,2,64),
+                        bounded(properties,BRIDGE_DEPTH,12,2,24),bounded(properties,BRIDGE_JOBS,2,1,4)));
     }
 
     /** Stable ordered values for the GUI; the returned map is an independent snapshot. */
@@ -209,6 +221,10 @@ Map<String, String> values = new LinkedHashMap<>();
         values.put("village_prosperity.scan_interval_ticks", String.valueOf(villageProsperityScanIntervalTicks));
         values.put("village_prosperity.development_radius", String.valueOf(villageDevelopmentRadius));
         values.put("village_prosperity.construction_blocks_per_second", String.valueOf(villageConstructionBlocksPerSecond));
+        values.put(BRIDGES_ENABLED, ""+bridgeSettings.enabled());
+        values.put(BRIDGE_LENGTH, ""+bridgeSettings.length());
+        values.put(BRIDGE_DEPTH, ""+bridgeSettings.depth());
+        values.put(BRIDGE_JOBS, ""+bridgeSettings.concurrent());
         values.put("village_prosperity.settler_spawn_interval_ticks", String.valueOf(villageSettlerSpawnIntervalTicks));
         values.put("village_prosperity.donations_enabled", String.valueOf(prosperityFundEnabled));
         values.put("village_prosperity.endowments_enabled", String.valueOf(prosperityFundEndowmentsEnabled));
@@ -361,7 +377,8 @@ Map<String, String> values = new LinkedHashMap<>();
         return new EmeraldConfig(false, true, 200, 256, 5, 5, true, true, true,
                 (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS, true, true, true, true, 400,
                 DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, 2, 600,
-                true, true, true, true, true, true, 400, 20, 24, true, 2, 12, true, false, true, false);
+                true, true, true, true, true, true, 400, 20, 24, true, 2, 12, true, false, true, false,
+                new BridgeSettings(true,48,12,2));
     }
     private static void writeDefaults(Path path) throws IOException {
         Files.createDirectories(path.getParent());

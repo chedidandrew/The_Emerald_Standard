@@ -40,14 +40,14 @@ public final class NewsGrowthRegressionTest {
         require(NewsWire.player(s,NewsWire.Kind.FOOD_REMOVED,village,player,"Renamed",9),"renamed news");
         var last=s.news.getLast();
         require(last.quantity()==17&&last.actor().equals("Renamed"),"UUID aggregation, not display name");
-        require(last.detail().contains("not intent")&&last.detail().contains("17 food items"),"facts and uncertainty");
+        require(last.text().contains("Renamed took 17 food items")&&!last.text().contains("satire"),"facts and uncertainty");
         require(!NewsWire.player(s,NewsWire.Kind.DAMAGE,village,player,"X",0),"empty report");
         require(!NewsWire.player(s,NewsWire.Kind.DAMAGE,UUID.randomUUID(),player,"X",9),"unknown village");
         require(s.prices.equals(quotes)&&s.commodityPrices.equals(physical)&&account.cashMicro==123456789,"news changed money");
         var pricesBefore=new LinkedHashMap<>(s.prices);
         NewsWire.day(s,EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS,pricesBefore);
         var event=s.news.getLast();
-        require(event.kind()==NewsWire.Kind.MARKET&&event.detail().contains("off-screen"),"event is not invented local destruction");
+        require(event.kind()==NewsWire.Kind.MARKET&&event.village().isEmpty()&&event.text().contains("World-market dispatch"),"event is not invented local destruction");
         require(s.prices.equals(quotes),"publishing an event changed price twice");
         var quiet=s.copy(); var noisy=s.copy();
         for(int day=0;day<1500;day++) {

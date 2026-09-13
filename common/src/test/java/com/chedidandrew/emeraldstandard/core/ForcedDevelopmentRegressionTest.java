@@ -10,7 +10,7 @@ public final class ForcedDevelopmentRegressionTest {
     }
     private static void check(boolean ok,String message) { if(!ok) throw new AssertionError(message); }
     public static void main(String[] args) throws Exception {
-        budgets(); service(); lots();
+        budgets(); scheduling(); wiring(args.length == 0 ? Path.of(".") : Path.of(args[0])); service(); lots();
         System.out.println("PASS forced development opt-in, economic bypass, persistence, rollback-safe indexing and global budgets");
     }
     private static void budgets() {
@@ -40,6 +40,71 @@ public final class ForcedDevelopmentRegressionTest {
         for(int i=0;i<32;i++) frontiers.set(rotation.next("frontier",32));
         check(frontiers.cardinality()==32,"frontier failed to inspect all eight directions per district");
     }
+    private static void wiring(Path root) throws Exception {
+        for (String loader : List.of("fabric", "neoforge")) {
+            String file = loader.equals("fabric") ? "EmeraldStandardFabric.java" : "EmeraldStandardNeoForge.java";
+            String source = Files.readString(root.resolve(loader + "/src/main/java/com/chedidandrew/emeraldstandard/" + loader + "/" + file));
+            check(source.contains("VillageDevelopmentRuntime.tick("), "loader bypasses shared queue scheduler: " + loader);
+            check(!source.contains("VillageProsperityManager.tick(") && !source.contains("VillageBankManager.tick("),
+                    "loader restored competing direct tick calls: " + loader);
+        }
+        String runtime = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageDevelopmentRuntime.java"));
+        check(runtime.indexOf("configureForcedVillageDevelopment(forced)") < runtime.indexOf("runQueues("),
+                "first Bank tick may use stale debug mode");
+    }
+
+    private static void scheduling() {
+        Object server = new Object();
+        // Reproduce the former real-loader order: project work always claimed before Banks.
+        var old = new ForcedDevelopmentWorkBudget();
+        int starved = 0;
+        for (int tick = 0; tick < 80; tick++) {
+            old.begin(server, tick, 0, true);
+            old.claim(1);
+            if (tick % 2 == 0) starved += old.claim(2);
+        }
+        check(starved == 0, "fixture must reproduce Bank starvation under reduced budget");
+        for (boolean lagging : List.of(false, true)) {
+            var budget = new ForcedDevelopmentWorkBudget();
+            var rotation = new ForcedDevelopmentWorkBudget.Rotation();
+            int[] bankVisits = new int[3], projectVisits = new int[4], callbacks = new int[2];
+            for (int tick = 0; tick < 240; tick++) {
+                final int currentTick = tick;
+                long[] now = {0};
+                budget.begin(server, tick, 0, lagging);
+                Runnable projects = () -> {
+                    callbacks[0]++;
+                    if (budget.claim(now[0]) > 0) {
+                        projectVisits[rotation.next("projects", 4)]++;
+                        now[0] = 5_000_000; // Slow preflight/placement exhausts the shared deadline.
+                    }
+                };
+                Runnable banks = () -> {
+                    callbacks[1]++;
+                    if (currentTick % 2 == 0 && budget.claim(now[0]) > 0) {
+                        bankVisits[rotation.next("banks", 3)]++;
+                        now[0] = 5_000_000;
+                    }
+                };
+                ForcedDevelopmentWorkBudget.runQueues(true, tick, projects, banks);
+            }
+            for (int visits : bankVisits) check(visits == 40, "Bank queue starvation");
+            for (int visits : projectVisits) check(visits == 30, "project/dimension parity starvation");
+            check(callbacks[0] == 240 && callbacks[1] == 240, "lifecycle callback skipped or doubled");
+        }
+        List<String> calls = new ArrayList<>();
+        for (int tick = 0; tick < 4; tick++)
+            ForcedDevelopmentWorkBudget.runQueues(false, tick, () -> calls.add("project"), () -> calls.add("bank"));
+        check(calls.equals(List.of("project","bank","project","bank","project","bank","project","bank")),
+                "normal mode callback order changed");
+        var fallback = new ForcedDevelopmentWorkBudget();
+        fallback.begin(server, 0, 0, true);
+        int[] granted = {0};
+        ForcedDevelopmentWorkBudget.runQueues(true, 0, () -> granted[0] = fallback.claim(1), () -> { });
+        check(granted[0] == 16, "empty Bank queue wasted the project grant");
+        System.out.println("PASS real queue priority: reduced budget, exhausted deadline, multiple Banks/projects, normal mode and empty queue");
+    }
+
     private static void service() throws Exception {
         Path dir=Files.createTempDirectory("tes-forced-development-");
         try {

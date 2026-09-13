@@ -218,6 +218,9 @@ public final class VillageProsperityManager {
         }
         if (tick % 200 == 0) scanLoadedVillages(
                 levels.get(Math.floorMod(tick / 200,levels.size())), economy, config);
+        // Empty dimensions must not consume a grant intended for real construction work.
+        levels.removeIf(l -> FORCED_NEARBY.getOrDefault(dimensionKey(l), List.of()).isEmpty());
+        if (levels.isEmpty()) return;
         // Rotate by successful grants, not tick parity: a Bank consuming even ticks under lag
         // must not permanently starve one dimension or every second district.
         int allowance = ForcedDevelopmentRuntime.claim(server);
@@ -747,8 +750,8 @@ public final class VillageProsperityManager {
                 if (forced) remainingBlockBudget -= initialPathBudget - pathBudget;
             }
             if (remainingBlockBudget > 0) {
-                int connectionWrites = materializeOneWalkwayConnection(level, village, excludedProjectLots,
-                        managedBankLots, gameTime, Math.min(2, remainingBlockBudget));
+                int connectionWrites = materializeOneWalkwayConnection(level, economy, village, excludedProjectLots,
+                        managedBankLots, gameTime, Math.min(forced?16:config.villageConstructionBlocksPerSecond(), remainingBlockBudget));
                 if (forced) remainingBlockBudget -= connectionWrites;
                 int lampWrites = materializeOneWalkwayLamp(level, village, excludedProjectLots,
                         managedBankLots, gameTime, Math.min(2, remainingBlockBudget));
@@ -1555,7 +1558,7 @@ public final class VillageProsperityManager {
     }
 
     /** One loaded-only connectivity job per dimension pulse, including existing completed trails. */
-    private static int materializeOneWalkwayConnection(ServerLevel level, EconomyState.VillageRecord village,
+    private static int materializeOneWalkwayConnection(ServerLevel level, EconomyService economy, EconomyState.VillageRecord village,
             List<EconomyService.VillageProjectLot> lots, List<Long> banks, long gameTime, int budget) {
         var ledger=WalkwayConnectionLedger.get(level);
         var candidates=village.projects.stream().filter(p -> walkwayReady(village,p)
@@ -1565,7 +1568,16 @@ public final class VillageProsperityManager {
         int ordinal=ledger.rotation.getOrDefault(village.villageId,0);
         ledger.rotation.put(village.villageId,ordinal==Integer.MAX_VALUE?0:ordinal+1);
         var project=candidates.get(Math.floorMod(ordinal,candidates.size()));
-        return WalkwayConnections.advance(level,walkwayRequest(village,project,lots,banks),gameTime,budget);
+        var character=VillageArchitecture.Character.fromId(village.architectureCharacter);
+        var dialect=VillageArchitecture.BiomeDialect.fromId(village.architectureDialect);
+        var materials=isBlueprint(project)?AuthoredVillageStructures.plan(project.type,project.designTemplateId,
+                project.designTemplateRevision,project.designPaletteId,project.designDressingId,character,dialect).materials()
+                :AuthoredVillageStructures.walkwayMaterials(character,dialect);
+        var settings=EmeraldConfig.current().bridgeSettings();
+        var context=settings.enabled()?new VillageBridges.Context(economy,village.villageId,materials,
+                VillageArchitecture.PALETTE_MASONRY_FORWARD.equals(project.designPaletteId),
+                settings.length(),settings.depth(),settings.concurrent()):null;
+        return WalkwayConnections.advance(level,walkwayRequest(village,project,lots,banks),gameTime,budget,context);
     }
 
     static boolean walkwayReady(EconomyState.VillageRecord village,EconomyState.VillageProject p) {

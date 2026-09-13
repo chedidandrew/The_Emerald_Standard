@@ -124,7 +124,7 @@ public final class NewspaperMenu extends AbstractContainerMenu {
         var all=economy.newspaper();
         for(int i=all.size()-1;i>=0;i--) {
             var a=all.get(i);String visible=policy.text(a);
-            if(visible!=null)entries.add(new NewsReader.Entry(a.id(),NewsEditorial.section(a),visible,a.day(),importance(a)));
+            if(visible!=null)entries.add(new NewsReader.Entry(a.id(),NewsEditorial.section(a),visible,a.day(),importance(a),com.chedidandrew.emeraldstandard.client.NewsIllustration.forArticle(a)));
         }
         if(entries.equals(published)&&publishedPolicy==policy.flags())return;
         published=List.copyOf(entries);publishedPolicy=policy.flags();generation++;

@@ -5,6 +5,7 @@ import com.chedidandrew.emeraldstandard.core.VillageDistrictMap;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageDashboardPolicy;
+import com.chedidandrew.emeraldstandard.core.VillageRecoveryGuidance;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.minecraft.BankerAmountSelection;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
@@ -336,10 +337,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         briefingScroll = Math.max(0,Math.min(briefingScroll,Math.max(0,lines.size()-visible)));
         for(int i=0;i<visible && briefingScroll+i<lines.size();i++)
             drawNativeText(graphics,lines.get(briefingScroll+i),18,56+i*step,TEXT,false);
-        drawTextWithin(graphics,Component.literal("Read-only | Up/Down | "+(briefingScroll+1)+" / "+Math.max(1,lines.size())),
+        drawTextWithin(graphics,Component.literal("Up/Down | "+(briefingScroll+1)+" / "+Math.max(1,lines.size())),
                 14,182,292,MUTED,false);
-        drawTextWithin(graphics,Component.literal("Build "+com.chedidandrew.emeraldstandard.core.BuildIdentity.display()),
-                14,194,292,MUTED,false);
+        // Compiled build identity remains available through /emerald debug, not the report.
     }
 
     private void addBrowserButtons() {
@@ -2202,6 +2202,11 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 menu.fundProjectSponsorshipEnabled());
     }
 
+    private String restorationState(VillageDashboardPolicy.Snapshot snapshot) {
+        return VillageRecoveryGuidance.key(VillageRecoveryGuidance.state(snapshot.lifecycle(),
+                snapshot.restorationFund(), menu.villageRecoveryEnabled(), snapshot.fundAvailable()));
+    }
+
     private Component newsHeadline(
             VillageDashboardPolicy.Snapshot snapshot,
             VillageDashboardPolicy.BulletinKind kind) {
@@ -2232,13 +2237,12 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return switch (kind) {
             case NO_VILLAGE -> tr("news.local.no_village.article");
             case SIMULATION_PAUSED -> tr("news.local.simulation_paused.article");
-            case RESTORATION -> tr(
-                    "news.local.restoration.article",
-                    lifecycleLabel(snapshot.lifecycle()),
+            case RESTORATION -> tr("news.local.restoration." + restorationState(snapshot) + ".article",
                     decimal(snapshot.restorationFund()),
-                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
+                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET),
+                    decimal(VillageRecoveryGuidance.remaining(snapshot.restorationFund())));
             case RECOVERY -> tr(
-                    "news.local.recovery.article",
+                    snapshot.population() == 0 ? "news.local.recovery.arrivals" : "news.local.recovery.article",
                     snapshot.population(),
                     snapshot.housing(),
                     decimal(snapshot.prosperity()),
@@ -2303,10 +2307,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case FIND_VILLAGE -> tr("news.tip.prosperity.find_village");
             case SIMULATION_DISABLED -> tr("news.tip.prosperity.simulation_disabled");
             case RESTORE_WITH_FUND -> tr(
-                    "news.tip.prosperity.restore",
+                    "news.tip.prosperity.restore." + restorationState(snapshot),
                     decimal(snapshot.restorationFund()),
                     decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
-            case RESTORE_UNAVAILABLE -> tr("news.tip.prosperity.restore_unavailable");
+            case RESTORE_UNAVAILABLE -> tr(restorationState(snapshot).equals("required")
+                    ? "news.tip.prosperity.restore_unavailable"
+                    : "news.tip.prosperity.restore." + restorationState(snapshot),
+                    decimal(snapshot.restorationFund()),
+                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
             case TARGET_FOOD -> tr("news.tip.prosperity.food_targeted");
             case FOOD_UNTARGETED -> tr("news.tip.prosperity.food_untargeted");
             case TARGET_HOUSING -> tr("news.tip.prosperity.housing_targeted");
@@ -2332,7 +2340,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return switch (guidance) {
             case FIND_VILLAGE -> tr("news.tip.safety.find_village");
             case SIMULATION_DISABLED -> tr("news.tip.safety.simulation_disabled");
-            case PROTECT_RECOVERY -> tr("news.tip.safety.recovery");
+            case PROTECT_RECOVERY -> tr(snapshot.population() == 0 ? "news.tip.safety.empty" : "news.tip.safety.recovery");
             case RECENT_INCIDENT -> tr(
                     "news.tip.safety.incident",
                     incidentAgeLabel(snapshot.incidentAgeDays()));
@@ -2346,18 +2354,18 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             VillageDashboardPolicy.Snapshot snapshot,
             VillageDashboardPolicy.BulletinKind kind) {
         return switch (kind) {
-            case NO_VILLAGE -> new ItemStack(Items.MAP);
-            case SIMULATION_PAUSED -> new ItemStack(Items.CLOCK);
-            case RESTORATION -> new ItemStack(Items.GOLDEN_APPLE);
-            case RECOVERY, STEADY -> new ItemStack(Items.BELL);
-            case INCIDENT -> new ItemStack(Items.IRON_SWORD);
-            case HARDSHIP -> new ItemStack(Items.CRACKED_STONE_BRICKS);
-            case SECURITY -> new ItemStack(Items.SHIELD);
-            case FOOD -> new ItemStack(Items.BREAD);
-            case HOUSING -> new ItemStack(Items.BED.red());
+            case NO_VILLAGE -> HandbookRecipes.previewStack(Items.MAP, 1);
+            case SIMULATION_PAUSED -> HandbookRecipes.previewStack(Items.CLOCK, 1);
+            case RESTORATION -> HandbookRecipes.previewStack(Items.GOLDEN_APPLE, 1);
+            case RECOVERY, STEADY -> HandbookRecipes.previewStack(Items.BELL, 1);
+            case INCIDENT -> HandbookRecipes.previewStack(Items.IRON_SWORD, 1);
+            case HARDSHIP -> HandbookRecipes.previewStack(Items.CRACKED_STONE_BRICKS, 1);
+            case SECURITY -> HandbookRecipes.previewStack(Items.SHIELD, 1);
+            case FOOD -> HandbookRecipes.previewStack(Items.BREAD, 1);
+            case HOUSING -> HandbookRecipes.previewStack(Items.BED.red(), 1);
             case PROJECT -> projectIcon(snapshot.projectType());
-            case DEVELOPMENT_PAUSED -> new ItemStack(Items.BARRIER);
-            case PROSPERITY -> new ItemStack(Items.EMERALD);
+            case DEVELOPMENT_PAUSED -> HandbookRecipes.previewStack(Items.BARRIER, 1);
+            case PROSPERITY -> HandbookRecipes.previewStack(Items.EMERALD, 1);
         };
     }
 

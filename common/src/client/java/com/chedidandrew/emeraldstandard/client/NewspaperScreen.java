@@ -54,6 +54,8 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
     private List<NewspaperPaper.Mark> paperMarks=List.of();
     private boolean contents,previousBrowser;
     private final List<Button> paperLinks=new ArrayList<>();
+    private int paperColumns(){return panelWidth<430?1:2;}
+    private int paperTextWidth(){return paperColumns()==1?panelWidth-36:columnWidth();}
     private int columnWidth() { return Math.max(60,(panelWidth-54)/2); }
     public NewspaperScreen(NewspaperMenu menu,Inventory inventory,Component title) {
         super(menu,inventory,title,600,380);titleLabelY=inventoryLabelY=-10000;
@@ -113,9 +115,9 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
                 link("Story "+(index+1)+": "+entry.headline(),x,topPos+91+i*24,w,()->open(entry));
             }
         } else if(selected==0&&!matches.isEmpty()) {
-            var lead=matches.getFirst();int col=columnWidth();
+            var lead=matches.getFirst();int col=paperTextWidth();
             link("Read lead - Story 1",x,topPos+panelHeight-69,col,()->open(lead));
-            int count=Math.max(1,(panelHeight-149)/44);
+            int count=paperColumns()==1?0:Math.max(1,(panelHeight-149)/44);
             for(int i=1;i<matches.size()&&i<=count;i++) {
                 var e=matches.get(i);
                 link("Story "+(i+1)+": "+e.headline(),x+col+18,topPos+100+(i-1)*44,col,()->open(e)).setHeight(28);
@@ -139,7 +141,7 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
     }
     private void open(NewsReader.Entry entry) {contents=false;selected=entry.id();reader.markRead(entry);scroll=0;rebuildWidgets();}
     private void navigate(int delta) {
-        if(!menu.browserMode()){turnPaper(delta,visibleLines()*2);return;}
+        if(!menu.browserMode()){turnPaper(delta,articleCapacity());return;}
         if(selected==0){frontPage+=delta;rebuildWidgets();return;}
         int index=0;for(int i=0;i<matches.size();i++)if(matches.get(i).id()==selected)index=i;
         if(!matches.isEmpty())open(matches.get(Math.max(0,Math.min(matches.size()-1,index+delta))));
@@ -151,9 +153,9 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
     private NewspaperPaging.Position paperStep(int direction,int amount) {
         return NewspaperPaging.move(paperPosition(),direction,amount,matches.size(),
                 Math.max(1,(matches.size()+contentsCount()-1)/contentsCount()),
-                Math.max(0,lines.size()-visibleLines()*2));
+                Math.max(0,lines.size()-articleCapacity()));
     }
-    private boolean canTurn(int direction){return !paperStep(direction,visibleLines()*2).equals(paperPosition());}
+    private boolean canTurn(int direction){return !paperStep(direction,articleCapacity()).equals(paperPosition());}
     private void turnPaper(int direction,int amount) {
         var next=paperStep(direction,amount);
         if(next.equals(paperPosition()))return;
@@ -182,16 +184,39 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
         var chosen=matches.stream().filter(a->a.id()==selected).findFirst().orElse(null);
         if(chosen==null)selected=0;
         String text=chosen==null?"No reports match these filters.":chosen.text();
+        if(menu.browserMode()&&chosen!=null) {
+            String[] parts=text.split("\n",6);
+            if(parts.length==6)text=parts[5];
+        }
         List<FormattedCharSequence> wrapped=new ArrayList<>();int paragraph=0;
         for(String line:text.split("\n",-1)) {
             var component=Component.literal(line.isEmpty()?" ":line);
-            if(paragraph==0||paragraph==3)component.withStyle(net.minecraft.ChatFormatting.BOLD);
-            wrapped.addAll(font.split(component,(menu.browserMode()?Math.max(60,panelWidth-36):columnWidth())));paragraph++;
+            if(!menu.browserMode()&&(paragraph==0||paragraph==3))component.withStyle(net.minecraft.ChatFormatting.BOLD);
+            wrapped.addAll(font.split(component,(menu.browserMode()?Math.max(60,panelWidth-36):paperTextWidth())));paragraph++;
         }
-        lines=wrapped;scroll=Math.max(0,Math.min(scroll,Math.max(0,lines.size()-visibleLines()*(menu.browserMode()?1:2))));
+        lines=wrapped;scroll=Math.max(0,Math.min(scroll,Math.max(0,lines.size()-articleCapacity())));
+    }
+    private int illustrationRows() {
+        return Math.min(Math.max(0,visibleLines()-1),Math.min(10,Math.max(3,visibleLines()/3)));
+    }
+    private int articleCapacity() {
+        return menu.browserMode()?visibleLines():Math.max(1,visibleLines()*paperColumns()-illustrationRows());
+    }
+    private NewsIllustration selectedArt() {
+        return matches.stream().filter(e->e.id()==selected).map(NewsReader.Entry::illustration)
+                .findFirst().orElse(NewsIllustration.MARKETS);
+    }
+    private void illustration(GuiGraphicsExtractor g,NewsIllustration art,int x,int y,int w,int h) {
+        if(h<20||w<40)return;
+        int pictureHeight=h-14;
+        int pictureWidth=Math.min(w,pictureHeight*2),left=x+(w-pictureWidth)/2;
+        var texture=net.minecraft.resources.Identifier.fromNamespaceAndPath("the_emerald_standard",art.texture());
+        g.blit(texture,left,y,left+pictureWidth,y+pictureHeight,0f,1f,0f,1f);
+        g.fill(x,y+h-2,x+w,y+h-1,0xFFB1AA98);
+        ink(g,art.caption(),x,y+h-12,w,0xFF777364);
     }
     private int frontCount() {return Math.max(1,(panelHeight-164)/24);}
-    private int visibleLines() {return Math.max(1,(panelHeight-(menu.browserMode()?136:126))/12);}
+    private int visibleLines() {return Math.max(1,(panelHeight-(menu.browserMode()?196:126))/12);}
     @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical) {
         if(vertical==0)return super.mouseScrolled(x,y,horizontal,vertical);
         if(!menu.browserMode()){turnPaper(-(int)Math.signum(vertical),3);return true;}
@@ -221,13 +246,19 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
             g.text(font,Component.literal(font.plainSubstrByWidth(quote,panelWidth-24)),leftPos+12,topPos+98,0xFF365646,false);
             if(matches.isEmpty())g.text(font,Component.literal("No matching reports yet."),leftPos+12,topPos+116,0xFF365646,false);
         } else {
-            g.enableScissor(leftPos+10,topPos+84,leftPos+panelWidth-10,topPos+panelHeight-49);
+            illustration(g,selectedArt(),leftPos+18,topPos+84,110,54);
+            var chosen=matches.get(storyIndex());
+            int titleHeight=paragraph(g,chosen.headline(),leftPos+140,topPos+86,
+                    Math.max(40,panelWidth-158),2,true);
+            ink(g,chosen.outlet()+" | Day "+chosen.day(),leftPos+140,topPos+90+titleHeight,
+                    Math.max(40,panelWidth-158),0xFF59564C);
+            g.enableScissor(leftPos+10,topPos+144,leftPos+panelWidth-10,topPos+panelHeight-49);
             for(int i=0;i<visibleLines()&&i+scroll<lines.size();i++)
-                g.text(font,lines.get(i+scroll),leftPos+18,topPos+86+i*12,0xFF1B3025,false);
+                g.text(font,lines.get(i+scroll),leftPos+18,topPos+146+i*12,0xFF1B3025,false);
             g.disableScissor();
         }
         String status=selected==0?"Page "+(frontPage+1)+"/"+Math.max(1,(matches.size()+frontCount()-1)/frontCount())
-                +" | "+matches.size()+" reports":"Scroll to read | Article #"+selected;
+                +" | "+matches.size()+" reports":"Scroll to read | Story "+(storyIndex()+1)+" / "+matches.size();
         g.text(font,Component.literal(font.plainSubstrByWidth(status,panelWidth-20)),leftPos+10,topPos+panelHeight-43,0xFF365646,false);
     }
 
@@ -263,14 +294,14 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
         return count*12;
     }
     private void drawPaper(GuiGraphicsExtractor g) {
-        int x=leftPos+18,y=topPos+82,w=panelWidth-36,col=columnWidth();
+        int x=leftPos+18,y=topPos+82,w=panelWidth-36,col=paperTextWidth();
         long edition=reader.edition().stream().mapToLong(NewsReader.Entry::day).max().orElse(0);
         ink(g,"Edition day "+edition+" | "+reader.unreadCount()+" unread",x,topPos+53,w-132,0xFF59564C);
         if(selected==0&&contents) {
-            ink(g,"CONTENTS - ranked by significance and recency",x,y,w,0xFF27251F);
+            ink(g,"CONTENTS",x,y,w,0xFF27251F);
             if(matches.isEmpty())ink(g,"The presses are waiting for their first report.",x,y+28,w,0xFF59564C);
         } else if(selected==0) {
-            if(matches.isEmpty())paragraph(g,"The presses are waiting. Reports appear as the economy advances and confirmed village events occur.",
+            if(matches.isEmpty())paragraph(g,"The press room is quiet. The next edition has not reached the stands.",
                     x,y,w,6,false);
             else {
                 var lead=matches.getFirst();
@@ -279,11 +310,17 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
                 ink(g,lead.outlet()+" | Day "+lead.day(),x,next+4,col,0xFF59564C);
                 String[] parts=lead.text().split("\\n",6);
                 String body=parts.length==6?parts[5]:"Open the story to read the full report.";
-                paragraph(g,body.replace("\n"," "),x,next+21,col,
-                        Math.max(0,(topPos+panelHeight-78-(next+21))/12),false);
-                g.fill(x+col+8,y,x+col+9,topPos+panelHeight-76,0xFFB1AA98);
-                ink(g,"ALSO IN THIS EDITION",x+col+18,y,col,0xFF59564C);
-                int count=Math.max(1,(panelHeight-149)/44);
+                int room=topPos+panelHeight-78-(next+21);
+                int artHeight=Math.min(col/2+14,Math.max(0,room/2));
+                illustration(g,lead.illustration(),x,next+21,col,artHeight);
+                int bodyTop=next+21+(artHeight>=20?artHeight+8:0);
+                paragraph(g,body.replace("\n"," "),x,bodyTop,col,
+                        Math.max(0,(topPos+panelHeight-78-bodyTop)/12),false);
+                if(paperColumns()==2) {
+                    g.fill(x+col+8,y,x+col+9,topPos+panelHeight-76,0xFFB1AA98);
+                    ink(g,"ALSO IN THIS EDITION",x+col+18,y,col,0xFF59564C);
+                }
+                int count=paperColumns()==1?0:Math.max(1,(panelHeight-149)/44);
                 for(int i=1;i<matches.size()&&i<=count;i++) {
                     var e=matches.get(i);
                     ink(g,e.outlet()+" / Day "+e.day(),x+col+18,topPos+132+(i-1)*44,col,0xFF777364);
@@ -292,14 +329,17 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
         } else {
             int rows=visibleLines();
             g.enableScissor(x,topPos+80,leftPos+panelWidth-18,topPos+panelHeight-45);
-            for(int c=0;c<2;c++)for(int i=0;i<rows;i++) {
-                int n=scroll+c*rows+i;
-                if(n<lines.size())g.text(font,lines.get(n),x+c*(col+18),topPos+82+i*12,0xFF27251F,false);
+            int artRows=illustrationRows(),leftRows=rows-artRows;
+            illustration(g,selectedArt(),x,topPos+82,col,artRows*12-6);
+            for(int c=0;c<paperColumns();c++)for(int i=0;i<(c==0?leftRows:rows);i++) {
+                int n=scroll+(c==0?0:leftRows)+i;
+                if(n<lines.size())g.text(font,lines.get(n),x+c*(col+18),
+                        topPos+82+(i+(c==0?artRows:0))*12,0xFF27251F,false);
             }
-            g.fill(x+col+8,topPos+82,x+col+9,topPos+panelHeight-47,0xFFB1AA98);
+            if(paperColumns()==2)g.fill(x+col+8,topPos+82,x+col+9,topPos+panelHeight-47,0xFFB1AA98);
             g.disableScissor();
         }
-        String status=selected!=0?"Story "+(storyIndex()+1)+" / "+matches.size()+" | Text "+(scroll+1)+"-"+Math.min(lines.size(),scroll+visibleLines()*2)+" / "+lines.size()
+        String status=selected!=0?"Story "+(storyIndex()+1)+" / "+matches.size()+" | "+(scroll==0?"Opening":scroll+articleCapacity()>=lines.size()?"Final column":"Continued")
                 :contents?"Contents "+(frontPage+1)+" / "+Math.max(1,(matches.size()+contentsCount()-1)/contentsCount())
                 :"Front page | "+matches.size()+" stories";
         ink(g,status,x,topPos+panelHeight-43,w,0xFF59564C);
@@ -319,7 +359,9 @@ public final class NewspaperScreen extends AbstractContainerScreen<NewspaperMenu
     int paperSectionForTesting(){return paperPosition().story();}
     int contentsPageForTesting(){return frontPage;}
     int contentsPagesForTesting(){return Math.max(1,(matches.size()+contentsCount()-1)/contentsCount());}
-    int maximumScrollForTesting(){return Math.max(0,lines.size()-visibleLines()*2);}
+    int illustrationRowsForTesting(){return illustrationRows();}
+    int articleCapacityForTesting(){return articleCapacity();}
+    int maximumScrollForTesting(){return Math.max(0,lines.size()-articleCapacity());}
     boolean nextActiveForTesting(){return paperNext.active;}
     boolean previousActiveForTesting(){return paperPrevious.active;}
     long selectedForTesting(){return selected;}

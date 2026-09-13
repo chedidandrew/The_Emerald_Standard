@@ -10,7 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Checks the actual packaged fence geometry, including all multipart rotations. No world required. */
+/** Checks packaged fence materials and geometry, including all multipart rotations. No world required. */
 public final class ConstructionFenceModelSelfTest {
     private static final String ROOT = "/assets/the_emerald_standard/";
     private static final List<String> DIRECTIONS = List.of("north", "east", "south", "west");
@@ -95,7 +95,59 @@ public final class ConstructionFenceModelSelfTest {
         }
         return out;
     }
+    private static void texturedRegion(java.awt.image.BufferedImage texture, String name,
+                                       int x, int y, int width, int height) {
+        int min = 255, max = 0;
+        for (int v = y; v < y + height; v++) for (int u = x; u < x + width; u++) {
+            int rgb = texture.getRGB(u, v);
+            int light = (((rgb >>> 16) & 255) + ((rgb >>> 8) & 255) + (rgb & 255)) / 3;
+            min = Math.min(min, light); max = Math.max(max, light);
+        }
+        require(max - min >= 5, name + ": material looks flat in the visible UV crop");
+    }
+    private static void materials() {
+        for (String model : List.of("block/construction_fence_post", "block/construction_fence_side",
+                "item/construction_fence")) {
+            var textures = json("models/" + model + ".json").getAsJsonObject("textures");
+            require(textures.get("wood").getAsString().equals("minecraft:block/stripped_spruce_log"),
+                    "Approved wooden post changed: " + model);
+            for (String material : List.of("yellow", "black"))
+                require(textures.get(material).getAsString().equals(
+                        "the_emerald_standard:block/construction_fence_" + material),
+                        "Shared fence material missing: " + model + "/" + material);
+            require(textures.get("particle").equals(textures.get("yellow")), "Fence particle material differs");
+        }
+        for (String material : List.of("yellow", "black")) {
+            String path = ROOT + "textures/block/construction_fence_" + material + ".png";
+            try (var in = ConstructionFenceModelSelfTest.class.getResourceAsStream(path)) {
+                require(in != null, "Missing packaged material: " + path);
+                var texture = javax.imageio.ImageIO.read(in);
+                require(texture != null && texture.getWidth() == 16 && texture.getHeight() == 16,
+                        "Fence must keep native 16px material density");
+                for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+                    int rgb = texture.getRGB(x, y), r = (rgb >>> 16) & 255, g = (rgb >>> 8) & 255, b = rgb & 255;
+                    require(rgb >>> 24 == 255, "Fence material must be opaque");
+                    if (material.equals("yellow"))
+                        require(r >= 180 && g >= 120 && b <= 55 && r - g >= 30,
+                                "Cap and stripe must retain the warm safety-yellow palette");
+                    else require(Math.max(r, Math.max(g, b)) <= 48,
+                            "Foot and stripe must remain black, not mid-grey");
+                }
+                // Default model-coordinate UVs expose only small slices of the material.
+                if (material.equals("yellow")) {
+                    texturedRegion(texture, "Cap top", 6, 6, 4, 4);
+                    texturedRegion(texture, "Cap side", 6, 0, 4, 2);
+                } else {
+                    texturedRegion(texture, "Foot top", 6, 6, 4, 4);
+                    texturedRegion(texture, "Foot side", 6, 14, 4, 2);
+                }
+                for (int row : new int[] {2, 9})
+                    texturedRegion(texture, material + " rail", 0, row, 6, 3);
+            } catch (java.io.IOException ex) { throw new IllegalStateException("Invalid fence material", ex); }
+        }
+    }
     public static void verify() {
+        materials();
         var state = json("blockstates/construction_fence.json");
         require(state.getAsJsonArray("multipart").size() == 5, "Fence connections missing");
         var post = parts(json("models/block/construction_fence_post.json"));
@@ -137,7 +189,7 @@ public final class ConstructionFenceModelSelfTest {
         Part stem = post.stream().filter(p -> p.faces.containsValue("#wood")).findFirst().orElseThrow();
         require(stem.from[1] == 2 && stem.to[1] == 14, "Stem penetrates cap or foot");
         require(!stem.faces.containsKey("up") && !stem.faces.containsKey("down"), "Hidden stem ends rendered");
-        System.out.println("Construction fence models passed: 16 connections, 64 neighbors, item, stripes and quad budget");
+        System.out.println("Construction fence models passed: 16px textured materials, 16 connections, 64 neighbors, item, stripes and quad budget");
     }
     private static void require(boolean condition, String message) {
         if (!condition) throw new IllegalStateException(message);

@@ -12,12 +12,14 @@ import net.minecraft.world.level.saveddata.*;
 
 /** Separate connector progress: never rewrite frozen historical paving/building cursors. */
 final class WalkwayConnectionLedger extends SavedData {
-    record Step(long pos,BlockState ground,BlockState lower,BlockState upper) {
+    record Step(long pos,BlockState ground,BlockState lower,BlockState upper,String bridge) {
+        Step(long pos,BlockState ground,BlockState lower,BlockState upper) { this(pos,ground,lower,upper,""); }
         static final Codec<Step> CODEC=RecordCodecBuilder.create(i->i.group(
                 Codec.LONG.fieldOf("pos").forGetter(Step::pos),
                 BlockState.CODEC.fieldOf("ground").forGetter(Step::ground),
                 BlockState.CODEC.fieldOf("lower").forGetter(Step::lower),
-                BlockState.CODEC.fieldOf("upper").forGetter(Step::upper)).apply(i,Step::new));
+                BlockState.CODEC.fieldOf("upper").forGetter(Step::upper),
+                Codec.STRING.optionalFieldOf("bridge","").forGetter(Step::bridge)).apply(i,Step::new));
     }
     record Job(List<Step> plan,int centers,int cursor,Set<Long> supplied,boolean done,long retry,String reason) {
         static final Codec<Job> CODEC=RecordCodecBuilder.create(i->i.group(

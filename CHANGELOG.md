@@ -1,6 +1,46 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.31
+## Unreleased: 0.4.0-beta.37
+
+- Add shared village footbridges to the walkway route search. Compare land detours with straight water crossings and verify a complete onward connection before reserving work.
+- Build three-wide raised spans with exterior railings, capped posts, inward-facing village lamps, timber framing or modest masonry/sandstone arches, stair approaches, natural foundations and an open boat channel.
+- Freeze and persist the complete design, reserved footprint, construction and verification progress. Infrastructure materials and treasury costs scale with size, use durable one-shot receipts, and survive debug-mode changes. Multiple crossings queue under a shared crew limit.
+- Respect district ownership, claims, inventories, occupants and player changes. Never force-load chunks, drain waterways or regenerate completed bridges. Keep surveys, validation and placement bounded.
+- Add four world settings (enabled; 48-block default water span; 12-block pier depth; two active crews), bridge diagnostics, both handbook formats, payment/territory regressions and native geometry, route, navigation, interruption and safety checks.
+
+## Previous unreleased candidate: 0.4.0-beta.36
+
+- Correct the separate roadside-nook benches beside Banks and project walkways: the stair's raised back now faces the grass, with the low seat opening onto the paved square. The beta.30 terrace-seat fix did not affect this generator.
+- Preserve materials, footprint, planters, lamps, road stairs and frozen older plans. No automatic edits to completed benches or saved construction.
+- Update both handbook formats and add native regressions for both road lengths, every direction/side, all pocket styles, collision shape, reservations, claims and saved-plan round trips.
+
+## Previous unreleased candidate: 0.4.0-beta.35
+
+- Add native-density pixel grain to construction-fence yellow caps, black bases and hazard rails. Preserve the wooden posts, stepped stripe pattern, all geometry, connection behavior and item shape.
+- Share two opaque 16px material textures across the block and item, with matching particles. No new quads, overlays, animation or runtime work.
+- Update guided and compact fence descriptions; validate source-to-texture import, packaged palettes/UV crops, all connections and native item rendering.
+
+## Previous unreleased candidate: 0.4.0-beta.34
+
+- Fix progressive Banks starving when forced instant development is enabled during construction. Both loaders now share a mode-synchronized dispatcher that alternates first access to the existing global debug budget.
+- Skip distant, unloaded and backing-off Bank sites before round-robin selection; empty dimensions no longer consume project grants. Recheck Bank waits when switching modes without discarding frozen plans or receipts.
+- Keep normal construction pace, player storage/occupancy protections, loaded-only work and completion checks. Add starvation/deadline regression coverage and native mid-build toggle, blocked-site, concurrent Bank and restart checks.
+- Update both handbook formats with mode-switch behavior and limitations.
+
+## Previous unreleased candidate: 0.4.0-beta.33
+
+- Distinguish optional recovery aid for Extinct villages from the 25-emerald requirement for Abandoned villages. Show fully funded and paused resettlement separately, with remaining aid and safe-home guidance.
+- Remove implementation jargon from local bulletins, ordinary Town reports and Fund previews/receipts. Keep costs, financial confirmations and useful site advice; retain raw construction details and build identity in debug captures.
+- Correct both handbook formats and automatic-recovery setting help. Recovery rules, donation allocation, construction and balances are unchanged.
+
+## Previous unreleased candidate: 0.4.0-beta.32
+
+- Overhaul The Emerald Wire with developed, multi-paragraph local reports, seventeen market-event narratives, directional roundups, and two-/seven-day follow-ups. Vary leads, narrative angles and outlet voices; keep tragic coverage restrained.
+- Remove reporting-system boilerplate and explicit tone labels from the newspaper, including legacy display copies. Retain factual quantities, historical comparisons, privacy filtering and all economic safeguards; explain mechanics in the handbook.
+- Add four sepia editorial woodcuts to the cover and both article readers. Reserve illustration space in native text pagination and preserve the full 256-report archive.
+- Update both handbook formats and validate article length/tone, deterministic variety, privacy, legacy rendering, texture assets, long-document transport and native navigation.
+
+## Previous unreleased candidate: 0.4.0-beta.31
 
 - Capture actual whole-server tick work, including end callbacks, in /emerald debug: mean/max MSPT, slow-tick counts, exact recent p50/p95/p99 and observed tick throughput. Keep recorder-overhead metrics separate.
 - Add global saved construction backlog, pending Bank counts, and bounded recently working/waiting observations to time-correlated performance snapshots. No block/chunk scanning or forced loading.

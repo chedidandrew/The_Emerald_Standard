@@ -75,8 +75,8 @@ and the compact/lectern book has 57 pages. Recipe definitions are unchanged and 
 Older ownership, pacing, investment-calibration and receipt-recovery prose was corrected.
 
 Each artifact embeds tes-build.properties with version and a SHA-256 fingerprint of
-production source/assets and build definitions. The report footer shows its short form;
-debug capture metadata includes the full hash. The shared build-input manifest defines canonical, normalized-path ordering for both loaders.
+production source/assets and build definitions. Since beta.33, ordinary reports omit build identity;
+debug capture metadata includes the version and full hash. The shared build-input manifest defines canonical, normalized-path ordering for both loaders.
 The verifier recomputes the current source fingerprint, compares both packaged identities against it,
 checks loader version parity and rejects source changes during verification. This is source provenance, not a claim that different versions share
 a compatible network protocol. Use matching client/server candidates.

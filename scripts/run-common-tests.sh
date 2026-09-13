@@ -30,6 +30,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.FundAllocationRegression
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.SpendingFundsRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsGrowthRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsEditorialRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsNarrativeRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.InvestmentDiversityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.CommodityInvestmentRegressionTest
@@ -41,13 +42,14 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.BankVillageIdentityRegre
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageDistrictMapRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageGuardSecurityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageExpansionRegressionTest
-java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ForcedDevelopmentRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ForcedDevelopmentRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageBackgroundRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.DevelopmentSafetyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageFoodSupplyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.BankConstructionRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.TerrainRoadPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageDashboardPolicyRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageRecoveryGuidanceRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageArchitectureRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.BlueprintTierSelectionRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.RoofGeometryValidatorRegressionTest
@@ -107,6 +109,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageBankStructur
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageMaterializationPolicyRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageRuntimeStructureSafetyWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.VillageStructureProgressionRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageBridgeFundingRegressionTest
 
 fabric_version="$(grep '^mod_version=' "$ROOT/fabric/gradle.properties" | cut -d= -f2-)"
 neo_version="$(grep '^mod_version=' "$ROOT/neoforge/gradle.properties" | cut -d= -f2-)"

@@ -877,6 +877,8 @@ public static final int FORMAT_VERSION = 38;
         public boolean districtFounding;
         public boolean organicTerritory;
         public final Set<Long> territoryCells = new java.util.TreeSet<>();
+        /** One-shot Infrastructure debits; shared bridge jobs retain these across restarts. */
+        public final Set<String> bridgeFundingReceipts = new java.util.TreeSet<>();
         public int expansionHealthyDays;
         public long lastExpansionDay;
         public long expansionSerial;
@@ -1021,6 +1023,7 @@ public static final int FORMAT_VERSION = 38;
             copy.cityId = cityId;
             copy.organicTerritory = organicTerritory;
             copy.territoryCells.addAll(territoryCells);
+            copy.bridgeFundingReceipts.addAll(bridgeFundingReceipts);
             copy.expansionMode = expansionMode;
             copy.expansionApproved = expansionApproved;
             copy.districtFounding = districtFounding;
@@ -2499,6 +2502,7 @@ public static final int FORMAT_VERSION = 38;
         if (village.residents.size() > VillageProsperityEngine.RESIDENT_HISTORY_LIMIT
                 || village.projects.size() > VillageProsperityEngine.projectLimit(village)
                 || village.territoryCells.size() > VillageTerritory.MAX_CELLS
+                || village.bridgeFundingReceipts.size() > VillageBridgeFunding.MAX_RECEIPTS
                 || village.incidents.size() > VillageProsperityEngine.INCIDENT_HISTORY_LIMIT) {
             throw new IOException("Village record exceeds bounded history limits " + id);
         }
@@ -2506,6 +2510,10 @@ public static final int FORMAT_VERSION = 38;
             if (VillageTerritory.cx(parcel) < -2_097_152 || VillageTerritory.cx(parcel) > 2_097_151
                     || VillageTerritory.cz(parcel) < -2_097_152 || VillageTerritory.cz(parcel) > 2_097_151)
                 throw new IOException("Invalid village territory parcel " + id);
+        }
+        for (String receipt : village.bridgeFundingReceipts) {
+            try { UUID.fromString(receipt); }
+            catch (IllegalArgumentException malformed) { throw new IOException("Invalid bridge funding receipt", malformed); }
         }
         for (Map.Entry<UUID, ResidentRecord> residentEntry : village.residents.entrySet()) {
             ResidentRecord resident = residentEntry.getValue();

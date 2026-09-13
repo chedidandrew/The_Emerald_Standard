@@ -18,7 +18,7 @@ public final class HandbookChapters {
             chapter("Resource trading", "trade", "trade_diamond_gold", "trade_netherite_emerald"),
             chapter("Village growth", "village", "town_scores", "guard_villagers", "town_outputs", "grow", "needs", "districts", "district_map"),
             chapter("Village recovery", "safety", "collapse"),
-            chapter("Building projects", "projects", "planning_building", "construction_safety", "construction_crews", "terrain", "damage"),
+            chapter("Building projects", "projects", "planning_building", "construction_safety", "construction_crews", "terrain", "bridges", "damage"),
             chapter("The Village Fund", "fund", "fund_types", "fund_general", "fund_food",
                     "fund_housing", "fund_security", "fund_infrastructure", "fund_trade",
                     "fund_restoration", "fund_numbers", "fund_example"),

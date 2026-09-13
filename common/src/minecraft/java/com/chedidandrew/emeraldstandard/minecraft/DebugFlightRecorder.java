@@ -57,6 +57,7 @@ public final class DebugFlightRecorder {
     private static final int NEWLINE_BYTES =
             System.lineSeparator().getBytes(StandardCharsets.UTF_8).length;
     private static final Set<String> PUBLIC_CONFIG_KEYS = Set.of(
+            EmeraldConfig.BRIDGES_ENABLED, EmeraldConfig.BRIDGE_LENGTH, EmeraldConfig.BRIDGE_DEPTH, EmeraldConfig.BRIDGE_JOBS,
             "village_banks.enabled",
             "village_banks.scan_interval_ticks",
             "village_banks.region_size",
@@ -787,6 +788,19 @@ public final class DebugFlightRecorder {
                 "catchUpDays", portfolio.catchUpDaysRemaining());
     }
 
+    private static Map<String,Object> bridgeReport(MinecraftServer server,EconomyState.VillageRecord village) {
+        for(var level:server.getAllLevels())if(level.dimension().identifier().toString().equals(village.dimensionKey)) {
+            var jobs=VillageBridgeLedger.get(level).jobs.values().stream()
+                    .filter(j->j.plan().village().equals(village.villageId.toString())).toList();
+            return fields("total",jobs.size(),"active",jobs.stream().filter(j->j.funded()&&!j.done()&&!j.altered()).count(),
+                    "queued",jobs.stream().filter(j->!j.funded()&&!j.altered()).count(),
+                    "complete",jobs.stream().filter(VillageBridgeLedger.Job::done).count(),
+                    "altered",jobs.stream().filter(VillageBridgeLedger.Job::altered).count(),
+                    "crossings",jobs.stream().map(j->VillageBridges.report(level,j.plan().id())).toList());
+        }
+        return Map.of();
+    }
+
     private static Map<String,Object> walkwayConnectionReport(MinecraftServer server,
             EconomyState.VillageRecord village,EconomyState.VillageProject project) {
         for(var level:server.getAllLevels()) {
@@ -839,6 +853,7 @@ public final class DebugFlightRecorder {
         return fields(
                 "present", true,
                 "currentServerGameTick", gameTick,
+                "infrastructureBridges",bridgeReport(server,village),
                 "projects", village.projects.stream().map(p -> fields(
                         "projectId", p.projectId, "type", p.type, "template", p.designTemplateId,
                         "originPacked", p.originPos, "complete", p.materializedComplete,

@@ -54,6 +54,9 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        if (Boolean.getBoolean("the_emerald_standard.bridgeSmokeOnly")) {
+            VillageBridgeSelfTest.verify(level);return;
+        }
         DebugPerformanceSelfTest.verify(level);
         NaturalVillageIdentitySelfTest.run(level);
         ConstructionFinishSelfTest.verify(level);
@@ -66,11 +69,13 @@ public final class BankerIntegrationSelfTest {
         VillagePopulationSelfTest.verify(level);
         NewspaperItemSelfTest.verify(level);
         BankConstructionSelfTest.verify(level);
+        ForcedDevelopmentSchedulingSelfTest.verify(level);
         ConstructionPacingSelfTest.verify();
         ConstructionSafetySelfTest.verify(level);
         ConstructionOwnershipSelfTest.verify(level);
         WalkwayLightingSelfTest.verify(level);
         WalkwayConnectionsSelfTest.verify(level);
+        VillageBridgeSelfTest.verify(level);
         CreativeContentSelfTest.verify(level);
         DistrictMapInteractionSelfTest.verify(level);
         NewsRuntime.verifyForSmoke(level);

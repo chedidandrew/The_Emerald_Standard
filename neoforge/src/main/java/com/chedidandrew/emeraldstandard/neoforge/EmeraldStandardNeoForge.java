@@ -144,8 +144,7 @@ public final class EmeraldStandardNeoForge {
             LOGGER.error("Could not advance or save The Emerald Standard economy: {}",
                     ECONOMY.lastError());
         }
-        VillageProsperityManager.tick(event.getServer(), ECONOMY);
-        VillageBankManager.tick(event.getServer(), ECONOMY);
+        com.chedidandrew.emeraldstandard.minecraft.VillageDevelopmentRuntime.tick(event.getServer(), ECONOMY);
         DebugFlightRecorder.tick(event.getServer(), ECONOMY);
         VillageComparisonGallery.tick(event.getServer());
     }

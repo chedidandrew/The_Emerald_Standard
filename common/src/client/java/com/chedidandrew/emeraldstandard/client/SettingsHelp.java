@@ -7,6 +7,10 @@ public final class SettingsHelp {
     private SettingsHelp() {}
     public static String description(String key) {
         String help = switch (key) {
+            case EmeraldConfig.BRIDGES_ENABLED -> "Survey and build shared village footbridges. Off pauses new and unfinished bridges without removing them. Existing crossings remain usable.";
+            case EmeraldConfig.BRIDGE_LENGTH -> "Longest water crossing in blocks, excluding the six-block approach on each shore. Shorter crossings and land detours are preferred. Existing saved designs keep their length. Range: 2–64.";
+            case EmeraldConfig.BRIDGE_DEPTH -> "Maximum pier depth below the water surface. Deep water is left open where the span permits; unsupported crossings are deferred. Existing saved designs are unchanged. Range: 2–24.";
+            case EmeraldConfig.BRIDGE_JOBS -> "Maximum bridge crews working at once per dimension. Further crossings queue without charging until a crew is free. Roads share crossings and a bounded work allowance. Range: 1–4.";
             case "news.public_player_reports" -> "Publish observed player and local follow-up reports. Off stops new reports and hides retained local articles from readers; it does not delete the private server archive or change village consequences.";
             case "news.anonymous_players" -> "Remove player names from every local article sent to newspaper readers, including retained reports. This cannot erase information somebody already saw or recorded.";
             case "news.approximate_locations" -> "Withhold exact village coordinates in public local reports. On reports only a local village; Off includes the district center. This cannot erase previously seen locations.";
@@ -24,15 +28,15 @@ public final class SettingsHelp {
             case "market.events_enabled" -> "Enables future exceptional market events and price shocks. Turning this off keeps ordinary market movement and existing history.";
             case "economic_clock.offline_progression_enabled" -> "Lets trusted elapsed real time advance the economy while the world is closed. Turning this off does not pause normal in-game time or cancel catch-up already queued.";
             case "economic_clock.max_offline_days" -> "Maximum economic days credited from one offline time gap. Lower gives stronger protection against clock jumps. Range: 1–25000.";
-            case "village_prosperity.simulation_enabled" -> "Advances village production, prosperity, upkeep and economic projects. Turning this off pauses this simulation and new Fund donations; already queued physical work can still finish if visual progression is on.";
-            case "village_prosperity.visual_progression_enabled" -> "Places queued village buildings, paths and settlers in loaded chunks. Turning this off pauses their physical development, not the economy. Bank construction has its own Bank enabled switch.";
+            case "village_prosperity.simulation_enabled" -> "Advances village production, prosperity, upkeep and economic projects. Off pauses village affairs and new Fund gifts; approved building work can still finish if construction is on.";
+            case "village_prosperity.visual_progression_enabled" -> "Builds approved village structures and paths, and welcomes settlers while you are nearby. Off pauses this work, not the economy. Bank construction has its own Bank enabled switch.";
             case "village_prosperity.market_integration_enabled" -> "Lets eligible village fundamentals influence market sectors. Turning this off disconnects that influence without stopping the villages or global markets.";
-            case "village_prosperity.automatic_recovery_enabled" -> "Allows eligible villages lost to non-player causes to recover after a cooldown. Does not bypass player-caused extinction protection.";
+            case "village_prosperity.automatic_recovery_enabled" -> "Allows settlers to return after a village is emptied. Extinct villages can recover with time; Abandoned villages also need 25 E for restoration. Off pauses both, even after a gift.";
             case "village_prosperity.scan_interval_ticks" -> "Ticks between loaded-village census and expansion checks. Lower notices changes sooner but costs more server work. 20 ticks = 1 second. Range: 40–24000.";
             case "village_prosperity.development_radius" -> "Horizontal distance in blocks from a player for physical village development. Higher activates more nearby work; it does not load chunks or cap city size. Range: 48–512.";
             case "village_prosperity.construction_blocks_per_second" -> "Block operations per second for EACH active construction site, including Banks, at 20 server ticks per second. Each site gets its own allowance; clearing blocks uses it too. Higher is faster and heavier. Paused/unloaded sites do not bank unused work. Range: 1–100.";
             case "village_prosperity.settler_spawn_interval_ticks" -> "Ticks between attempts to place eligible new settlers. Lower brings ready settlers in sooner; housing and safety checks still apply. 20 ticks = 1 second. Range: 200–24000.";
-            case "village_prosperity.donations_enabled" -> "Enables new Prosperity Fund contributions. Requires village simulation. Turning this off preserves existing balances, principal and donation records.";
+            case "village_prosperity.donations_enabled" -> "Enables new Prosperity Fund contributions. Requires village affairs to be active. Turning this off preserves existing balances, principal and donation records.";
             case "village_prosperity.endowments_enabled" -> "Allows new protected-principal Endowment contributions. Turning this off does not erase existing endowments.";
             case "village_prosperity.project_sponsorship_enabled" -> "Allows new donations tied to a village's active economic project. Turning this off preserves previous contributions.";
             case "village_prosperity.targeted_donations_enabled" -> "Allows Direct Grants and Endowments for a selected purpose such as Food or Infrastructure. Turning this off limits new contributions to General.";

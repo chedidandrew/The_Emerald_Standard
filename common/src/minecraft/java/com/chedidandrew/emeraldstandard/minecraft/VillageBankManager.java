@@ -63,6 +63,8 @@ import net.minecraft.world.phys.AABB;
 public final class VillageBankManager {
     private static final Map<Long, ParsedBankConstruction> CONSTRUCTION_CACHE = new HashMap<>();
     private static final Map<Long, Long> CONSTRUCTION_RETRY = new HashMap<>();
+    private static final ForcedDevelopmentWorkBudget.Rotation CONSTRUCTION_ROTATION = new ForcedDevelopmentWorkBudget.Rotation();
+    private static boolean lastForcedDevelopment;
     private record ParsedBankConstruction(BankConstruction plan, List<BankPlacement> before,
             List<BankPlacement> after, List<Integer> order, Map<BlockPos,List<SupportedConstructionOrder.Cell>> supports,
             Set<Integer> disconnected) { }
@@ -120,6 +122,8 @@ public final class VillageBankManager {
     public static void resetRuntimeState() {
         CONSTRUCTION_CACHE.clear();
         CONSTRUCTION_RETRY.clear();
+        CONSTRUCTION_ROTATION.reset();
+        lastForcedDevelopment = false;
         LAST_FALLBACK_BANK_RETRY_TICK.clear();
         LAST_BANK_UPGRADE_RETRY_TICK.clear();
         PENDING_BANKER_DEATHS.clear();
@@ -330,12 +334,26 @@ public final class VillageBankManager {
         }
         retryPendingBankerConversions(server, economy);
         boolean forcedDevelopment = config.forcedVillageDevelopment();
+        if (forcedDevelopment != lastForcedDevelopment) {
+            // Fence/economic waits from the previous mode are not placement failures.
+            // Recheck the live safety rules immediately; never discard construction receipts.
+            CONSTRUCTION_RETRY.clear();
+            lastForcedDevelopment = forcedDevelopment;
+        }
         if (config.villageBanksEnabled() && !economy.isCatchingUp()
                 && (forcedDevelopment ? gameTime % 2 == 0 : config.constructionAllowance(gameTime) > 0)) {
             var pendingSites = new ArrayList<>(economy.pendingBankConstructionsSnapshot().entrySet());
             pendingSites.sort(java.util.Map.Entry.comparingByKey());
+            pendingSites.removeIf(entry -> CONSTRUCTION_RETRY.getOrDefault(entry.getKey(), 0L) > gameTime
+                    || !isLoaded(level, BlockPos.of(entry.getValue().origin()))
+                    || level.players().stream().noneMatch(p -> {
+                        BlockPos origin = BlockPos.of(entry.getValue().origin());
+                        double dx = p.getX() - origin.getX(), dz = p.getZ() - origin.getZ();
+                        return dx * dx + dz * dz <= (double) config.villageDevelopmentRadius() * config.villageDevelopmentRadius();
+                    }));
             if (forcedDevelopment && !pendingSites.isEmpty())
-                pendingSites = new ArrayList<>(List.of(pendingSites.get(Math.floorMod(gameTime / 2,pendingSites.size()))));
+                pendingSites = new ArrayList<>(List.of(pendingSites.get(
+                        CONSTRUCTION_ROTATION.next("banks", pendingSites.size()))));
             for (var entry : pendingSites) {
                 if (CONSTRUCTION_RETRY.getOrDefault(entry.getKey(), 0L) > gameTime) continue;
                 BlockPos origin = BlockPos.of(entry.getValue().origin());

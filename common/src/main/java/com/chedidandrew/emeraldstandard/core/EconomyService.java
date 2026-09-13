@@ -1865,6 +1865,24 @@ public final class EconomyService {
         var v=state==null?null:state.villages.get(id);
         return v!=null && (!v.organicTerritory || VillageTerritory.plan(v,state.villages.values(),low,high)!=null);
     }
+    /** Cheap parcel ownership check for bounded, read-only bridge surveys, even beyond held land. */
+    public synchronized boolean mayBridgeParcel(UUID id, long position) {
+        var v = state == null ? null : state.villages.get(id);
+        return v != null && VillageTerritory.mayOwn(v, state.villages.values(), VillageTerritory.parcel(position));
+    }
+
+    /** Journal the one-shot debit and connected territory extension together before construction. */
+    public synchronized boolean fundVillageBridge(UUID id, String receipt, int length, int operations,
+            long low, long high) {
+        if (isCatchingUp()) return false;
+        return mutateVillage(id, true, v -> {
+            var parcels = VillageTerritory.plan(v, state.villages.values(), low, high);
+            if (parcels == null || !VillageBridgeFunding.pay(v, receipt, length, operations, forcedVillageDevelopment))
+                return false;
+            v.territoryCells.addAll(parcels);
+            return true;
+        });
+    }
     public synchronized VillageDistrictMap.Page districtMap(UUID villageId, int page) {
         return VillageDistrictMap.collect(state, canonicalVillageId(villageId), page);
     }

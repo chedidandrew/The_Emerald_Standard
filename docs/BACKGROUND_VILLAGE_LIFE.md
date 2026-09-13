@@ -68,7 +68,10 @@ new spacing makes their results less grid-like. Reserved lots and existing stree
 A safe, flat roadside patch may receive a five-by-five square, flower garden or seating/lantern
 nook. These are deliberate repeated motifs, not random decorative blocks. They join an approved
 flat road at its walking height, keep an open center, seat details on solid support, and use dry
-planting on sand. Each pocket is optional and frozen in the new site's preparation plan. Claims,
+planting on sand. New roadside benches open toward the paving, with their raised stair backs toward the grass,
+including the separate seating nook beside a Bank. The earlier Bank-terrace seat correction did
+not cover these pockets. Existing placed benches and saved site-preparation plans are not rotated;
+players may turn older seats after construction. Each pocket is optional and frozen in the new site's preparation plan. Claims,
 occupied construction cells, storage, player landscaping, steep terrain or insufficient space
 skip the pocket without rejecting the building. Terrain and permanent pocket placements share
 the existing **two operations per second per site at 20 TPS** budget. Existing buildings are not

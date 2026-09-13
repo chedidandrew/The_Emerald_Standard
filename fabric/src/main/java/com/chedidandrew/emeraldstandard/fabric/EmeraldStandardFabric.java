@@ -124,8 +124,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
                 LOGGER.error("Could not advance or save The Emerald Standard economy: {}",
                         ECONOMY.lastError());
             }
-            VillageProsperityManager.tick(server, ECONOMY);
-            VillageBankManager.tick(server, ECONOMY);
+            com.chedidandrew.emeraldstandard.minecraft.VillageDevelopmentRuntime.tick(server, ECONOMY);
             DebugFlightRecorder.tick(server, ECONOMY);
             VillageComparisonGallery.tick(server);
         });

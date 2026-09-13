@@ -300,7 +300,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int DATA_DISTRICT_MAP = DATA_EXPANSION + 10;
     private static final int DATA_GUARD_COUNT = DATA_DISTRICT_MAP + VillageDistrictMap.DATA_SIZE;
     private static final int DATA_GUARD_BONUS = DATA_GUARD_COUNT + 1;
-    public static final int DATA_COUNT = DATA_GUARD_BONUS + 1;
+    private static final int DATA_VILLAGE_RECOVERY_ENABLED = DATA_GUARD_BONUS + 1;
+    public static final int DATA_COUNT = DATA_VILLAGE_RECOVERY_ENABLED + 1;
     public static final int BUTTON_TOWN_REPORT = 126, BUTTON_FUND_PREVIEW = 127,
             BUTTON_REPORT_CLOSE = 128, BUTTON_FUND_RECEIPT = 129;
     private final net.minecraft.world.SimpleContainer briefingDocument = new net.minecraft.world.SimpleContainer(1);
@@ -1351,6 +1352,10 @@ public final class BankerMenu extends AbstractContainerMenu {
         return Math.max(0, data.get(DATA_VILLAGE_RESTORATION_CENTI)) / 100.0;
     }
 
+    public boolean villageRecoveryEnabled() {
+        return data.get(DATA_VILLAGE_RECOVERY_ENABLED) != 0;
+    }
+
     public boolean villageSimulationEnabled() {
         return data.get(DATA_VILLAGE_SIMULATION_ENABLED) != 0;
     }
@@ -2331,6 +2336,7 @@ public final class BankerMenu extends AbstractContainerMenu {
         if (index == DATA_VILLAGE_PROJECT_PROGRESS_BPS) return villageProjectProgressBps;
         if (index == DATA_VILLAGE_PROJECT_BACKLOG) return villageProjectBacklog;
         if (index == DATA_VILLAGE_RESTORATION_CENTI) return villageRestorationCenti;
+        if (index == DATA_VILLAGE_RECOVERY_ENABLED) return EmeraldConfig.current().villageAutomaticRecoveryEnabled() ? 1 : 0;
         if (index == DATA_VILLAGE_SIMULATION_ENABLED) return villageSimulationEnabled;
         if (index == DATA_VILLAGE_VISUAL_ENABLED) return villageVisualEnabled;
         if (index == DATA_VILLAGE_INCIDENT_CAUSE) return villageIncidentCause;
