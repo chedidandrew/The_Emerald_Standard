@@ -100,16 +100,9 @@ public final class VillageTerritory {
     public static long[] neighbors(long c) {
         int x=cx(c),z=cz(c); return new long[]{key(x-1,z),key(x+1,z),key(x,z-1),key(x,z+1)};
     }
-    /** Each sweep tries a rotating infill batch before adjacent frontier candidates. */
+    /** Full infill first, then compact frontier growth. The saved cursor advances one native site at a time. */
     public static List<long[]> candidates(EconomyState.VillageRecord v,int failures) {
-        Set<Long> held=v.territoryCells;
-        Set<Long> frontier=new TreeSet<>();
-        for(long c:held) for(long n:neighbors(c)) if(!held.contains(n)) frontier.add(n);
-        List<Long> inside=new ArrayList<>(held); inside.sort(Comparator.comparingLong(c->distance(v.centerPos,cx(c)*16+8,cz(c)*16+8)));
-        List<Long> outside=new ArrayList<>(frontier);
-        List<long[]> out=new ArrayList<>();
-        append(out,inside,failures,24); append(out,outside,failures,24);
-        return out;
+        return VillageSiteCandidates.order(v);
     }
     /** Compact row fills and merged outer edges; no internal parcel grid is drawn. */
     public static List<int[]> outlines(Set<Long> cells) {
@@ -138,20 +131,5 @@ public final class VillageTerritory {
         else if(kind==1) out.add(new int[]{start*16,row*16,(last+1)*16,row*16,1});
         else out.add(new int[]{row*16,start*16,row*16,(last+1)*16,1});
     }
-    private static void append(List<long[]> out,List<Long> cells,int sweep,int limit) {
-        if(cells.isEmpty()) return;
-        int start=(int)Math.floorMod((long)sweep*limit,cells.size());
-        for(int i=0;i<Math.min(limit,cells.size());i++) {
-            long c=cells.get((start+i)%cells.size());
-            int x=cx(c)*16+8,z=cz(c)*16+8;
-            // Ownership stays parcel based; physical origins need not land on a 16-block grid.
-            // Five deterministic micro-sites, still one bounded native preflight per pulse.
-            int[][] offsets={{0,0},{-4,0},{4,0},{0,-4},{0,4}};
-            int rotation=Math.floorMod(Long.hashCode(c),4);
-            for(int n=0;n<5;n++) {
-                int[] offset=n==4?offsets[0]:offsets[1+(n+rotation)%4];
-                out.add(new long[]{(long)x+offset[0],(long)z+offset[1]});
-            }
-        }
-    }
+
 }

@@ -424,6 +424,7 @@ final class EconomyPersistence {
             properties.setProperty(projectPrefix + "bounds_max", Long.toString(project.boundsMaxPos));
             properties.setProperty(projectPrefix + "retry_after_tick", Long.toString(project.retryAfterGameTick));
             properties.setProperty(projectPrefix + "materialization_failures", Integer.toString(project.materializationFailures));
+            properties.setProperty(projectPrefix + "site_search_layout", Long.toString(project.siteSearchLayoutKey));
             properties.setProperty(
                     projectPrefix + "site_search_cursor",
                     Integer.toString(project.siteSearchCursor));
@@ -1400,6 +1401,7 @@ final class EconomyPersistence {
             case "bounds_max" -> project.boundsMaxPos = Long.parseLong(value);
             case "retry_after_tick" -> project.retryAfterGameTick = Long.parseLong(value);
             case "materialization_failures" -> project.materializationFailures = Integer.parseInt(value);
+            case "site_search_layout" -> project.siteSearchLayoutKey = Long.parseLong(value);
             case "site_search_cursor" -> project.siteSearchCursor = Integer.parseInt(value);
             case "site_preparation_complete" -> project.sitePreparationComplete = Boolean.parseBoolean(value);
             case "site_preparation_cursor" -> project.sitePreparationCursor = Integer.parseInt(value);

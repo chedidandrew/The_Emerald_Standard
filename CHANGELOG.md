@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.45
+## Unreleased: 0.4.0-beta.46
+
+- Fix one-direction village growth: search all owned parcels before frontier sites, rank compact connected growth using nearby building/connection metadata, and remove coordinate-order preference.
+- Keep terrain checks to one candidate per pulse; cache bounded lazy candidate orders and persist their identity with the search cursor. Changed layouts restart only unreserved searches, without moving existing buildings.
+- Present Forced instant development as an optional accelerated mode rather than a DEBUG-only setting. Retain explicit confirmation, protected placement and irreversible-world-change warnings.
+- Update both handbook forms and add repeated flat-world, neighboring-district, obstructed-side and saved-search regression coverage.
+
+## Previous unreleased candidate: 0.4.0-beta.45
 
 - Add matching default Minecraft buildings alongside TES designs, with a curated five-family catalog, actual bed capacity, role-aware selection and limited civic spaces.
 - Lock expansion to the natural village's architectural family. Reject changed template resources; optional modded-village expansion remains deferred.

@@ -105,6 +105,7 @@ public final class VillageProsperityManager {
         VillagePopulationEnvironment.reset();
         ConstructionDiagnostics.reset();
         ConstructionWorkCue.reset();
+        com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.reset();
         SiteSearchDiagnostics.reset();
         ConstructionWorkStatus.reset();
         VillageConstructionActivity.reset();
@@ -2933,16 +2934,52 @@ public final class VillageProsperityManager {
             List<EconomyService.VillageProjectLot> excludedProjectLots,
             List<Long> managedBankLots) {
         BlockPos center = BlockPos.of(village.centerPos);
-        List<VillageMaterializationPolicy.SiteOffset> offsets =
-                village.organicTerritory ? com.chedidandrew.emeraldstandard.core.VillageTerritory
-                        .candidates(village,project.materializationFailures).stream()
-                        .map(p->new VillageMaterializationPolicy.SiteOffset((int)p[0]-center.getX(),(int)p[1]-center.getZ())).toList()
-                        : VillageNeighborhoodPlan.offsets(project.materializationFailures, village.villageId);
+        List<VillageMaterializationPolicy.SiteOffset> offsets;
+        if (village.organicTerritory) {
+            var ranked = com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.order(village);
+            if (project.siteSearchLayoutKey != ranked.signature()) {
+                if (!economy.beginVillageProjectSiteSearch(village.villageId, project.projectId, ranked.signature()))
+                    return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.SEARCH_INCOMPLETE);
+                project.siteSearchLayoutKey = ranked.signature();
+                project.siteSearchCursor = 0;
+                project.siteSearchSawUnloadedCandidate = false;
+            }
+            // Do not materialize the whole district's micro-sites every pulse.
+            offsets = new java.util.AbstractList<>() {
+                @Override public int size() { return ranked.size(); }
+                @Override public VillageMaterializationPolicy.SiteOffset get(int index) {
+                    long[] p = ranked.get(index);
+                    return new VillageMaterializationPolicy.SiteOffset((int)p[0]-center.getX(), (int)p[1]-center.getZ());
+                }
+            };
+        } else {
+            offsets = VillageNeighborhoodPlan.offsets(project.materializationFailures, village.villageId);
+        }
         if(offsets.isEmpty()) return new ProjectSiteSearch(null,VillageMaterializationPolicy.SiteAvailability.UNSAFE);
         int start = village.organicTerritory ? 0 : Math.floorMod(
                 (int) (project.projectId ^ village.villageId.hashCode()), offsets.size());
         int testedCandidates = Math.min(project.siteSearchCursor, offsets.size());
         boolean sawUnloadedCandidate = project.siteSearchSawUnloadedCandidate;
+        if (village.organicTerritory) {
+            // Known occupied lots need no native terrain survey. Bound metadata skips too.
+            int skipped = 0;
+            BlockPos lastReserved = null;
+            while (testedCandidates < offsets.size() && skipped < 128) {
+                var offset = offsets.get(testedCandidates);
+                int x = center.getX() + offset.x(), z = center.getZ() + offset.z();
+                if (!com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.reservedCenter(
+                        village, project.projectId, x, z)) break;
+                testedCandidates++; skipped++;
+                lastReserved = new BlockPos(x, center.getY(), z);
+            }
+            if (skipped > 0) {
+                checkpointProjectSiteSearch(economy, village, project, testedCandidates, sawUnloadedCandidate);
+                observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), lastReserved,
+                        SiteSearchDiagnostics.Reason.PROJECT_OVERLAP, "Candidate centers inside existing reserved lots");
+            }
+            if (skipped == 128 && testedCandidates < offsets.size())
+                return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.SEARCH_INCOMPLETE);
+        }
         String persistedDialect = village.architectureDialect;
         String planningDialect = persistedDialect;
         if (isManagedProject(project) && planningDialect.isBlank()) {

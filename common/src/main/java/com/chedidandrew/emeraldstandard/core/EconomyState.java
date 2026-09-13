@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-public static final int FORMAT_VERSION = 39;
+public static final int FORMAT_VERSION = 40;
     /** Ten complete years of daily intervals, plus the opening endpoint. */
     public static final int HISTORY_DAYS = 3_651;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -34,8 +34,8 @@ public static final int FORMAT_VERSION = 39;
     public static final int ENTRANCE_APPROACH_VERSION = 1;
     /** Bounded stair, landing, and support cells for one modular entrance. */
     public static final int MAX_ENTRANCE_APPROACH_CELLS = 64;
-    /** Maximum deterministic candidates in one failure-expanded project-site sweep. */
-    public static final int MAX_PROJECT_SITE_SEARCH_CANDIDATES = 256;
+    /** Maximum candidates in a resumable sweep, not a per-tick work allowance. */
+    public static final int MAX_PROJECT_SITE_SEARCH_CANDIDATES = VillageSiteCandidates.MAX_CANDIDATES;
 
     public long seed;
     public long economicDay;
@@ -637,6 +637,8 @@ public static final int FORMAT_VERSION = 39;
         public int materializationFailures;
         /** Next deterministic site candidate to inspect in the active bounded sweep. */
         public int siteSearchCursor;
+        /** Ranking identity; changed territory/connection metadata restarts only an unreserved search. */
+        public long siteSearchLayoutKey;
         /** Whether the active sweep has encountered at least one unloaded candidate. */
         public boolean siteSearchSawUnloadedCandidate;
         /** Immutable generator contract. Missing pre-format-10 data remains legacy_v1. */
@@ -726,6 +728,7 @@ public String designPlanHash = "";
             copy.retryAfterGameTick = retryAfterGameTick;
             copy.materializationFailures = materializationFailures;
             copy.siteSearchCursor = siteSearchCursor;
+            copy.siteSearchLayoutKey = siteSearchLayoutKey;
             copy.siteSearchSawUnloadedCandidate = siteSearchSawUnloadedCandidate;
             copy.designSchema = designSchema;
             copy.designSeed = designSeed;

@@ -40,7 +40,7 @@ public final class VillageTerritoryRegressionTest {
         check(page.districts()==2 && page.markers().stream().anyMatch(m->m.kind()==VillageDistrictMap.TERRITORY),"neighbor map missing territories");
         int[] encoded=VillageDistrictMap.encode(page,1);
         check(page.equals(VillageDistrictMap.decode(i->encoded[i])),"territory packet round trip");
-        check(VillageTerritory.candidates(a,0).size()<=256,"unbounded planning sweep");
+        check(VillageTerritory.candidates(a,0).size()<=EconomyState.MAX_PROJECT_SITE_SEARCH_CANDIDATES,"unbounded planning sweep");
         a.projects.clear();
         check(VillageProsperityEngine.forceDevelopment(a,1), "first debug project missing");
         check(VillageProsperityEngine.forceDevelopment(a,1), "one stuck lot blocks independent work");

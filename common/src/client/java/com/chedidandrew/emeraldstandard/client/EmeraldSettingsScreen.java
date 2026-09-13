@@ -135,7 +135,7 @@ public final class EmeraldSettingsScreen extends Screen {
         if (next && key.equals(EmeraldConfig.FORCED_DEVELOPMENT_KEY)) {
             minecraft.gui.setScreen(new ForcedDevelopmentConfirmationScreen(this, () -> {
                 edits.put(key, "true");
-                status = "Debug mode confirmed in draft. Apply to enable; changes cannot be undone automatically.";
+                status = "Instant development confirmed in draft. Apply to enable; changes cannot be undone automatically.";
                 minecraft.gui.setScreen(this);
             }));
         } else {
@@ -188,8 +188,8 @@ public final class EmeraldSettingsScreen extends Screen {
         });
         rebuildWidgets();
     }
-    private static String label(String key) {
-        if (key.equals(EmeraldConfig.FORCED_DEVELOPMENT_KEY)) return "DEBUG: forced instant development";
+    static String label(String key) {
+        if (key.equals(EmeraldConfig.FORCED_DEVELOPMENT_KEY)) return "Forced instant development";
         if (key.equals("village_prosperity.construction_blocks_per_second"))
             return "Village: blocks per second per site";
         String text = key.replace("village_prosperity.", "Village: ")

@@ -10,6 +10,11 @@ import net.minecraft.client.gui.components.EditBox;
 final class SettingsClientChecks {
     static void verify(Minecraft game) throws Exception {
         EmeraldConfig active = EmeraldConfig.current();
+        require(EmeraldSettingsScreen.label(EmeraldConfig.FORCED_DEVELOPMENT_KEY).equals("Forced instant development"),
+                "accelerated-development label regressed");
+        require(!SettingsHelp.description(EmeraldConfig.FORCED_DEVELOPMENT_KEY).contains("DEBUG")
+                && !ForcedDevelopmentConfirmationScreen.WARNING.contains("DEBUG"),
+                "ordinary optional mode still labeled debug-only");
         java.util.Set<String> hovered = new java.util.HashSet<>();
         for (int scale : new int[] {2, 4}) {
             game.options.guiScale().set(scale);

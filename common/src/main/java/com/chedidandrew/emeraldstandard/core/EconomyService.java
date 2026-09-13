@@ -3014,6 +3014,21 @@ public final class EconomyService {
     }
 
     /** Records a monotonic checkpoint for one unreserved project's bounded site search. */
+    /** A changed ranking must not interpret an old cursor as already inspected new candidates. */
+    public synchronized boolean beginVillageProjectSiteSearch(UUID villageId, long projectId, long layoutKey) {
+        if (layoutKey == 0) return false;
+        return mutateVillage(villageId, false, village -> {
+            var project = findProject(village, projectId);
+            if (project == null || project.originPos != 0 || project.materializedComplete
+                    || project.manualRepairRequired || project.abstractOnly) return false;
+            if (project.siteSearchLayoutKey != layoutKey) {
+                resetVillageProjectSiteSearch(project);
+                project.siteSearchLayoutKey = layoutKey;
+            }
+            return true;
+        });
+    }
+
     public synchronized boolean recordVillageProjectSiteSearchProgress(
             UUID villageId,
             long projectId,
@@ -4190,6 +4205,7 @@ public final class EconomyService {
     }
 
     private static void resetVillageProjectSiteSearch(EconomyState.VillageProject project) {
+        project.siteSearchLayoutKey = 0;
         project.siteSearchCursor = 0;
         project.siteSearchSawUnloadedCandidate = false;
     }

@@ -335,7 +335,7 @@ Map<String, String> values = new LinkedHashMap<>();
         appliedEconomy = java.util.Objects.requireNonNull(economy, "economy");
         if (forcedVillageDevelopment && !economy.forcedVillageDevelopment())
             System.getLogger("the_emerald_standard").log(System.Logger.Level.WARNING,
-                    "DEBUG forced village development enabled: permanent world changes, no economic gates, no automatic undo. Back up this world. Work remains loaded/protected and budgeted.");
+                    "Forced instant development enabled: permanent world changes, no economic gates, no automatic undo. Back up this world. Work remains loaded/protected and budgeted.");
         economy.configureForcedVillageDevelopment(forcedVillageDevelopment);
         economy.configureMarketEvents(marketEventsEnabled);
         economy.configurePlayerNews(newsPublic);
@@ -360,7 +360,7 @@ Map<String, String> values = new LinkedHashMap<>();
                         + "settler interval=%d ticks, prosperity fund=%s, endowments=%s, "
                         + "project sponsorship=%s, targeted donations=%s, donor recognition=%s, "
                         + "fast-track capital=%s, endowment payout=%.2f%%, emergency reserve=%d%%, "
-                        + "routine monthly spending cap=%d, DEBUG forced development=%s",
+                        + "routine monthly spending cap=%d, forced instant development=%s",
                 villageBanksEnabled, villageScanIntervalTicks, villageRegionSize, bankerRestrictionRadius,
                 transactionCooldownTicks, onboardingJoinHintEnabled, marketEventsEnabled, offlineProgressionEnabled,
                 maximumOfflineDays, villageProsperitySimulationEnabled, villageVisualProgressionEnabled,

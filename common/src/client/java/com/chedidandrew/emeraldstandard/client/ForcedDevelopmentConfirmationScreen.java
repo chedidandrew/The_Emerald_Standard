@@ -10,7 +10,7 @@ final class ForcedDevelopmentConfirmationScreen extends Screen {
     private final Screen parent;
     private final Runnable confirm;
     private int x, y, panelWidth, panelHeight;
-    static final String WARNING = "DEBUG: skips food, safety, resources, upkeep, tiers and growth approval. "
+    static final String WARNING = "Optional accelerated mode: skips food, safety, resources, upkeep, tiers and growth approval. "
             + "Rapid endless growth in loaded areas; protection stays on.\n"
             + "PERMANENT: disabling does NOT remove buildings or restore terrain. Pending work may finish normally.\n"
             + "Back up first! Buildings and loot can increase lag/save size. Confirm, then Apply to enable.";

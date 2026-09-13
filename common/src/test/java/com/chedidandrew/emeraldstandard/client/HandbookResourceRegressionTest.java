@@ -528,6 +528,12 @@ public final class HandbookResourceRegressionTest {
                     &&json.contains("masthead, lead story")&&json.contains("Contents: jump."),
                     "Newspaper, commodity basket and comparison guide must stay current");
         }
+        if(path.getFileName().toString().equals("en_us.json")) {
+            check(json.contains("checks the whole owned district") && json.contains("Check gaps first.")
+                    && json.contains("Existing buildings stay where they are") && json.contains("Old builds stay.")
+                    && json.contains("optional accelerated play") && json.contains("Instant: Banks and"),
+                    "Compact growth and optional acceleration must be explained in both handbook forms");
+        }
         check(!inString, "Unterminated JSON string in handbook resource: " + path);
         return compact.toString();
     }

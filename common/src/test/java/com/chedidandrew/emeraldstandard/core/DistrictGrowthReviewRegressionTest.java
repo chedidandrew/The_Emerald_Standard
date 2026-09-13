@@ -72,7 +72,7 @@ public final class DistrictGrowthReviewRegressionTest {
     private static void placement() {
         var v=village();VillageTerritory.seed(v,List.of(v));
         var candidates=VillageTerritory.candidates(v,0);
-        check(candidates.size()<=256,"unbounded candidate sweep");
+        check(candidates.size()<=EconomyState.MAX_PROJECT_SITE_SEARCH_CANDIDATES,"unbounded candidate sweep");
         check(candidates.stream().anyMatch(p->Math.floorMod(p[0],16)!=8||Math.floorMod(p[1],16)!=8),"still parcel centers only");
         var second=VillageTerritory.candidates(v,0);
         for(int i=0;i<candidates.size();i++)check(Arrays.equals(candidates.get(i),second.get(i)),"nondeterministic sites");

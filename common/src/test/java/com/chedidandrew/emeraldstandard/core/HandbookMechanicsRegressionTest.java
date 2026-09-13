@@ -20,7 +20,7 @@ public final class HandbookMechanicsRegressionTest {
             throw new AssertionError("Guided and compact Bank help must explain the configured activation radius");
         if (!language.contains("Both continue their saved plans and share bounded construction time fairly")
                 || !language.contains("resumes ordinary construction pace and eligibility rules")
-                || !language.contains("Debug: Banks and\\nprojects continue."))
+                || !language.contains("Instant: Banks and\\nprojects continue."))
             throw new AssertionError("Handbook must explain live construction mode switching");
         if (!language.contains("Covered paths settle.")
                 || !language.contains("Builders keep that sound footing and continue")

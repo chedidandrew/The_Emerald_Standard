@@ -248,11 +248,24 @@ Finished historical trails receive one compatibility audit per session; remainin
 returns through its saved flags. The queue is disposable on reload and does not grant
 permission to repair completed player-edited structures.
 
-Unreserved organic sites now have five candidate centers per selected parcel, with
-a maximum of 240 candidates in a sweep. One candidate center is preflighted per
-work pulse, including up to four rotations. Safe rotations favor easier approaches,
-fewer terrain changes and the existing connection direction. No saved blueprint is
-rerolled; automatic smaller-blueprint substitution remains deferred.
+Unreserved organic sites offer five micro-sites for every owned parcel before adjacent
+frontier parcels. Metadata ranking favors distance to the original center, compact
+edges and nearby completed buildings/known connection anchors, with deterministic
+hash tie-breaking rather than signed coordinate order. Native clearance remains
+authoritative; ranking is not proof that a road is usable.
+
+Orders are lazy and cached for at most four districts. One candidate center is
+terrain-preflighted per pulse, including up to four rotations; up to 128 centers
+inside positively known reserved lots can be skipped first without world reads.
+A full search is bounded by 409,600 micro-sites at the territory storage ceiling,
+not 409,600 operations per tick. The saved cursor and layout signature (format 40)
+resume the same ordering after restart. Changed ranking inputs restart only an
+unreserved search. Old cursors without a signature restart once. Native unloaded,
+protection, reservation and terrain checks remain unchanged.
+
+Safe rotations favor easier approaches, fewer terrain changes and the existing
+connection direction. No reserved blueprint or existing building is moved;
+automatic smaller-blueprint substitution remains deferred.
 
 The Town report gives a dominant observed waiting reason and useful next action.
 An occupied work area resumes automatically; protected land or personal storage is
