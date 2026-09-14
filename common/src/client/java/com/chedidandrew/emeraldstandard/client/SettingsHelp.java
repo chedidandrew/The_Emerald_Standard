@@ -44,7 +44,7 @@ public final class SettingsHelp {
             case "village_prosperity.fast_track_capital_enabled" -> "Lets enough player-donated capital cover a selected project's remaining resources and economic labor outside routine spending limits. Still requires valid approval and paced physical construction; it does not instantly spawn a building.";
             case "village_prosperity.endowment_annual_payout_bps" -> "Annual payout from Endowments in basis points: 100 = 1%, 400 = 4%. Higher releases more income; principal remains protected. Range: 0–10000.";
             case "village_prosperity.minimum_emergency_reserve_percent" -> "Percentage of ordinary grant funds held for emergencies. Higher keeps a larger safety reserve but leaves less for routine improvements. Range: 0–90.";
-            case "village_prosperity.max_monthly_treasury_spending" -> "Routine automatic Fund spending cap in emeralds per 30 economic days, distributed as a daily allowance. Higher spends available funds faster. Fast-track player capital uses a separate project-sized limit. Range: 1–1000000.";
+            case "village_prosperity.max_monthly_treasury_spending" -> "Routine Village Fund spending allowance in emeralds per 30 economic days, shared across each village's purposes. The default 240 allows 8 emeralds per economic day. Higher spends available funds faster; it does not create money or change block-placement speed. Eligible fast-track project funding is separate. Range: 1–1000000.";
             default -> throw new IllegalArgumentException("Missing settings help: " + key);
         };
         return help + " Default: " + EmeraldConfig.defaults().values().get(key) + ".";

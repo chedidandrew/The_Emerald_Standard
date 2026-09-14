@@ -3,15 +3,30 @@ package com.chedidandrew.emeraldstandard.core;
 /** Short, non-accumulating retry windows for searches that have no reserved world site. */
 public final class ProjectSiteRetry {
     public static final long MAX_WAIT_TICKS = 600L;
+    public static final long FORCED_MAX_WAIT_TICKS = 100L;
     private ProjectSiteRetry() {}
 
     public static boolean searching(EconomyState.VillageProject p) {
         return p.originPos == 0L && !p.materializedComplete && !p.manualRepairRequired && !p.abstractOnly;
     }
 
+    public static boolean boundedInMode(EconomyState.VillageProject p, boolean forced) {
+        return searching(p) || forced && !p.materializedComplete && !p.manualRepairRequired && !p.abstractOnly;
+    }
+
     public static long deadline(long now, int failures) {
         long delay = Math.min(MAX_WAIT_TICKS, 200L << Math.min(2, Math.max(0, failures - 1)));
         return add(Math.max(0L, now), delay);
+    }
+
+    public static long forcedDeadline(long now, int failures) {
+        long delay = Math.min(FORCED_MAX_WAIT_TICKS, 20L << Math.min(3, Math.max(0, failures - 1)));
+        return add(Math.max(0L, now), delay);
+    }
+
+    public static long boundedDeadline(long now, long saved, boolean forced) {
+        return Math.min(Math.max(0L, saved), add(Math.max(0L, now),
+                forced ? FORCED_MAX_WAIT_TICKS : MAX_WAIT_TICKS));
     }
 
     /** Clamp once in saved state; never slide a deadline forward on each polling tick. */

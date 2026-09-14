@@ -189,6 +189,8 @@ public final class EmeraldSettingsScreen extends Screen {
         rebuildWidgets();
     }
     static String label(String key) {
+        if (key.equals("village_prosperity.max_monthly_treasury_spending"))
+            return "Village Fund: monthly spending allowance";
         if (key.equals(EmeraldConfig.FORCED_DEVELOPMENT_KEY)) return "Forced instant development";
         if (key.equals("village_prosperity.construction_blocks_per_second"))
             return "Village: blocks per second per site";

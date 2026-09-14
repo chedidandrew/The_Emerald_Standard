@@ -88,6 +88,14 @@ public final class HandbookResourceRegressionTest {
         Path root = args.length == 0 ? Path.of(".") : Path.of(args[0]);
         String benchGuide = Files.readString(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/lang/en_us.json"));
+        check(benchGuide.contains("Village Fund: monthly spending allowance")
+                        && benchGuide.contains("240 E per 30-economic-day month")
+                        && benchGuide.contains("shared 8 E daily limit for each village")
+                        && benchGuide.contains("Existing worlds keep their saved allowance")
+                        && benchGuide.contains("Default 240/mo.")
+                        && benchGuide.contains("8 E/economic day.")
+                        && !benchGuide.contains("shared 0.8 E daily limit"),
+                "Both handbook forms must explain the 240-E monthly default and saved-value policy");
         check(benchGuide.contains("matching vanilla homes") && benchGuide.contains("actual bed count")
                         && benchGuide.contains("imported containers remain empty")
                         && benchGuide.contains("overhaul mods is not included")
@@ -535,6 +543,9 @@ public final class HandbookResourceRegressionTest {
                     && json.contains("Existing buildings stay where they are") && json.contains("Old builds stay.")
                     && json.contains("optional accelerated play") && json.contains("Instant: Banks and"),
                     "Compact growth and optional acceleration must be explained in both handbook forms");
+            check(json.contains("Faster surveying.") && json.contains("Retry: 1-5s.")
+                    && json.contains("safe homes") && json.contains("up to eight candidate centers"),
+                    "Both handbook forms must explain accelerated surveys, retries and safe arrivals");
         }
         check(!inString, "Unterminated JSON string in handbook resource: " + path);
         return compact.toString();

@@ -34,6 +34,10 @@ final class VanillaConstructionSelfTest {
     }
 
     private static void verifyOne(ServerLevel level,String name,int rotation) throws Exception {
+        verifyOne(level, name, rotation, Boolean.getBoolean("the_emerald_standard.thinGroundFixture"), false);
+    }
+
+    static void verifyOne(ServerLevel level,String name,int rotation,boolean thinGround,boolean soilChanges) throws Exception {
         var entry = VanillaVillageBuildings.manifest().stream().filter(e -> e.id().endsWith("/"+name)).findFirst().orElseThrow();
         VanillaConstructionPlan plan;
         try (var stream = level.getServer().getResourceManager().getResourceOrThrow(
@@ -45,7 +49,7 @@ final class VanillaConstructionSelfTest {
         ServerPlayer observer = null;
         try {
             var state = EconomyState.fresh(7788,0,0);
-            var village = state.village(UUID.nameUUIDFromBytes(name.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            var village = state.village(UUID.nameUUIDFromBytes((name+"-"+rotation).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             village.architectureCharacter = "agrarian"; village.architectureDialect = village.naturalVillageStyle = plan.style();
             village.dimensionKey = "minecraft:overworld"; village.centerPos = origin.asLong();
             village.population = village.observedPopulation = 20; village.housingCapacity = 30;
@@ -76,11 +80,14 @@ final class VanillaConstructionSelfTest {
             int side = Math.max(plan.width(),plan.depth())+4;
             for(int x=-2;x<side;x++) for(int z=-3;z<side;z++) {
                 for(int y=-9;y<plan.height()+2;y++)
-                    set(level,before,origin.offset(x,y,z),y<0 ? Blocks.DIRT.defaultBlockState() : Blocks.AIR.defaultBlockState());
+                    set(level,before,origin.offset(x,y,z),y < -3 && thinGround
+                            ? Blocks.BEDROCK.defaultBlockState() : y<0 ? Blocks.DIRT.defaultBlockState() : Blocks.AIR.defaultBlockState());
             }
             require(invoke("mayUseProjectSite",level,village.villageId,project.projectId,origin,canonical,
                     invoke("excavationFloor",origin,project)) == VillageMaterializationPolicy.SiteAvailability.AVAILABLE,
-                    name+" rejected a protected, loaded, flat natural site");
+                    name+" rejected a protected, loaded, flat natural site; minY="
+                            +plan.cells().stream().mapToInt(VanillaConstructionPlan.Cell::y).min().orElse(0)
+                            +" "+ConstructionDiagnostics.recent(village.villageId+"/1",level.getGameTime()));
             project.sitePreparationPlan = (SitePreparationPlan)invoke("prepareProjectSitePlan",level,origin,village,project,canonical);
             require(project.sitePreparationPlan != null,name+" could not survey shallow foundation");
             project.sitePreparationComplete = project.sitePreparationPlan.cells().isEmpty();
@@ -95,6 +102,12 @@ final class VanillaConstructionSelfTest {
             var props = new Properties(); props.setProperty(EmeraldConfig.FORCED_DEVELOPMENT_KEY,"true");
             var config = EmeraldConfig.parse(props);
             for(int pulse=1;pulse<=250;pulse++) {
+                if (soilChanges) for (Object cell : canonical) {
+                    BlockPos pos=origin.offset((int)field(cell,"dx"),(int)field(cell,"dy"),(int)field(cell,"dz"));
+                    var expected=(BlockState)field(cell,"state");
+                    if (expected.is(Blocks.DIRT) && level.getBlockState(pos).is(Blocks.DIRT) && level.getBlockState(pos.above()).isAir())
+                        set(level,before,pos,Blocks.GRASS_BLOCK.defaultBlockState());
+                }
                 if (pulse==3 && name.endsWith("_small_house_1")) {
                     economy = new EconomyService(); economy.configureEconomicClock(false,30);
                     economy.configureVillageProsperity(true,true); economy.start(directory,7788,0);
@@ -121,6 +134,8 @@ final class VanillaConstructionSelfTest {
             restart.configureVillageProsperity(true,true); restart.start(directory,7788,0);
             var restored = restart.developmentVillageSnapshot(village.villageId).village().projects.getFirst();
             require(restored.materializedComplete && restored.vanillaPlan.hash().equals(plan.hash()),name+" lost completion or frozen cells");
+            if (thinGround) for(int x=-2;x<side;x++) for(int z=-3;z<side;z++)
+                require(level.getBlockState(origin.offset(x,-4,z)).is(Blocks.BEDROCK),"construction removed bedrock");
             for(var cell:canonical) {
                 BlockPos at = origin.offset((int)field(cell,"dx"),(int)field(cell,"dy"),(int)field(cell,"dz"));
                 require(level.getBlockState(at).canSurvive(level,at),name+" has an unsupported block "+level.getBlockState(at)+" below="+level.getBlockState(at.below())+" above="+level.getBlockState(at.above())+" at "+at.toShortString());

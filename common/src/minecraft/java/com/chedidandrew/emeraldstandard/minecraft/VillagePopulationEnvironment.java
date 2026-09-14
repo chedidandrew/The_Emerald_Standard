@@ -162,11 +162,21 @@ final class VillagePopulationEnvironment {
     }
 
     static void attemptArrival(ServerLevel level,EconomyService economy,EconomyState.VillageRecord village) {
+        attemptArrival(level, economy, village, false);
+    }
+
+    static void attemptArrival(ServerLevel level,EconomyService economy,EconomyState.VillageRecord village,
+            boolean forced) {
         UUID id=village.villageId;
         long now=level.getGameTime();
         if(!VillageMaterializationPolicy.settlerAttemptDue(now,LAST_ARRIVAL.get(id),
-                EmeraldConfig.current().villageSettlerSpawnIntervalTicks()))return;
+                forced ? 20 : EmeraldConfig.current().villageSettlerSpawnIntervalTicks()))return;
         LAST_ARRIVAL.put(id,now);
+        if (forced && economy.prepareForcedSettlerArrival(id)) {
+            var updated = economy.developmentVillageSnapshot(id);
+            if (updated == null) return;
+            village = updated.village();
+        }
         if(village.pendingSettlers<=0) {STATUS.put(id,"No queued arrivals");return;}
         if(village.lifecycle!=VillageProsperityEngine.Lifecycle.ACTIVE
                 && village.lifecycle!=VillageProsperityEngine.Lifecycle.RECOVERING
@@ -179,8 +189,9 @@ final class VillagePopulationEnvironment {
         Set<Long> reserved=new HashSet<>();
         for(var r:village.residents.values()) if(r.status!=VillageProsperityEngine.ResidentStatus.DEAD
                 && r.status!=VillageProsperityEngine.ResidentStatus.EMIGRATED) reserved.add(r.homePos);
+        String dimension = village.dimensionKey;
         List<EconomyState.VillageRecord> districts=economy.villageSnapshots().stream()
-                .map(EconomyService.VillageSnapshot::village).filter(v -> v.dimensionKey.equals(village.dimensionKey)).toList();
+                .map(EconomyService.VillageSnapshot::village).filter(v -> v.dimensionKey.equals(dimension)).toList();
         int intact=0, reachable=0;
         List<Long> candidates=village.housingChunks.values().stream().flatMap(List::stream).distinct().toList();
         int start=Math.floorMod(NEXT_BED.getOrDefault(id,0),Math.max(1,candidates.size()));

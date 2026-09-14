@@ -537,6 +537,7 @@ public final class VillageProsperityEngine {
 
     /** Debug-only: no economic debits or fake residents; each district stays bounded. */
     static boolean forceDevelopment(EconomyState.VillageRecord village, long day) {
+        updateDevelopmentTier(village);
         var pending = village.projects.stream().filter(p -> !p.abstractOnly && !p.materializedComplete
                 && !p.manualRepairRequired && !p.economicComplete).findFirst().orElse(null);
         if (pending != null) {
@@ -764,7 +765,7 @@ public final class VillageProsperityEngine {
         return ProjectType.INN;
     }
 
-    private static void updateDevelopmentTier(EconomyState.VillageRecord village) {
+    static void updateDevelopmentTier(EconomyState.VillageRecord village) {
         int completed = (int) village.projects.stream()
                 .filter(VillageProsperityEngine::isProjectOperational)
                 .count();

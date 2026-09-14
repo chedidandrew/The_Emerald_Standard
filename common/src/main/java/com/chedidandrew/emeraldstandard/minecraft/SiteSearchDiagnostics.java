@@ -8,7 +8,7 @@ public final class SiteSearchDiagnostics {
         UNLOADED_FOOTPRINT, GROUND_OR_TERRAIN, TERRAIN_HEIGHT, BLOCKED_VOLUME,
         BANK_SPACING, ENTRANCE_UNLOADED, ENTRANCE_UNSAFE, TEMPLATE_UNLOADED,
         TEMPLATE_OBSTRUCTION, PROJECT_OVERLAP, RESERVED_SITE_OVERLAP, BANK_OVERLAP,
-        PROTECTED_AREA, PREPARATION_UNSAFE, AVAILABLE
+        PROTECTED_AREA, PREPARATION_UNSAFE, CACHED_REJECTION, AVAILABLE
     }
     public record Trial(long tick, int sweep, int candidate, int total, int rotation,
             int x, int y, int z, Reason reason, String detail) {}

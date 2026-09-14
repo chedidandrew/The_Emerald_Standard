@@ -3009,13 +3009,13 @@ public final class EconomyService {
     /** Upgrade old long site-search waits without touching reservations, failures, progress or pause state. */
     public synchronized boolean boundVillageProjectSiteRetries(UUID villageId, long currentGameTick) {
         var existing = state == null ? null : state.existingVillage(villageId);
-        if (existing == null || existing.projects.stream().noneMatch(p -> ProjectSiteRetry.searching(p)
-                && p.retryAfterGameTick != ProjectSiteRetry.boundedDeadline(currentGameTick, p.retryAfterGameTick))) return false;
+        if (existing == null || existing.projects.stream().noneMatch(p -> ProjectSiteRetry.boundedInMode(p, forcedVillageDevelopment)
+                && p.retryAfterGameTick != ProjectSiteRetry.boundedDeadline(currentGameTick, p.retryAfterGameTick, forcedVillageDevelopment))) return false;
         return mutateVillage(villageId, false, village -> {
             boolean changed = false;
             for (var project : village.projects) {
-                if (!ProjectSiteRetry.searching(project)) continue;
-                long deadline = ProjectSiteRetry.boundedDeadline(currentGameTick, project.retryAfterGameTick);
+                if (!ProjectSiteRetry.boundedInMode(project, forcedVillageDevelopment)) continue;
+                long deadline = ProjectSiteRetry.boundedDeadline(currentGameTick, project.retryAfterGameTick, forcedVillageDevelopment);
                 if (deadline != project.retryAfterGameTick) {
                     project.retryAfterGameTick = deadline; changed = true;
                 }
@@ -3434,7 +3434,9 @@ public final class EconomyService {
             int exponent = Math.min(6, Math.max(0, project.materializationFailures - 1));
             long retryDelay = Math.min(
                     MAX_PROJECT_RETRY_TICKS, INITIAL_PROJECT_RETRY_TICKS << exponent);
-            project.retryAfterGameTick = ProjectSiteRetry.searching(project)
+            project.retryAfterGameTick = forcedVillageDevelopment
+                    ? ProjectSiteRetry.forcedDeadline(currentGameTick, project.materializationFailures)
+                    : ProjectSiteRetry.searching(project)
                     ? ProjectSiteRetry.deadline(currentGameTick, project.materializationFailures)
                     : saturatingAdd(Math.max(Math.max(0L, currentGameTick), project.retryAfterGameTick), retryDelay);
             project.blocked = false;
@@ -4354,6 +4356,12 @@ public final class EconomyService {
                 && z >= (int)(low<<26>>38) && z <= (int)(high<<26>>38);
     }
 
+    /** Queue at most one food-funded invitation; only explicit online acceleration may use this. */
+    public synchronized boolean prepareForcedSettlerArrival(UUID id) {
+        if (!forcedVillageDevelopment || isCatchingUp()) return false;
+        return mutateVillage(id, true, VillageImmigration::queueAcceleratedArrival);
+    }
+
     /** Journal before touching the entity world. A crash cannot replay this arrival. */
     public synchronized boolean claimSettlerArrival(UUID id, UUID residentId, long home, long position) {
         if (state == null || residentId == null || state.villages.values().stream()
@@ -4372,6 +4380,7 @@ public final class EconomyService {
             resident.lastSeenDay=state.economicDay;
             village.residents.put(residentId,resident);
             village.pendingSettlers--; village.population++;
+            VillageProsperityEngine.updateDevelopmentTier(village);
             return true;
         });
     }

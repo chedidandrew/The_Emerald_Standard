@@ -10,7 +10,7 @@ public final class ForcedDevelopmentRegressionTest {
     }
     private static void check(boolean ok,String message) { if(!ok) throw new AssertionError(message); }
     public static void main(String[] args) throws Exception {
-        budgets(); scheduling(); wiring(args.length == 0 ? Path.of(".") : Path.of(args[0])); service(); lots();
+        budgets(); scheduling(); wiring(args.length == 0 ? Path.of(".") : Path.of(args[0])); service(); lots(); arrivals();
         System.out.println("PASS forced development opt-in, economic bypass, persistence, rollback-safe indexing and global budgets");
     }
     private static void budgets() {
@@ -39,6 +39,58 @@ public final class ForcedDevelopmentRegressionTest {
         var frontiers=new java.util.BitSet();
         for(int i=0;i<32;i++) frontiers.set(rotation.next("frontier",32));
         check(frontiers.cardinality()==32,"frontier failed to inspect all eight directions per district");
+    }
+
+    private static void arrivals() throws Exception {
+        Path dir=Files.createTempDirectory("tes-forced-arrivals-");
+        try {
+            UUID id=new UUID(915,44); var state=EconomyState.fresh(15,0,0); var v=state.village(id);
+            v.centerPos=pack(100,64,100); v.dimensionKey="minecraft:overworld"; v.organicTerritory=true;
+            v.population=v.observedPopulation=12; v.housingCapacity=40; v.foodSupply=2000;
+            v.prosperity=v.safety=90; v.lifecycle=VillageProsperityEngine.Lifecycle.ACTIVE;
+            var homes=new ArrayList<Long>(); for(int i=0;i<40;i++)homes.add(pack(100+i,64,100));
+            for (long home : homes) {
+                long chunk=((long)(VillageTerritory.x(home)>>4)&0xffffffffL)|((long)(VillageTerritory.z(home)>>4)<<32);
+                v.housingChunks.computeIfAbsent(chunk, unused -> new ArrayList<>()).add(home);
+            }
+            for(int i=0;i<6;i++) {
+                var p=new EconomyState.VillageProject();p.projectId=i+1;
+                p.type=VillageProsperityEngine.ProjectType.HOUSE;p.economicComplete=p.materializedComplete=true;
+                p.economicProgress=1;p.materializedBlocks=p.totalBlocks=10;v.projects.add(p);
+            }
+            v.projectSerial=6; state.save(dir.resolve("the_emerald_standard.properties"));
+            var service=new EconomyService();service.startWithSeed(dir,15,0,0);
+            check(!service.prepareForcedSettlerArrival(id),"normal mode accelerated immigration");
+            service.configureForcedVillageDevelopment(true);
+            for(int i=12;i<28;i++) {
+                check(service.prepareForcedSettlerArrival(id),"safe housing invitation stalled");
+                check(!service.prepareForcedSettlerArrival(id),"duplicate queued invitation");
+                var before=service.villageSnapshot(id).village();
+                check(before.population==i,"invitation invented a physical resident");
+                check(service.claimSettlerArrival(id,new UUID(916,i),homes.get(i),homes.get(i)),"legitimate arrival rejected");
+            }
+            var grown=service.villageSnapshot(id).village();
+            check(grown.population==28 && grown.developmentTier==5,"actual arrivals failed to unlock tier five");
+            check(Math.abs(grown.foodSupply-(2000-16*6))<.001,"accelerated arrivals created food");
+            check(service.cancelSettlerArrival(id,new UUID(916,27)),"failed insertion could not release claim");
+            var rolledBack=service.villageSnapshot(id).village();
+            check(rolledBack.population==27 && rolledBack.pendingSettlers==1
+                    && !rolledBack.residents.containsKey(new UUID(916,27)),
+                    "failed insertion retained resident or lost invitation");
+            check(service.claimSettlerArrival(id,new UUID(917,27),homes.get(27),homes.get(27)),
+                    "released home could not receive replacement arrival");
+            check(service.villageSnapshot(id).village().developmentTier==5,"replacement arrival lost tier eligibility");
+            var empty=grown.copy();empty.housingChunks.clear();empty.pendingSettlers=0;
+            check(!VillageImmigration.queueAcceleratedArrival(empty),"unsurveyed housing admitted");
+            empty.housingChunks.put(0L,homes);empty.foodSupply=0;
+            check(!VillageImmigration.queueAcceleratedArrival(empty),"starving town admitted");
+            empty.foodSupply=2000;empty.safety=0;empty.observedGuards=0;
+            check(!VillageImmigration.queueAcceleratedArrival(empty),"unsafe town admitted");
+            empty.safety=90;empty.lifecycle=VillageProsperityEngine.Lifecycle.EXTINCT;
+            check(!VillageImmigration.queueAcceleratedArrival(empty),"extinction cooldown bypassed");
+            service.configureForcedVillageDevelopment(false);
+            check(!service.prepareForcedSettlerArrival(id),"disable retained acceleration");
+        } finally {RegressionTestSupport.deleteTree(dir);}
     }
     private static void wiring(Path root) throws Exception {
         for (String loader : List.of("fabric", "neoforge")) {

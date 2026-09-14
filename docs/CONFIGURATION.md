@@ -38,7 +38,7 @@ that local reader preference and cannot write server/world settings.
 | `economic_clock.offline_progression_enabled` | `true` | `true`, `false` | Allows trusted wall-clock time to advance the economy while the world is closed. Game-time progression remains active when disabled. |
 | `economic_clock.max_offline_days` | `25000` | `1`–`25000` | Maximum wall-clock economic days credited from one observed gap. Lower values provide stronger clock-jump protection. |
 | `village_prosperity.simulation_enabled` | `true` | `true`, `false` | Advances abstract settlement economies. |
-| `village_prosperity.forced_instant_development` | `false` | `true`, `false` | Debug-only rapid, continuing construction/expansion without economic gates. Requires an explicit confirmation in the editor, then Apply. Permanent world changes; see below. |
+| `village_prosperity.forced_instant_development` | `false` | `true`, `false` | Optional rapid construction and site surveys. Food-funded arrivals still require verified safe housing. Requires explicit confirmation in the editor, then Apply. Permanent world changes; see below. |
 | `village_prosperity.visual_progression_enabled` | `true` | `true`, `false` | Allows queued structures and settlers to materialize in loaded chunks. |
 | `village_prosperity.market_integration_enabled` | `true` | `true`, `false` | Allows eligible settlement fundamentals to influence market sectors. |
 | `village_prosperity.automatic_recovery_enabled` | `true` | `true`, `false` | Allows eligible non-player-caused extinction to recover after its cooldown. |
@@ -54,7 +54,7 @@ that local reader preference and cannot write server/world settings.
 | `village_prosperity.fast_track_capital_enabled` | `true` | `true`, `false` | Lets player-origin liquid capital atomically cover one valid project's exact input gap and remaining labor outside the routine spending cap. Passive Endowment payout and emergency reserves remain rate-limited. |
 | `village_prosperity.endowment_annual_payout_bps` | `400` | `0`–`10000` | Annual Endowment payout in basis points; `400` is 4 percent. Principal remains protected. |
 | `village_prosperity.minimum_emergency_reserve_percent` | `20` | `0`–`90` | Share of ordinary grant funds reserved for emergencies. |
-| `village_prosperity.max_monthly_treasury_spending` | `24` | `1`–`1000000` | Maximum routine automatic Fund spending per 30 economic days, in emeralds. Fast-track capital is instead bounded by one selected project's exact unmet requirements. |
+| `village_prosperity.max_monthly_treasury_spending` | `240` | `1`–`1000000` | **Village Fund: monthly spending allowance.** Routine automatic Fund spending per 30 economic days, in emeralds (default: 8 per economic day per village). Existing saved values stay unchanged. Fast-track capital is instead bounded by one selected project's exact unmet requirements. |
 
 Integers must be written without decimal points. Boolean values are case-insensitive, but must be `true` or `false`. Blank or omitted known settings use their documented defaults.
 
@@ -81,6 +81,19 @@ world-local configuration—including the former `96` default—until an operato
 `256` is the recommended general-purpose value. Raising it toward `512` only broadens which already-loaded villages may receive physical work; it does not increase view distance or keep distant chunks active. Prefer the default instead of a very large radius unless another server mechanism already keeps the intended chunks loaded and profiling shows sufficient headroom.
 
 ## Mode combinations
+
+Forced instant development overrides ordinary construction pacing and project input gates.
+It can inspect up to eight candidate centers per work turn, stopping between candidates when
+the shared 4 ms construction window is exhausted (1 ms under lag). Searches retry in 1-5
+seconds at 20 TPS and, after exhausting nearer candidates, consider up to four connected
+parcel rings. Negative survey results have bounded temporary caches invalidated by local
+block writes, chunk reloads or expiry. World protections still decide every accepted site.
+No chunks are force-loaded, and one native survey operation can exceed the cooperative window.
+
+Food and housing queues continue in forced mode. Healthy settlements can invite and attempt
+one settler per second per district, subject to fair scheduling, food, spare surveyed beds,
+exclusive home claims, loaded terrain, safe landings and reachable paths. Population and
+tier requirements are not fabricated. Switching off restores ordinary intervals and gates.
 
 | Simulation | Visual progression | Result |
 | --- | --- | --- |

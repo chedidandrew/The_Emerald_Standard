@@ -5,6 +5,18 @@ public final class VillageImmigration {
     public static final int MAX_PENDING = 8, MAX_DAILY_ARRIVALS = 4;
     private VillageImmigration() {}
 
+    /** One funded invitation; physical bed ownership and landing safety are verified at arrival. */
+    public static boolean queueAcceleratedArrival(EconomyState.VillageRecord v) {
+        int capacity = Math.min(VillageProsperityEngine.populationLimit(v),
+                VillageProsperityEngine.effectiveHousingCapacity(v));
+        int surveyed = v.housingChunks.values().stream().mapToInt(java.util.List::size).sum();
+        if (v.pendingSettlers > 0 || v.population >= Math.min(capacity, surveyed)
+                || dailyRate(v, false) <= 0 || v.foodSupply < (v.population + 1) * 10.0) return false;
+        v.pendingSettlers++;
+        v.foodSupply -= 6.0;
+        return true;
+    }
+
     public static double dailyRate(EconomyState.VillageRecord v, boolean peaceful) {
         double safety = VillageGuardSecurity.effectiveSafety(v);
         int committed = v.population + v.pendingSettlers;

@@ -31,6 +31,13 @@ public final class CompactVillageGrowthRegressionTest {
         int selected=-1;
         for(int i=0;i<order.size();i++)if(Arrays.equals(gap,order.get(i))||i>=order.infillCandidates()){selected=i;break;}
         check(selected==order.infillCandidates()-1,"available late infill lost to frontier");
+        var extended=VillageSiteCandidates.order(v,4);
+        check(extended.size()>order.size() && extended.infillCandidates()==order.infillCandidates(),
+                "forced exhaustion must reach more connected land while retaining infill");
+        check(extended.signature()!=order.signature(),"expanded survey keeps stale cursor identity");
+        for(int i=0;i<order.infillCandidates();i++)
+            check(Arrays.equals(order.get(i),extended.get(i)),"forced frontier displaced nearby gaps");
+        check(VillageSiteCandidates.order(v).size()==order.size(),"normal mode inherited forced survey extent");
     }
     private static List<int[]> grow(EconomyState.VillageRecord v,List<EconomyState.VillageRecord> districts,
             int count, boolean obstructEast, boolean mixed) {

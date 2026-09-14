@@ -20,7 +20,7 @@ village_prosperity.donor_recognition_enabled=true
 village_prosperity.fast_track_capital_enabled=true
 village_prosperity.endowment_annual_payout_bps=400
 village_prosperity.minimum_emergency_reserve_percent=20
-village_prosperity.max_monthly_treasury_spending=24
+village_prosperity.max_monthly_treasury_spending=240
 ```
 
 The simulation settings are independent.
@@ -169,7 +169,7 @@ Projects require population, resources, treasury, prosperity, safety, and develo
 The materializer preserves real builds while allowing routine new-site preparation:
 
 - No forced chunk loading
-- Natural villages search up to 128 rotating infill candidates then 128 adjacent frontier candidates per sweep, extending connected territory only on reservation. Legacy sites retain their bounded expanding-ring search. Due projects rotate between pulses.
+- Natural villages search all owned parcels before adjacent frontier candidates, using five deterministic positions per parcel and extending connected territory only on reservation. Forced mode can check up to eight centers while shared time remains, expanding the search to four connected parcel rings after failed sweeps. Cached negative terrain checks expire or invalidate when local chunks change; ordinary mode retains one center per pulse. Legacy sites retain their bounded expanding-ring search. Due projects rotate between pulses.
 - No placement when a required chunk is unloaded. An unreserved frontier is backed off before a later expanded sweep, while an existing reservation is retained and delayed rather than discarded on incomplete world information
 - No replacement of block entities
 - New reservations may clear ordinary torches and recognizable natural tree remnants in a bounded,

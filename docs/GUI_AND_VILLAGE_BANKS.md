@@ -127,7 +127,7 @@ village_prosperity.donor_recognition_enabled=true
 village_prosperity.fast_track_capital_enabled=true
 village_prosperity.endowment_annual_payout_bps=400
 village_prosperity.minimum_emergency_reserve_percent=20
-village_prosperity.max_monthly_treasury_spending=24
+village_prosperity.max_monthly_treasury_spending=240
 ```
 
 The Fund settings independently enable contribution features and recognition, choose the protected endowment's annual payout, reserve a fraction of ordinary grants for emergencies, and cap routine releases into the simulated local economy. With fast-track capital enabled, a dedicated Project Sponsorship, matching-purpose Direct Grant balance, and then General player-origin capital may atomically cover the current project's exact input gap and remaining labor. The full remainder must be available or nothing is debited. Passive Endowment payout and emergency reserves remain in the capped channel; extra funds remain untouched and physical construction stays paced and protected.

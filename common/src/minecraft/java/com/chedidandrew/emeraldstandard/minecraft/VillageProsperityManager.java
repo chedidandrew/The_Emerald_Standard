@@ -78,6 +78,7 @@ public final class VillageProsperityManager {
             "the_emerald_standard_village_development");
     private static final String VILLAGE_TAG_PREFIX = "the_emerald_standard_village_";
     private static final int PROJECT_SITE_CANDIDATES_PER_PULSE = 1;
+    private static final int FORCED_SITE_CANDIDATES_PER_PULSE = 8;
     private static final int PROJECT_TRAIL_INSPECTIONS_PER_PULSE = 16;
     private static final int PROJECT_ENTRANCE_INSPECTIONS_PER_PULSE = 32;
     private static final long PROJECT_TRAIL_PULSE_CADENCE = 2L;
@@ -107,6 +108,7 @@ public final class VillageProsperityManager {
         ConstructionWorkCue.reset();
         com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.reset();
         SiteSearchDiagnostics.reset();
+        SiteSurveyRejections.reset();
         ConstructionWorkStatus.reset();
         VillageConstructionActivity.reset();
         LAST_SETTLER_TICK.clear();
@@ -221,8 +223,10 @@ public final class VillageProsperityManager {
                         config.villageDevelopmentRadius()));
             }
         }
-        // No extra settlers/workers are spawned by the debug accelerator. Existing temporary
-        // worksites clean up through the ordinary ownership-aware presentation ledger.
+        // Keep the bounded physical surveys alive so new homes and food reach the arrival gate.
+        VillageFoodEnvironment.tick(server, economy);
+        VillagePopulationEnvironment.tick(server, economy, config);
+        // Temporary worksites clean up through the ordinary ownership-aware presentation ledger.
         if (tick % 20 == 0) {
             ConstructionWorkStatus.tick(server, economy);
             server.getAllLevels().forEach(l -> VillageConstructionActivity.tick(l,economy,false));
@@ -243,6 +247,9 @@ public final class VillageProsperityManager {
         var snapshot = economy.developmentVillageSnapshot(id);
         if (snapshot == null || !villageWorkAreaAvailable(level,snapshot.village())) return;
         economy.forceVillageDevelopment(id);
+        snapshot = economy.developmentVillageSnapshot(id);
+        // Check invitations before construction can spend this grant's entire time window.
+        VillagePopulationEnvironment.attemptArrival(level, economy, snapshot.village(), true);
         snapshot = economy.developmentVillageSnapshot(id);
         try {
             materializeDevelopment(level,economy,config,tick,new MaterializationBudget(allowance,1),snapshot);
@@ -2733,6 +2740,8 @@ public final class VillageProsperityManager {
                             && placement.role != PlacementRole.ENTRANCE_STAIR)
                     || structuralStateMatches(current, placement.state);
         }
+        // Grass spreads onto supplied dirt and dies back under shade. Both remain sound ground.
+        if (naturalSoilEquivalent(current, placement.state)) return true;
         // Covered yard paths naturally become dirt under ironwork and other solid props.
         // Preserve that supplied footing rather than endlessly rewinding the finished building.
         // This is not a waiver for required floors, missing blocks, or arbitrary replacements.
@@ -2763,6 +2772,11 @@ public final class VillageProsperityManager {
         return placement.role == PlacementRole.ENTRANCE_SUPPORT
                 ? isEntranceApproachGround(state)
                 : isNaturalProjectGround(state);
+    }
+
+    static boolean naturalSoilEquivalent(BlockState current, BlockState expected) {
+        return (current.is(Blocks.DIRT) || current.is(Blocks.GRASS_BLOCK))
+                && (expected.is(Blocks.DIRT) || expected.is(Blocks.GRASS_BLOCK));
     }
 
     private static boolean structuralStateMatches(BlockState current, BlockState expected) {
@@ -2936,7 +2950,8 @@ public final class VillageProsperityManager {
         BlockPos center = BlockPos.of(village.centerPos);
         List<VillageMaterializationPolicy.SiteOffset> offsets;
         if (village.organicTerritory) {
-            var ranked = com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.order(village);
+            var ranked = com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.order(village,
+                    economy.forcedVillageDevelopment() ? 1 + Math.min(3, project.materializationFailures) : 1);
             if (project.siteSearchLayoutKey != ranked.signature()) {
                 if (!economy.beginVillageProjectSiteSearch(village.villageId, project.projectId, ranked.signature()))
                     return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.SEARCH_INCOMPLETE);
@@ -2988,12 +3003,14 @@ public final class VillageProsperityManager {
             planningDialect = biomeDialect(level, center).id();
         }
         int attempts = Math.min(
-                PROJECT_SITE_CANDIDATES_PER_PULSE,
+                economy.forcedVillageDevelopment() ? FORCED_SITE_CANDIDATES_PER_PULSE : PROJECT_SITE_CANDIDATES_PER_PULSE,
                 offsets.size() - testedCandidates);
         ProjectSiteSearch bestSite = null;
         long bestSiteCost = Long.MAX_VALUE;
         int bestRotation = project.designRotation;
         for (int attempt = 0; attempt < attempts; attempt++) {
+            // Finish at most one indivisible candidate after the shared deadline.
+            if (attempt > 0 && economy.forcedVillageDevelopment() && !ForcedDevelopmentRuntime.hasTime()) break;
             if (isManagedProject(project)) {
                 village.architectureDialect = planningDialect;
             }
@@ -3100,8 +3117,14 @@ public final class VillageProsperityManager {
             }
             List<Placement> planned = projectTemplate(
                     level, origin, village, planningProject);
-            VillageMaterializationPolicy.SiteAvailability siteAvailability = mayUseProjectSite(
-                    level, village.villageId, project.projectId, origin, planned, excavationFloor(origin, project));
+            Object templateKey = List.of("template", village.villageId, project.projectId, origin,
+                    project.designRotation, village.developmentTier, planningDialect,
+                    project.vanillaPlan == null ? project.designSignature : project.vanillaPlan.hash());
+            int surveyRadius = Math.max(siteSize.width, siteSize.depth) + 36;
+            var remembered = SiteSurveyRejections.get(level, templateKey, origin.getX(), origin.getZ(), surveyRadius, 100);
+            VillageMaterializationPolicy.SiteAvailability siteAvailability = remembered == null ? mayUseProjectSite(
+                    level, village.villageId, project.projectId, origin, planned, excavationFloor(origin, project))
+                    : VillageMaterializationPolicy.SiteAvailability.UNSAFE;
             if (siteAvailability
                     == VillageMaterializationPolicy.SiteAvailability.INCOMPLETE_UNLOADED) {
                 observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
@@ -3113,8 +3136,12 @@ public final class VillageProsperityManager {
                 continue;
             }
             if (siteAvailability != VillageMaterializationPolicy.SiteAvailability.AVAILABLE) {
+                if (remembered == null) SiteSurveyRejections.remember(level, templateKey,
+                        origin.getX(), origin.getZ(), surveyRadius, siteAvailability);
                 observeSiteCandidate(level, village, project, testedCandidates, offsets.size(), origin,
-                        SiteSearchDiagnostics.Reason.TEMPLATE_OBSTRUCTION, "Template clearance/protection check rejected this origin");
+                        remembered == null ? SiteSearchDiagnostics.Reason.TEMPLATE_OBSTRUCTION : SiteSearchDiagnostics.Reason.CACHED_REJECTION,
+                        remembered == null ? "Template clearance/protection check rejected this origin"
+                                : "Recent rejected template; surrounding chunks unchanged");
                 village.architectureDialect = persistedDialect;
                 checkpointProjectSiteSearch(
                         economy, village, project, testedCandidates, sawUnloadedCandidate);
@@ -3262,6 +3289,9 @@ public final class VillageProsperityManager {
                             existing, placement.state)) continue;
             if (placement.isAccessClearance()) {
                 if (!placementSatisfied(level, origin, target, existing, placement)) {
+                    ConstructionDiagnostics.record(villageId + "/" + projectId, "site_rejection", 0, placements.size(),
+                            level.getGameTime(), "Clearance at " + target.toShortString() + "; present " + existing
+                                    + "; excavation floor " + excavationFloor);
                     return VillageMaterializationPolicy.SiteAvailability.UNSAFE;
                 }
                 continue;
@@ -3295,6 +3325,9 @@ public final class VillageProsperityManager {
                 if (placement.isTrail() || placement.isCosmetic()) {
                     continue;
                 }
+                ConstructionDiagnostics.record(villageId + "/" + projectId, "site_rejection", 0, placements.size(),
+                        level.getGameTime(), "Required cell at " + target.toShortString() + "; present " + existing
+                                + "; expected " + placement.state + "; excavation floor " + excavationFloor);
                 return VillageMaterializationPolicy.SiteAvailability.UNSAFE;
             }
         }
@@ -3322,6 +3355,12 @@ public final class VillageProsperityManager {
             int centerZ,
             StructureSize size,
             List<TerrainFoundationPlan.Column> authoritativeGroundContact) {
+        Object surveyKey = List.of("ground", centerX, centerZ, size, List.copyOf(authoritativeGroundContact));
+        int surveyRadius = Math.max(size.width, size.depth) + 36;
+        Object remembered = SiteSurveyRejections.get(level, surveyKey, centerX, centerZ, surveyRadius, 1200);
+        if (remembered instanceof ProjectSiteSearch rejection) return new ProjectSiteSearch(
+                null, rejection.availability, SiteSearchDiagnostics.Reason.CACHED_REJECTION,
+                "Unchanged surveyed terrain: " + rejection.detail, rejection.checked);
         // This is deliberately the required building/approach envelope. Blueprint V2 side and
         // rear dressing may extend farther, but reserving only sites with an entirely empty yard
         // would make harmless player landscaping prevent essential village construction. Those
@@ -3368,19 +3407,21 @@ public final class VillageProsperityManager {
         for (TerrainFoundationPlan.Column column : terrainColumns) {
             Integer surface = survey.surface(column.x(), column.z());
             if (surface == null) {
-                return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
+                return SiteSurveyRejections.remember(level, surveyKey, centerX, centerZ, surveyRadius,
+                        new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
                         SiteSearchDiagnostics.Reason.GROUND_OR_TERRAIN,
                         "Column has no admissible dry natural ground (water, protected/crafted ground or unremovable vegetation may reject it)",
-                        new BlockPos(column.x(), 0, column.z()));
+                        new BlockPos(column.x(), 0, column.z())));
             }
             surfaces.add(surface);
         }
         var floor = TerrainFoundationPlan.levelledFloor(surfaces);
         if (floor.isEmpty()) {
-            return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
+            return SiteSurveyRejections.remember(level, surveyKey, centerX, centerZ, surveyRadius,
+                    new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
                     SiteSearchDiagnostics.Reason.TERRAIN_HEIGHT,
                     "Ground height range "+java.util.Collections.min(surfaces)+".."+java.util.Collections.max(surfaces)+" exceeds cut/fill limits",
-                    new BlockPos(centerX, 0, centerZ));
+                    new BlockPos(centerX, 0, centerZ)));
         }
         // Existing support geometry stays frozen; bounded cutting adds hillside tolerance without
         // changing any saved template hash or introducing giant stilts.
@@ -3392,9 +3433,10 @@ public final class VillageProsperityManager {
             for (int y = 0; y <= size.height; y++) {
                 BlockPos target = new BlockPos(column.x(), floor.getAsInt() + y, column.z());
                 if (!survey.available(target, floor.getAsInt())) {
-                    return new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
+                    return SiteSurveyRejections.remember(level, surveyKey, centerX, centerZ, surveyRadius,
+                            new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
                             SiteSearchDiagnostics.Reason.BLOCKED_VOLUME,
-                            "Required volume cannot safely clear "+level.getBlockState(target), target);
+                            "Required volume cannot safely clear "+level.getBlockState(target), target));
                 }
             }
         }

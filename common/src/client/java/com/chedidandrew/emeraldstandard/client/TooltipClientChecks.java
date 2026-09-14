@@ -31,6 +31,7 @@ final class TooltipClientChecks extends Screen {
         int row=index%(int)get(settings,"rows"), rowY=(int)get(settings,"y")+93+row*27;
         AbstractWidget input=settings.children().stream().filter(c->c instanceof EditBox)
                 .map(c->(AbstractWidget)c).filter(c->c.getY()==rowY).findFirst().orElseThrow();
+        check(((EditBox) input).getValue().equals("240"), "Settings field must display the new default");
         hoverX=mode.equals("label")?(int)get(settings,"x")+14:input.getX()+input.getWidth()-3;
         hoverY=input.getY()+7;
         if(mode.equals("focus")) {
@@ -67,6 +68,11 @@ final class TooltipClientChecks extends Screen {
     void verifyObserved() {check(observations>0,"No actual "+mode+" tooltip was rendered");}
     static void verify(Minecraft game) {
         Font font=game.font;
+        check(EmeraldSettingsScreen.label(KEY).equals("Village Fund: monthly spending allowance"),
+                "Spending setting must use the requested player-facing name");
+        check(SettingsHelp.description(KEY).contains("8 emeralds per economic day")
+                        && SettingsHelp.description(KEY).endsWith("Default: 240."),
+                "Spending tooltip must explain the monthly default and daily allowance");
         int count=0;
         for(int width:new int[]{120,180,320,640,1280}) {
             for(String key:EmeraldConfig.defaults().values().keySet()) {

@@ -2,10 +2,10 @@ package com.chedidandrew.emeraldstandard.core;
 
 import java.util.*;
 
-/** Cheap, bounded world-free ranking. Native footprint checks still admit one site per pulse. */
+/** Cheap, bounded world-free ranking. Native footprint checks use their own work allowance. */
 public final class VillageSiteCandidates {
     public static final int SITES_PER_PARCEL = 5;
-    // Every owned parcel plus at most four adjacent frontier parcels, each with five micro-sites.
+    // Hard cap shared by ordinary and wider forced searches; owned parcels always fit first.
     public static final int MAX_CANDIDATES = VillageTerritory.MAX_CELLS * 25;
     private static final int CACHE_LIMIT = 4;
     private static final Map<UUID, Order> CACHE = new LinkedHashMap<>(8, .75f, true);
@@ -26,6 +26,11 @@ public final class VillageSiteCandidates {
     }
 
     public static synchronized Order order(EconomyState.VillageRecord village) {
+        return order(village, 1);
+    }
+
+    public static synchronized Order order(EconomyState.VillageRecord village, int frontierDepth) {
+        frontierDepth = Math.max(1, Math.min(4, frontierDepth));
         Set<Long> anchors = new TreeSet<>();
         anchors.add(VillageTerritory.parcel(village.centerPos));
         if (village.bankAnchorPos != 0) anchors.add(VillageTerritory.parcel(village.bankAnchorPos));
@@ -38,8 +43,9 @@ public final class VillageSiteCandidates {
         }
         Order cached = CACHE.get(village.villageId);
         if (cached != null && cached.center == village.centerPos
+                && cached.frontierDepth == frontierDepth
                 && cached.held.equals(village.territoryCells) && cached.anchors.equals(anchors)) return cached;
-        Order result = new Order(village, anchors);
+        Order result = new Order(village, anchors, frontierDepth);
         CACHE.put(village.villageId, result);
         if (CACHE.size() > CACHE_LIMIT) CACHE.remove(CACHE.keySet().iterator().next());
         return result;
@@ -51,15 +57,22 @@ public final class VillageSiteCandidates {
         private final Set<Long> held, anchors;
         private final long[] parcels;
         private final int insideCount;
-        private Order(EconomyState.VillageRecord village, Set<Long> anchors) {
+        private final int frontierDepth;
+        private Order(EconomyState.VillageRecord village, Set<Long> anchors, int frontierDepth) {
             if (village.territoryCells.size() > VillageTerritory.MAX_CELLS)
                 throw new IllegalArgumentException("Territory exceeds saved parcel limit");
             this.center = village.centerPos;
             this.held = new TreeSet<>(village.territoryCells);
             this.anchors = Set.copyOf(anchors);
+            this.frontierDepth = frontierDepth;
             Set<Long> frontier = new HashSet<>();
-            for (long cell : held) for (long next : VillageTerritory.neighbors(cell))
-                if (!held.contains(next)) frontier.add(next);
+            Set<Long> edge = held;
+            for (int depth = 0; depth < frontierDepth; depth++) {
+                Set<Long> nextEdge = new HashSet<>();
+                for (long cell : edge) for (long next : VillageTerritory.neighbors(cell))
+                    if (!held.contains(next) && frontier.add(next)) nextEdge.add(next);
+                edge = nextEdge;
+            }
             long seed = mix(village.villageId.getMostSignificantBits() ^ village.villageId.getLeastSignificantBits());
             List<Rank> inside = new ArrayList<>(), outside = new ArrayList<>();
             for (long cell : held) inside.add(rank(cell, seed));
@@ -67,6 +80,8 @@ public final class VillageSiteCandidates {
             Comparator<Rank> byCost = Comparator.comparingLong(Rank::cost)
                     .thenComparingLong(Rank::tie).thenComparingLong(Rank::cell);
             inside.sort(byCost); outside.sort(byCost);
+            int outsideLimit = MAX_CANDIDATES / SITES_PER_PARCEL - inside.size();
+            if (outside.size() > outsideLimit) outside.subList(outsideLimit, outside.size()).clear();
             insideCount = inside.size() * SITES_PER_PARCEL;
             parcels = new long[inside.size() + outside.size()];
             int index = 0;

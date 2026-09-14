@@ -10,6 +10,10 @@ public final class ProjectSiteRetryRegressionTest {
         require(ProjectSiteRetry.deadline(100,2)==500, "second retry is twenty seconds");
         require(ProjectSiteRetry.deadline(100,Integer.MAX_VALUE)==700, "retry caps at thirty seconds");
         require(ProjectSiteRetry.deadline(Long.MAX_VALUE-1,3)==Long.MAX_VALUE, "no overflow");
+        require(ProjectSiteRetry.forcedDeadline(100,1)==120, "forced first retry is one second");
+        require(ProjectSiteRetry.forcedDeadline(100,Integer.MAX_VALUE)==200, "forced retries cap at five seconds");
+        require(ProjectSiteRetry.forcedDeadline(Long.MAX_VALUE-1,2)==Long.MAX_VALUE, "forced no overflow");
+        require(ProjectSiteRetry.boundedDeadline(200,24000,true)==300, "enabling forced mode bounds old waits");
         require(ProjectSiteRetry.boundedDeadline(200,700)==700, "polling does not slide a bounded deadline");
         require(ProjectSiteRetry.boundedDeadline(10,24000)==610, "legacy/future deadline is bounded");
         Path dir=Files.createTempDirectory("tes-site-retry-");
@@ -51,6 +55,16 @@ public final class ProjectSiteRetryRegressionTest {
                     && retry.materializationFailures==7 && retry.originPos==0 && retry.constructionStarted,"short delay preserves old unplaced job authority");
             require(reload.deferVillageProjectMaterialization(id,1,700,true)
                     && reload.villageSnapshot(id).village().projects.getFirst().retryAfterGameTick==1300,"same-tick deferrals cannot accumulate a long delay");
+            reload.configureForcedVillageDevelopment(true);
+            require(reload.boundVillageProjectSiteRetries(id,700)
+                    && reload.villageSnapshot(id).village().projects.getFirst().retryAfterGameTick==800,
+                    "mode toggle cannot retain a normal search delay");
+            require(reload.deferVillageProjectMaterialization(id,1,800,true)
+                    && reload.villageSnapshot(id).village().projects.getFirst().retryAfterGameTick==900,
+                    "forced service retry is bounded");
+            require(reload.deferVillageProjectMaterialization(id,1,800,true)
+                    && reload.villageSnapshot(id).village().projects.getFirst().retryAfterGameTick==900,
+                    "forced retries never stack");
         } finally {RegressionTestSupport.deleteTree(dir);}
         SiteSearchDiagnostics.reset();
         require(Boolean.FALSE.equals(SiteSearchDiagnostics.report("missing").get("observed")),"missing evidence is explicitly unknown");

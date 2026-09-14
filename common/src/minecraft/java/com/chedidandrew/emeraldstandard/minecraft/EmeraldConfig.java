@@ -28,6 +28,7 @@ public final class EmeraldConfig {
     public static final String BRIDGE_DEPTH = "village_prosperity.bridge_max_foundation_depth";
     public static final String BRIDGE_JOBS = "village_prosperity.bridge_concurrent_jobs";
     static final int DEFAULT_VILLAGE_DEVELOPMENT_RADIUS = 256;
+    private static final int DEFAULT_FUND_MONTHLY_ALLOWANCE = 240;
     static final int MIN_VILLAGE_DEVELOPMENT_RADIUS = 48;
     static final int MAX_VILLAGE_DEVELOPMENT_RADIUS = 512;
     private static final String FILE_NAME = "the_emerald_standard-config.properties";
@@ -186,7 +187,8 @@ boolean guardVillagersEnabled, int guardSafetyPerGuard, int guardMaximumSafetyBo
                 bool(properties, "village_prosperity.fast_track_capital_enabled", true),
                 bounded(properties, "village_prosperity.endowment_annual_payout_bps", 400, 0, 10_000),
                 bounded(properties, "village_prosperity.minimum_emergency_reserve_percent", 20, 0, 90),
-                bounded(properties, "village_prosperity.max_monthly_treasury_spending", 24, 1, 1_000_000),
+                bounded(properties, "village_prosperity.max_monthly_treasury_spending",
+                        DEFAULT_FUND_MONTHLY_ALLOWANCE, 1, 1_000_000),
                 bool(properties, GUARDS_ENABLED_KEY, true),
                 bounded(properties, GUARDS_POINTS_KEY, 2, 0, 10),
 bounded(properties, GUARDS_CAP_KEY, 12, 0, 30),
@@ -377,7 +379,8 @@ Map<String, String> values = new LinkedHashMap<>();
         return new EmeraldConfig(false, true, 200, 256, 5, 5, true, true, true,
                 (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS, true, true, true, true, 400,
                 DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, 2, 600,
-                true, true, true, true, true, true, 400, 20, 24, true, 2, 12, true, false, true, false,
+                true, true, true, true, true, true, 400, 20, DEFAULT_FUND_MONTHLY_ALLOWANCE,
+                true, 2, 12, true, false, true, false,
                 new BridgeSettings(true,48,12,2));
     }
     private static void writeDefaults(Path path) throws IOException {

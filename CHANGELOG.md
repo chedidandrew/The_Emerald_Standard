@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.47
+## Unreleased: 0.4.0-beta.48
 
+- Raise the default Village Fund monthly spending allowance to 240 emeralds (8 per economic day) and clarify its settings label/help. Explicit saved world values remain unchanged; update both handbook forms and configuration examples.
+- Fix endless finishing repairs when supplied dirt becomes grass or shaded grass becomes dirt.
+- Admit shallow vanilla foundations above superflat bedrock without making bedrock removable; reproduce the fisher-cottage rejection in native Minecraft.
+- Forced development surveys up to eight candidate centers while shared server time remains, remembers rejected unchanged terrain, retries within 1-5 seconds and explores farther connected parcels after exhausted searches.
+- Keep food/housing surveys active in forced mode and accelerate food-funded settler invitations into verified safe homes. Actual arrivals refresh tier eligibility; normal pace returns when the mode is disabled.
+- Update both handbook forms and add native thin-ground, soil-change, cached-rejection and growth regression checks.
+
+## Previous unreleased candidate: 0.4.0-beta.47
 - Replace district-map marker pages with one continuous geographic view. Panning and zooming request saved sites and borders together; old-world outline complexity no longer pushes buildings onto a hidden page.
 - Focus opens the current district; Overview frames the wider region. Wide/dense views show counted district summaries, with geographic grouping for very large regions, and zooming reveals individual sites.
 - Coalesce and validate camera requests, retain atomic map updates and bounded network/render payloads, cache a lightweight shared map index, and avoid chunk loading or saved-world mutations.

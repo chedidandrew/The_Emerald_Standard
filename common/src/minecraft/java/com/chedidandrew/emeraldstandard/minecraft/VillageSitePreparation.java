@@ -115,7 +115,8 @@ final class VillageSitePreparation {
                     if (!loaded(nearby)) return false;
                     BlockState s = level.getBlockState(nearby);
                     if (s.hasBlockEntity()) return false;
-                    if (s.isAir() || vegetation(s) || naturalLog(s) || dryNaturalGround(s) || s.is(Blocks.DIRT_PATH)
+                    // Bedrock below a shallow site is natural backing, never a removable cell.
+                    if (s.isAir() || vegetation(s) || naturalLog(s) || dryNaturalGround(s) || s.is(Blocks.BEDROCK) || s.is(Blocks.DIRT_PATH)
                             || !s.getFluidState().isEmpty()) continue;
                     return false;
                 }
@@ -166,7 +167,9 @@ final class VillageSitePreparation {
                 if (!loaded(pos.relative(face)) || !level.getFluidState(pos.relative(face)).isEmpty()) return false;
             // Do not excavate suspended stone floors/bridges or tunnel below a natural cavity.
             for (int y = pos.getY(); y >= floorY - 1; y--)
-                if (!dryNaturalGround(level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ())))) return false;
+                if (!dryNaturalGround(level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ())))
+                        && !(y == floorY - 1
+                            && level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ())).is(Blocks.BEDROCK))) return false;
             return true;
         }
 
