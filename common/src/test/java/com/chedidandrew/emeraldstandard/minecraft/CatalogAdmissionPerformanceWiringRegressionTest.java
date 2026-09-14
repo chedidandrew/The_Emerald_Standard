@@ -33,12 +33,16 @@ public final class CatalogAdmissionPerformanceWiringRegressionTest {
         String descriptor = methodBody(
                 source,
                 "private static CatalogValidationResult validateCatalogDescriptor(");
-        require(catalog.contains("activeDescriptors.parallelStream()")
+        String results = methodBody(source, "private static void validateCatalogResults(");
+        String live = methodBody(source, "static List<Runnable> catalogValidationSteps()");
+        require(catalog.contains("activeCatalogDescriptors().parallelStream()")
                         && catalog.contains(
                                 ".map(AuthoredVillageStructures::validateCatalogDescriptor)")
-                        && catalog.contains("List<CatalogValidationResult> results")
-                        && catalog.contains("for (CatalogValidationResult result : results)"),
-                "Authored masters are no longer checked concurrently and consumed deterministically");
+                        && results.contains("for (CatalogValidationResult result : results)")
+                        && live.contains("for (var descriptor : activeCatalogDescriptors())")
+                        && live.contains("results.add(validateCatalogDescriptor(descriptor))")
+                        && live.contains("steps.add(() -> validateCatalogResults(results))"),
+                "Headless concurrency and bounded live steps must share deterministic complete admission");
         for (String dimension : new String[] {
                 "descriptor.dressingIds()",
                 "VillageArchitecture.BiomeDialect.values()",

@@ -11425,6 +11425,22 @@ final class AuthoredVillageStructures {
     }
 
     static void validateCatalog() {
+        validateCatalogResults(activeCatalogDescriptors().parallelStream()
+                .map(AuthoredVillageStructures::validateCatalogDescriptor).toList());
+    }
+
+    /** Live CI yields between masters; no async world work or weaker palette coverage. */
+    static List<Runnable> catalogValidationSteps() {
+        List<CatalogValidationResult> results = new ArrayList<>();
+        List<Runnable> steps = new ArrayList<>();
+        for (var descriptor : activeCatalogDescriptors()) {
+            steps.add(() -> results.add(validateCatalogDescriptor(descriptor)));
+        }
+        steps.add(() -> validateCatalogResults(results));
+        return List.copyOf(steps);
+    }
+
+    private static List<VillageArchitecture.BlueprintDescriptor> activeCatalogDescriptors() {
         List<VillageArchitecture.BlueprintDescriptor> activeDescriptors = new ArrayList<>();
         for (VillageProsperityEngine.ProjectType type
                 : VillageProsperityEngine.ProjectType.values()) {
@@ -11436,14 +11452,10 @@ final class AuthoredVillageStructures {
             }
         }
 
-        // This smoke-only gate intentionally exercises the entire palette/dressing matrix. Each
-        // descriptor is self-contained and all Minecraft block states are immutable, so validate
-        // independent masters concurrently and then consume results in stable catalog order. A
-        // broken master still produces the same deterministic aggregate admission failure without
-        // monopolizing the server thread long enough to trip its watchdog.
-        List<CatalogValidationResult> results = activeDescriptors.parallelStream()
-                .map(AuthoredVillageStructures::validateCatalogDescriptor)
-                .toList();
+        return List.copyOf(activeDescriptors);
+    }
+
+    private static void validateCatalogResults(List<CatalogValidationResult> results) {
         List<StructuralSnapshot> activeStructuralSnapshots = new ArrayList<>();
         List<String> catalogFailures = new ArrayList<>();
         for (CatalogValidationResult result : results) {

@@ -5187,7 +5187,20 @@ public final class VillageProsperityManager {
 
     /** Validates every authored template during the live server smoke test. */
     static void validateProjectTemplates(ServerLevel level) {
-        long validationStarted = System.nanoTime();
+        for (Runnable step : projectTemplateValidationSteps(level)) step.run();
+    }
+
+    static List<Runnable> projectTemplateValidationSteps(ServerLevel level) {
+        List<Runnable> steps = new ArrayList<>();
+        steps.add(() -> validateLegacyProjectTemplates(level));
+        steps.addAll(AuthoredVillageStructures.catalogValidationSteps());
+        steps.add(VillageProsperityManager::validateModularProjectTemplates);
+        steps.add(VillageProsperityManager::validateModularEntranceApproachRecipes);
+        steps.add(() -> LOGGER.info("Project-template admission passed: complete legacy, authored, modular and approach checks"));
+        return List.copyOf(steps);
+    }
+
+    private static void validateLegacyProjectTemplates(ServerLevel level) {
         BlockPos origin = new BlockPos(0, 64, 0);
         for (VillageProsperityEngine.ProjectType type
                 : VillageProsperityEngine.ProjectType.values()) {
@@ -5273,24 +5286,6 @@ public final class VillageProsperityManager {
             }
             validateProgressionLayers(type, palette(level, origin), placements);
         }
-        long legacyFinished = System.nanoTime();
-        AuthoredVillageStructures.validateCatalog();
-        long authoredFinished = System.nanoTime();
-        validateModularProjectTemplates();
-        long modularFinished = System.nanoTime();
-        validateModularEntranceApproachRecipes();
-        long approachesFinished = System.nanoTime();
-        LOGGER.info(
-                "Project-template admission passed in {} ms (legacy={} ms, authored={} ms, modular={} ms, approaches={} ms)",
-                elapsedMillis(validationStarted, approachesFinished),
-                elapsedMillis(validationStarted, legacyFinished),
-                elapsedMillis(legacyFinished, authoredFinished),
-                elapsedMillis(authoredFinished, modularFinished),
-                elapsedMillis(modularFinished, approachesFinished));
-    }
-
-    private static long elapsedMillis(long started, long finished) {
-        return Math.max(0L, (finished - started) / 1_000_000L);
     }
 
     /** Exercises every material family, project footprint, rotation, and supported stair depth. */

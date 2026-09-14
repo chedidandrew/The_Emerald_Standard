@@ -41,8 +41,26 @@ public final class SmokeServerHarnessRegressionTest {
                 "Smoke cleanup must retain exact unique-marker process ownership");
         String fixtures=Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/BankerIntegrationSelfTest.java"));
         require(fixtures.contains("sequence.checks.removeFirst().run()") && fixtures.contains("sequence.running")
+                        && fixtures.contains("net.minecraft.util.Util.getNanos() - server.getNextTickTime() > 250_000_000L")
                         && fixtures.contains("if (sequence.checks.isEmpty())") && fixtures.contains("SEQUENCES.remove(server)"),
-                "Native suites must yield between fixtures, resist nested ticks and clear their lifecycle state");
+                "Native suites must yield for real clock catch-up, resist nested ticks and clear their lifecycle state");
+        String catalog = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/AuthoredVillageStructures.java"));
+        String projects = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java"));
+        require(fixtures.contains("checks.addAll(VillageProsperityManager.projectTemplateValidationSteps(level))")
+                        && catalog.contains("steps.add(() -> results.add(validateCatalogDescriptor(descriptor)))")
+                        && catalog.contains("steps.add(() -> validateCatalogResults(results))")
+                        && catalog.contains("activeStructuralSnapshots.size() != 52")
+                        && catalog.contains(".requireDistinct()")
+                        && projects.contains("steps.addAll(AuthoredVillageStructures.catalogValidationSteps())")
+                        && projects.contains("steps.add(VillageProsperityManager::validateModularProjectTemplates)")
+                        && projects.contains("steps.add(VillageProsperityManager::validateModularEntranceApproachRecipes)"),
+                "Live catalog admission must yield between all 52 masters and retain aggregate and legacy checks");
+        String client = Files.readString(root.resolve("common/src/client/java/com/chedidandrew/emeraldstandard/client/ClientSmokeSupport.java"));
+        require(client.contains("Math.max(1L, deadline - System.nanoTime())")
+                        && client.contains("TimeUnit.SECONDS.toNanos(90)")
+                        && client.contains("return onClient(minecraft, work, TimeUnit.SECONDS.toNanos(15))")
+                        && client.contains("return result.get(timeoutNanos, TimeUnit.NANOSECONDS)"),
+                "Client startup uses one bounded readiness deadline, without extending ordinary UI action deadlines");
         System.out.println("PASS bounded isolated dedicated-server smoke harness regression");
     }
 

@@ -112,6 +112,23 @@ Do not call every historical obstruction fixed solely because this suite passes.
 
 ## Handbook review
 
+### Final CI follow-up
+
+The first complete candidate run exposed two additional harness limitations: the Fabric
+render thread was still creating its graphics backend when the helper's 15-second per-action
+timer expired, and NeoForge's final fixture still ran the entire authored catalog in one tick.
+Startup now uses its existing 90-second overall readiness deadline (ordinary UI actions stay
+at 15 seconds). Live catalog validation yields between each of the 52 masters, then performs
+the same aggregate distinctiveness, modular and entrance checks. No validation combination
+or failure gate was removed, and the server watchdog remains enabled. These internal-only
+follow-ups do not change player behavior; both handbook forms were reviewed and remain accurate.
+
+A local reproduction also showed why merely returning between fixtures was insufficient:
+Minecraft's watchdog measures against the scheduled next-tick clock. Repeated multi-second
+fixtures accumulate schedule debt even when each callback returns. Admission now waits for
+ordinary catch-up ticks to retire that debt; it does not rewrite Minecraft's clock or suppress
+the watchdog. The captured native stack and advancing fixture log established this distinction.
+
 Reviewed both guided and compact/lectern forms. Updated profiling instructions, measurement
 limitations and privacy guidance, and explained varied dispatches/brief reports. The existing
 safe-home, construction-budget and protection explanations remain accurate. Market risk and

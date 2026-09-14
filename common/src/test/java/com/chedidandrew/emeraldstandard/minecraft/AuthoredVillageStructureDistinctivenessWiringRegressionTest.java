@@ -34,7 +34,12 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
         require(Files.isRegularFile(sourceFile),
                 "Missing authored village structures source: " + sourceFile);
         String source = Files.readString(sourceFile);
-        String catalog = methodBody(source, "static void validateCatalog()");
+        String catalog = methodBody(source, "private static void validateCatalogResults(")
+                + methodBody(source, "private static List<VillageArchitecture.BlueprintDescriptor> activeCatalogDescriptors()");
+        require(methodBody(source, "static void validateCatalog()").contains("validateCatalogResults(activeCatalogDescriptors()")
+                        && methodBody(source, "static List<Runnable> catalogValidationSteps()")
+                                .contains("steps.add(() -> validateCatalogResults(results))"),
+                "Both headless and yielding live admission must invoke the aggregate catalog gate");
         String descriptorValidation = methodBody(
                 source,
                 "private static CatalogValidationResult validateCatalogDescriptor(");

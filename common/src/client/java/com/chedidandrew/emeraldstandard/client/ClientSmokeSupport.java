@@ -36,7 +36,8 @@ public final class ClientSmokeSupport {
                 while (System.nanoTime() < deadline) {
                     ready = onClient(minecraft, () -> minecraft.gui.overlay() == null
                             && !Component.translatable(HandbookChapters.PREFIX + "first_steps.title")
-                                    .getString().equals(HandbookChapters.PREFIX + "first_steps.title"));
+                                    .getString().equals(HandbookChapters.PREFIX + "first_steps.title"),
+                            Math.max(1L, deadline - System.nanoTime()));
                     if (ready) break;
                     Thread.sleep(200);
                 }
@@ -516,11 +517,17 @@ public final class ClientSmokeSupport {
     }
 
     private static <T> T onClient(Minecraft minecraft, Supplier<T> work) throws Exception {
+        return onClient(minecraft, work, TimeUnit.SECONDS.toNanos(15));
+    }
+
+    private static <T> T onClient(Minecraft minecraft, Supplier<T> work, long timeoutNanos) throws Exception {
         CompletableFuture<T> result = new CompletableFuture<>();
         minecraft.execute(() -> {
             try { result.complete(work.get()); } catch (Throwable failure) { result.completeExceptionally(failure); }
         });
-        return result.get(15, TimeUnit.SECONDS);
+        // Initial graphics/resource loading may not drain the render queue for 15 seconds.
+        // Use the existing overall startup deadline there; ordinary UI actions stay at 15s.
+        return result.get(timeoutNanos, TimeUnit.NANOSECONDS);
     }
     /** Xvfb/unfocused windows do not reliably dispatch glfwSetCursorPos as an input event.
      * Exercise the installed Minecraft callback too; do not mutate screen hover/frame state. */

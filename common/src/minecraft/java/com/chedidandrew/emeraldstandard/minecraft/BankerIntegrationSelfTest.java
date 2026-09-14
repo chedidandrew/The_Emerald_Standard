@@ -81,6 +81,10 @@ public final class BankerIntegrationSelfTest {
     public static void tick(net.minecraft.server.MinecraftServer server) {
         var sequence = SEQUENCES.get(server);
         if (sequence == null || sequence.running) return; // debug boundary fixture deliberately nests a tick
+        // Minecraft's watchdog measures lag against its scheduled next tick, not just the
+        // current callback's duration. Let ordinary empty/catch-up ticks retire a fixture's
+        // schedule debt before admitting another; never rewrite the clock or disable its guard.
+        if (net.minecraft.util.Util.getNanos() - server.getNextTickTime() > 250_000_000L) return;
         sequence.running = true;
         long started = System.nanoTime();
         try {
@@ -175,7 +179,7 @@ public final class BankerIntegrationSelfTest {
     }
 
     private static List<Runnable> fullChecks(ServerLevel level) {
-        return List.of(
+        var checks = new java.util.ArrayList<Runnable>(List.of(
                 () -> StabilizationSelfTest.verifyCore(level),
                 () -> DebugPerformanceSelfTest.verify(level),
                 () -> NaturalVillageIdentitySelfTest.run(level),
@@ -206,7 +210,10 @@ public final class BankerIntegrationSelfTest {
                 () -> BankerMenuPacketCodecSelfTest.verifyExchangeResourceVisualMapping(),
                 () -> verifyInventoryPersistenceGuard(),
                 () -> UnifiedFundsSelfTest.run(level),
-                () -> verifyBanker(level));
+                () -> verifyBanker(level),
+                () -> VillageBankManager.validateBankTemplate(level)));
+        checks.addAll(VillageProsperityManager.projectTemplateValidationSteps(level));
+        return List.copyOf(checks);
     }
 
     private static void verifyBanker(ServerLevel level) {
@@ -417,8 +424,6 @@ public final class BankerIntegrationSelfTest {
                         Blocks.LANTERN.defaultBlockState()),
                 "Rollback ownership accepted a different replacement block");
         verifyProtectionGuards(level);
-        VillageBankManager.validateBankTemplate(level);
-        VillageProsperityManager.validateProjectTemplates(level);
 
         Villager named = create(level);
         named.setCustomName(Component.literal("Keep Me"));

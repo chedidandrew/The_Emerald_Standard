@@ -329,7 +329,8 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
 
     private static void verifyCatalogAndGalleryUseProduction(
             String authored, String prosperity, String gallery) {
-        String catalog = methodBody(authored, "static void validateCatalog()");
+        String catalog = methodBody(authored, "private static void validateCatalogResults(")
+                + methodBody(authored, "private static List<VillageArchitecture.BlueprintDescriptor> activeCatalogDescriptors()");
         String descriptorValidation = methodBody(
                 authored,
                 "private static CatalogValidationResult validateCatalogDescriptor(");
