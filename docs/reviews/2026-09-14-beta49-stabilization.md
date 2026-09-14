@@ -130,6 +130,10 @@ ordinary catch-up ticks to retire that debt; it does not rewrite Minecraft's clo
 the watchdog. The captured native stack and advancing fixture log established this distinction.
 The disposable playerless test world also explicitly disables empty-server auto-pause so long
 suites continue ticking. No real server configuration is changed.
+The native creative-egg fixture now keeps its dispenser outlet in the same chunk as its
+verified manual spawns: loading an adjacent chunk synchronously does not guarantee that its
+entity section is immediately visible to queries. Egg consumption, identity, persistence,
+spawner refusal and loot assertions remain unchanged.
 
 Reviewed both guided and compact/lectern forms. Updated profiling instructions, measurement
 limitations and privacy guidance, and explained varied dispatches/brief reports. The existing
