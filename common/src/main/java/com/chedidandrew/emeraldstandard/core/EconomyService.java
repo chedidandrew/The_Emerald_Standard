@@ -1897,8 +1897,19 @@ public final class EconomyService {
             return true;
         });
     }
-    public synchronized VillageDistrictMap.Page districtMap(UUID villageId, int page) {
-        return VillageDistrictMap.collect(state, canonicalVillageId(villageId), page);
+    private VillageDistrictMap.Index districtMapIndex;
+    private java.lang.ref.WeakReference<EconomyState> districtMapState = new java.lang.ref.WeakReference<>(null);
+    private long districtMapIndexTick = Long.MIN_VALUE;
+
+    public synchronized VillageDistrictMap.Snapshot districtMap(UUID villageId, VillageDistrictMap.View view, long tick) {
+        // Share a lightweight index between viewers; pan/zoom requests never copy the economy.
+        if (districtMapIndex == null || districtMapState.get() != state || tick < districtMapIndexTick
+                || tick - districtMapIndexTick >= 100) {
+            districtMapIndex = new VillageDistrictMap.Index(state);
+            districtMapState = new java.lang.ref.WeakReference<>(state);
+            districtMapIndexTick = tick;
+        }
+        return districtMapIndex.collect(canonicalVillageId(villageId), view);
     }
 
     public synchronized ExpansionStatus expansionStatus(UUID villageId) {

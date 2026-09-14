@@ -271,6 +271,11 @@ public final class ClientSmokeSupport {
                         });
                         Thread.sleep(2500);
                         capture(minecraft, "district-map-boundary-scale-" + guiScale + ".png");
+                        onClient(minecraft, () -> {
+                            minecraft.gui.setScreen(BankerClientChecks.districtMapFixture(3)); return null;
+                        });
+                        Thread.sleep(2500);
+                        capture(minecraft, "district-map-summary-scale-" + guiScale + ".png");
                     }
                     onClient(minecraft, () -> {
                         try { ReaderClientChecks.verifyLongForm(minecraft); }

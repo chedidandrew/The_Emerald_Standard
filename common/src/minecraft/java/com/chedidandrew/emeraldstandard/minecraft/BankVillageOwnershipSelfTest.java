@@ -63,9 +63,19 @@ final class BankVillageOwnershipSelfTest {
             require(map.markers().stream().anyMatch(m -> m.kind() == 1), "map contains distant owned Bank");
             var revisionField = BankerMenu.class.getDeclaredField("mapRevision"); revisionField.setAccessible(true);
             int revision = revisionField.getInt(menu);
-            for (int i = 0; i < 100; i++) menu.clickMenuButton(player, BankerMenu.BUTTON_MAP_NEXT);
+            var target = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.View(-1000,500,64);
+            for (int i = 0; i < 100; i++)
+                for (int button : com.chedidandrew.emeraldstandard.core.DistrictMapRequest.encode(target))
+                    require(menu.clickMenuButton(player,button),"valid map view accepted");
             require(revisionField.getInt(menu) == revision, "map request flood is throttled");
+            var lastMapField=BankerMenu.class.getDeclaredField("lastMapTick");lastMapField.setAccessible(true);
+            lastMapField.setLong(menu,level.getGameTime()-5);
+            menu.broadcastChanges();
+            require(menu.districtMap().view().equals(target),"last throttled viewport request eventually delivered");
+            revision=revisionField.getInt(menu);
             require(menu.clickMenuButton(player, BankerMenu.BUTTON_MAP_CLOSE), "close map");
+            for (int button : com.chedidandrew.emeraldstandard.core.DistrictMapRequest.encode(target))
+                require(!menu.clickMenuButton(player,button),"closed map rejects viewport requests");
             menu.broadcastChanges();
             require(revisionField.getInt(menu) == revision, "hidden map does not refresh");
             var afterMap = economy.villageSnapshot(ownerId).village();

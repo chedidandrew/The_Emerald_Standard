@@ -418,13 +418,16 @@ public final class BankerMenu extends AbstractContainerMenu {
     public static final int BUTTON_MAP_OPEN = 121, BUTTON_MAP_CLOSE = 122,
             BUTTON_MAP_PREVIOUS = 123, BUTTON_MAP_NEXT = 124;
     private boolean mapOpen;
-    private int mapPage, mapRevision;
+    private int mapRevision;
+    private VillageDistrictMap.View mapView;
+    private final com.chedidandrew.emeraldstandard.core.DistrictMapRequest mapRequest = new com.chedidandrew.emeraldstandard.core.DistrictMapRequest();
+    private boolean mapDirty;
     private long lastMapTick = Long.MIN_VALUE;
     private int[] mapData = new int[VillageDistrictMap.DATA_SIZE];
-    private VillageDistrictMap.Page clientMap = VillageDistrictMap.EMPTY;
+    private VillageDistrictMap.Snapshot clientMap = VillageDistrictMap.EMPTY;
     private int clientMapRevision;
 
-    public VillageDistrictMap.Page districtMap() {
+    public VillageDistrictMap.Snapshot districtMap() {
         int revision = data.get(DATA_DISTRICT_MAP);
         if (revision != clientMapRevision) {
             var next = VillageDistrictMap.decode(i -> data.get(DATA_DISTRICT_MAP + i));
@@ -434,8 +437,8 @@ public final class BankerMenu extends AbstractContainerMenu {
     }
 
     private void refreshDistrictMap(long now) {
-        var page = villageId == null ? VillageDistrictMap.EMPTY : economy.districtMap(villageId, mapPage);
-        mapPage = page.number();
+        var page = villageId == null ? VillageDistrictMap.EMPTY : economy.districtMap(villageId, mapView, now);
+        mapDirty = false;
         if (++mapRevision == 0) mapRevision++;
         mapData = VillageDistrictMap.encode(page, mapRevision);
         lastMapTick = now;
@@ -646,19 +649,19 @@ public final class BankerMenu extends AbstractContainerMenu {
             if(player instanceof ServerPlayer p) NewsRuntime.open(p,true);
             return true;
         }
+        if (com.chedidandrew.emeraldstandard.core.DistrictMapRequest.matches(buttonId)) {
+            if (player.level().isClientSide()) return true;
+            if (!mapOpen) return false;
+            var view = mapRequest.accept(buttonId);
+            if (view != null && !view.equals(mapView)) { mapView = view; mapDirty = true; }
+            // Coalesce bursts. The normal server tick sends the latest complete view, even if throttled.
+            return true;
+        }
         if (buttonId >= BUTTON_MAP_OPEN && buttonId <= BUTTON_MAP_NEXT) {
             if (player.level().isClientSide()) return true;
-            if (buttonId == BUTTON_MAP_CLOSE) { mapOpen = false; return true; }
-            long now = serverPlayer.level().getGameTime();
-            if (lastMapTick != Long.MIN_VALUE && now >= lastMapTick && now - lastMapTick < 10) {
-                if (buttonId == BUTTON_MAP_OPEN) mapOpen = true;
-                return true;
-            }
-            if (buttonId == BUTTON_MAP_OPEN) { mapOpen = true; mapPage = 0; }
-            else if (!mapOpen) return false;
-            else if (buttonId == BUTTON_MAP_PREVIOUS) mapPage = Math.max(0, mapPage - 1);
-            else mapPage = Math.min(mapPage + 1, Math.max(0, (mapData[2] - 1) / VillageDistrictMap.PAGE_SIZE));
-            refreshDistrictMap(now);
+            if (buttonId == BUTTON_MAP_CLOSE) { mapOpen = false; mapRequest.reset(); return true; }
+            if (buttonId != BUTTON_MAP_OPEN) return false; // Retired page buttons cannot move the camera.
+            mapOpen = true; mapView = null; mapDirty = true; mapRequest.reset();
             broadcastChanges();
             return true;
         }
@@ -1026,7 +1029,7 @@ public final class BankerMenu extends AbstractContainerMenu {
             refreshServerSnapshot();
         }
         if (serverPlayer != null && mapOpen && (lastMapTick == Long.MIN_VALUE
-                || now < lastMapTick || now - lastMapTick >= 100)) refreshDistrictMap(now);
+                || now < lastMapTick || now - lastMapTick >= (mapDirty ? 5 : 100))) refreshDistrictMap(now);
         if (serverPlayer != null && briefingMode != 0 && (lastBriefingTick == Long.MIN_VALUE
                 || now < lastBriefingTick || now-lastBriefingTick >= (briefingPending ? 5 : 100))) refreshBriefing();
         super.broadcastChanges();

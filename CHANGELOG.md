@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.46
+## Unreleased: 0.4.0-beta.47
+
+- Replace district-map marker pages with one continuous geographic view. Panning and zooming request saved sites and borders together; old-world outline complexity no longer pushes buildings onto a hidden page.
+- Focus opens the current district; Overview frames the wider region. Wide/dense views show counted district summaries, with geographic grouping for very large regions, and zooming reveals individual sites.
+- Coalesce and validate camera requests, retain atomic map updates and bounded network/render payloads, cache a lightweight shared map index, and avoid chunk loading or saved-world mutations.
+- Update both handbook forms and add geographic completeness, complex-border, 500-district, packet, navigation and summary-render checks.
+
+## Previous unreleased candidate: 0.4.0-beta.46
 
 - Fix one-direction village growth: search all owned parcels before frontier sites, rank compact connected growth using nearby building/connection metadata, and remove coordinate-order preference.
 - Keep terrain checks to one candidate per pulse; cache bounded lazy candidate orders and persist their identity with the search cursor. Changed layouts restart only unreserved searches, without moving existing buildings.

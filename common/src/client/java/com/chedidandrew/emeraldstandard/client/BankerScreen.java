@@ -60,7 +60,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private boolean expansionDetails;
     private boolean districtMap;
     private boolean mapDragging;
-    private int fittedMapPage = -1;
+    private boolean mapFitted;
+    private VillageDistrictMap.View lastMapRequest;
+    private int mapRequestTicks;
     private final DistrictMapViewport mapViewport = new DistrictMapViewport();
     private final DistrictTerrainLayer mapTerrain = new DistrictTerrainLayer();
     private int seenStatusRevision;
@@ -724,7 +726,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         if (!expansionDetails) {
             detailButton("What next? Progress report",12,198,296,()->openBriefing(BankerMenu.BUTTON_TOWN_REPORT));
             addRenderableWidget(Button.builder(tr("map.open"), button -> {
-                districtMap = true; fittedMapPage = -1;
+                districtMap = true; mapFitted = false; lastMapRequest = null; mapRequestTicks = 0;
                 sendMenuButton(BankerMenu.BUTTON_MAP_OPEN); rebuildWidgets();
             }).bounds(leftPos + 166, topPos + 174, 142, 12)
                     .tooltip(GuiTooltips.widget(tr("map.help"))).build());
@@ -769,11 +771,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private void addDistrictMapButtons() {
         mapButton("map.back", 12, 64, () -> { closeDistrictMap(); rebuildWidgets(); });
-        mapButton("map.previous", 80, 23, () -> sendMenuButton(BankerMenu.BUTTON_MAP_PREVIOUS));
-        mapButton("map.next", 107, 23, () -> sendMenuButton(BankerMenu.BUTTON_MAP_NEXT));
-        mapButton("map.zoom_out", 134, 23, () -> mapViewport.zoom(0.8));
-        mapButton("map.zoom_in", 161, 23, () -> mapViewport.zoom(1.25));
-        mapButton("map.fit", 188, 55, () -> mapViewport.fit(menu.districtMap()));
+        mapButton("map.zoom_out", 80, 30, () -> mapViewport.zoom(0.8));
+        mapButton("map.zoom_in", 114, 30, () -> mapViewport.zoom(1.25));
+        mapButton("map.fit", 148, 95, () -> mapViewport.fit(menu.districtMap()));
         mapButton("map.home", 247, 61, () -> {
             var p = menu.districtMap();
             mapViewport.focus(p);
@@ -806,6 +806,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private static int mapColor(VillageDistrictMap.Marker m) {
         if (m.kind() == VillageDistrictMap.DISTRICT || m.kind() == VillageDistrictMap.TERRITORY)
             return m.status() == VillageDistrictMap.CURRENT ? GOLD : TEXT;
+        if (m.kind() == VillageDistrictMap.SUMMARY) return m.status() == VillageDistrictMap.CURRENT ? GOLD : 0xFF78BBF2;
         if (m.kind() == VillageDistrictMap.BANK) return 0xFFCF9CFF;
         return switch (m.status()) {
             case VillageDistrictMap.BUILDING -> GOLD;
@@ -818,6 +819,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private Component mapMarkerTitle(VillageDistrictMap.Marker m) {
         if (m.kind() == VillageDistrictMap.DISTRICT) return tr("map.district", m.district());
         if (m.kind() == VillageDistrictMap.BANK) return tr("map.bank");
+        if (m.kind() == VillageDistrictMap.SUMMARY) return m.extra() == 1 ? tr("map.district", m.district()) : tr("map.count", m.extra());
         var imported = com.chedidandrew.emeraldstandard.core.VanillaConstructionPlan.labelKind(m.extra());
         if (imported != null) return tr("village.vanilla." + imported.name().toLowerCase(Locale.ROOT));
         var types = VillageProsperityEngine.ProjectType.values();
@@ -826,8 +828,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private void drawDistrictMap(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         var page = menu.districtMap();
-        if (fittedMapPage != page.number() && page.total() > 0) {
-            fittedMapPage = page.number(); mapViewport.fit(page);
+        if (!mapFitted && page != VillageDistrictMap.EMPTY) {
+            mapFitted = true; mapViewport.focus(page);
         }
         graphics.pose().pushMatrix();
         graphics.pose().translate(leftPos, topPos);
@@ -876,11 +878,12 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             // Any exact building/center hit takes precedence over the broader coverage tooltip.
             nearest = Double.MAX_VALUE;
             // Footprints first, then point landmarks. Never draw outside the map rectangle.
-            for (int layer = VillageDistrictMap.PROJECT; layer >= VillageDistrictMap.DISTRICT; layer--) {
+            for (int layer = VillageDistrictMap.SUMMARY; layer >= VillageDistrictMap.DISTRICT; layer--) {
+                if (layer == VillageDistrictMap.TERRITORY) continue;
                 for (var m : page.markers()) {
                     if (m.kind() != layer) continue;
                     double cx = mapViewport.x(m.x()), cy = mapViewport.y(m.z());
-                    double radius = m.kind() == VillageDistrictMap.PROJECT ? 2 : 3;
+                    double radius = m.kind() == VillageDistrictMap.SUMMARY ? 5 : m.kind() == VillageDistrictMap.PROJECT ? 2 : 3;
                     boolean point = m.kind() != VillageDistrictMap.PROJECT;
                     double lx = point ? cx - radius : Math.min(cx - radius, mapViewport.x(m.minX()));
                     double ly = point ? cy - radius : Math.min(cy - radius, mapViewport.y(m.minZ()));
@@ -894,6 +897,10 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     graphics.outline(left - 1, top - 1, width + 2, height + 2, 0xFF132219);
                     graphics.fill(left, top, left + width, top + height, (color & 0xFFFFFF) | 0x55000000);
                     graphics.outline(left, top, width, height, color);
+                    if (m.kind() == VillageDistrictMap.SUMMARY && cx >= x + 3 && cx < right - 40
+                            && cy >= y + 12 && cy < bottom - 12)
+                        drawTextWithin(graphics, Component.literal((m.extra() == 1 ? "D" + m.district() : m.extra() + "D")
+                                + ": " + m.value()), (int) cx + 6, (int) cy - 10, 40, color, true);
                     if (m.kind() == VillageDistrictMap.DISTRICT
                             && cx >= x + 3 && cx < right - 28 && cy >= y + 12 && cy < bottom - 12)
                         drawTextWithin(graphics, Component.literal("D" + m.district()),
@@ -920,22 +927,28 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     :Component.literal("Terrain cache unavailable"), x + 4, y + 3, 123, TEXT, false);
             graphics.fill(179, 75, 220, 87, 0xD0132219);
             drawTextWithin(graphics, tr("map.north"), 181, 77, 37, MUTED, true);
-            drawTextWithin(graphics, tr("map.page", page.number() + 1, page.pages()), 230, 55, 78, TEXT, false);
+            drawTextWithin(graphics, tr(page.summary() ? "map.overview" : "map.details"), 230, 55, 78, TEXT, false);
             drawTextWithin(graphics, tr("map.count", page.districts()), 230, 76, 78, TEXT, false);
-            String[] legend = {"current", "districts", "banks", "built", "building", "planned", "blocked", "player"};
-            int[] colors = {GOLD, TEXT, 0xFFCF9CFF, EMERALD, GOLD, 0xFF78BBF2, NEGATIVE, 0xFF36EBED};
+            String[] legend = page.summary() ? new String[]{"current", "groups"}
+                    : new String[]{"current", "districts", "banks", "built", "building", "planned", "blocked", "player"};
+            int[] colors = page.summary() ? new int[]{GOLD, 0xFF78BBF2}
+                    : new int[]{GOLD, TEXT, 0xFFCF9CFF, EMERALD, GOLD, 0xFF78BBF2, NEGATIVE, 0xFF36EBED};
             for (int i = 0; i < legend.length; i++)
                 drawTextWithin(graphics, tr("map.legend." + legend[i]), 230, 89 + i * 10, 78, colors[i], false);
+            if (page.summary()) drawWrappedText(graphics, tr("map.summary_help"), 230, 116, 78, 11, 5, MUTED);
             drawTextWithin(graphics, tr("map.unsited", page.unsited()), 230, 174, 78, MUTED, false);
             drawTextWithin(graphics, tr("map.grid", (long) step), 230, 184, 78, MUTED, false);
-            drawTextWithin(graphics, tr("map.hint"), 12, 199, 296, MUTED, false);
-            if (page.total() == 0)
-                drawWrappedText(graphics, tr(menu.hasVillage() ? "map.loading" : "map.unavailable"),
+            boolean updating = lastMapRequest != null && !lastMapRequest.equals(page.view());
+            drawTextWithin(graphics, tr(updating ? "map.updating" : page.summary() ? "map.summary_hint" : "map.hint"),
+                    12, 199, 296, MUTED, false);
+            if (page.markers().isEmpty())
+                drawWrappedText(graphics, tr(!menu.hasVillage() ? "map.unavailable"
+                        : page == VillageDistrictMap.EMPTY ? "map.loading" : "map.empty"),
                         30, 120, 170, 12, 3, MUTED);
             if (hovered != null) {
                 var m = hovered;
                 Component detail = m.kind() == VillageDistrictMap.DISTRICT
-                        ? tr("map.residents", m.value(), m.extra())
+                        ? m.extra() < 0 ? tr("map.residents_count", m.value()) : tr("map.residents", m.value(), m.extra())
                         : tr("map.status." + m.status());
                 Component text = mapMarkerTitle(m).copy().append("\n")
                         .append(tr("map.district", m.district())).append(" | ").append(detail)
@@ -945,6 +958,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 if (m.kind() == VillageDistrictMap.DISTRICT && m.extra()>=0) text = text.copy().append("\n")
                         .append(tr("map.coverage", (long) m.maxX() - m.minX() + 1, (long) m.maxZ() - m.minZ() + 1))
                         .append("\nX: " + m.minX() + " .. " + m.maxX() + "  Z: " + m.minZ() + " .. " + m.maxZ());
+                if (m.kind() == VillageDistrictMap.SUMMARY) text = mapMarkerTitle(m).copy()
+                        .append("\n").append(tr("map.summary_sites", m.value())).append("\n").append(tr("map.summary_hint"));
                 GuiTooltips.show(graphics, font, text, tooltipMouseX, tooltipMouseY);
             }
         } finally { graphics.pose().popMatrix(); }
@@ -1332,6 +1347,15 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     @Override
     protected void containerTick() {
         super.containerTick();
+        if (districtMap && mapFitted && ++mapRequestTicks >= 5) {
+            mapRequestTicks = 0;
+            var view = mapViewport.request();
+            if (!view.equals(lastMapRequest)) {
+                for (int button : com.chedidandrew.emeraldstandard.core.DistrictMapRequest.encode(view))
+                    sendMenuButton(button);
+                lastMapRequest = view;
+            }
+        }
         int revision = menu.statusRevision();
         int state = interactiveState();
         if (statusDisplayTicks > 0) {

@@ -54,6 +54,11 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        if (Boolean.getBoolean("the_emerald_standard.districtMapSmokeOnly")) {
+            DistrictMapMenuSelfTest.verify(level);
+            DistrictMapInteractionSelfTest.verify(level);
+            return;
+        }
         if (Boolean.getBoolean("the_emerald_standard.vanillaConstructionSmokeOnly")) {
             VanillaConstructionSelfTest.verify(level);
             return;

@@ -112,8 +112,20 @@ public final class BankerMenuPacketCodecSelfTest {
         require(serverPacked.getCount() < 32767, "Map exceeds signed-short menu slot IDs");
         var marker = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Marker(
                 -30000000, 29999980, -29999990, 30000000, 2, 42, 3, 37, 0);
-        var page = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Page(
-                0, 1, 42, 0, -30000000, 30000000, List.of(marker));
+        var view = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.View(-30000000,30000000,64);
+        var bounds = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Bounds(-30000000,29999980,-29999990,30000000);
+        var page = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Snapshot(
+                view,42,0,1,0,false,bounds,bounds,List.of(marker));
+        var receiver = new com.chedidandrew.emeraldstandard.core.DistrictMapRequest();
+        com.chedidandrew.emeraldstandard.core.VillageDistrictMap.View received = null;
+        for (int button : com.chedidandrew.emeraldstandard.core.DistrictMapRequest.encode(view)) {
+            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                ServerboundContainerButtonClickPacket.STREAM_CODEC.encode(buffer,new ServerboundContainerButtonClickPacket(7,button));
+                received = receiver.accept(ServerboundContainerButtonClickPacket.STREAM_CODEC.decode(buffer).buttonId());
+            } finally { buffer.release(); }
+        }
+        require(view.equals(received),"Viewport request lost through actual button packet codec");
         int start = BankerMenu.DATA_DISTRICT_MAP;
         int[] values = com.chedidandrew.emeraldstandard.core.VillageDistrictMap.encode(page, 65536);
         for (int i = 0; i < values.length; i++) {

@@ -192,6 +192,8 @@ public final class HandbookResourceRegressionTest {
         requireNewspaperAppearance(root,language);
         check(language.contains("guide.the_emerald_standard.handbook.district_map.body")
                 && language.contains("Checkered cells mean unknown or still-loading map data")
+                && language.contains("There are no marker pages") && language.contains("Wide view: groups.")
+                && language.contains("Summary labels count the building sites in the viewed area")
                 && language.contains("saved locally") && language.contains("not total return or a forecast")
                 && language.contains("Sneak + block:"), "map and desk instructions stay documented");
         for (String loader : new String[] {"fabric", "neoforge"}) {

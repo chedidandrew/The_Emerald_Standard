@@ -116,8 +116,15 @@ final class BankerClientChecks {
                 }
             }
             var hoverSite = markers.stream().filter(m -> m.kind()==2 && m.district()==1).findFirst().orElseThrow();
-            var page = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Page(
-                    0, markers.size(), 3, 2, -90, 160, markers);
+            var bounds = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Bounds(-160,50,160,240);
+            if (hoverMode == 3) {
+                markers.clear();
+                for (int n=1;n<=3;n++) markers.add(new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Marker(
+                        -180+n*90,120,-170+n*90,130,4,n,n==1?4:0,n*150,1));
+            }
+            var page = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Snapshot(
+                    com.chedidandrew.emeraldstandard.core.VillageDistrictMap.View.fit(bounds),3,2,
+                    hoverMode==3?900:24,3,hoverMode==3,bounds,bounds,markers);
             int[] encoded = com.chedidandrew.emeraldstandard.core.VillageDistrictMap.encode(page, 1);
             for (int i = 0; i < encoded.length; i++) data.set(BankerMenu.DATA_DISTRICT_MAP + i, encoded[i]);
             BankerScreen dashboard = new BankerScreen(menu, inventory, Component.translatable(PREFIX + "banker.title"));
@@ -138,19 +145,22 @@ final class BankerClientChecks {
                 private int hoverX() {
                     float scale = BankerScreenScale.fit(width, height, 320, 230);
                     return hoverMode > 0 ? (int) (BankerScreenScale.origin(width, 320, scale)
-                            + viewport.x(hoverMode == 2 ? -90 : hoverSite.x()) * scale) : -100;
+                            + viewport.x(hoverMode == 2 ? -90 : hoverMode == 3 ? markers.getFirst().x() : hoverSite.x()) * scale) : -100;
                 }
                 private int hoverY() {
                     float scale = BankerScreenScale.fit(width, height, 320, 230);
                     return hoverMode > 0 ? (int) (BankerScreenScale.origin(height, 230, scale)
-                            + viewport.y(hoverMode == 2 ? 160 : hoverSite.z()) * scale) : -100;
+                            + viewport.y(hoverMode == 2 ? 160 : hoverMode == 3 ? markers.getFirst().z() : hoverSite.z()) * scale) : -100;
                 }
                 @Override protected void init() {
                     dashboard.init(width, height);
+                    try {
+                        Field fitted = BankerScreen.class.getDeclaredField("mapFitted"); fitted.setAccessible(true); fitted.setBoolean(dashboard,true);
+                    } catch (ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
                     ReaderClientChecks.press(dashboard, "+");
                     ReaderClientChecks.press(dashboard, "-");
                     ReaderClientChecks.press(dashboard, "Focus");
-                    ReaderClientChecks.press(dashboard, "Fit page");
+                    ReaderClientChecks.press(dashboard, "Overview");
                     if (menu.districtMap().markers().size() != markers.size()) throw new IllegalStateException("Missing map markers");
                     // Exercise the same logical/pixel conversion used by drag and scroll at each GUI scale.
                     float scale = BankerScreenScale.fit(width, height, 320, 230);
@@ -161,7 +171,7 @@ final class BankerClientChecks {
                     if (!dashboard.mouseClicked(click, false) || !dashboard.mouseDragged(click, 12, 10)
                             || !dashboard.mouseReleased(click) || !dashboard.mouseScrolled(x, y, 0, 1))
                         throw new IllegalStateException("Map navigation was not handled");
-                    ReaderClientChecks.press(dashboard, "Fit page");
+                    ReaderClientChecks.press(dashboard, "Overview");
                 }
                 @Override public void extractBackground(GuiGraphicsExtractor graphics, int x, int y, float delta) {
                     dashboard.extractBackground(graphics, hoverX(), hoverY(), delta);

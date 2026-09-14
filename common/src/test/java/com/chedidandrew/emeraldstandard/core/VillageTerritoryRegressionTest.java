@@ -36,7 +36,7 @@ public final class VillageTerritoryRegressionTest {
         var bounds=VillageDistrictCoverage.of(a);
         check((long)(bounds.maxX()-bounds.minX()+1)*(bounds.maxZ()-bounds.minZ()+1)>visible.size()*256L,"territory still a bounding rectangle");
         check(VillageTerritory.outlines(visible).stream().anyMatch(r->r[4]==1),"no border edges");
-        var page=VillageDistrictMap.collect(state,a.villageId,0);
+        var page=VillageDistrictMap.collect(state,a.villageId,new VillageDistrictMap.View(0,0,300));
         check(page.districts()==2 && page.markers().stream().anyMatch(m->m.kind()==VillageDistrictMap.TERRITORY),"neighbor map missing territories");
         int[] encoded=VillageDistrictMap.encode(page,1);
         check(page.equals(VillageDistrictMap.decode(i->encoded[i])),"territory packet round trip");
