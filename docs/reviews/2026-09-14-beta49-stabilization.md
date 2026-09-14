@@ -134,6 +134,11 @@ The native creative-egg fixture now keeps its dispenser outlet in the same chunk
 verified manual spawns: loading an adjacent chunk synchronously does not guarantee that its
 entity section is immediately visible to queries. Egg consumption, identity, persistence,
 spawner refusal and loot assertions remain unchanged.
+It prepares that disposable chunk at the start of the sequence with a native forced-chunk
+ticket and allows real ticks to activate the section before the egg checks. Only its own
+ticket is released on completion, failure or shutdown. The sequential exhaustive suite also
+needs a 600-second total compile/startup allowance on hosted runners (the prior 360-second
+run reached 85/90 completed fixtures); the individual-tick watchdog remains 180 seconds.
 
 Reviewed both guided and compact/lectern forms. Updated profiling instructions, measurement
 limitations and privacy guidance, and explained varied dispatches/brief reports. The existing

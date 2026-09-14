@@ -26,8 +26,8 @@ public final class SmokeServerHarnessRegressionTest {
                         && launcher.contains("runDirectory = project.file(targetPath)")
                         && launcher.contains("run.gameDirectory.set(project.file(targetPath))"),
                 "Both loaders must use only the generated smoke world, without disabling the watchdog");
-        require(script.contains("for _ in $(seq 1 360)")
-                        && script.contains("server did not finish startup within 360 seconds")
+        require(script.contains("for _ in $(seq 1 600)")
+                        && script.contains("server did not finish startup within 600 seconds")
                         && script.contains("server logged a fatal startup error")
                         && script.contains("Exception in thread|A fatal error has been detected|Failed to start the minecraft server")
                         && script.contains("The Emerald Standard Banker integration self-test passed")
@@ -44,6 +44,14 @@ public final class SmokeServerHarnessRegressionTest {
                         && fixtures.contains("net.minecraft.util.Util.getNanos() - server.getNextTickTime() > 250_000_000L")
                         && fixtures.contains("if (sequence.checks.isEmpty())") && fixtures.contains("SEQUENCES.remove(server)"),
                 "Native suites must yield for real clock catch-up, resist nested ticks and clear their lifecycle state");
+        String creative = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/CreativeContentSelfTest.java"));
+        require(fixtures.indexOf("() -> CreativeContentSelfTest.prepare(level)")
+                            < fixtures.indexOf("() -> CreativeContentSelfTest.verify(level)")
+                        && fixtures.contains("CreativeContentSelfTest.cleanup(server.overworld())")
+                        && creative.contains("getForceLoadedChunks().contains(FIXTURE_CHUNK.pack())")
+                        && creative.contains("if (FORCED_BY_TEST.remove(level))")
+                        && creative.contains("updateChunkForced(FIXTURE_CHUNK,false)"),
+                "Native egg checks prepare real chunk visibility and release only their own disposable ticket");
         String catalog = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/AuthoredVillageStructures.java"));
         String projects = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java"));
         require(fixtures.contains("checks.addAll(VillageProsperityManager.projectTemplateValidationSteps(level))")

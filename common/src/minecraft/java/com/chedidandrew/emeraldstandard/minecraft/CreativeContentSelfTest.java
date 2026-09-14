@@ -14,6 +14,7 @@ import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.item.crafting.*;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -22,6 +23,22 @@ import net.minecraft.world.phys.*;
 
 /** Opt-in disposable-server checks, including actual egg placement and native dispenser behavior. */
 final class CreativeContentSelfTest {
+    private static final ChunkPos FIXTURE_CHUNK = new ChunkPos(58,58);
+    private static final Set<ServerLevel> FORCED_BY_TEST = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /** Admit the native entity section early, then let real server ticks make it visible. */
+    static void prepare(ServerLevel level) {
+        if (!level.getChunkSource().getForceLoadedChunks().contains(FIXTURE_CHUNK.pack())) {
+            level.getChunkSource().updateChunkForced(FIXTURE_CHUNK,true);
+            FORCED_BY_TEST.add(level);
+        }
+        level.getChunk(FIXTURE_CHUNK.x(),FIXTURE_CHUNK.z());
+    }
+
+    static void cleanup(ServerLevel level) {
+        if (FORCED_BY_TEST.remove(level)) level.getChunkSource().updateChunkForced(FIXTURE_CHUNK,false);
+    }
+
     static void verify(ServerLevel level) {
         CreativeModeTabs.tryRebuildTabContents(level.getServer().getWorldData().enabledFeatures(), false, level.registryAccess());
         var tab=BuiltInRegistries.CREATIVE_MODE_TAB.getValue(EmeraldCreativeContent.TAB_ID);
@@ -144,6 +161,7 @@ final class CreativeContentSelfTest {
         } finally {
             actors.forEach(Entity::discard);
             before.forEach((p,state)->level.setBlock(p,state,18));
+            cleanup(level);
         }
     }
     private static <T extends Mob> T spawn(ServerLevel level,BlockPos pos,ServerPlayer player,Item egg,Class<T> type,List<Entity> actors) {

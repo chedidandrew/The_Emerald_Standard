@@ -76,7 +76,10 @@ public final class BankerIntegrationSelfTest {
         SEQUENCES.put(level.getServer(), new Sequence(checks));
     }
 
-    public static void stop(net.minecraft.server.MinecraftServer server) { SEQUENCES.remove(server); }
+    public static void stop(net.minecraft.server.MinecraftServer server) {
+        SEQUENCES.remove(server);
+        CreativeContentSelfTest.cleanup(server.overworld());
+    }
 
     public static void tick(net.minecraft.server.MinecraftServer server) {
         var sequence = SEQUENCES.get(server);
@@ -97,7 +100,7 @@ public final class BankerIntegrationSelfTest {
                 log.info("The Emerald Standard Banker integration self-test passed");
             }
         } catch (RuntimeException | Error failure) {
-            SEQUENCES.remove(server); throw failure;
+            stop(server); throw failure;
         } finally { sequence.running = false; }
     }
 
@@ -180,6 +183,7 @@ public final class BankerIntegrationSelfTest {
 
     private static List<Runnable> fullChecks(ServerLevel level) {
         var checks = new java.util.ArrayList<Runnable>(List.of(
+                () -> CreativeContentSelfTest.prepare(level),
                 () -> StabilizationSelfTest.verifyCore(level),
                 () -> DebugPerformanceSelfTest.verify(level),
                 () -> NaturalVillageIdentitySelfTest.run(level),

@@ -72,7 +72,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 360); do
+# Full compile/startup plus all yielding catalog fixtures; each tick still has its own watchdog.
+for _ in $(seq 1 600); do
     unexpected_errors="$(
         grep -E '\[[^]]+/(ERROR|FATAL)\]' "$LOG_FILE" \
             | grep -Ev 'HkeyPerformanceDataUtil[^:]*:?[[:space:]]*Unable to locate English counter names' \
@@ -110,6 +111,6 @@ for _ in $(seq 1 360); do
     sleep 1
 done
 
-echo "$LOADER server did not finish startup within 360 seconds" >&2
+echo "$LOADER server did not finish startup within 600 seconds" >&2
 cat "$LOG_FILE" >&2
 exit 1
