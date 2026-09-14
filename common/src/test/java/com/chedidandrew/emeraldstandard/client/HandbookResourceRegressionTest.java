@@ -79,6 +79,8 @@ public final class HandbookResourceRegressionTest {
                 &&language.contains("Civic news remains.")&&language.contains("latest publication"),
                 "Current evidence-linked newsroom and both handbook formats");
         check(language.contains("text, then stories.")&&language.contains("Previous: reverse."),"Compact newspaper route is current");
+        check(language.contains("Briefs & reports.")&&language.contains("Longer dispatches now sit alongside shorter desk reports."),
+                "Both handbook forms retain article-length guidance alongside appearance and navigation");
     }
 
     private HandbookResourceRegressionTest() {
