@@ -17,7 +17,7 @@ public final class SmokeServerHarnessRegressionTest {
         String launcher = Files.readString(root.resolve("scripts/smoke-server.init.gradle"));
         require(script.contains("RUN_DIR=\"$(mktemp -d \"$LOG_DIR/$LOADER-run.XXXXXX\")\"")
                         && script.contains("-PtesSmokeGameDir=\"$RUN_DIR\"")
-                        && script.contains("printf 'online-mode=false\\nserver-port=0\\nmax-tick-time=180000\\n'"
+                        && script.contains("printf 'online-mode=false\\nserver-port=0\\nmax-tick-time=180000\\npause-when-empty-seconds=0\\n'"
                                 + " > \"$RUN_DIR/server.properties\""),
                 "Smoke watchdog allowance must remain bounded and confined to a fresh ephemeral-port test world");
         require(script.indexOf("max-tick-time=") == script.lastIndexOf("max-tick-time=")

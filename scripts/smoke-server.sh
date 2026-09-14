@@ -15,9 +15,9 @@ mkdir -p "$LOG_DIR"
 RUN_DIR="$(mktemp -d "$LOG_DIR/$LOADER-run.XXXXXX")"
 SMOKE_ID="$LOADER-$(date +%s)-$$-$RANDOM"
 printf 'eula=true\n' > "$RUN_DIR/eula.txt"
-# Exhaustive opt-in catalog checks run synchronously during startup. Allow a bounded three minutes
-# in this fresh smoke world under constrained CI/parallel review; ordinary server settings are untouched.
-printf 'online-mode=false\nserver-port=0\nmax-tick-time=180000\n' > "$RUN_DIR/server.properties"
+# Exhaustive opt-in checks yield between fixtures. Keep a bounded watchdog, and keep this
+# playerless disposable test world ticking; ordinary server settings are untouched.
+printf 'online-mode=false\nserver-port=0\nmax-tick-time=180000\npause-when-empty-seconds=0\n' > "$RUN_DIR/server.properties"
 if [[ -n "${TES_GUARD_COMPAT_JAR:-}" ]]; then
     [[ -f "$TES_GUARD_COMPAT_JAR" ]] || { echo "Missing Guard Villagers test JAR" >&2; exit 1; }
     mkdir -p "$RUN_DIR/mods"

@@ -128,6 +128,8 @@ Minecraft's watchdog measures against the scheduled next-tick clock. Repeated mu
 fixtures accumulate schedule debt even when each callback returns. Admission now waits for
 ordinary catch-up ticks to retire that debt; it does not rewrite Minecraft's clock or suppress
 the watchdog. The captured native stack and advancing fixture log established this distinction.
+The disposable playerless test world also explicitly disables empty-server auto-pause so long
+suites continue ticking. No real server configuration is changed.
 
 Reviewed both guided and compact/lectern forms. Updated profiling instructions, measurement
 limitations and privacy guidance, and explained varied dispatches/brief reports. The existing
