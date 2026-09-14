@@ -39,6 +39,10 @@ final class CreativeContentSelfTest {
         if (FORCED_BY_TEST.remove(level)) level.getChunkSource().updateChunkForced(FIXTURE_CHUNK,false);
     }
 
+    static boolean ready(ServerLevel level) {
+        return level.areEntitiesActuallyLoadedAndTicking(FIXTURE_CHUNK);
+    }
+
     static void verify(ServerLevel level) {
         CreativeModeTabs.tryRebuildTabContents(level.getServer().getWorldData().enabledFeatures(), false, level.registryAccess());
         var tab=BuiltInRegistries.CREATIVE_MODE_TAB.getValue(EmeraldCreativeContent.TAB_ID);

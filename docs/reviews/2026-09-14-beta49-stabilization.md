@@ -139,6 +139,14 @@ ticket and allows real ticks to activate the section before the egg checks. Only
 ticket is released on completion, failure or shutdown. The sequential exhaustive suite also
 needs a 600-second total compile/startup allowance on hosted runners (the prior 360-second
 run reached 85/90 completed fixtures); the individual-tick watchdog remains 180 seconds.
+The hosted census fixture also exposed a terrain/entity-readiness race before its ownership
+assertion. Both disposable resident chunks are now prepared alongside the creative fixture;
+a ten-second readiness gate yields real server ticks until Minecraft confirms their entity
+sections are loaded and ticking. Each inserted census villager must be query-visible before
+testing the unchanged neighboring-village assignment rules. Diagnostics print actual and
+expected identities on failure. Owned tickets are released on success, failure and shutdown.
+This is test setup, not additional chunk loading or relaxed census rules in gameplay. Both
+handbook forms were rechecked; this internal fixture correction needs no player-text changes.
 
 Reviewed both guided and compact/lectern forms. Updated profiling instructions, measurement
 limitations and privacy guidance, and explained varied dispatches/brief reports. The existing

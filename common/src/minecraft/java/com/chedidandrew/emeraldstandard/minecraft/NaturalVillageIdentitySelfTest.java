@@ -11,6 +11,29 @@ import net.minecraft.world.level.levelgen.structure.structures.BuriedTreasurePie
 
 /** Disposable smoke-world metadata fixture; never places or generates village buildings. */
 final class NaturalVillageIdentitySelfTest {
+    private static final List<net.minecraft.world.level.ChunkPos> RESIDENT_CHUNKS = List.of(
+            new net.minecraft.world.level.ChunkPos(512,512), new net.minecraft.world.level.ChunkPos(514,512));
+    private static final Map<ServerLevel, Set<net.minecraft.world.level.ChunkPos>> OWNED_TICKETS = new IdentityHashMap<>();
+
+    static void prepare(ServerLevel level) {
+        var owned = OWNED_TICKETS.computeIfAbsent(level, ignored -> new HashSet<>());
+        for (var chunk : RESIDENT_CHUNKS) {
+            if (!level.getChunkSource().getForceLoadedChunks().contains(chunk.pack())) {
+                level.getChunkSource().updateChunkForced(chunk,true); owned.add(chunk);
+            }
+            level.getChunk(chunk.x(),chunk.z());
+        }
+    }
+
+    static boolean ready(ServerLevel level) {
+        return RESIDENT_CHUNKS.stream().allMatch(level::areEntitiesActuallyLoadedAndTicking);
+    }
+
+    static void cleanup(ServerLevel level) {
+        var owned = OWNED_TICKETS.remove(level);
+        if (owned != null) for (var chunk : owned) level.getChunkSource().updateChunkForced(chunk,false);
+    }
+
     static void run(ServerLevel level) {
         var type = level.registryAccess().lookupOrThrow(Registries.STRUCTURE).stream()
                 .filter(s -> level.registryAccess().lookupOrThrow(Registries.STRUCTURE).wrapAsHolder(s).is(StructureTags.VILLAGE))
@@ -58,6 +81,7 @@ final class NaturalVillageIdentitySelfTest {
             System.out.println("PASS natural village discovery: configurable 128/256/512 radius, boundary, height, multiple villages, no forced chunk loading");
         } finally {
             ca.setAllStarts(oldA); cb.setAllStarts(oldB);
+            cleanup(level);
         }
     }
 
@@ -74,7 +98,10 @@ final class NaturalVillageIdentitySelfTest {
                 var villager = net.minecraft.world.entity.EntityTypes.VILLAGER.create(level,
                         net.minecraft.world.entity.EntitySpawnReason.COMMAND);
                 villager.setPos(home.getX(), home.getY(), home.getZ());
-                level.addFreshEntity(villager); residents.add(villager);
+                residents.add(villager);
+                if (!level.addFreshEntity(villager) || level.getEntity(villager.getUUID()) != villager)
+                    throw new AssertionError("Census fixture resident is not query-visible at " + home
+                            + "; native entity readiness=" + ready(level));
             }
             observer.setPos(a.getX() - 224, a.getY() + 120, a.getZ());
             level.players().add(observer);
@@ -89,7 +116,9 @@ final class NaturalVillageIdentitySelfTest {
                 throw new AssertionError("Distant first census failed or used the player's position as the village center");
             if (!first.equals(VillageProsperityManager.villageId(residents.get(0)))
                     || !second.equals(VillageProsperityManager.villageId(residents.get(1))))
-                throw new AssertionError("Overlapping first censuses mixed neighboring natural village residents");
+                throw new AssertionError("Overlapping first censuses mixed neighboring natural village residents: expected "
+                        + first + "/" + second + ", observed " + VillageProsperityManager.villageId(residents.get(0))
+                        + "/" + VillageProsperityManager.villageId(residents.get(1)));
             if (VillageBankManager.activeBankVillages(level, economy, 256).size() != 2)
                 throw new AssertionError("Newly discovered villages do not reach automatic Bank planning");
             VillageProsperityManager.scanLoadedVillages(level, economy, config);

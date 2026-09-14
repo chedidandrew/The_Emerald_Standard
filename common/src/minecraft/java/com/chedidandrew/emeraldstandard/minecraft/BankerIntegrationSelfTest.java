@@ -61,6 +61,21 @@ public final class BankerIntegrationSelfTest {
         Sequence(List<Runnable> checks) { this.checks = new java.util.ArrayDeque<>(checks); }
     }
 
+    /** Readiness waits yield real ticks; they never block the server thread or fake native state. */
+    private static final class AwaitFixture implements Runnable {
+        private final java.util.function.BooleanSupplier ready;
+        private long deadline;
+        AwaitFixture(java.util.function.BooleanSupplier ready) { this.ready = ready; }
+        boolean admit() {
+            if (ready.getAsBoolean()) return true;
+            long now = System.nanoTime();
+            if (deadline == 0) deadline = now + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            if (now >= deadline) throw new IllegalStateException("Native fixture entity sections not ready within 10 seconds");
+            return false;
+        }
+        @Override public void run() { }
+    }
+
     /** Exhaustive CI work must not occupy a single startup tick or disable the watchdog. */
     @FunctionalInterface public interface CheckedFixture { void run() throws Exception; }
     public static void schedule(ServerLevel level, CheckedFixture clockCheck) {
@@ -69,6 +84,9 @@ public final class BankerIntegrationSelfTest {
             try { clockCheck.run(); }
             catch (Exception failure) { throw new IllegalStateException("Clock fixture failed", failure); }
         });
+        checks.add(() -> CreativeContentSelfTest.prepare(level));
+        checks.add(() -> NaturalVillageIdentitySelfTest.prepare(level));
+        checks.add(new AwaitFixture(() -> CreativeContentSelfTest.ready(level) && NaturalVillageIdentitySelfTest.ready(level)));
         boolean subset = System.getProperties().stringPropertyNames().stream().anyMatch(key ->
                 key.startsWith("the_emerald_standard.") && key.endsWith("SmokeOnly") && Boolean.getBoolean(key));
         if (subset) checks.add(() -> run(level));
@@ -79,6 +97,7 @@ public final class BankerIntegrationSelfTest {
     public static void stop(net.minecraft.server.MinecraftServer server) {
         SEQUENCES.remove(server);
         CreativeContentSelfTest.cleanup(server.overworld());
+        NaturalVillageIdentitySelfTest.cleanup(server.overworld());
     }
 
     public static void tick(net.minecraft.server.MinecraftServer server) {
@@ -91,12 +110,13 @@ public final class BankerIntegrationSelfTest {
         sequence.running = true;
         long started = System.nanoTime();
         try {
+            if (sequence.checks.peekFirst() instanceof AwaitFixture wait && !wait.admit()) return;
             sequence.checks.removeFirst().run(); sequence.completed++;
             var log = org.slf4j.LoggerFactory.getLogger("the_emerald_standard_smoke");
             log.info("Server fixture {} completed in {} ms; {} remaining", sequence.completed,
                     (System.nanoTime()-started)/1_000_000.0, sequence.checks.size());
             if (sequence.checks.isEmpty()) {
-                SEQUENCES.remove(server);
+                stop(server);
                 log.info("The Emerald Standard Banker integration self-test passed");
             }
         } catch (RuntimeException | Error failure) {
@@ -183,7 +203,6 @@ public final class BankerIntegrationSelfTest {
 
     private static List<Runnable> fullChecks(ServerLevel level) {
         var checks = new java.util.ArrayList<Runnable>(List.of(
-                () -> CreativeContentSelfTest.prepare(level),
                 () -> StabilizationSelfTest.verifyCore(level),
                 () -> DebugPerformanceSelfTest.verify(level),
                 () -> NaturalVillageIdentitySelfTest.run(level),

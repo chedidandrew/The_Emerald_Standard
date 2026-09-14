@@ -52,6 +52,15 @@ public final class SmokeServerHarnessRegressionTest {
                         && creative.contains("if (FORCED_BY_TEST.remove(level))")
                         && creative.contains("updateChunkForced(FIXTURE_CHUNK,false)"),
                 "Native egg checks prepare real chunk visibility and release only their own disposable ticket");
+        String census = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/NaturalVillageIdentitySelfTest.java"));
+        require(fixtures.contains("new AwaitFixture(() -> CreativeContentSelfTest.ready(level) && NaturalVillageIdentitySelfTest.ready(level))")
+                        && fixtures.contains("instanceof AwaitFixture wait && !wait.admit()")
+                        && fixtures.contains("TimeUnit.SECONDS.toNanos(10)")
+                        && fixtures.contains("NaturalVillageIdentitySelfTest.cleanup(server.overworld())")
+                        && census.contains("allMatch(level::areEntitiesActuallyLoadedAndTicking)")
+                        && census.contains("level.getEntity(villager.getUUID()) != villager")
+                        && census.contains("OWNED_TICKETS.remove(level)"),
+                "Census setup waits for real entity visibility with a bounded yielding deadline and exact ticket cleanup");
         String catalog = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/AuthoredVillageStructures.java"));
         String projects = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java"));
         require(fixtures.contains("checks.addAll(VillageProsperityManager.projectTemplateValidationSteps(level))")
