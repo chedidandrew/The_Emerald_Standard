@@ -11,6 +11,35 @@ import java.util.UUID;
 public final class DebugPerformanceRegressionTest {
     public static void main(String[] args) throws Exception {
         ServerTickMetrics stats = new ServerTickMetrics(0);
+        var measurements = new WorkMeasurements();
+        measurements.record("plot", 2_000_000L); measurements.record("plot", 4_000_000L);
+        measurements.count("cache.hit"); measurements.count("cache.hit");
+        var measured = (Map<?,?>)((Map<?,?>)measurements.snapshot().get("timings")).get("plot");
+        check(number(measured,"calls") == 2 && number(measured,"meanMs") == 3
+                && number(measured,"maxMs") == 4, "Subsystem aggregates");
+        for (int i=0;i<1000;i++) { measurements.record("scope"+i,1); measurements.count("counter"+i); }
+        check(((Map<?,?>)measurements.snapshot().get("timings")).size() == WorkMeasurements.LIMIT
+                && ((Map<?,?>)measurements.snapshot().get("counters")).size() == WorkMeasurements.LIMIT, "Bounded diagnostic keys");
+        measurements.job("bank:1",10,"selected",false);
+        measurements.job("bank:1",10,"placed_blocks",true);
+        measurements.job("bank:1",20,"shared_budget_exhausted",false);
+        var job=(Map<?,?>)((Map<?,?>)measurements.snapshot().get("jobs")).get("bank:1");
+        check(number(job,"visits")==2&&number(job,"successfulBatches")==1
+                &&number(job,"lastVisitedGameTick")==20&&number(job,"lastProgressGameTick")==10,
+                "Budget-only selections never masquerade as physical progress");
+        for(int i=0;i<1000;i++) measurements.job("job"+i,i,"selected",false);
+        var jobs=(Map<?,?>)measurements.snapshot().get("jobs");
+        check(jobs.size()==WorkMeasurements.JOB_LIMIT&&!jobs.containsKey("bank:1")&&jobs.containsKey("job999"),"Bounded recent job diagnostics");
+        var gaps = new ServerTickMetrics(0);
+        gaps.recordBoundary(1_000_000L, 11_000_000L, true);
+        gaps.recordBoundary(61_000_000L, 71_000_000L, true);
+        gaps.recordBoundary(12_071_000_000L, 12_081_000_000L, true);
+        var gapReport = gaps.snapshot(12_100_000_000L);
+        check(number(gapReport,"interTickGapsOverOneSecond") == 1
+                && number(gapReport,"maxMspt") == 10 && number(gapReport,"ticksOver50Ms") == 0,
+                "Pauses/gaps are not slow ticks");
+        check(number(gapReport,"gapAdjustedTicksPerSecond") > number(gapReport,"observedTicksPerSecond"),
+                "Raw throughput retained beside explicitly heuristic gap-adjusted throughput");
         check(stats.snapshot(1).get("meanMspt") == null, "No samples must be unavailable, not zero lag");
         for (int ms = 1; ms <= 100; ms++) stats.record(ms * 1_000_000L, true);
         var report = stats.snapshot(5_000_000_000L);

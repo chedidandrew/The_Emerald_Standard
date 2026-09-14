@@ -50,6 +50,12 @@ final class EmeraldCommandHandlers {
                 : failure(context, result.message());
     }
 
+    static int debugProfile(CommandContext<CommandSourceStack> context,
+            EconomyService economy) throws CommandSyntaxException {
+        var result = DebugFlightRecorder.profile(player(context), economy);
+        return result.success() ? success(context, result.message()) : failure(context, result.message());
+    }
+
     static int debugMark(
             CommandContext<CommandSourceStack> context,
             EconomyService economy) throws CommandSyntaxException {

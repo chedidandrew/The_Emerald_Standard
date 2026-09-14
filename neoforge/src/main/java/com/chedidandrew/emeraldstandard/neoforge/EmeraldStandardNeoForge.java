@@ -99,9 +99,8 @@ public final class EmeraldStandardNeoForge {
                     ECONOMY.catchUpDaysRemaining());
             DebugFlightRecorder.initialize(server);
             if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
-                com.chedidandrew.emeraldstandard.minecraft.MarketTimeCommandSelfTest.run(server,ECONOMY);
-                    BankerIntegrationSelfTest.run(server.overworld());
-                LOGGER.info("The Emerald Standard Banker integration self-test passed");
+                BankerIntegrationSelfTest.schedule(server.overworld(), () ->
+                            com.chedidandrew.emeraldstandard.minecraft.MarketTimeCommandSelfTest.run(server,ECONOMY));
             }
             StructureGallery.autoBuildIfRequested(server);
             VillageComparisonGallery.autoBuildIfRequested(server);
@@ -114,6 +113,7 @@ public final class EmeraldStandardNeoForge {
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
         var server = event.getServer();
+        BankerIntegrationSelfTest.stop(server);
             com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.stop(server);
             com.chedidandrew.emeraldstandard.minecraft.ConstructionOwnership.stop(server);
             com.chedidandrew.emeraldstandard.minecraft.MarketTimeRuntime.stop(server);
@@ -146,6 +146,7 @@ public final class EmeraldStandardNeoForge {
         }
         com.chedidandrew.emeraldstandard.minecraft.VillageDevelopmentRuntime.tick(event.getServer(), ECONOMY);
         DebugFlightRecorder.tick(event.getServer(), ECONOMY);
+            BankerIntegrationSelfTest.tick(event.getServer());
         VillageComparisonGallery.tick(event.getServer());
     }
 

@@ -44,7 +44,7 @@ final class VillageWalkingSelfTest {
             }
             walker.tick();
             double dx = walker.getX() - goal.getX() - .5, dz = walker.getZ() - goal.getZ() - .5;
-            if (dx * dx + dz * dz < .65 * .65 && Math.abs(walker.getY() - goal.getY()) < 1.1) {
+            if (dx * dx + dz * dz < .35 * .35 && Math.abs(walker.getY() - goal.getY()) < .125 && walker.onGround()) {
                 System.out.println("PASS VillageWalkingSelfTest: " + label + " steps=" + (tick + 1)
                         + " route_retries=" + tick / 80
                         + " displacement=" + Math.hypot(walker.getX() - startX, walker.getZ() - startZ));
@@ -54,6 +54,9 @@ final class VillageWalkingSelfTest {
         throw new IllegalStateException("Villager did not physically reach " + label + ": " + walker.position() + " -> " + goal);
         } finally {
             walker.getBrain().stopAll(level, walker);
+            walker.getNavigation().stop();
+            walker.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+            walker.getBrain().eraseMemory(MemoryModuleType.PATH);
             clock.setGameTime(originalTime);
         }
     }
@@ -101,7 +104,25 @@ final class VillageWalkingSelfTest {
             var path = feet(level, beside) ? walker.getNavigation().createPath(beside, 0) : null;
             if (path != null && path.canReach()) { walk(level, walker, beside, label); return; }
         }
-        throw new IllegalStateException("No accessible standing cell beside " + label + " at " + object);
+        StringBuilder evidence = new StringBuilder();
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos p = object.relative(direction);
+            evidence.append("\n").append(p).append(" feet=").append(level.getBlockState(p))
+                    .append(" head=").append(level.getBlockState(p.above())).append(" floor=")
+                    .append(level.getBlockState(p.below())).append(" type=")
+                    .append(net.minecraft.world.level.pathfinder.WalkNodeEvaluator.getPathTypeStatic(walker,p));
+        }
+        for (int z = object.getZ()-5; z <= object.getZ()+2; z++) {
+            evidence.append("\nrow ").append(z).append(": ");
+            for (int x = object.getX()-6; x <= object.getX()+2; x++) {
+                var p = new BlockPos(x,object.getY(),z);
+                evidence.append(level.getBlockState(p).getBlock()).append(" / ")
+                        .append(level.getBlockState(p.above()).getBlock()).append(" / ")
+                        .append(net.minecraft.world.level.pathfinder.WalkNodeEvaluator.getPathTypeStatic(walker,p)).append(' ');
+            }
+        }
+        throw new IllegalStateException("No accessible standing cell beside " + label + " at " + object
+                + " walker=" + walker.position() + " onGround=" + walker.onGround() + evidence);
     }
 
     private static boolean feet(ServerLevel level, BlockPos pos) {

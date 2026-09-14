@@ -377,7 +377,7 @@ public final class ClientSmokeSupport {
                         if (minecraft.getWindow().getGuiScale() != guiScale)
                             throw new IllegalStateException("Recipe GUI scale was clamped");
                         ReaderClientChecks.craftingFixture(minecraft);
-                        org.lwjgl.glfw.GLFW.glfwSetCursorPos(minecraft.getWindow().handle(), 5, 5);
+                        moveSmokePointer(minecraft, 5, 5);
                         return null;
                     });
                     Thread.sleep(350);
@@ -390,7 +390,7 @@ public final class ClientSmokeSupport {
                     onClient(minecraft, () -> {
                         int[] point = ((HandbookScreen) minecraft.gui.screen()).firstRecipeIngredientCenter();
                         var window = minecraft.getWindow();
-                        org.lwjgl.glfw.GLFW.glfwSetCursorPos(window.handle(),
+                        moveSmokePointer(minecraft,
                                 point[0] * window.getScreenWidth() / (double) window.getGuiScaledWidth(),
                                 point[1] * window.getScreenHeight() / (double) window.getGuiScaledHeight());
                         return null;
@@ -407,7 +407,7 @@ public final class ClientSmokeSupport {
                         reader.keyPressed(new net.minecraft.client.input.KeyEvent(org.lwjgl.glfw.GLFW.GLFW_KEY_HOME, 0, 0));
                         for (int i = 0; i < reader.recipeTitleLine(1); i++)
                             reader.keyPressed(new net.minecraft.client.input.KeyEvent(org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN, 0, 0));
-                        org.lwjgl.glfw.GLFW.glfwSetCursorPos(minecraft.getWindow().handle(), 5, 5);
+                        moveSmokePointer(minecraft, 5, 5);
                         return null;
                     });
                     Thread.sleep(250);
@@ -522,6 +522,19 @@ public final class ClientSmokeSupport {
         });
         return result.get(15, TimeUnit.SECONDS);
     }
+    /** Xvfb/unfocused windows do not reliably dispatch glfwSetCursorPos as an input event.
+     * Exercise the installed Minecraft callback too; do not mutate screen hover/frame state. */
+    private static void moveSmokePointer(Minecraft minecraft, double x, double y) {
+        long window = minecraft.getWindow().handle();
+        org.lwjgl.glfw.GLFW.glfwSetCursorPos(window, x, y);
+        var callback = org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback(window, null);
+        if (callback == null) throw new IllegalStateException("Minecraft mouse callback is missing");
+        org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback(window, callback);
+        callback.invoke(window, x, y);
+        // Minecraft queues this callback. The caller waits for subsequent rendered frames;
+        // reading MouseHandler here would incorrectly assert before its queued input runs.
+    }
+
     private static void capture(Minecraft minecraft, String name) throws Exception {
         Path output = minecraft.gameDirectory.toPath().resolve("screenshots/tes-reader-ci").resolve(name);
         Files.createDirectories(output.getParent());

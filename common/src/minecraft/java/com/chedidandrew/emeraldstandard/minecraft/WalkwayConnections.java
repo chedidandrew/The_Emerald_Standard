@@ -46,7 +46,8 @@ final class WalkwayConnections {
     }
     static boolean due(ServerLevel level,long tick) {
         var ledger=get(level);
-        return ledger.lastTick==Long.MIN_VALUE || tick<ledger.lastTick || tick-ledger.lastTick>=20;
+        int interval = EmeraldConfig.current().forcedVillageDevelopment() ? 2 : 20;
+        return ledger.lastTick==Long.MIN_VALUE || tick<ledger.lastTick || tick-ledger.lastTick>=interval;
     }
     static boolean acquire(ServerLevel level,long tick) {
         if(!due(level,tick))return false;
@@ -54,23 +55,55 @@ final class WalkwayConnections {
         ledger.lastTick=tick; return true;
     }
     static long column(BlockPos p) { return new BlockPos(p.getX(),0,p.getZ()).asLong(); }
+    /** Resume admitted searches before opening more. Pending history must not dilute active turns. */
+    static List<String> runnable(ServerLevel level, List<String> keys, long tick) {
+        prune(level, tick);
+        var searches = SEARCHES.getOrDefault(level, Map.of());
+        var active = keys.stream().filter(k -> searches.containsKey(k) || !get(level).job(k).plan().isEmpty()).toList();
+        if (!active.isEmpty()) return active;
+        if (searches.size() < 8) return keys;
+        DebugWork.count("walkway.waitingForSearchSlot");
+        return List.of();
+    }
+    private static void prune(ServerLevel level, long tick) {
+        var searches = SEARCHES.get(level);
+        if (searches == null) return;
+        int range = EmeraldConfig.current().villageDevelopmentRadius() + MAX_LENGTH;
+        searches.entrySet().removeIf(e -> {
+            Search s = e.getValue();
+            boolean remove = tick < s.lastUsed || tick - s.lastUsed > 1200
+                    && level.players().stream().noneMatch(p -> p.blockPosition().distSqr(s.request.start()) <= (double)range*range
+                            || p.blockPosition().distSqr(s.request.destination()) <= (double)range*range);
+            if (remove) DebugWork.count("walkway.inactiveSearchEvicted");
+            return remove;
+        });
+    }
     static int advance(ServerLevel level,Request r,long tick,int allowance) {
         return advance(level,r,tick,allowance,null);
     }
     static int advance(ServerLevel level,Request r,long tick,int allowance,VillageBridges.Context bridges) {
+        try (var ignored = DebugWork.scope("walkway")) {
+            DebugWork.job("walkway:"+r.key(),tick,allowance <= 0 ? "shared_budget_exhausted" : "selected",false);
+            int changed = advanceMeasured(level,r,tick,allowance,bridges);
+            if(changed>0) DebugWork.job("walkway:"+r.key(),tick,"placed_blocks",true);
+            return changed;
+        }
+    }
+    private static int advanceMeasured(ServerLevel level,Request r,long tick,int allowance,VillageBridges.Context bridges) {
         if(allowance<=0)return 0;
         var ledger=get(level); Job job=ledger.job(r.key());
         if(job.done()||tick<job.retry())return 0;
         if(!job.plan().isEmpty())return pave(level,r,job,tick,allowance,bridges);
         var searches=SEARCHES.computeIfAbsent(level,k->new LinkedHashMap<>());
-        searches.entrySet().removeIf(e -> tick < e.getValue().lastUsed || tick-e.getValue().lastUsed>1200);
+        prune(level, tick);
         Search search=searches.get(r.key());
         if(search!=null && (!search.request.destination().equals(r.destination())
                 || !search.request.start().equals(r.start()) || !Objects.equals(search.bridgeContext,bridges))) {
+            DebugWork.count("walkway.requestRestart");
             searches.remove(r.key()); search=null;
         }
         if(search==null) {
-            if(searches.size()>=8)return 0;
+            if(searches.size()>=8) { DebugWork.count("walkway.waitingForSearchSlot"); return 0; }
             if(Math.abs((long)r.start().getX()-r.destination().getX())
                     +Math.abs((long)r.start().getZ()-r.destination().getZ())>384) {
                 ledger.put(r.key(),job.retry(tick,"Connection exceeds the bounded 384-block survey; add a nearer district connection"));
@@ -82,6 +115,7 @@ final class WalkwayConnections {
                 return 0;
             }
             search=new Search(r,start,bridges); searches.put(r.key(),search);
+            DebugWork.count("walkway.searchStarted");
         }
         search.lastUsed=tick;
         if(r.streetGoal() && search.targetCursor<49*49) {
@@ -469,7 +503,13 @@ final class WalkwayConnections {
     }
     static Map<String,Object> report(ServerLevel level,String key) {
         Job j=get(level).job(key);
+        Search search = SEARCHES.getOrDefault(level, Map.of()).get(key);
         return Map.of("connected",j.done(),"centerCells",j.centers(),"cursor",j.cursor(),"reason",j.reason(),
+                "activeSearch", search != null,
+                "lastSurveyVisitGameTick", search == null ? -1L : search.lastUsed,
+                "surveyNodes", search == null ? 0 : search.expanded,
+                "targetColumnsChecked", search == null ? 0 : search.targetCursor,
+                "retryAfterGameTick", j.retry(),
                 "bridges",j.plan().stream().map(Step::bridge).filter(s->!s.isEmpty()).distinct()
                         .map(id->VillageBridges.report(level,id)).toList());
     }

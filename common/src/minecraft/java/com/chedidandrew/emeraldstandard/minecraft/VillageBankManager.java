@@ -372,6 +372,8 @@ public final class VillageBankManager {
                     int allowance = forcedDevelopment ? ForcedDevelopmentRuntime.claim(server)
                             : ConstructionTimeRuntime.allowance("bank:" + entry.getKey() + ":" + entry.getValue().origin(),
                                     gameTime, config);
+                    DebugWork.job("bank:" + entry.getKey(), gameTime,
+                            allowance == 0 ? "shared_budget_exhausted" : "selected", false);
                     if (allowance == 0) continue;
                     for (; allowance > 0; allowance--) {
                         if (forcedDevelopment && changed > 0 && !ForcedDevelopmentRuntime.hasTime()) break;
@@ -381,6 +383,7 @@ public final class VillageBankManager {
                         changed += step;
                         if (step == 0) break;
                     }
+                    if (changed > 0) DebugWork.job("bank:" + entry.getKey(), gameTime, "placed_blocks", true);
                     if (changed == 0 && economy.pendingBankConstructionsSnapshot().containsKey(entry.getKey()))
                         CONSTRUCTION_RETRY.put(entry.getKey(), gameTime
                                 + (ConstructionDiagnostics.waitingForEntities("bank:" + entry.getKey())

@@ -1814,6 +1814,11 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return tr("market.type." + asset.type().name().toLowerCase(Locale.ROOT));
     }
 
+    static String marketBehaviorKey(EconomyEngine.Asset asset) {
+        String ticker = asset.ticker().toLowerCase(Locale.ROOT);
+        return (ticker.equals("vilx") || ticker.equals("vcix") ? "market.brief." : "market.behavior.") + ticker;
+    }
+
     private void drawMarketLabels(GuiGraphicsExtractor graphics) {
         EconomyEngine.Asset selected = menu.selectedAsset();
         drawTextWithin(graphics, assetTypeLabel(selected),
@@ -1828,7 +1833,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 BankerScreenLayout.MARKET_SELECTOR_LABEL_X,
                 BankerScreenLayout.MARKET_RISK_Y,
                 BankerScreenLayout.MARKET_META_WIDTH, MUTED, false);
-        drawWrappedText(graphics, tr("market.behavior." + selected.ticker().toLowerCase(Locale.ROOT)),
+        drawWrappedText(graphics, tr(marketBehaviorKey(selected)),
                 BankerScreenLayout.MARKET_SELECTOR_LABEL_X, BankerScreenLayout.MARKET_BEHAVIOR_Y,
                 BankerScreenLayout.MARKET_META_WIDTH, BankerScreenLayout.MARKET_BEHAVIOR_LINE_STEP,
                 BankerScreenLayout.MARKET_BEHAVIOR_LINES, MUTED);

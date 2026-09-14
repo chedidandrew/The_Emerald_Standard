@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.48
+## Unreleased: 0.4.0-beta.49
+
+- Add bounded capture-local subsystem timings, cache counters, scheduler visit/progress evidence, housing-survey details and raw versus gap-adjusted TPS. `/emerald debug profile` adds an owner-requested 60-second JVM profile without toggling gameplay settings.
+- Reuse frozen authored templates in normal construction and relative geometry during site searches. Resolve road materials without generating an entire building. All live terrain, ownership, occupancy and saved-hash safeguards remain.
+- Resume admitted walkway searches before admitting more backlog; keep relevant searches alive and accelerate forced-mode road turns within existing shared work limits.
+- Invalidate path classifications on actual loaded-chunk changes, including non-ticking chunks; previously cached air or walls could survive construction until a villager tried to navigate.
+- Correct client input injection, require first-launch success before restart checks, and derive handbook page counts from the actual renderer. Keep long market descriptions in tooltips and fit compact basket summaries in the dashboard.
+- Give native integration fixtures individual server ticks with the watchdog enabled; initialize shared scheduler admission in isolated construction/sleep fixtures. Reconcile the standalone economy test with the actual VILX basket, without tuning returns to an obsolete assertion.
+- Vary complete market dispatch structures and event-specific reactions, with shorter desk reports between longer stories. Preserve quoted facts, incident continuity, outlet attribution and saved articles.
+- Review/update guided and compact handbooks, candidate identity and save-format documentation. Extended human-play and modpack performance certification remain separate from automated checks.
+
+## Previous unreleased candidate: 0.4.0-beta.48
 
 - Raise the default Village Fund monthly spending allowance to 240 emeralds (8 per economic day) and clarify its settings label/help. Explicit saved world values remain unchanged; update both handbook forms and configuration examples.
 - Fix endless finishing repairs when supplied dirt becomes grass or shaded grass becomes dirt.

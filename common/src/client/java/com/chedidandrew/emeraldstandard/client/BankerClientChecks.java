@@ -50,7 +50,7 @@ final class BankerClientChecks {
             for (var asset : EconomyEngine.ASSETS) {
                 checkLines(minecraft, "market.type." + asset.type().name().toLowerCase(Locale.ROOT),
                         BankerScreenScale.scaled(BankerScreenLayout.MARKET_META_WIDTH, scale), 1);
-                checkLines(minecraft, "market.behavior." + asset.ticker().toLowerCase(Locale.ROOT),
+                checkLines(minecraft, BankerScreen.marketBehaviorKey(asset),
                         BankerScreenScale.scaled(BankerScreenLayout.MARKET_META_WIDTH, scale), 4);
             }
             for (String key : new String[] {"chart.history_building", "chart.history_next_day"})

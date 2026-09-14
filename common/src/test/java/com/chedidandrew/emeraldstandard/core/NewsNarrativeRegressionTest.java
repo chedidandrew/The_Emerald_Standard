@@ -22,6 +22,17 @@ public final class NewsNarrativeRegressionTest {
     public static void main(String[] args) throws Exception {
         var s=EconomyState.fresh(411,0,0);
         var prices=Map.copyOf(s.prices);
+        var openings=new HashSet<String>(); var paragraphCounts=new HashSet<Integer>();
+        for (int day=0;day<64;day++) {
+            s.economicDay=day;
+            String body=NewsNarrative.market(s,"NETHER_SUPPLY_CRISIS",NewsWire.OUTLETS.getFirst(),"Cargo delayed","NETH: +2.34% today");
+            require(body.equals(NewsNarrative.market(s,"NETHER_SUPPLY_CRISIS",NewsWire.OUTLETS.getFirst(),"Cargo delayed","NETH: +2.34% today")),"deterministic dispatch");
+            require(body.contains("NETH: +2.34% today")&&!body.contains("routes have reopened"),"composition preserves quotation and event");
+            openings.add(body.split("\n\n")[0]); paragraphCounts.add(body.split("\n\n").length);
+            story(new NewsWire.Article(1000+day,day,NewsWire.Kind.MARKET,"NETHER_SUPPLY_CRISIS",NewsWire.OUTLETS.getFirst(),"","",0,"Cargo delayed",body));
+        }
+        require(openings.size()>=3&&paragraphCounts.size()>=3,"full articles vary openings and length, not only headlines");
+        s.economicDay=0;
         for(var event:EconomyEngine.MarketEvent.values())if(event!=EconomyEngine.MarketEvent.NONE) {
             NewsWire.day(s,event,prices);
             story(s.news.getLast());

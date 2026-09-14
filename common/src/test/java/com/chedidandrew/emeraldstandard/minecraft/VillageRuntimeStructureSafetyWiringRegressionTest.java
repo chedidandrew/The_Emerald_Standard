@@ -38,7 +38,7 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
     }
 
     private static void verifyAuthoritativeTerrainFootprint(String source) {
-        String search = methodBody(source, "private static ProjectSiteSearch findProjectOrigin(");
+        String search = methodBody(source, "private static ProjectSiteSearch findProjectOriginMeasured(");
         require(search.contains("blueprintPlacementPlan(level, provisionalOrigin, village, project).base()")
                         && search.contains("authoritativeGroundContactColumns(")
                         && search.contains("safeOrigin(")
@@ -129,7 +129,7 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
     }
 
     private static void verifyLiveSiteSearch(String source) {
-        String search = methodBody(source, "private static ProjectSiteSearch findProjectOrigin(");
+        String search = methodBody(source, "private static ProjectSiteSearch findProjectOriginMeasured(");
         require(search.contains("VillageNeighborhoodPlan.offsets(")
                                 && search.contains("project.materializationFailures, village.villageId"),
                 "Repeated failures cannot expand the deterministic site frontier");

@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.ConstructionWorkBudget;
 import com.mojang.authlib.GameProfile;
 import java.nio.file.Files;
 import java.util.LinkedHashMap;
@@ -438,7 +439,14 @@ final class VillageExpansionSelfTest {
         if (config.forcedVillageDevelopment()) {
             ForcedDevelopmentRuntime.reset(); ForcedDevelopmentRuntime.claim(level.getServer());
             invoke("materializeDevelopment",level,economy,config,tick,budget,economy.developmentVillageSnapshot(village));
-        } else invoke("materializeDevelopment",level,economy,config,tick,budget);
+        } else {
+            // This isolated fixture invokes the private construction phase without the loader
+            // tick. Supply its normal admission context; no runtime protection is bypassed.
+            ConstructionTimeRuntime.reset();
+            ConstructionTimeRuntime.observe(tick, tick, config);
+            require(ConstructionTimeRuntime.enter(ConstructionWorkBudget.Lane.VILLAGE), "fixture construction admission");
+            invoke("materializeDevelopment",level,economy,config,tick,budget);
+        }
     }
     private static void verifyRotationFallback(ServerLevel level, EconomyService economy,
             EconomyState.VillageRecord draft, BlockPos fixture) throws Exception {

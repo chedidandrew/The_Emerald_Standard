@@ -15,21 +15,27 @@ final class SiteSurveyRejections {
 
     static Object get(ServerLevel level, Object key, int x, int z, int radius, int lifetime) {
         var entries = LEVELS.get(level);
-        if (entries == null) return null;
+        if (entries == null) { DebugWork.count("plotCache.miss"); return null; }
         var entry = entries.get(key);
-        if (entry == null) return null;
+        if (entry == null) { DebugWork.count("plotCache.miss"); return null; }
         long age = level.getGameTime() - entry.tick;
-        if (age < 0 || age >= lifetime || !entry.stamps.equals(stamps(level, x, z, radius))) {
+        boolean expired = age < 0 || age >= lifetime;
+        if (expired || !entry.stamps.equals(stamps(level, x, z, radius))) {
+            DebugWork.count(expired ? "plotCache.expired" : "plotCache.worldChanged");
             entries.remove(key);
             return null;
         }
+        DebugWork.count("plotCache.hit");
         return entry.rejection;
     }
 
     static <T> T remember(ServerLevel level, Object key, int x, int z, int radius, T rejection) {
         var entries = LEVELS.computeIfAbsent(level, unused -> new LinkedHashMap<>(32, .75f, true));
         entries.put(key, new Entry(level.getGameTime(), stamps(level, x, z, radius), rejection));
-        if (entries.size() > LIMIT) entries.remove(entries.keySet().iterator().next());
+        if (entries.size() > LIMIT) {
+            entries.remove(entries.keySet().iterator().next());
+            DebugWork.count("plotCache.evicted");
+        }
         return rejection;
     }
 

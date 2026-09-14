@@ -25,8 +25,25 @@ final class VillagePopulationEnvironment {
     private static final Map<UUID,String> STATUS=new HashMap<>();
     private static final Map<UUID,Long> LAST_ARRIVAL=new HashMap<>();
     private static final Map<UUID,Integer> NEXT_BED=new HashMap<>();
-    static void reset() { PENDING.clear(); STATUS.clear(); LAST_ARRIVAL.clear(); NEXT_BED.clear(); }
+    private static final Map<UUID,Map<String,Object>> LAST_SURVEY=new LinkedHashMap<>();
+    static void reset() { PENDING.clear(); STATUS.clear(); LAST_ARRIVAL.clear(); NEXT_BED.clear(); LAST_SURVEY.clear(); }
     static String status(UUID id) { return STATUS.getOrDefault(id,"Housing survey pending"); }
+
+    /** Metadata only: cached homes are explicitly not asserted to be loaded or usable. */
+    static Map<String,Object> report(EconomyState.VillageRecord village) {
+        Scan scan = PENDING.get(village.villageId);
+        return Map.of("economicAccommodation", VillageProsperityEngine.effectiveHousingCapacity(village),
+                "cachedDistinctBedHeads", village.housingChunks.values().stream().flatMap(List::stream).distinct().count(),
+                "cachedChunks", village.housingChunks.size(),
+                "activeResidentHomeClaims", village.residents.values().stream().filter(r -> r.homePos != 0
+                        && r.status != VillageProsperityEngine.ResidentStatus.DEAD
+                        && r.status != VillageProsperityEngine.ResidentStatus.EMIGRATED).map(r -> r.homePos).distinct().count(),
+                "pendingSettlers", village.pendingSettlers,
+                "status", status(village.villageId),
+                "lastSurvey", LAST_SURVEY.getOrDefault(village.villageId, Map.of()),
+                "inProgress", scan == null ? Map.of() : scan.report(),
+                "meaning", "Economic accommodation is not a physical-bed census. Cached unloaded homes are retained; arrival checks revalidate ownership, both halves, POI claims and safe landings.");
+    }
 
     static void survey(ServerLevel level, EconomyService economy, EmeraldConfig config) {
         if (economy.isCatchingUp()) return;
@@ -116,6 +133,8 @@ final class VillagePopulationEnvironment {
         if(scan.level.getServer()!=server || !economy.hasVillage(id))return;
         if(!scan.advance(BackgroundSurveyBudget.cells(server,2048))) {PENDING.put(id,scan);return;}
         economy.observeDistrictHousing(id,scan.completed);
+        LAST_SURVEY.put(id, scan.report());
+        if (LAST_SURVEY.size() > 128) LAST_SURVEY.remove(LAST_SURVEY.keySet().iterator().next());
         var current=economy.villageSnapshot(id);
         if(current!=null && config.villageVisualProgressionEnabled() && !config.forcedVillageDevelopment())
             attemptArrival(scan.level,economy,current.village());
@@ -199,18 +218,20 @@ final class VillagePopulationEnvironment {
             int index=(start+step)%candidates.size();
             NEXT_BED.put(id,index+1); // Unloaded/unsafe early homes cannot starve later loaded homes.
             long packed=candidates.get(index);
-            if(reserved.contains(packed))continue;
+            if(reserved.contains(packed)) { DebugWork.count("arrival.existingHomeClaim"); continue; }
             BlockPos bed=BlockPos.of(packed);
-            if(!id.equals(owner(bed,districts)) || !intactBed(level,bed))continue;
+            if(!loaded(level,bed)) { DebugWork.count("arrival.unloadedBed"); continue; }
+            if(!id.equals(owner(bed,districts))) { DebugWork.count("arrival.otherDistrict"); continue; }
+            if(!intactBed(level,bed)) { DebugWork.count("arrival.brokenOrOccupiedBed"); continue; }
             intact++;
             Villager settler=EntityTypes.VILLAGER.create(level,EntitySpawnReason.NATURAL);
             if(settler==null)return;
             BlockPos spawn=findArrival(level,bed,settler);
-            if(spawn==null) {settler.discard();continue;}
+            if(spawn==null) { DebugWork.count("arrival.noSafeLanding"); settler.discard();continue; }
             reachable++;
             var claim=level.getPoiManager().take(holder -> holder.is(PoiTypes.HOME),
                     (holder,pos)->pos.equals(bed),bed,1);
-            if(claim.isEmpty()) {settler.discard();continue;}
+            if(claim.isEmpty()) { DebugWork.count("arrival.poiUnavailable"); settler.discard();continue; }
             settler.teleportTo(spawn.getX()+.5,spawn.getY(),spawn.getZ()+.5);
             settler.setPersistenceRequired();
             settler.getBrain().setMemory(MemoryModuleType.HOME,GlobalPos.of(level.dimension(),bed));
@@ -272,6 +293,7 @@ final class VillagePopulationEnvironment {
         final int minX,minZ,width,depth;
         final List<Long> additionalChunks=new ArrayList<>();
         long cursor;int section,cell;
+        int unloadedChunks, foreignBeds;
         final List<Long> beds=new ArrayList<>();
         final Map<Long,List<Long>> completed=new LinkedHashMap<>();
         Scan(ServerLevel level,EconomyState.VillageRecord village,List<EconomyState.VillageRecord> neighbors) {
@@ -302,7 +324,7 @@ final class VillagePopulationEnvironment {
                 long extra=cursor<rectangle ? 0 : additionalChunks.get((int)(cursor-rectangle));
                 int cx=cursor<rectangle ? minX+(int)(cursor%width) : (int)extra;
                 int cz=cursor<rectangle ? minZ+(int)(cursor/width) : (int)(extra>>32);
-                if(!level.hasChunk(cx,cz)) {next();continue;}
+                if(!level.hasChunk(cx,cz)) {unloadedChunks++;next();continue;}
                 var chunk=level.getChunk(cx,cz);
                 if(section>=chunk.getSections().length) {
                     completed.put(((long)cx & 0xffffffffL)|((long)cz<<32),List.copyOf(beds));next();continue;
@@ -314,10 +336,19 @@ final class VillagePopulationEnvironment {
                 if(bedHead(state)) {
                     BlockPos p=new BlockPos(cx*16+x,level.getMinY()+section*16+y,cz*16+z);
                     if(village.villageId.equals(owner(p,neighbors)) && beds.size()<4096)beds.add(p.asLong());
+                    else foreignBeds++;
                 }
                 if(++cell==4096){cell=0;section++;}
             }
             return cursor>=total;
+        }
+        Map<String,Object> report() {
+            return Map.of("observedGameTick", level.getGameTime(), "chunkCursor", cursor,
+                    "totalChunks", (long)width*depth+additionalChunks.size(),
+                    "sectionCursor", section, "cellCursor", cell,
+                    "fullyScannedLoadedChunks", completed.size(), "unloadedChunksSkipped", unloadedChunks,
+                    "headsInCompletedChunks", completed.values().stream().mapToInt(List::size).sum(),
+                    "foreignOrExcessBedHeads", foreignBeds);
         }
         void next(){cursor++;section=cell=0;beds.clear();}
     }

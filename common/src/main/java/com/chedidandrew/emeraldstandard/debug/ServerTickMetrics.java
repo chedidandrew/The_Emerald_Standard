@@ -16,6 +16,7 @@ public final class ServerTickMetrics {
     private long count, interruptedTicks, invalidTicks, maximumNanos, over50, over100, over250;
     private double totalNanos;
     private final long startedNanos;
+    private long previousEnd, gapCount, gapNanos, longestGap;
 
     public ServerTickMetrics(long nowNanos) {
         startedNanos = nowNanos;
@@ -35,6 +36,20 @@ public final class ServerTickMetrics {
         if (duration > 250_000_000L) over250++;
     }
 
+    /** Long gaps between ticks are not long ticks, and are not assumed to be proven pauses. */
+    public void recordBoundary(long start, long end, boolean completed) {
+        if (previousEnd != 0 && start >= previousEnd) {
+            long gap = start - previousEnd;
+            if (gap > 1_000_000_000L) {
+                gapCount++;
+                gapNanos += gap - 50_000_000L; // retain one ordinary scheduling interval
+                longestGap = Math.max(longestGap, gap);
+            }
+        }
+        previousEnd = end;
+        record(end - start, completed);
+    }
+
     public Map<String, Object> snapshot(long nowNanos) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("source", "Monotonic wall time around tickServer including loader callbacks; excludes scheduled inter-tick sleep");
@@ -49,6 +64,12 @@ public final class ServerTickMetrics {
         double seconds = Math.max(0L, nowNanos - startedNanos) / 1_000_000_000.0;
         out.put("elapsedSeconds", seconds);
         out.put("observedTicksPerSecond", count == 0 || seconds <= 0 ? null : count / seconds);
+        double activeSeconds = seconds - gapNanos / 1_000_000_000.0;
+        out.put("interTickGapsOverOneSecond", gapCount);
+        out.put("interTickGapSecondsExcluded", gapNanos / 1_000_000_000.0);
+        out.put("longestInterTickGapSeconds", longestGap / 1_000_000_000.0);
+        out.put("gapAdjustedTicksPerSecond", count == 0 || activeSeconds <= 0 ? null : count / activeSeconds);
+        out.put("gapMeaning", "Heuristic excluding inter-tick gaps over one second, retaining 50ms per gap. Gaps may be pauses or scheduling stalls; neither is recorded as a slow tick. Raw TPS remains above.");
         out.put("tpsMeaning", "Completed sampled ticks / monotonic capture time; includes pauses, excludes incomplete boundary ticks; not 1000/MSPT");
         long[] sorted = Arrays.copyOf(recent, retained);
         Arrays.sort(sorted);

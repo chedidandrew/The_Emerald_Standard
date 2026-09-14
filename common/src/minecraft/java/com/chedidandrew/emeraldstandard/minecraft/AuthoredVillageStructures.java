@@ -98,7 +98,7 @@ final class AuthoredVillageStructures {
             throw new IllegalArgumentException(
                     "Unknown Blueprint V2 revision " + templateRevision + " for " + templateId);
         }
-        Materials materials = palette(materials(character, dialect, templateRevision), paletteId);
+        Materials materials = planMaterials(templateRevision, paletteId, character, dialect);
         Builder base = new Builder(Set.of());
         base.templateRevision = templateRevision;
         Metadata metadata = new Metadata();
@@ -314,6 +314,14 @@ final class AuthoredVillageStructures {
                 character,
                 dialect,
                 0L);
+    }
+
+    /** Identical frozen palette without allocating or validating the entire building geometry. */
+    static Materials planMaterials(int revision, String paletteId,
+            VillageArchitecture.Character character, VillageArchitecture.BiomeDialect dialect) {
+        if (revision < 1 || revision > LATEST_TEMPLATE_REVISION)
+            throw new IllegalArgumentException("Unknown Blueprint V2 revision " + revision);
+        return palette(materials(character, dialect, revision), paletteId);
     }
 
     private static Materials materials(

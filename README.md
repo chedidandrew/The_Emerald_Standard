@@ -6,7 +6,7 @@ The badge reports **main only**. Development candidates require their own exact-
 
 A lightweight villager banking, investing, commodity-exchange, and settlement-economy mod for **Minecraft 26.2**, with Fabric and NeoForge builds.
 
-> Current source status: **unreleased `0.4.0-beta.45` development candidate**, not a stable release. See the [beta.45 vanilla-construction validation](docs/reviews/2026-09-13-beta45-vanilla-construction.md) for current results and artifact fingerprints; older review records do not certify this build. The broader human gameplay matrix is not certified. See [the five-priority upgrade](docs/FIVE_PRIORITIES.md) for the current UI, test harness and build-identity changes.
+> Current source status: **unreleased `0.4.0-beta.49` stabilization candidate**, not a stable release. See the [beta.49 stabilization record](docs/reviews/2026-09-14-beta49-stabilization.md) for changes, validation and remaining limits; older review records do not certify this build. The broader human gameplay matrix is not certified.
 
 ## Core rule
 
@@ -30,11 +30,11 @@ The latest [background village life](docs/BACKGROUND_VILLAGE_LIFE.md) pass adds 
 cosmetic deliveries, neighborhood gathering spaces, upkeep advice and automatic retry diagnostics.
 See the [beta.5 background-life validation record](docs/reviews/2026-09-10-beta5-background-village-life-validation.md)
 for tested behavior, exact local JAR hashes and remaining gameplay-review limits.
-Upgrading writes economy **format 39** and per-dimension construction ownership receipts; keep a
+Upgrading writes economy **format 40** and per-dimension construction ownership receipts; keep a
 pre-upgrade world backup and do not downgrade that save to an older binary.
 
 1. Back up the world before installing or upgrading this beta.
-2. To test this source candidate, build or obtain exactly one `0.4.0-beta.45` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
+2. To test this source candidate, build or obtain exactly one `0.4.0-beta.49` playable JAR from the same exact commit, then install that same Fabric or NeoForge JAR on the server and every connecting client. Never install both loader JARs, do not use a `-sources.jar`, and do not mix builds from different commits. The linked public `0.4.0-beta.2` artifacts are older and do not include the Unreleased features described by this README.
 3. Enter a loaded Overworld village. The mod searches periodically for a safe Village Bank site and supplies a Banker even when terrain prevents a structure.
 4. Right-click the Banker or an Exchange Desk to open the eight-page dashboard.
 5. Choose an amount and spend Bank Cash or ordinary loose inventory emeralds directly; deposits are optional. Use **Savings** for a safe liquid return, or choose a CD, villager lending position, commodity exchange, or market asset according to its displayed risk. See [combined spending and recovery](docs/UNIFIED_SPENDING.md).
@@ -58,6 +58,11 @@ Town opens the village overview; **What next? Progress report** opens the option
 allocation previews and accepted-payment receipts. **Market > Browse / compare** adds search,
 type filters, local favorites and holdings filtering. These views never place orders or promise
 construction completion. Debug captures and report footers include a reproducible source fingerprint.
+`/emerald debug` now includes subsystem timings, cache activity, scheduler selections versus actual
+progress, road-search admission and housing-survey evidence. `/emerald debug profile` optionally
+adds up to 60 seconds of JVM samples to that capture. Profiling adds overhead and includes Java
+thread/class names across installed mods; review before sharing. It does not change development
+settings. Raw TPS and an explicitly heuristic gap-adjusted rate are both retained.
 
 ## Banking and investing
 

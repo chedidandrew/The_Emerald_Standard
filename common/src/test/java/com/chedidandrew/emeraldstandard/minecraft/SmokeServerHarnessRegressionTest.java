@@ -39,6 +39,10 @@ public final class SmokeServerHarnessRegressionTest {
                         && script.contains("jps -lv | grep -F -- \"-Dthe_emerald_standard.smokeId=$SMOKE_ID\"")
                         && script.contains("taskkill.exe //PID \"$java_pid\" //T //F"),
                 "Smoke cleanup must retain exact unique-marker process ownership");
+        String fixtures=Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/BankerIntegrationSelfTest.java"));
+        require(fixtures.contains("sequence.checks.removeFirst().run()") && fixtures.contains("sequence.running")
+                        && fixtures.contains("if (sequence.checks.isEmpty())") && fixtures.contains("SEQUENCES.remove(server)"),
+                "Native suites must yield between fixtures, resist nested ticks and clear their lifecycle state");
         System.out.println("PASS bounded isolated dedicated-server smoke harness regression");
     }
 

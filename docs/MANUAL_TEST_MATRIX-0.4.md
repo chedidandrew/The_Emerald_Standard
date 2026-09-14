@@ -16,7 +16,7 @@ This document is the human-play evidence gate for The Emerald Standard 0.4 and l
 | Field | Fabric | NeoForge |
 | --- | --- | --- |
 | Commit | Unverified | Unverified |
-| Mod version | 0.4.0-beta.15 development candidate | 0.4.0-beta.15 development candidate |
+| Mod version | 0.4.0-beta.49 stabilization candidate | 0.4.0-beta.49 stabilization candidate |
 | Source fingerprint | Record report footer / debug capture | Record report footer / debug capture |
 | Loader version | Unverified | Unverified |
 | Tester | Unverified | Unverified |

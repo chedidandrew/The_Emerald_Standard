@@ -164,6 +164,7 @@ public final class DebugFlightRecorder {
                     player.blockPosition(),
                     economy);
             SESSIONS.put(server, session);
+            DebugWork.activate(session.workMeasurements);
             session.event("capture", "started", fields(
                     "durationMinutes", minutes,
                     "tester", session.ownerName,
@@ -189,7 +190,37 @@ public final class DebugFlightRecorder {
                             + "Stay near the affected district: candidate rejection reasons, search progress and retry timers are included automatically.");
         } catch (IOException | RuntimeException exception) {
             LOGGER.error("Could not start The Emerald Standard debug capture", exception);
+            Session failed = SESSIONS.remove(server);
+            DebugWork.deactivate();
+            if (failed != null) {
+                try { failed.writer.close(); } catch (IOException ignored) { }
+            }
             return CommandResult.failure("Debug capture could not start: " + message(exception));
+        }
+    }
+
+    /** Add one bounded, opt-in JVM profile without changing the world or development mode. */
+    public static synchronized CommandResult profile(ServerPlayer player, EconomyService economy) {
+        if (player == null || player.level().getServer() == null)
+            return CommandResult.failure("A server-side player is required.");
+        var server = player.level().getServer();
+        if (!SESSIONS.containsKey(server)) {
+            var started = toggle(player, economy, DEFAULT_MINUTES);
+            if (!started.success()) return started;
+        }
+        var session = SESSIONS.get(server);
+        if (!DebugCapturePolicy.isOwner(session.ownerId, player.getUUID()))
+            return CommandResult.failure("Only the capture owner can add a runtime profile.");
+        if (session.profile != null)
+            return CommandResult.failure("This capture already contains a runtime profile; start a new capture for another sample.");
+        try {
+            session.profile = DebugJvmProfile.start(session.sessionDirectory);
+            session.event("capture", "runtime_profile_started", fields("seconds", 60, "maxRetainedMiB", 16));
+            return new CommandResult(true, false, null,
+                    "Runtime profile started for up to 60 seconds. The debug ZIP will include JVM thread/stack, allocation and GC samples across Minecraft and installed mods. Profiling adds overhead; no world settings were changed.");
+        } catch (IOException | RuntimeException | LinkageError failure) {
+            session.captureErrors.add("Runtime profile unavailable: " + message(failure));
+            return CommandResult.failure("Runtime profile could not start; ordinary debug capture is still active: " + message(failure));
         }
     }
 
@@ -258,7 +289,10 @@ public final class DebugFlightRecorder {
     public static synchronized void completedServerTick(
             MinecraftServer server, Object capture, long elapsedNanos, boolean completed) {
         Session session = SESSIONS.get(server);
-        if (session != null && session == capture) session.serverTicks.record(elapsedNanos, completed);
+        if (session != null && session == capture) {
+            long end = System.nanoTime();
+            session.serverTicks.recordBoundary(end - elapsedNanos, end, completed);
+        }
     }
 
     /** Called once per server tick by each loader. It is nearly free when no capture is active. */
@@ -549,6 +583,11 @@ public final class DebugFlightRecorder {
             return CommandResult.failure("No debug capture is active.");
         }
         SESSIONS.remove(server);
+        DebugWork.deactivate();
+        if (session.profile != null) {
+            try { session.profile.close(); }
+            catch (RuntimeException failure) { session.captureErrors.add("Profile finalization failed: " + message(failure)); }
+        }
         Path report = null;
         try {
             session.event("capture", "stopping", fields("reason", reason));
@@ -885,7 +924,11 @@ public final class DebugFlightRecorder {
                         "economicProgress", p.economicProgress, "constructionStarted", p.constructionStarted,
                         "materializedBlocks", p.materializedBlocks, "totalBlocks", p.totalBlocks,
                         "siteSearchCursor", p.siteSearchCursor,
-                        "siteSearchCandidates", VillageNeighborhoodPlan.offsets(p.materializationFailures,village.villageId).size(),
+                        "siteSearchCandidates", village.organicTerritory
+                                ? com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.order(village,
+                                        EmeraldConfig.current().forcedVillageDevelopment()
+                                                ? 1 + Math.min(3, p.materializationFailures) : 1).size()
+                                : VillageNeighborhoodPlan.offsets(p.materializationFailures,village.villageId).size(),
                         "siteSearchSawUnloaded", p.siteSearchSawUnloadedCandidate,
                         "failedSweepsOrMaterializations", p.materializationFailures,
                         "retryAfterGameTick", p.retryAfterGameTick,
@@ -941,6 +984,7 @@ public final class DebugFlightRecorder {
                         r.status==VillageProsperityEngine.ResidentStatus.UNVERIFIED).count(),
                 "surveyedBedHeads", village.housingChunks.values().stream().mapToInt(List::size).sum(),
                 "arrivalStatus", VillagePopulationEnvironment.status(village.villageId),
+                "housingSurvey", VillagePopulationEnvironment.report(village),
                 "incidentsTracked", village.incidents.size(),
                 "projectBacklog", village.visualBacklog(),
                 "activeProject", project);
@@ -1050,6 +1094,7 @@ public final class DebugFlightRecorder {
         final Path timeline;
         final BufferedWriter writer;
         final EconomyService economy;
+        DebugJvmProfile profile;
         final List<String> captureErrors = new ArrayList<>();
         final List<String> validationWarnings = new ArrayList<>();
         final Map<String, Integer> projectMilestones = new HashMap<>();
@@ -1058,6 +1103,8 @@ public final class DebugFlightRecorder {
         long nextStatusAtNanos;
         final com.chedidandrew.emeraldstandard.debug.ServerTickMetrics serverTicks =
                 new com.chedidandrew.emeraldstandard.debug.ServerTickMetrics(System.nanoTime());
+        final com.chedidandrew.emeraldstandard.debug.WorkMeasurements workMeasurements =
+                new com.chedidandrew.emeraldstandard.debug.WorkMeasurements();
         Map<String, Object> latestConstruction = Map.of();
         long maximumObservedWorkingSites;
         long maximumUnfinishedSites;
@@ -1178,6 +1225,7 @@ public final class DebugFlightRecorder {
                         ((Number) latestConstruction.get("unfinishedPhysicalSitesIncludingBanks")).longValue());
                 event("performance", "server_workload", fields(
                         "serverTicks", serverPerformance(server),
+                        "subsystems", workMeasurements.snapshot(),
                         "construction", latestConstruction));
                 latestMarket = economy.marketSnapshot();
                 latestPortfolio = economy.portfolioSnapshot(ownerId);
@@ -1403,6 +1451,8 @@ public final class DebugFlightRecorder {
             writeText(sessionDirectory.resolve("performance-summary.json"),
                     json(fields(
                             "serverTicks", serverPerformance(server),
+                            "subsystems", workMeasurements.snapshot(),
+                            "runtimeProfile", profile == null ? "not requested" : "runtime-profile.jfr (opt-in, up to 60 seconds; adds profiling overhead)",
                             "construction", latestConstruction,
                             "maximumObservedWorkingSites", maximumObservedWorkingSites,
                             "maximumUnfinishedSites", maximumUnfinishedSites,

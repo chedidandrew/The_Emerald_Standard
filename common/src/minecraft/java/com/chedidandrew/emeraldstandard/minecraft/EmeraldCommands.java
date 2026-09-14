@@ -53,6 +53,8 @@ public final class EmeraldCommands {
                         .then(Commands.literal("mark")
                                 .executes(context -> EmeraldCommandHandlers.debugMark(
                                         context, economy)))
+                        .then(Commands.literal("profile")
+                                .executes(context -> EmeraldCommandHandlers.debugProfile(context, economy)))
                         .then(Commands.literal("stop")
                                 .executes(context -> EmeraldCommandHandlers.debugStop(
                                         context, economy)))

@@ -14,9 +14,17 @@ final class NewsNarrative {
     }
     static String market(EconomyState s,String family,String publisher,String headline,String quotes) {
         var scene=NewsStoryCatalog.scene(family);
-        int v=variant(s.seed,s.economicDay,family,3);
-        return paragraphs(scene.opening(),v==0?scene.detail():scene.angle(),
-                column(s,publisher,headline),scene.outlook(),FACTS+"World-market dispatch.\n"+quotes);
+        int v=variant(s.seed,s.economicDay,family+":"+publisher,4);
+        String reaction=NewsEventAngles.reaction(family,variant(s.seed,s.economicDay,family+":reaction",2));
+        String voice=column(s,publisher,headline), notebook=FACTS+"World-market dispatch.\n"+quotes;
+        // Mix developed dispatches, a counter-side opening and a shorter desk report.
+        // All retain the same source event and exact quotation notebook.
+        return switch(v) {
+            case 0 -> paragraphs(scene.opening(),scene.detail(),reaction,voice,scene.outlook(),notebook);
+            case 1 -> paragraphs(reaction,scene.opening(),voice,scene.angle(),notebook);
+            case 2 -> paragraphs(scene.opening(),scene.angle(),reaction,voice,notebook);
+            default -> paragraphs(scene.opening(),reaction,voice,notebook);
+        };
     }
     private static String column(EconomyState s,String publisher,String headline) {
         String key="VOICE_"+NewsWire.OUTLETS.indexOf(publisher);
@@ -32,10 +40,13 @@ final class NewsNarrative {
             case 4 -> "The broad index closed "+direction+", a development the Gravel is prepared to describe with tremendous certainty now that it has occurred. The important question is what happens next. We have reserved ample ink for an answer arriving shortly after the next closing bell.";
             default -> "The broad index closed "+direction+". This puts a new figure beside yesterday's confident explanations. A respectable account begins with that figure and works outward; an exceptionally confident explanation sometimes prefers to start with itself and work around the account.";
         };
+        int layout=variant(s.seed,s.economicDay,family+":"+publisher+":layout",3);
+        if(layout==1) lead="The closing bell leaves the broad index "+direction+" and tomorrow's business still unwritten. Sellers and buyers can agree on today's final figure while finding entirely different reasons to put it away. One side has a holding to value; the other has a price to consider.";
+        else if(layout==2) lead="A "+(up?"dearer":"cheaper")+" entry, a "+(up?"stronger":"weaker")+" holding: the broad index ended "+direction+". These are two readings of the same quotation, separated by which side of the trade a reader occupies. The closing bell has settled today's number, though not the discussion around it.";
         return paragraphs(lead,column(s,publisher,""),
                 up?"Existing holders have a better closing mark; new buyers face a dearer entry. The same price offers each side a different conversation."
                   :"Existing holders face a weaker mark; new buyers see a cheaper entry. Neither side gets tomorrow's result included in today's price.",
-                NewsColumns.closing(publisher),FACTS+"The Closing Bell\n"+quotes);
+                layout==2?"":NewsColumns.closing(publisher),FACTS+"The Closing Bell\n"+quotes);
     }
     static String local(NewsWire.Kind kind,int quantity,long seed,long day,String key,String location,String development) {
         String[] p=NewsLocalStories.passages(kind);int v=variant(seed,day,key,4);

@@ -150,6 +150,7 @@ final class WalkwayConnectionsSelfTest {
             require(decoded.job(entrance.key()).done()&&level.getBlockState(stair).is(Blocks.STONE_BRICK_STAIRS),
                     "entrance steps were not preserved by connection pass");
             managerEndpoints(level,origin);
+            matureTownQueue(level, origin);
             System.out.println("PASS walkway connections: truncated-road detour, real endpoint, trees, water, claims, chest, edits,"
                     +" grades, lots, occupancy, budgets, partial reload, no regeneration, unloaded chunks and manager endpoints");
             chest.clearContent();
@@ -160,6 +161,29 @@ final class WalkwayConnectionsSelfTest {
             before.forEach((p,s)->level.setBlock(p,s,18));
         }
     }
+    private static void matureTownQueue(ServerLevel level,BlockPos origin) {
+        UUID village = UUID.randomUUID();
+        var requests = new LinkedHashMap<String, WalkwayConnections.Request>();
+        for (int i = 0; i < 24; i++) {
+            var r = new WalkwayConnections.Request(village, i, origin.asLong(), origin.east(2), origin.east(8),
+                    false, Set.of(), List.of(), List.of(), false);
+            requests.put(r.key(), r);
+        }
+        int ordinal = 0;
+        for (int pulse = 0; pulse < 2400; pulse++) {
+            long tick = 100_000L + pulse * 20;
+            var pending = requests.keySet().stream().filter(k -> !WalkwayConnectionLedger.get(level).job(k).done()
+                    && WalkwayConnectionLedger.get(level).job(k).retry() <= tick).toList();
+            if (requests.keySet().stream().allMatch(k -> WalkwayConnectionLedger.get(level).job(k).done())) break;
+            var runnable = WalkwayConnections.runnable(level, pending, tick);
+            require(!runnable.isEmpty(), "24-job town stranded behind search admission");
+            String selected = runnable.get(Math.floorMod(ordinal++, runnable.size()));
+            WalkwayConnections.advance(level, requests.get(selected), tick, 2);
+        }
+        require(requests.keySet().stream().allMatch(k -> WalkwayConnectionLedger.get(level).job(k).done()),
+                "admitted work did not drain a backlog larger than the search cap");
+    }
+
     private static void managerEndpoints(ServerLevel level,BlockPos origin) {
         var village=new EconomyState.VillageRecord();village.villageId=UUID.randomUUID();village.centerPos=origin.east(60).asLong();
         village.architectureCharacter=VillageArchitecture.Character.RUSTIC.id();

@@ -36,6 +36,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsEditorialRegressionT
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsNarrativeRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewsroomRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomyRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.EconomySelfTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.InvestmentDiversityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.CommodityInvestmentRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.PersistenceRegressionTest

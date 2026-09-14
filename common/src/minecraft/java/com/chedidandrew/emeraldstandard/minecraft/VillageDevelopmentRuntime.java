@@ -8,7 +8,7 @@ public final class VillageDevelopmentRuntime {
     private VillageDevelopmentRuntime() { }
 
     public static void tick(MinecraftServer server, EconomyService economy) {
-        VanillaVillageBuildings.tick(server);
+        DebugWork.run("catalog", () -> VanillaVillageBuildings.tick(server));
         boolean forced = EmeraldConfig.current().forcedVillageDevelopment();
         // The Bank can now run first, including the first tick after switching modes.
         economy.configureForcedVillageDevelopment(forced);
@@ -18,12 +18,12 @@ public final class VillageDevelopmentRuntime {
             economy.configureVillageProsperity(config.villageProsperitySimulationEnabled(),
                     config.villageVisualProgressionEnabled(), config.villageMarketIntegrationEnabled(),
                     config.villageAutomaticRecoveryEnabled());
-            ConstructionTimeRuntime.runQueues(() -> VillageProsperityManager.tick(server, economy),
-                    () -> VillageBankManager.tick(server, economy));
+            ConstructionTimeRuntime.runQueues(() -> DebugWork.run("village", () -> VillageProsperityManager.tick(server, economy)),
+                    () -> DebugWork.run("bank", () -> VillageBankManager.tick(server, economy)));
             return;
         }
         ForcedDevelopmentWorkBudget.runQueues(forced, server.overworld().getGameTime(),
-                () -> VillageProsperityManager.tick(server, economy),
-                () -> VillageBankManager.tick(server, economy));
+                () -> DebugWork.run("village", () -> VillageProsperityManager.tick(server, economy)),
+                () -> DebugWork.run("bank", () -> VillageBankManager.tick(server, economy)));
     }
 }

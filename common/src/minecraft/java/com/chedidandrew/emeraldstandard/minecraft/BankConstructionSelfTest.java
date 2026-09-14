@@ -86,11 +86,16 @@ final class BankConstructionSelfTest {
             // the disposable server's clock. Both managers observing the same wake-up is safe.
             try {
                 var config = EmeraldConfig.current();
+                ConstructionTimeRuntime.reset();
                 ConstructionTimeRuntime.observe(13_000, 13_000, config);
+                require(ConstructionTimeRuntime.enter(com.chedidandrew.emeraldstandard.core.ConstructionWorkBudget.Lane.BANK),
+                        "Bank enters its shared construction lane");
                 ConstructionTimeRuntime.allowance("bank:777", 13_000, config);
                 ConstructionTimeRuntime.observe(13_001, 24_000, config);
                 ConstructionTimeRuntime.observe(13_001, 24_000, config);
                 ConstructionTimeRuntime.observe(13_010, 24_009, config);
+                require(ConstructionTimeRuntime.enter(com.chedidandrew.emeraldstandard.core.ConstructionWorkBudget.Lane.BANK),
+                        "waking Bank enters the next construction pulse");
                 int allowance = ConstructionTimeRuntime.allowance("bank:777", 13_010, config);
                 require(allowance == config.constructionAllowance(13_010) + 8,
                         "sleep grants a bounded extra allowance to the same active Bank");

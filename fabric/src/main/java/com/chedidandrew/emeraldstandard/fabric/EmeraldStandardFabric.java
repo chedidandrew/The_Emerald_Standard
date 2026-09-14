@@ -82,9 +82,8 @@ public final class EmeraldStandardFabric implements ModInitializer {
                         ECONOMY.catchUpDaysRemaining());
                 DebugFlightRecorder.initialize(server);
                 if (Boolean.getBoolean("the_emerald_standard.integrationSmoke")) {
-                    com.chedidandrew.emeraldstandard.minecraft.MarketTimeCommandSelfTest.run(server,ECONOMY);
-                    BankerIntegrationSelfTest.run(server.overworld());
-                    LOGGER.info("The Emerald Standard Banker integration self-test passed");
+                    BankerIntegrationSelfTest.schedule(server.overworld(), () ->
+                            com.chedidandrew.emeraldstandard.minecraft.MarketTimeCommandSelfTest.run(server,ECONOMY));
                 }
                 StructureGallery.autoBuildIfRequested(server);
                 VillageComparisonGallery.autoBuildIfRequested(server);
@@ -95,6 +94,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            BankerIntegrationSelfTest.stop(server);
             com.chedidandrew.emeraldstandard.minecraft.NewsRuntime.stop(server);
             com.chedidandrew.emeraldstandard.minecraft.ConstructionOwnership.stop(server);
             com.chedidandrew.emeraldstandard.minecraft.MarketTimeRuntime.stop(server);
@@ -126,6 +126,7 @@ public final class EmeraldStandardFabric implements ModInitializer {
             }
             com.chedidandrew.emeraldstandard.minecraft.VillageDevelopmentRuntime.tick(server, ECONOMY);
             DebugFlightRecorder.tick(server, ECONOMY);
+            BankerIntegrationSelfTest.tick(server);
             VillageComparisonGallery.tick(server);
         });
 
