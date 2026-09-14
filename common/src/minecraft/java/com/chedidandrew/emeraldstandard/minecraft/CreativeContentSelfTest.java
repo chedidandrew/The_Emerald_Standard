@@ -59,7 +59,8 @@ final class CreativeContentSelfTest {
         // chunk as the verified manual spawns. A getChunk() in a second chunk does not
         // guarantee its entity section is query-visible before the next server tick.
         BlockPos origin=new BlockPos(16*58+3,level.getMaxY()-30,16*58+3);
-        require(new ChunkPos(origin.offset(-3,0,-3)).equals(new ChunkPos(origin.offset(12,0,3))),
+        require(Math.floorDiv(origin.getX()-3,16)==Math.floorDiv(origin.getX()+12,16)
+                        && Math.floorDiv(origin.getZ()-3,16)==Math.floorDiv(origin.getZ()+3,16),
                 "creative fixture must share one entity-visible chunk");
         Map<BlockPos,BlockState> before=new LinkedHashMap<>();
         List<Entity> actors=new ArrayList<>();
