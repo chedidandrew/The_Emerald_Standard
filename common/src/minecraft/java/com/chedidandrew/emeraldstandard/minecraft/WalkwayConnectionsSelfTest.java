@@ -170,6 +170,7 @@ final class WalkwayConnectionsSelfTest {
                     "entrance steps were not preserved by connection pass");
             managerEndpoints(level,origin);
             matureTownQueue(level, origin);
+            styleConnections(level,origin);
             System.out.println("PASS walkway connections: truncated-road detour, real endpoint, trees, water, claims, chest, edits,"
                     +" grades, lots, occupancy, budgets, partial reload, no regeneration, unloaded chunks and manager endpoints");
             chest.clearContent();
@@ -180,6 +181,76 @@ final class WalkwayConnectionsSelfTest {
             before.forEach((p,s)->level.setBlock(p,s,18));
         }
     }
+    private static void styleConnections(ServerLevel level,BlockPos origin) {
+        Set<Set<BlockState>> signatures=new HashSet<>();
+        UUID village=UUID.fromString("11111111-2222-3333-4444-555555555555");
+        BlockPos start=origin.offset(0,0,-10);
+        for(var dialect:VillageArchitecture.BiomeDialect.values()) {
+            level.getDataStorage().set(WalkwayConnectionLedger.TYPE,new WalkwayConnectionLedger());
+            for(int x=0;x<=42;x++) for(int z=-12;z<=-8;z++) for(int y=0;y<=4;y++)
+                level.setBlock(origin.offset(x,y,z),(y==0?Blocks.GRASS_BLOCK:Blocks.AIR).defaultBlockState(),18);
+            String style=WalkwayStyle.forDialect(dialect.id());
+            var request=new WalkwayConnections.Request(village,100+dialect.ordinal(),origin.asLong(),
+                    start,start.east(40),false,Set.of(),List.of(),List.of(),
+                    dialect==VillageArchitecture.BiomeDialect.DESERT,style);
+            boolean reloaded=false;
+            for(int i=0;i<500&&!WalkwayConnectionLedger.get(level).job(request.key()).done();i++) {
+                int n=WalkwayConnections.advance(level,request,200000+i*20L,2);
+                require(n>=0&&n<=2,"styled paving exceeded write budget");
+                var ledger=WalkwayConnectionLedger.get(level);
+                if(!reloaded&&ledger.job(request.key()).cursor()>3) {
+                    level.getDataStorage().set(WalkwayConnectionLedger.TYPE,WalkwayConnectionLedger.CODEC.parse(
+                            NbtOps.INSTANCE,WalkwayConnectionLedger.CODEC.encodeStart(NbtOps.INSTANCE,ledger).getOrThrow()).getOrThrow());
+                    // A caller changing its biome/style mid-build cannot repaint the remaining road.
+                    request=request.withStyle(style.equals("desert_v1")?"snowy_v1":"desert_v1");
+                    reloaded=true;
+                }
+            }
+            var ledger=WalkwayConnectionLedger.get(level);
+            var job=ledger.job(request.key());
+            require(reloaded&&job.done(),"styled route failed to complete: "+style+" / "+job.reason());
+            require(style.equals(ledger.styles.get(request.key())),"saved road style changed");
+            Set<BlockState> signature=new HashSet<>();
+            for(int i=0;i<job.plan().size();i++) {
+                BlockPos pos=BlockPos.of(job.plan().get(i).pos());
+                if(!job.supplied().contains(pos.asLong())) continue;
+                var actual=level.getBlockState(pos);
+                require(actual.equals(WalkwayStyle.surface(style,village,pos,i>=job.centers())),
+                        "style or shoulder pattern changed after reload: "+style);
+                require(WalkwayConnections.road(level,pos,actual),"supplied styled road not recognized");
+                require(actual.getFluidState().isEmpty()&&actual.canSurvive(level,pos),
+                        "unsafe styled surface: "+style);
+                signature.add(actual);
+            }
+            require(signatures.add(Set.copyOf(signature)),"village families share a paving palette");
+            BlockPos supplied=BlockPos.of(job.supplied().iterator().next());
+            level.setBlock(supplied,Blocks.AIR.defaultBlockState(),18);
+            require(!ledger.matchesPaving(supplied,level.getBlockState(supplied)),"removed paving still recognized");
+            WalkwayConnections.advance(level,request,220000,2);
+            require(level.getBlockState(supplied).isAir(),"completed styled path regenerated");
+            require(!WalkwayConnections.road(level,origin.offset(20,0,12),Blocks.SANDSTONE.defaultBlockState()),
+                    "arbitrary sandstone became a road");
+            // Older jobs have no palette/provenance fields; keep their legacy surface recipe.
+            var legacy=new WalkwayConnectionLedger(Map.of("old",WalkwayConnectionLedger.Job.fresh()));
+            var oldTag=WalkwayConnectionLedger.CODEC.encodeStart(NbtOps.INSTANCE,legacy).getOrThrow();
+            ((net.minecraft.nbt.CompoundTag)oldTag).remove("styles");
+            ((net.minecraft.nbt.CompoundTag)oldTag).remove("paving");
+            var loaded=WalkwayConnectionLedger.CODEC.parse(NbtOps.INSTANCE,oldTag).getOrThrow();
+            require(loaded.freezeStyle("old",style,false).equals("legacy_temperate"),"legacy partial route was restyled");
+            require(loaded.freezeStyle("old",style,true).equals("legacy_temperate"),"legacy palette did not freeze");
+            require(loaded.freezeStyle("new",style,false).equals(style),"new route did not get its own style");
+            BlockPos negative=new BlockPos(-123,0,-456);
+            var first=request.withStyle(style);
+            var second=new WalkwayConnections.Request(village,9999,origin.asLong(),start,start.east(40),
+                    false,Set.of(),List.of(),List.of(),false,style);
+            for(int dx=0;dx<32;dx++) for(boolean edge:new boolean[]{false,true})
+                require(WalkwayConnections.surfaceState(first,negative.east(dx),edge).equals(
+                        WalkwayConnections.surfaceState(second,negative.east(dx),edge)),
+                        "negative-coordinate shared intersections depend on project");
+        }
+        System.out.println("PASS walkway styles: five distinct palettes, edging, bounded placement, partial reload, frozen identity, legacy migration, provenance and no regeneration");
+    }
+
     private static void matureTownQueue(ServerLevel level,BlockPos origin) {
         UUID village = UUID.randomUUID();
         var requests = new LinkedHashMap<String, WalkwayConnections.Request>();
@@ -214,6 +285,12 @@ final class WalkwayConnectionsSelfTest {
         var request=VillageProsperityManager.walkwayRequest(level,village,a,List.of(),List.of());
         require(request.streetGoal()&&request.destination().equals(BlockPos.of(village.centerPos).below()),
                 "first project still uses arbitrary outskirts anchor");
+        for(var dialect:VillageArchitecture.BiomeDialect.values()) {
+            village.architectureDialect=dialect.id();
+            require(VillageProsperityManager.walkwayRequest(level,village,a,List.of(),List.of()).style().equals(
+                    WalkwayStyle.forDialect(dialect.id())),"project road ignored village family: "+dialect);
+        }
+        village.architectureDialect=VillageArchitecture.BiomeDialect.PLAINS.id();
         var b=a.copy();b.projectId=2;b.originPos=origin.east(35).asLong();village.projects.add(b);
         var unconnected=VillageProsperityManager.walkwayRequest(level,village,b,List.of(),List.of());
         require(unconnected.streetGoal(),"finished house with no verified walkway must not become a destination");

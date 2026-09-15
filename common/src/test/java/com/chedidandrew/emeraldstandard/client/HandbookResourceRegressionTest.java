@@ -327,6 +327,11 @@ public final class HandbookResourceRegressionTest {
                 && language.contains("arbitrary patch near the center") && language.contains("Connection receipts survive reloads")
                 && language.contains("narrow passage is better than a wide dead end"),
                 "Both handbook forms must explain loaded-only walkway connections, bounds and editing");
+        check(language.contains("Roads keep local style.") && language.contains("walkway_styles.body")
+                && language.contains("New walkway connections keep the village's established architectural style")
+                && language.contains("Old paths and already-started connection surveys keep their earlier paving")
+                && language.contains("snowy villages use andesite and cobblestone"),
+                "Both handbook forms explain five road styles and preservation of existing paving");
         String manager = Files.readString(root.resolve(
                 "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java"));
         check(manager.contains("materializeOneWalkwayLamp(level, economy, village, excludedProjectLots")

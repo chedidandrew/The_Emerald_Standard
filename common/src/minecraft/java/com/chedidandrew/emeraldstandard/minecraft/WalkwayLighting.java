@@ -58,7 +58,7 @@ final class WalkwayLighting {
             int index = stations.get(job.station());
             BlockPos center = surface(level, route.get(index));
             if (center == null) return 0;
-            if (!road(level.getBlockState(center)) || !clear(level.getBlockState(center.above()))
+            if (!WalkwayConnections.road(level,center,level.getBlockState(center)) || !clear(level.getBlockState(center.above()))
                     || !clear(level.getBlockState(center.above(2)))) {
                 ledger.record(key, job.next()); return 0;
             }
@@ -120,7 +120,7 @@ final class WalkwayLighting {
                 return new Search(List.of(), false);
             // Keep every occupied column outside other physical road branches too.
             BlockPos ground = new BlockPos(pos.getX(), foot.getY() - 1, pos.getZ());
-            if (road(level.getBlockState(ground))) return new Search(List.of(), false);
+            if (WalkwayConnections.road(level,ground,level.getBlockState(ground))) return new Search(List.of(), false);
             if (!VillageConstructionOccupancy.mayChange(level, pos, before, cell.state()))
                 return new Search(List.of(), true);
             pieces.add(new Piece(pos.asLong(), before, cell.state()));
@@ -193,9 +193,6 @@ final class WalkwayLighting {
     }
     private static boolean naturalBase(ServerLevel level, BlockPos p, BlockState state) {
         return VillageProsperityManager.isNaturalProjectGround(state) && state.isFaceSturdy(level, p, Direction.UP);
-    }
-    private static boolean road(BlockState state) {
-        return state.is(Blocks.DIRT_PATH) || state.is(Blocks.GRAVEL) || state.is(Blocks.COARSE_DIRT);
     }
     private static boolean clear(BlockState state) {
         return state.isAir() || state.is(Blocks.SHORT_GRASS) || state.is(Blocks.FERN)

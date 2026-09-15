@@ -58,6 +58,36 @@ final class WalkwayLightingSelfTest {
                 && !negative.nearby(new BlockPos(-8, 64, -17)), "negative-coordinate receipt boundaries");
     }
 
+    private static void styledRoadAdmission(ServerLevel level,UUID village,BlockPos origin,List<BlockPos> route) {
+        var oldLights=WalkwayLightingLedger.get(level);
+        var oldRoads=WalkwayConnectionLedger.get(level);
+        try {
+            for(var dialect:VillageArchitecture.BiomeDialect.values()) {
+                var lights=new WalkwayLightingLedger();
+                var roads=new WalkwayConnectionLedger();
+                level.getDataStorage().set(WalkwayLightingLedger.TYPE,lights);
+                level.getDataStorage().set(WalkwayConnectionLedger.TYPE,roads);
+                for(BlockPos pos:route) {
+                    var state=WalkwayStyle.surface(WalkwayStyle.forDialect(dialect.id()),village,pos,false);
+                    level.setBlock(pos,state,18); roads.recordPaving(pos,state);
+                }
+                var materials=AuthoredVillageStructures.walkwayMaterials(VillageArchitecture.Character.RUSTIC,dialect);
+                int writes=WalkwayLighting.advance(level,village,900,origin.asLong(),route,materials,List.of(),List.of(),2);
+                var job=lights.jobs.get(WalkwayLightingLedger.key(village,900,origin.asLong()));
+                require(writes==0&&job!=null&&job.pending().size()==10,
+                        "matching lamps not admitted on styled road: "+dialect);
+                require(WalkwayLighting.advance(level,village,900,origin.asLong(),route,materials,
+                        List.of(),List.of(),2)==2,"styled lamp did not start within its write allowance");
+                job.pending().forEach(piece->level.setBlock(BlockPos.of(piece.position()),piece.before(),18));
+            }
+        } finally {
+            route.forEach(pos->level.setBlock(pos,Blocks.DIRT_PATH.defaultBlockState(),18));
+            level.getDataStorage().set(WalkwayLightingLedger.TYPE,oldLights);
+            level.getDataStorage().set(WalkwayConnectionLedger.TYPE,oldRoads);
+        }
+        System.out.println("PASS matching lamp admission on all five styled road surfaces");
+    }
+
     static void verify(ServerLevel level) {
         geometry();
         BlockPos origin = new BlockPos(1248, level.getMaxY() - 24, 1248);
@@ -80,6 +110,7 @@ final class WalkwayLightingSelfTest {
             require(WalkwayLighting.acquire(level, 1000) && !WalkwayLighting.acquire(level, 1000)
                     && !WalkwayLighting.acquire(level, 1019) && WalkwayLighting.acquire(level, 1020),
                     "global per-dimension work cap");
+            styledRoadAdmission(level,village,origin,route);
             String key = WalkwayLightingLedger.key(village, 1, origin.asLong());
             int writes = 0;
             for (int step = 0; step < 50 && !ledger.done(key); step++) {

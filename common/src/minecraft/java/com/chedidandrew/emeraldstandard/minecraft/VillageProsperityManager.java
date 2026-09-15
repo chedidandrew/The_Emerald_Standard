@@ -1673,7 +1673,9 @@ public final class VillageProsperityManager {
                 .collect(java.util.stream.Collectors.toSet());
         return new WalkwayConnections.Request(village.villageId,project.projectId,project.originPos,
                 start.below(),destination.below(),branch==null,oldColumns,lots,banks,
-                isDesertTrailPalette(managedProjectPalette(village,project)));
+                isDesertTrailPalette(managedProjectPalette(village,project)),
+                WalkwayStyle.forDialect(village.architectureDialect.isBlank()
+                        ? biomeDialect(level,BlockPos.of(village.centerPos)).id() : village.architectureDialect));
     }
 
     private static String walkwayLampKey(ServerLevel level,EconomyState.VillageRecord village,

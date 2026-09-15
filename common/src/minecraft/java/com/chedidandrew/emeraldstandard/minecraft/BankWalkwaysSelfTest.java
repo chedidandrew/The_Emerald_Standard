@@ -62,6 +62,11 @@ final class BankWalkwaysSelfTest {
                     "entrance has a continuous paving corridor");
             var desert = village.copy(); desert.architectureDialect = VillageArchitecture.BiomeDialect.DESERT.id();
             require(BankWalkways.request(level, desert, bank, List.of(), banks).desert(), "village dialect determines path palette");
+            for(var dialect:VillageArchitecture.BiomeDialect.values()) {
+                var themed=village.copy(); themed.architectureDialect=dialect.id();
+                require(BankWalkways.request(level,themed,bank,List.of(),banks).style().equals(
+                        WalkwayStyle.forDialect(dialect.id())),"Bank road must use saved village family: "+dialect);
+            }
 
             boolean reloaded = false;
             int writes = 0;

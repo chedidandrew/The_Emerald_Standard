@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.50
+## Unreleased: 0.4.0-beta.51
+
+- Give new Bank and building walkway connections five distinct, village-matched paving/edging treatments: plains lanes, desert sandstone, savanna earth/terracotta, taiga gravel with mossy verges, and snowy stone paving. Use stable village-wide weathering rather than per-building random palettes.
+- Freeze each new connection's surface style across partial construction and reloads. Preserve older surveys, existing paving, authored entrances, player edits, matching lamps, and bridge designs.
+- Recognize supplied stone paving through exact saved receipts rather than mistaking every natural sandstone or stone block for a road. Keep existing survey, write, protection and no-regeneration limits.
+- Update both handbook forms and cover all five styles, partial reloads, legacy migration, route verification and road receipts in native tests.
+
+## Previous unreleased candidate: 0.4.0-beta.50
 
 - Give each unfinished construction site its own temporary support-recovery window. First revisit supports, then briefly relax TES ordering without bypassing native survival, occupancy, inventories, protected land or loaded-chunk checks. Actual forward progress resets recovery; replaying a consumed prefix does not. New builds start normally.
 - Defer walkway connections after three unsuccessful surveys rather than endlessly repeating unchanged searches. Later attempts may join verified existing routes; safe narrow sections remain supported. Preserve partial paving, keep disconnected routes marked disconnected, and reconsider changed terrain/chunks/connections.

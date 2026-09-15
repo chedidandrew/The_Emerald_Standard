@@ -13,7 +13,15 @@ final class WalkwayConnections {
     static final int NODE_LIMIT=8192, SLICE=96, MAX_LENGTH=512;
     record Request(UUID village,long project,long origin,BlockPos start,BlockPos destination,
             boolean streetGoal,Set<Long> oldColumns,List<EconomyService.VillageProjectLot> lots,
-            List<Long> banks,boolean desert) {
+            List<Long> banks,boolean desert,String style) {
+        Request(UUID village,long project,long origin,BlockPos start,BlockPos destination,
+                boolean streetGoal,Set<Long> oldColumns,List<EconomyService.VillageProjectLot> lots,
+                List<Long> banks,boolean desert) {
+            this(village,project,origin,start,destination,streetGoal,oldColumns,lots,banks,desert,"");
+        }
+        Request withStyle(String style) {
+            return new Request(village,project,origin,start,destination,streetGoal,oldColumns,lots,banks,desert,style);
+        }
         String key() { return WalkwayConnectionLedger.key(village,project,origin); }
     }
     private record Node(BlockPos pos,int cost,int score) {}
@@ -93,6 +101,7 @@ final class WalkwayConnections {
     private static int advanceMeasured(ServerLevel level,Request r,long tick,int allowance,VillageBridges.Context bridges) {
         if(allowance<=0)return 0;
         var ledger=get(level); Job job=ledger.job(r.key());
+        r=r.withStyle(ledger.freezeStyle(r.key(),r.style(),r.desert()));
         if(job.done()||tick<job.retry())return 0;
         if (ledger.failures(r.key()) >= 3) {
             if (tick < ledger.nextReview.getOrDefault(r.key(),Long.MIN_VALUE)) return 0;
@@ -355,15 +364,15 @@ final class WalkwayConnections {
             boolean rail=retainedRail(level,r,p);
             // Existing clear paving can be walked through a completed lot without changing a cell.
             // No new road, plant clearance or furniture is allowed inside the excluded footprint.
-            if(WalkwayLighting.excluded(p,r.lots(),r.banks()) && (!existingSurface(r,p,ground)
+            if(WalkwayLighting.excluded(p,r.lots(),r.banks()) && (!existingSurface(level,r,p,ground)
                     ||(!rail&&!level.getBlockState(p.above()).isAir())||!level.getBlockState(p.above(2)).isAir()))continue;
-            if(!existingSurface(r,p,ground)&&!VillageProsperityManager.isPaveableTrailGround(ground))continue;
-            if(job.supplied().contains(p.asLong())&&!road(ground))continue; // Never regenerate this pass's removed paving.
+            if(!existingSurface(level,r,p,ground)&&!VillageProsperityManager.isPaveableTrailGround(ground))continue;
+            if(job.supplied().contains(p.asLong())&&!road(level,p,ground))continue; // Never regenerate this pass's removed paving.
             if(!ground.getFluidState().isEmpty()||level.getBlockEntity(p)!=null
-                    ||(!existingSurface(r,p,ground)
+                    ||(!existingSurface(level,r,p,ground)
                         &&!level.getBlockState(p.below()).isFaceSturdy(level,p.below(),Direction.UP)))continue;
             if((!rail&&!clear(level.getBlockState(p.above())))||!clear(level.getBlockState(p.above(2))))continue;
-            if(!safeChange(level,r,p,ground,existingSurface(r,p,ground)?ground:surfaceState(r,p,false)))continue;
+            if(!safeChange(level,r,p,ground,existingSurface(level,r,p,ground)?ground:surfaceState(r,p,false)))continue;
             boolean permitted=true;
             for(int y=1;y<=2;y++) {
                 BlockPos air=p.above(y); BlockState s=level.getBlockState(air);
@@ -461,7 +470,7 @@ final class WalkwayConnections {
                 cursor++;continue;
             }
             BlockState ground=level.getBlockState(p);
-            boolean stable=(ground.equals(s.ground())||road(ground))
+            boolean stable=(ground.equals(s.ground())||road(level,p,ground))
                     &&(level.getBlockState(p.above()).equals(s.lower())||level.getBlockState(p.above()).isAir())
                     &&(level.getBlockState(p.above(2)).equals(s.upper())||level.getBlockState(p.above(2)).isAir())
                     &&p.equals(surface(level,r,p,new Job(List.of(),0,0,supplied,false,0,"")));
@@ -474,18 +483,19 @@ final class WalkwayConnections {
             for(int y=2;y>=0&&writes<budget;y--) {
                 BlockPos cell=p.above(y); BlockState current=level.getBlockState(cell);
                 BlockState after=y>0?Blocks.AIR.defaultBlockState():surfaceState(r,p,!center);
-                if((y==0&&existingSurface(r,p,current))||(y==1&&retainedRail(level,r,p))||current.equals(after))continue;
+                if((y==0&&existingSurface(level,r,p,current))||(y==1&&retainedRail(level,r,p))||current.equals(after))continue;
                 if(!safeChange(level,r,cell,current,after)
                         ||!VillageConstructionOccupancy.mayChange(level,cell,current,after)) {occupied=true;break;}
                 if(y==0) { supplied.add(p.asLong()); ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,false,0,"Paving")); }
                 if(!level.setBlock(cell,after,y>0?18:Block.UPDATE_ALL)) {occupied=true;break;}
+                if(y==0&&!road(after)) ledger.recordPaving(cell,after);
                 writes++;
             }
             if(occupied) {
                 ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,false,0,
                         "Waiting for clear path/footing at "+p.toShortString()));return writes;
             }
-            if(existingSurface(r,p,level.getBlockState(p))&&(level.getBlockState(p.above()).isAir()||retainedRail(level,r,p))
+            if(existingSurface(level,r,p,level.getBlockState(p))&&(level.getBlockState(p.above()).isAir()||retainedRail(level,r,p))
                     &&level.getBlockState(p.above(2)).isAir())cursor++;
         }
         // Verification is also budgeted. Keep its progress in the same durable cursor.
@@ -495,7 +505,7 @@ final class WalkwayConnections {
                 ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,false,0,
                         "Waiting for loaded route verification at "+p.toShortString()));return writes;
             }
-            if(!(VillageBridges.walkable(level,r.village(),p)||existingSurface(r,p,level.getBlockState(p)))
+            if(!(VillageBridges.walkable(level,r.village(),p)||existingSurface(level,r,p,level.getBlockState(p)))
                     ||(!retainedRail(level,r,p)&&!clear(level.getBlockState(p.above())))
                     ||!clear(level.getBlockState(p.above(2)))) {
                 failed(level,r,new Job(List.of(),0,0,supplied,false,0,""),tick,
@@ -529,10 +539,13 @@ final class WalkwayConnections {
         BlockState ground=level.getBlockState(p),rail=level.getBlockState(p.above());
         return rail.getBlock() instanceof BaseRailBlock&&rail.getFluidState().isEmpty()
                 &&level.getBlockEntity(p.above())==null&&rail.getCollisionShape(level,p.above()).isEmpty()
-                &&existingSurface(r,p,ground)&&ground.isFaceSturdy(level,p,Direction.UP);
+                &&existingSurface(level,r,p,ground)&&ground.isFaceSturdy(level,p,Direction.UP);
     }
     static BlockState surfaceState(Request r,BlockPos p,boolean shoulder) {
-        var surface=VillageMaterializationPolicy.plannedTrailSurface(r.desert(),shoulder,
+        if(!r.style().isEmpty()&&!r.style().equals("legacy_desert")&&!r.style().equals("legacy_temperate"))
+            return WalkwayStyle.surface(r.style(),r.village(),p,shoulder);
+        boolean desert=r.style().isEmpty()?r.desert():r.style().equals("legacy_desert");
+        var surface=VillageMaterializationPolicy.plannedTrailSurface(desert,shoulder,
                 VillageStructureProgression.trailDetail(r.project(),p.getX(),p.getZ()));
         return switch(surface) {
             case DIRT_PATH -> Blocks.DIRT_PATH.defaultBlockState();
@@ -554,6 +567,12 @@ final class WalkwayConnections {
                 ||s.is(Blocks.DEEPSLATE_BRICKS)||s.is(Blocks.BRICKS)||s.is(Blocks.STONE)||s.is(Blocks.SMOOTH_STONE);
     }
     static boolean road(BlockState s) { return s.is(Blocks.DIRT_PATH)||s.is(Blocks.GRAVEL)||s.is(Blocks.COARSE_DIRT); }
+    static boolean road(ServerLevel level,BlockPos p,BlockState s) {
+        return road(s)||get(level).matchesPaving(p,s);
+    }
+    private static boolean existingSurface(ServerLevel level,Request r,BlockPos p,BlockState s) {
+        return get(level).matchesPaving(p,s)||existingSurface(r,p,s);
+    }
     private static boolean clear(BlockState s) {
         return s.isAir()||s.getFluidState().isEmpty()&&s.canBeReplaced()&&!s.hasBlockEntity()
                 &&!(s.getBlock() instanceof LeavesBlock);
@@ -576,6 +595,7 @@ final class WalkwayConnections {
                         .map(id->VillageBridges.report(level,id)).toList()));
         report.put("failedSurveys",get(level).failures(key));
         report.put("deferred",get(level).failures(key)>=3);
+        report.put("surfaceStyle",get(level).styles.getOrDefault(key,""));
         return report;
     }
 }

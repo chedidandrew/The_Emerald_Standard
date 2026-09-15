@@ -68,12 +68,15 @@ final class BankWalkways {
         return new WalkwayConnections.Request(village.villageId, PROJECT, bank.anchor(), bank.start(), destination,
                 branch == null, forecourt, List.copyOf(exclusions),
                 banks.stream().filter(anchor -> anchor != bank.anchor()).toList(),
-                dialect(level, village, bank) == VillageArchitecture.BiomeDialect.DESERT);
+                (village.architectureDialect.isBlank() ? VillageProsperityManager.biomeDialect(level,bank.origin())
+                        : VillageArchitecture.BiomeDialect.fromId(village.architectureDialect))
+                        == VillageArchitecture.BiomeDialect.DESERT,
+                WalkwayStyle.forDialect(dialect(level,village,bank).id()));
     }
 
     private static VillageArchitecture.BiomeDialect dialect(ServerLevel level, EconomyState.VillageRecord village, Bank bank) {
         // A Bank can finish before the first expansion project establishes a saved dialect.
-        return village.architectureDialect.isBlank() ? VillageProsperityManager.biomeDialect(level, bank.origin())
+        return village.architectureDialect.isBlank() ? VillageProsperityManager.biomeDialect(level, BlockPos.of(village.centerPos))
                 : VillageArchitecture.BiomeDialect.fromId(village.architectureDialect);
     }
 

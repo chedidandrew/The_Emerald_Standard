@@ -42,13 +42,19 @@ final class WalkwayConnectionLedger extends SavedData {
     }
     static final Codec<WalkwayConnectionLedger> CODEC=RecordCodecBuilder.create(i->i.group(
             Codec.unboundedMap(Codec.STRING,Job.CODEC).fieldOf("jobs").forGetter(s->s.jobs),
-            Codec.unboundedMap(Codec.STRING,Attempts.CODEC).optionalFieldOf("attempts",Map.of()).forGetter(s->s.attempts))
+            Codec.unboundedMap(Codec.STRING,Attempts.CODEC).optionalFieldOf("attempts",Map.of()).forGetter(s->s.attempts),
+            Codec.unboundedMap(Codec.STRING,Codec.STRING).optionalFieldOf("styles",Map.of()).forGetter(s->s.styles),
+            Codec.unboundedMap(Codec.STRING,BlockState.CODEC).optionalFieldOf("paving",Map.of()).forGetter(s->s.paving))
             .apply(i,WalkwayConnectionLedger::new));
     static final SavedDataType<WalkwayConnectionLedger> TYPE=new SavedDataType<>(
             Identifier.fromNamespaceAndPath("the_emerald_standard","walkway_connections"),
             WalkwayConnectionLedger::new,CODEC,DataFixTypes.LEVEL);
     final Map<String,Job> jobs=new LinkedHashMap<>();
     final Map<String,Attempts> attempts=new HashMap<>();
+    final Map<String,String> styles=new HashMap<>();
+    // Exact supplied states, not a global whitelist of naturally occurring sandstone/stone.
+    // Retain receipts after removal: they confer read-only road recognition, never repair rights.
+    final Map<String,BlockState> paving=new HashMap<>();
     final Map<String,Long> nextReview=new HashMap<>();
     final Map<UUID,Integer> rotation=new HashMap<>();
     long lastTick=Long.MIN_VALUE;
@@ -56,6 +62,24 @@ final class WalkwayConnectionLedger extends SavedData {
     WalkwayConnectionLedger(Map<String,Job> jobs) { this.jobs.putAll(jobs); }
     WalkwayConnectionLedger(Map<String,Job> jobs,Map<String,Attempts> attempts) {
         this(jobs); this.attempts.putAll(attempts);
+    }
+    WalkwayConnectionLedger(Map<String,Job> jobs,Map<String,Attempts> attempts,
+            Map<String,String> styles,Map<String,BlockState> paving) {
+        this(jobs,attempts); this.styles.putAll(styles); this.paving.putAll(paving);
+    }
+    String freezeStyle(String key,String requested,boolean desert) {
+        if(!styles.containsKey(key)) {
+            // Existing surveys and partially paved roads keep their historical surface recipe.
+            styles.put(key,jobs.containsKey(key)||requested.isEmpty()
+                    ? (desert?"legacy_desert":"legacy_temperate") : requested); setDirty();
+        }
+        return styles.get(key);
+    }
+    void recordPaving(BlockPos pos,BlockState state) {
+        paving.put(Long.toString(pos.asLong()),state); setDirty();
+    }
+    boolean matchesPaving(BlockPos pos,BlockState state) {
+        return state.equals(paving.get(Long.toString(pos.asLong())));
     }
     int failures(String key) { return attempts.getOrDefault(key,new Attempts(0,0)).failures(); }
     static WalkwayConnectionLedger get(ServerLevel level) { return level.getDataStorage().computeIfAbsent(TYPE); }
