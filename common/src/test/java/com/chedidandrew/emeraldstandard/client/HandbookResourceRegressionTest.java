@@ -287,7 +287,11 @@ public final class HandbookResourceRegressionTest {
                 && !language.contains("hard hat, vest and hammer model"),
                 "Both handbook forms describe native builder workwear and saved biome appearance");
         check(language.contains("Physical work follows a support-first sequence")
-                && language.contains("saved sequence") && language.contains("Supports before lamps."),
+                && language.contains("saved sequence") && language.contains("Supports before lamps.")
+                && language.contains("Each unfinished building has its own recovery attempts")
+                && language.contains("an unsuccessful attempt expires")
+                && language.contains("Three failed tries:")
+                && language.contains("Banks match too."),
                 "Long and compact handbooks must explain sequencing, support dependencies and safe migration");
         check(language.contains("yellow post cap, dark foot and stepped black-and-yellow rails")
                 && language.contains("straight runs, corners and junctions") && language.contains("Textured stripes.")
@@ -332,7 +336,7 @@ public final class HandbookResourceRegressionTest {
                 && manager.contains("BankWalkways.materials(level, village, work.bank())")
                 && language.contains("Banks get paths."), "Completed project and Bank path lighting must be wired");
         check(language.contains("Optional yard decorations are different from required structure")
-                && language.contains("Unsafe decor skips.") && language.contains("expected nearby support"),
+                && language.contains("Each site retries.") && language.contains("expected nearby support"),
                 "Both handbook forms must explain optional support recovery and diagnostics");
         check(manager.contains("placement.isCosmetic() && !ConstructionOwnership.owned(level,target,placement.state)")
                 && manager.contains("SupportedConstructionOrder.waitReason"),

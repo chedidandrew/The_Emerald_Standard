@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.49
+## Unreleased: 0.4.0-beta.50
+
+- Give each unfinished construction site its own temporary support-recovery window. First revisit supports, then briefly relax TES ordering without bypassing native survival, occupancy, inventories, protected land or loaded-chunk checks. Actual forward progress resets recovery; replaying a consumed prefix does not. New builds start normally.
+- Defer walkway connections after three unsuccessful surveys rather than endlessly repeating unchanged searches. Later attempts may join verified existing routes; safe narrow sections remain supported. Preserve partial paving, keep disconnected routes marked disconnected, and reconsider changed terrain/chunks/connections.
+- Freeze new automatic Banks to the village's saved architectural family rather than the Bank plot's biome. Persist the chosen style through construction and handover. Existing completed Banks are not repainted.
+- Add exact beta.49 Mine/Inn replay fixtures, per-build recovery/expiry checks, deferred/alternate-route tests, five-style Bank persistence checks, and guided/compact handbook explanations.
+
+## Previous unreleased candidate: 0.4.0-beta.49
 
 - Add bounded capture-local subsystem timings, cache counters, scheduler visit/progress evidence, housing-survey details and raw versus gap-adjusted TPS. `/emerald debug profile` adds an owner-requested 60-second JVM profile without toggling gameplay settings.
 - Reuse frozen authored templates in normal construction and relative geometry during site searches. Resolve road materials without generating an entire building. All live terrain, ownership, occupancy and saved-hash safeguards remain.

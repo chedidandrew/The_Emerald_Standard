@@ -35,21 +35,33 @@ final class WalkwayConnectionLedger extends SavedData {
         static Job fresh() { return new Job(List.of(),0,0,Set.of(),false,0,"Awaiting loaded route survey"); }
         Job retry(long tick,String why) { return new Job(List.of(),0,0,supplied,false,tick+100,why); }
     }
+    record Attempts(int failures,long terrain) {
+        static final Codec<Attempts> CODEC=RecordCodecBuilder.create(i->i.group(
+                Codec.intRange(0,3).fieldOf("failures").forGetter(Attempts::failures),
+                Codec.LONG.fieldOf("terrain").forGetter(Attempts::terrain)).apply(i,Attempts::new));
+    }
     static final Codec<WalkwayConnectionLedger> CODEC=RecordCodecBuilder.create(i->i.group(
-            Codec.unboundedMap(Codec.STRING,Job.CODEC).fieldOf("jobs").forGetter(s->s.jobs))
+            Codec.unboundedMap(Codec.STRING,Job.CODEC).fieldOf("jobs").forGetter(s->s.jobs),
+            Codec.unboundedMap(Codec.STRING,Attempts.CODEC).optionalFieldOf("attempts",Map.of()).forGetter(s->s.attempts))
             .apply(i,WalkwayConnectionLedger::new));
     static final SavedDataType<WalkwayConnectionLedger> TYPE=new SavedDataType<>(
             Identifier.fromNamespaceAndPath("the_emerald_standard","walkway_connections"),
             WalkwayConnectionLedger::new,CODEC,DataFixTypes.LEVEL);
     final Map<String,Job> jobs=new LinkedHashMap<>();
+    final Map<String,Attempts> attempts=new HashMap<>();
+    final Map<String,Long> nextReview=new HashMap<>();
     final Map<UUID,Integer> rotation=new HashMap<>();
     long lastTick=Long.MIN_VALUE;
     WalkwayConnectionLedger() {}
     WalkwayConnectionLedger(Map<String,Job> jobs) { this.jobs.putAll(jobs); }
+    WalkwayConnectionLedger(Map<String,Job> jobs,Map<String,Attempts> attempts) {
+        this(jobs); this.attempts.putAll(attempts);
+    }
+    int failures(String key) { return attempts.getOrDefault(key,new Attempts(0,0)).failures(); }
     static WalkwayConnectionLedger get(ServerLevel level) { return level.getDataStorage().computeIfAbsent(TYPE); }
     static String key(UUID village,long project,long origin) { return village+"/"+project+"/"+origin; }
     Job job(String key) { return jobs.getOrDefault(key,Job.fresh()); }
-    void put(String key,Job job) { jobs.put(key,job);setDirty(); }
+    void put(String key,Job job) { jobs.put(key,job); if(job.done()) attempts.remove(key); setDirty(); }
     List<BlockPos> route(String key) {
         Job j=job(key);
         return j.done() ? j.plan().stream().limit(j.centers()).map(s->BlockPos.of(s.pos())).toList() : List.of();

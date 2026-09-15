@@ -8,6 +8,11 @@ public final class BankConstructionRegressionTest {
         var plan = new BankConstruction(123, 456, null, 8,
                 List.of(new BankConstruction.Cell(123, "minecraft:air", "minecraft:stone")));
         require(plan.equals(BankConstruction.decode(plan.encode())), "frozen state round trip");
+        for(var dialect:VillageArchitecture.BiomeDialect.values()) {
+            var styled=new BankConstruction(plan.origin(),plan.bankerAnchor(),plan.villageId(),plan.version(),
+                    plan.cells(),java.util.Set.of(),false,dialect.id());
+            require(styled.equals(BankConstruction.decode(styled.encode())),"all five saved Bank styles round trip");
+        }
         var prep = new SitePreparationPlan(List.of(new SitePreparationPlan.Cell(123, "minecraft:oak_log[axis=y]")));
         require(prep.equals(SitePreparationPlan.decode(prep.encode())), "preparation state round trip");
         var graded = new SitePreparationPlan(List.of(new SitePreparationPlan.Cell(456,
@@ -102,6 +107,13 @@ public final class BankConstructionRegressionTest {
                 && legacy.cells().equals(plan.cells()), "old plans keep geometry but cannot reroll unknown loot");
         require(BankConstruction.decode(legacy.withHandledStorage(10).encode()).legacyLootSuppressed(),
                 "legacy suppression survives receipt updates and saves");
+        try(var out=new java.io.DataOutputStream(bytes)) {
+            out.writeInt(1); out.writeBoolean(false); out.writeInt(1); out.writeLong(10);
+        }
+        var oldReceipts=BankConstruction.decode(java.util.Base64.getEncoder().encodeToString(bytes.toByteArray()));
+        require(oldReceipts.style().isEmpty()&&!oldReceipts.legacyLootSuppressed()
+                &&oldReceipts.handledStorage().equals(java.util.Set.of(10L))&&oldReceipts.cells().equals(plan.cells()),
+                "version-1 Bank trailer preserves old geometry and loot receipts without inventing a style");
         try { plan.withHandledStorage(12); throw new AssertionError("non-storage position accepted"); }
         catch (IllegalArgumentException expected) { }
     }

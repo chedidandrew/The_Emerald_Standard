@@ -690,7 +690,9 @@ public final class VillageBankManager {
     static boolean reserveProgressiveBank(ServerLevel level, EconomyService economy,
             BlockPos origin, UUID villageId, long key) {
         ensureBankTemplateValidated();
-        List<BankPlacement> authored = terrainSupportedBankPlan(level, origin, paletteFor(level, origin));
+        var dialect = bankDialect(level,economy,villageId,origin);
+        var palette = paletteFor(dialect);
+        List<BankPlacement> authored = terrainSupportedBankPlan(level, origin, palette);
         if (authored == null) return false;
         var survey = new VillageSitePreparation.Survey(level);
         Set<BlockPos> volume = new HashSet<>();
@@ -718,8 +720,8 @@ public final class VillageBankManager {
         preparation = VillageTerrainFinishing.finish(level, preparation, origin,
                 BANK_PLOT_MIN_X, BANK_PLOT_MAX_X, BANK_PLOT_MIN_Z, BANK_PLOT_MAX_Z,
                 occupied, approach, arrival == null ? origin.getY() : arrival,
-                paletteFor(level, origin).foundation().defaultBlockState(),
-                paletteFor(level, origin).stairs().defaultBlockState(), villageId, key);
+                palette.foundation().defaultBlockState(),
+                palette.stairs().defaultBlockState(), villageId, key);
         Map<BlockPos, BlockState> finalCells = new LinkedHashMap<>();
         for (var cell : preparation.cells()) finalCells.put(BlockPos.of(cell.position()),
                 VillageTerrainFinishing.state(level, cell.after()));
@@ -743,7 +745,14 @@ public final class VillageBankManager {
         }
         return economy.reserveBankConstruction(key, new BankConstruction(origin.asLong(),
                 origin.offset(BANK_WIDTH / 2, 1, BANK_DEPTH - 2).asLong(), villageId,
-                BANK_STRUCTURE_VERSION, frozen));
+                BANK_STRUCTURE_VERSION, frozen, Set.of(), false, dialect.id()));
+    }
+
+    static VillageArchitecture.BiomeDialect bankDialect(ServerLevel level,EconomyService economy,UUID villageId,BlockPos origin) {
+        var village=villageId==null?null:economy.developmentVillageSnapshot(villageId);
+        return village!=null&&!village.village().architectureDialect.isBlank()
+                ? VillageArchitecture.BiomeDialect.fromId(village.village().architectureDialect)
+                : VillageProsperityManager.biomeDialect(level,village==null?origin:BlockPos.of(village.village().centerPos));
     }
 
     /** One authored operation; callers supply the configured independent allowance per site. */
@@ -753,6 +762,8 @@ public final class VillageBankManager {
         if (authoritative == null || authoritative.origin() != plan.origin()
                 || !authoritative.cells().equals(plan.cells())) return 0;
         plan = authoritative;
+        // Recovered from the durable plan after restart; never infer a new style for an old plan.
+        BankStyleLedger.get(level).remember(plan.origin(),plan.style());
         BlockPos siteOrigin = BlockPos.of(plan.origin());
         if (DevelopmentLandProtection.excludes(level,siteOrigin.offset(BANK_PLOT_MIN_X,0,BANK_PLOT_MIN_Z),
                 siteOrigin.offset(BANK_PLOT_MAX_X,0,BANK_PLOT_MAX_Z))) {
@@ -786,11 +797,14 @@ public final class VillageBankManager {
             CONSTRUCTION_CACHE.put(key, parsed);
         }
         String ownershipJob=ConstructionOwnership.bank(key,plan.origin());
+        var recovery=ConstructionRecovery.site(level,ownershipJob);
+        boolean nativeOrder=recovery.mode(level.getGameTime())==com.chedidandrew.emeraldstandard.core.ConstructionRecoveryWindow.Mode.NATIVE_ORDER;
         var ownership=ConstructionOwnership.get(level);
         ownership.begin(economy,ownershipJob,plan.villageId(),key,plan.origin(),true);
         for(var cell:parsed.after()) ownership.reserve(ownershipJob,cell.position(),cell.state());
         boolean unfinished = false;
         boolean occupied = false;
+        boolean supportWait = false, hardWait = false;
         int matched = 0;
         var ordered=new ArrayList<>(parsed.order());
         var currentParsed=parsed;
@@ -800,7 +814,7 @@ public final class VillageBankManager {
         }));
         for (int i : ordered) {
             BankPlacement cell = parsed.after().get(i);
-            if (!isLoaded(level, cell.position())) { unfinished = true; continue; }
+            if (!isLoaded(level, cell.position())) { unfinished = true; hardWait = true; continue; }
             BlockState current = level.getBlockState(cell.position());
             boolean storage = plan.cells().get(i).storage();
             boolean handled = plan.handledStorage().contains(cell.position().asLong());
@@ -820,11 +834,12 @@ public final class VillageBankManager {
                     || current.hasBlockEntity()
                     || !level.getFluidState(cell.position()).isEmpty()
                     || !VillageDevelopmentProtection.mayPlace(level, plan.villageId(), key,
-                            cell.position(), current, cell.state())) continue;
-            if (!cell.state().canSurvive(level, cell.position())) continue;
+                            cell.position(), current, cell.state())) { hardWait=true; continue; }
+            if (!ConstructionRecovery.survives(level,cell.position(),cell.state())) { supportWait=true; continue; }
             var supportCell=new SupportedConstructionOrder.Cell(cell.position().subtract(siteOrigin),cell.state(),-1);
             if(!parsed.disconnected().contains(i)
-                    && !SupportedConstructionOrder.supportedNow(level,siteOrigin,supportCell,parsed.supports())) continue;
+                    && !SupportedConstructionOrder.supportedNow(level,siteOrigin,supportCell,parsed.supports())
+                    && !nativeOrder) { supportWait=true; continue; }
             if (!VillageConstructionOccupancy.mayChange(level,cell.position(),current,cell.state())) {
                 occupied = true; continue;
             }
@@ -838,10 +853,12 @@ public final class VillageBankManager {
                         level.getGameTime(), "automatic progressive construction");
                 ConstructionWorkCue.placed(VillageConstructionActivity.bankTag(key, plan.origin()),
                         cell.state(), matched + 1, parsed.after().size(), level.getGameTime());
+                recovery.observe(level.getGameTime(),0,false,false);
                 return 1;
             }
         }
         if (unfinished) {
+            recovery.observe(level.getGameTime(),0,supportWait&&!hardWait&&!occupied,false);
             ConstructionDiagnostics.record("bank:" + key, occupied ? "waiting_for_entities" : "retry_in_place", matched, parsed.after().size(),
                     level.getGameTime(), occupied ? "Living entity occupies a placement or its supporting floor; retry shortly"
                             : "unloaded, protected, changed or not-yet-supported cells; preserving saved work");
@@ -853,6 +870,7 @@ public final class VillageBankManager {
                 plan.villageId(), plan.version())) return 0;
         ownership.grantHandoverLoot(level,ownershipJob,VillageStructureLoot.key("bank"));
         ownership.finish(ownershipJob);
+        ConstructionRecovery.finish(level,ownershipJob);
         for (BankPlacement cell : parsed.after()) {
             level.updateNeighborsAt(cell.position(), cell.state().getBlock(), null);
         }
@@ -5683,6 +5701,8 @@ public final class VillageBankManager {
     }
 
     private static BankPalette paletteFor(ServerLevel level, BlockPos origin) {
+        var saved = BankStyleLedger.get(level).style(origin.asLong());
+        if (saved != null) return paletteFor(saved);
         var biome = level.getBiome(origin);
         if (biome.is(BiomeTags.HAS_VILLAGE_DESERT)) {
             return paletteFor(VillageArchitecture.BiomeDialect.DESERT);

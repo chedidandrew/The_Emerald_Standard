@@ -42,6 +42,7 @@ final class BankConstructionSelfTest {
                     origin.getZ() + bankDepth.getInt(null) / 2)), "production Bank survey selects a level entrance in woodland/hillside");
             require(VillageBankManager.reserveProgressiveBank(level, economy, origin, null, 777), "full Bank reservation");
             BankConstruction plan = economy.pendingBankConstructionsSnapshot().get(777L);
+            require(!plan.style().isBlank(),"new automatic Bank freezes its style");
             require(plan.cells().stream().anyMatch(c -> c.before().startsWith("minecraft:oak_log") && c.after().equals("minecraft:air")),
                     "Bank freezes tree removal instead of rejecting forest");
             require(plan.cells().stream().anyMatch(c -> c.before().startsWith("minecraft:dirt")),
@@ -66,6 +67,7 @@ final class BankConstructionSelfTest {
             require(VillageBankManager.advanceBankConstruction(level, economy, 777, plan) == 1, "one first block");
             var reload = new EconomyService(); reload.start(dir, 774, 0); economy = reload;
             require(plan.equals(economy.pendingBankConstructionsSnapshot().get(777L)), "partial Bank resumes frozen plan");
+            require(BankStyleLedger.get(level).style(origin.asLong()).id().equals(plan.style()),"style restored from saved plan");
 
             BlockPos second = origin.offset(17, 1, 0);
             set(level, before, second, Blocks.AIR.defaultBlockState());

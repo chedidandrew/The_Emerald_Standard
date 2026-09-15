@@ -58,6 +58,7 @@ final class WalkwayConnections {
     /** Resume admitted searches before opening more. Pending history must not dilute active turns. */
     static List<String> runnable(ServerLevel level, List<String> keys, long tick) {
         prune(level, tick);
+        keys=keys.stream().filter(k->tick>=get(level).nextReview.getOrDefault(k,Long.MIN_VALUE)).toList();
         var searches = SEARCHES.getOrDefault(level, Map.of());
         var active = keys.stream().filter(k -> searches.containsKey(k) || !get(level).job(k).plan().isEmpty()).toList();
         if (!active.isEmpty()) return active;
@@ -93,6 +94,13 @@ final class WalkwayConnections {
         if(allowance<=0)return 0;
         var ledger=get(level); Job job=ledger.job(r.key());
         if(job.done()||tick<job.retry())return 0;
+        if (ledger.failures(r.key()) >= 3) {
+            if (tick < ledger.nextReview.getOrDefault(r.key(),Long.MIN_VALUE)) return 0;
+            ledger.nextReview.put(r.key(),tick+100);
+            if (terrainStamp(level,r)==ledger.attempts.get(r.key()).terrain()) return 0;
+            ledger.attempts.remove(r.key()); ledger.setDirty();
+            DebugWork.count("walkway.deferredWorldChanged");
+        }
         if(!job.plan().isEmpty())return pave(level,r,job,tick,allowance,bridges);
         var searches=SEARCHES.computeIfAbsent(level,k->new LinkedHashMap<>());
         prune(level, tick);
@@ -106,15 +114,31 @@ final class WalkwayConnections {
             if(searches.size()>=8) { DebugWork.count("walkway.waitingForSearchSlot"); return 0; }
             if(Math.abs((long)r.start().getX()-r.destination().getX())
                     +Math.abs((long)r.start().getZ()-r.destination().getZ())>384) {
-                ledger.put(r.key(),job.retry(tick,"Connection exceeds the bounded 384-block survey; add a nearer district connection"));
+                failed(level,r,job,tick,"Connection exceeds the bounded 384-block survey; add a nearer district connection");
                 return 0;
             }
             BlockPos start=surface(level,r,r.start(),job);
             if(start==null) {
-                ledger.put(r.key(),job.retry(tick,"Entrance ground or clearance is blocked/unloaded at "+r.start().toShortString()));
+                failed(level,r,job,tick,"Entrance ground or clearance is blocked/unloaded at "+r.start().toShortString());
                 return 0;
             }
             search=new Search(r,start,bridges); searches.put(r.key(),search);
+            // Later attempts can join a verified, already-connected route instead of insisting
+            // on the original destination. Never use this site's own unfinished stub as a goal.
+            if (ledger.failures(r.key()) > 0) {
+                String prefix=r.village()+"/";
+                for (var entry:ledger.jobs.entrySet()) {
+                    if (search.streetTargets.size()>=64) break;
+                    Job other=entry.getValue();
+                    if (!entry.getKey().startsWith(prefix)||entry.getKey().equals(r.key())||!other.done()
+                            ||other.centers()<1||other.centers()>other.plan().size()) continue;
+                    for (int end:new int[]{0,other.centers()-1}) {
+                        BlockPos target=BlockPos.of(other.plan().get(end).pos());
+                        if (within(r,target)&&loaded(level,target)&&surface(level,r,target,job)!=null)
+                            search.streetTargets.add(target);
+                    }
+                }
+            }
             DebugWork.count("walkway.searchStarted");
         }
         search.lastUsed=tick;
@@ -123,7 +147,7 @@ final class WalkwayConnections {
             if(search.targetCursor>=49*49) {
                 if(search.streetTargets.isEmpty()) {
                     searches.remove(r.key());
-                    ledger.put(r.key(),job.retry(tick,"No loaded village road found near the district center"));
+                    failed(level,r,job,tick,"No loaded village road found near the district center");
                 } else {
                     BlockPos start=search.open.peek().pos();
                     search.open.clear();
@@ -154,7 +178,7 @@ final class WalkwayConnections {
             Node next=search.open.remove();
             if(next.cost()!=search.costs.getOrDefault(next.pos(),Integer.MAX_VALUE))continue;
             search.expanded++;
-            if(goal(level,r,next.pos(),job)) {
+            if(goal(level,r,next.pos(),job)||search.streetTargets.contains(next.pos())) {
                 List<BlockPos> route=new ArrayList<>();
                 for(BlockPos p=next.pos();p!=null&&route.size()<=MAX_LENGTH;p=search.parents.get(p)) {
                     route.add(p);
@@ -172,7 +196,7 @@ final class WalkwayConnections {
                 Collections.reverse(route);
                 if(route.size()>MAX_LENGTH) {
                     searches.remove(r.key());
-                    ledger.put(r.key(),job.retry(tick,"Safe route exceeds 512 cells; waiting for a nearer connection"));return 0;
+                    failed(level,r,job,tick,"Safe route exceeds 512 cells; waiting for a nearer connection");return 0;
                 }
                 search.route=List.copyOf(route);
                 return 0;
@@ -207,12 +231,39 @@ final class WalkwayConnections {
         }
         if(search.crossings.isEmpty()&&(search.open.isEmpty()||search.expanded>=NODE_LIMIT)) {
             searches.remove(r.key());
-            ledger.put(r.key(),job.retry(tick,search.sawUnloaded
+            failed(level,r,job,tick,search.sawUnloaded
                     ? "No loaded connection yet; load the route toward the village"
-                    : "No safe connected route in survey bounds; trees, terrain, water or protected land block it"));
+                    : "No safe connected route in survey bounds; trees, terrain, water or protected land block it");
         } else ledger.put(r.key(),new Job(List.of(),0,0,job.supplied(),false,0,
                 "Surveying safe connection: "+search.expanded+" / "+NODE_LIMIT+" nodes"));
         return 0;
+    }
+    private static void failed(ServerLevel level,Request r,Job job,long tick,String reason) {
+        var ledger=get(level);
+        int failures=Math.min(3,ledger.failures(r.key())+1);
+        ledger.attempts.put(r.key(),new Attempts(failures,terrainStamp(level,r)));
+        ledger.put(r.key(),job.retry(tick,failures>=3
+                ? "Route deferred after three unsuccessful surveys; waiting for changed terrain or a new connection. "+reason
+                : reason));
+        DebugWork.count(failures>=3 ? "walkway.deferred" : "walkway.failedSurvey");
+    }
+    /** Chunk revisions, load identity and connection topology only; no block scans or chunk loads. */
+    private static long terrainStamp(ServerLevel level,Request r) {
+        long hash=Objects.hash(r.start(),r.destination(),r.lots(),r.banks(),r.oldColumns());
+        // Invalid distant requests also defer, but must not produce an unbounded rectangle.
+        int endX=r.start().getX()+Math.clamp((long)r.destination().getX()-r.start().getX(),-384,384);
+        int endZ=r.start().getZ()+Math.clamp((long)r.destination().getZ()-r.start().getZ(),-384,384);
+        for(int x=(Math.min(r.start().getX(),endX)-24)>>4;
+                x<=(Math.max(r.start().getX(),endX)+24)>>4;x++)
+            for(int z=(Math.min(r.start().getZ(),endZ)-24)>>4;
+                    z<=(Math.max(r.start().getZ(),endZ)+24)>>4;z++) {
+                var chunk=level.getChunkSource().getChunkNow(x,z);
+                hash=31*hash+System.identityHashCode(chunk);
+                hash=31*hash+(chunk instanceof SurveyChunkRevision revision ? revision.emeraldSurveyRevision() : 0);
+            }
+        for(var entry:get(level).jobs.entrySet())
+            if(entry.getKey().startsWith(r.village()+"/")&&entry.getValue().done()) hash=31*hash+entry.getKey().hashCode();
+        return hash;
     }
     private static boolean usefulSurvey(Search search,BlockPos start,Direction direction) {
         BlockPos water=start.relative(direction,VillageBridgeSurvey.APPROACH);
@@ -346,13 +397,13 @@ final class WalkwayConnections {
                     search.bridgeAt.put(p,bridge);
                 }
                 if(bridge!=null) {
-                    if(!loaded(level,p)) {get(level).put(r.key(),job.retry(tick,"Bridge route chunks unloaded"));return true;}
+                    if(!loaded(level,p)) {failed(level,r,job,tick,"Bridge route chunks unloaded");return true;}
                     Step s=snapshot(level,p);
                     search.plan.add(new Step(s.pos(),s.ground(),s.lower(),s.upper(),bridge.id()));
                     search.columns.add(column(p));continue;
                 }
                 if(!p.equals(surface(level,r,p,job))) {
-                    get(level).put(r.key(),job.retry(tick,"Route changed during survey; replanning"));return true;
+                    failed(level,r,job,tick,"Route changed during survey; replanning");return true;
                 }
                 search.plan.add(snapshot(level,p));search.columns.add(column(p));
             } else {
@@ -386,14 +437,14 @@ final class WalkwayConnections {
         for(String id:job.plan().stream().map(Step::bridge).filter(s->!s.isEmpty()).distinct().toList()) {
             var bridge=VillageBridgeLedger.get(level).jobs.get(id);
             if(bridge==null||bridge.altered()) {
-                ledger.put(r.key(),job.retry(tick,"Crossing changed; seeking another route"));return 0;
+                failed(level,r,job,tick,"Crossing changed; seeking another route");return 0;
             }
             if(!bridge.done())return VillageBridges.advance(level,r,bridges,id,budget);
         }
         budget=Math.min(2,budget);
         if(job.centers()<1||job.centers()>job.plan().size()||job.plan().size()>4096
                 ||job.cursor()>job.plan().size()+job.centers()) {
-            ledger.put(r.key(),job.retry(tick,"Invalid saved connection plan; resurveying"));return 0;
+            failed(level,r,job,tick,"Invalid saved connection plan; resurveying");return 0;
         }
         int cursor=job.cursor(),writes=0,inspected=0;
         Set<Long> supplied=new LinkedHashSet<>(job.supplied());
@@ -405,7 +456,7 @@ final class WalkwayConnections {
             }
             if(!s.bridge().isEmpty()||VillageBridges.walkable(level,r.village(),p)) {
                 if(!VillageBridges.walkable(level,r.village(),p)) {
-                    ledger.put(r.key(),job.retry(tick,"Crossing changed before connection; resurveying"));return writes;
+                    failed(level,r,job,tick,"Crossing changed before connection; resurveying");return writes;
                 }
                 cursor++;continue;
             }
@@ -416,8 +467,8 @@ final class WalkwayConnections {
                     &&p.equals(surface(level,r,p,new Job(List.of(),0,0,supplied,false,0,"")));
             if(!stable) {
                 if(!center) {cursor++;continue;}
-                ledger.put(r.key(),new Job(List.of(),0,0,supplied,false,tick+100,
-                        "Path changed/protected at "+p.toShortString()+"; seeking a safe detour"));return writes;
+                failed(level,r,new Job(List.of(),0,0,supplied,false,0,""),tick,
+                        "Path changed/protected at "+p.toShortString()+"; seeking a safe detour");return writes;
             }
             boolean occupied=false;
             for(int y=2;y>=0&&writes<budget;y--) {
@@ -447,19 +498,30 @@ final class WalkwayConnections {
             if(!(VillageBridges.walkable(level,r.village(),p)||existingSurface(r,p,level.getBlockState(p)))
                     ||(!retainedRail(level,r,p)&&!clear(level.getBlockState(p.above())))
                     ||!clear(level.getBlockState(p.above(2)))) {
-                ledger.put(r.key(),new Job(List.of(),0,0,supplied,false,tick+100,
-                        "Connection changed before verification; resurveying"));return writes;
+                failed(level,r,new Job(List.of(),0,0,supplied,false,0,""),tick,
+                        "Connection changed before verification; resurveying");return writes;
             }
             cursor++;
         }
         boolean done=cursor==job.plan().size()+job.centers();
-        if(done&&!goal(level,r,BlockPos.of(job.plan().get(job.centers()-1).pos()),job)) {
-            ledger.put(r.key(),new Job(List.of(),0,0,supplied,false,tick+100,
-                    "Destination changed before connection completed; resurveying"));return writes;
+        if(done&&!connectedGoal(level,r,BlockPos.of(job.plan().get(job.centers()-1).pos()),job)) {
+            failed(level,r,new Job(List.of(),0,0,supplied,false,0,""),tick,
+                    "Destination changed before connection completed; resurveying");return writes;
         }
         ledger.put(r.key(),new Job(job.plan(),job.centers(),cursor,supplied,done,0,
                 done?"Connected to village walkway":"Paving connection: "+Math.min(cursor,job.centers())+" / "+job.centers()));
         return writes;
+    }
+    private static boolean connectedGoal(ServerLevel level,Request r,BlockPos p,Job job) {
+        if(goal(level,r,p,job)) return true;
+        if(!loaded(level,p)||surface(level,r,p,job)==null) return false;
+        for(var entry:get(level).jobs.entrySet()) {
+            Job other=entry.getValue();
+            if(entry.getKey().equals(r.key())||!entry.getKey().startsWith(r.village()+"/")||!other.done()
+                    ||other.centers()<1||other.centers()>other.plan().size()) continue;
+            if(other.plan().getFirst().pos()==p.asLong()||other.plan().get(other.centers()-1).pos()==p.asLong()) return true;
+        }
+        return false;
     }
     /** Mine throats carry rails over their entry paving. Cross these fixtures read-only:
      * never clear the rail, change its bearing, waive headroom, or admit an arbitrary block. */
@@ -504,13 +566,16 @@ final class WalkwayConnections {
     static Map<String,Object> report(ServerLevel level,String key) {
         Job j=get(level).job(key);
         Search search = SEARCHES.getOrDefault(level, Map.of()).get(key);
-        return Map.of("connected",j.done(),"centerCells",j.centers(),"cursor",j.cursor(),"reason",j.reason(),
+        var report = new LinkedHashMap<String,Object>(Map.of("connected",j.done(),"centerCells",j.centers(),"cursor",j.cursor(),"reason",j.reason(),
                 "activeSearch", search != null,
                 "lastSurveyVisitGameTick", search == null ? -1L : search.lastUsed,
                 "surveyNodes", search == null ? 0 : search.expanded,
                 "targetColumnsChecked", search == null ? 0 : search.targetCursor,
                 "retryAfterGameTick", j.retry(),
                 "bridges",j.plan().stream().map(Step::bridge).filter(s->!s.isEmpty()).distinct()
-                        .map(id->VillageBridges.report(level,id)).toList());
+                        .map(id->VillageBridges.report(level,id)).toList()));
+        report.put("failedSurveys",get(level).failures(key));
+        report.put("deferred",get(level).failures(key)>=3);
+        return report;
     }
 }

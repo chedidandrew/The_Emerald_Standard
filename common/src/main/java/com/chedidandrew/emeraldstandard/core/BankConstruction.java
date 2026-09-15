@@ -5,7 +5,7 @@ import java.util.*;
 
 /** Durable intent, not a cursor: Minecraft's saved blocks remain the progress authority. */
 public record BankConstruction(long origin, long bankerAnchor, UUID villageId, int version, List<Cell> cells,
-        Set<Long> handledStorage, boolean legacyLootSuppressed) {
+        Set<Long> handledStorage, boolean legacyLootSuppressed, String style) {
     public record Cell(long position, String before, String after) {
         public boolean storage() {
             String block = after.split("\\[", 2)[0];
@@ -18,9 +18,15 @@ public record BankConstruction(long origin, long bankerAnchor, UUID villageId, i
         this(origin, bankerAnchor, villageId, version, cells, Set.of(), false);
     }
 
+    public BankConstruction(long origin, long bankerAnchor, UUID villageId, int version, List<Cell> cells,
+            Set<Long> handledStorage, boolean legacyLootSuppressed) {
+        this(origin,bankerAnchor,villageId,version,cells,handledStorage,legacyLootSuppressed,"");
+    }
+
     public BankConstruction {
         cells = List.copyOf(cells);
         handledStorage = Set.copyOf(handledStorage);
+        if (!style.isEmpty()) VillageArchitecture.BiomeDialect.fromId(style);
         if (version < 1 || cells.isEmpty() || cells.size() > 50_000)
             throw new IllegalArgumentException("Invalid Bank construction plan");
         Set<Long> positions = new HashSet<>();
@@ -39,7 +45,7 @@ public record BankConstruction(long origin, long bankerAnchor, UUID villageId, i
     public BankConstruction withHandledStorage(long position) {
         Set<Long> next = new HashSet<>(handledStorage);
         next.add(position);
-        return new BankConstruction(origin, bankerAnchor, villageId, version, cells, next, legacyLootSuppressed);
+        return new BankConstruction(origin, bankerAnchor, villageId, version, cells, next, legacyLootSuppressed, style);
     }
 
     public String encode() throws IOException {
@@ -50,10 +56,11 @@ public record BankConstruction(long origin, long bankerAnchor, UUID villageId, i
             for (Cell cell : cells) {
                 out.writeLong(cell.position); out.writeUTF(cell.before); out.writeUTF(cell.after);
             }
-            out.writeInt(1); // Optional trailer, introduced with economy format 26.
+            out.writeInt(2); // Version 2 freezes the architectural dialect alongside block states.
             out.writeBoolean(legacyLootSuppressed);
             out.writeInt(handledStorage.size());
             for (long position : handledStorage.stream().sorted().toList()) out.writeLong(position);
+            out.writeUTF(style);
         }
         return Base64.getEncoder().encodeToString(bytes.toByteArray());
     }
@@ -70,16 +77,19 @@ public record BankConstruction(long origin, long bankerAnchor, UUID villageId, i
             // remaining storage empty rather than guessing that it deserves a new loot roll.
             boolean legacy = true;
             Set<Long> handled = new HashSet<>();
+            String style = "";
             if (in.available() > 0) {
-                if (in.readInt() != 1) throw new IOException("Unknown Bank loot receipt version");
+                int trailer = in.readInt();
+                if (trailer < 1 || trailer > 2) throw new IOException("Unknown Bank receipt/style version");
                 legacy = in.readBoolean();
                 int receipts = in.readInt();
                 if (receipts < 0 || receipts > count) throw new IOException("Invalid Bank loot receipt count");
                 for (int i = 0; i < receipts; i++)
                     if (!handled.add(in.readLong())) throw new IOException("Duplicate Bank loot receipt");
+                if (trailer >= 2) style = in.readUTF();
             }
             if (in.available() != 0) throw new IOException("Trailing Bank construction data");
-            return new BankConstruction(origin, anchor, owner.isEmpty() ? null : UUID.fromString(owner), version, cells, handled, legacy);
+            return new BankConstruction(origin, anchor, owner.isEmpty() ? null : UUID.fromString(owner), version, cells, handled, legacy, style);
         } catch (IllegalArgumentException ex) { throw new IOException("Invalid Bank construction", ex); }
     }
 }

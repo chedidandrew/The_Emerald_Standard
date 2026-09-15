@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-public static final int FORMAT_VERSION = 40;
+public static final int FORMAT_VERSION = 41;
     /** Ten complete years of daily intervals, plus the opening endpoint. */
     public static final int HISTORY_DAYS = 3_651;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;

@@ -1020,6 +1020,10 @@ public final class VillageProsperityManager {
             }
             int index = Math.min(Math.max(project.materializedBlocks,handoverFloor), placements.size());
             int firstPending = -1;
+            var recovery = ConstructionRecovery.site(level, ownershipJob + "/" + handoverFloor);
+            var recoveryMode = recovery.mode(gameTime);
+            boolean supportPass = recoveryMode != com.chedidandrew.emeraldstandard.core.ConstructionRecoveryWindow.Mode.NORMAL;
+            boolean nativeOrder = recoveryMode == com.chedidandrew.emeraldstandard.core.ConstructionRecoveryWindow.Mode.NATIVE_ORDER;
             int pendingPhase = Integer.MAX_VALUE;
             String supportWaitReason = "";
             int waivedDressing = 0;
@@ -1046,7 +1050,7 @@ public final class VillageProsperityManager {
                 Placement placement = placements.get(index);
                 int phase=SupportedConstructionOrder.phase(new SupportedConstructionOrder.Cell(
                         new BlockPos(placement.dx,placement.dy,placement.dz),placement.state,placement.constructionPhase));
-                if(firstPending>=0&&phase>pendingPhase) break; // No floating later phase around a blocked support.
+                if(firstPending>=0&&phase>pendingPhase&&!supportPass) break;
                 if (placement.isCosmetic() && project.manualRepairRequired) {
                     // A structural integrity rewind must never turn destroyed yard props into a
                     // renewable repair source. Cosmetics get their one attempt only during fresh
@@ -1119,7 +1123,7 @@ public final class VillageProsperityManager {
                         || SupportedConstructionOrder.supportedNow(level,origin,
                             new SupportedConstructionOrder.Cell(new BlockPos(placement.dx,placement.dy,placement.dz),placement.state,placement.constructionPhase),
                             constructionSchedule.supports());
-                if(!supported) {
+                if(!supported && !(nativeOrder && ConstructionRecovery.survives(level,target,placement.state))) {
                     // A yard foot may already have been waived on solid terrain/protected ground.
                     // Never let its unsupplied decoration become a mandatory support dependency.
                     // Supplied unfinished blocks retain repair authority; required fixtures never waive.
@@ -1136,9 +1140,11 @@ public final class VillageProsperityManager {
                     continue; // Other independent cells can proceed; never place above missing supports.
                 }
                 boolean safe = level.getBlockEntity(target) == null
+                        && (!nativeOrder || ConstructionRecovery.survives(level,target,placement.state))
                         && level.getFluidState(target).isEmpty()
                         && mayApplyPlacement(current, placement)
-                        && (constructionSchedule.disconnected().contains(new BlockPos(placement.dx,placement.dy,placement.dz))
+                        && ((nativeOrder && ConstructionRecovery.survives(level,target,placement.state))
+                            || constructionSchedule.disconnected().contains(new BlockPos(placement.dx,placement.dy,placement.dz))
                             || SupportedConstructionOrder.supportedNow(level,origin,
                                 new SupportedConstructionOrder.Cell(new BlockPos(placement.dx,placement.dy,placement.dz),placement.state,placement.constructionPhase),
                                 constructionSchedule.supports()))
@@ -1181,6 +1187,7 @@ public final class VillageProsperityManager {
                 index++;
             }
             if(firstPending>=0) index=firstPending;
+            recovery.observe(gameTime,index,!blocked&&!entityWait&&index<constructionTarget,false);
             boolean complete = index >= placements.size();
             if (isManagedProject(project) && (placedThisTick > 0 || complete)) {
                 normalizeAuthoredModularConnections(
@@ -1263,6 +1270,7 @@ public final class VillageProsperityManager {
                         complete,
                         false);
                 if(complete&&savedCompletion) {
+                    ConstructionRecovery.finish(level,ownershipJob + "/" + handoverFloor);
                     ownership.grantHandoverLoot(level,ownershipJob,VillageStructureLoot.table(project.type));
                     ownership.completeProject(ownershipJob,index);
                 }

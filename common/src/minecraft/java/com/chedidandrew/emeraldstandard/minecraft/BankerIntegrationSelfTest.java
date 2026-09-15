@@ -125,6 +125,15 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        if (Boolean.getBoolean("the_emerald_standard.timedRecoverySmokeOnly")) {
+            TimedConstructionRecoverySelfTest.verify(level,false);
+            TimedConstructionRecoverySelfTest.verify(level,true);
+            TimedConstructionRecoverySelfTest.verify(level,false,false);
+            TimedConstructionRecoverySelfTest.verify(level,true,false);
+            BankStyleSelfTest.verify(level);
+            WalkwayConnectionsSelfTest.verify(level);
+            BankConstructionSelfTest.verify(level); return;
+        }
         if (Boolean.getBoolean("the_emerald_standard.stabilizationSmokeOnly")) {
             StabilizationSelfTest.verify(level); return;
         }
@@ -210,6 +219,11 @@ public final class BankerIntegrationSelfTest {
                 () -> ConstructionFinishSelfTest.verify(level),
                 () -> SmithyConstructionSelfTest.verify(level),
                 () -> ConstructionSupportRecoverySelfTest.verify(level),
+                () -> TimedConstructionRecoverySelfTest.verify(level,false),
+                () -> TimedConstructionRecoverySelfTest.verify(level,true),
+                () -> TimedConstructionRecoverySelfTest.verify(level,false,false),
+                () -> TimedConstructionRecoverySelfTest.verify(level,true,false),
+                () -> BankStyleSelfTest.verify(level),
                 () -> GuardVillagersCompatSelfTest.verify(level),
                 () -> DevelopmentProtectionSelfTest.verify(level),
                 () -> VillageStructureLootSelfTest.verify(level),

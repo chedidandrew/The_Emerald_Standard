@@ -28,7 +28,7 @@ public final class EmeraldHandbook {
             BankerProfessionSupport.MOD_ID, "handbook");
     public static final ResourceKey<Item> HANDBOOK_ITEM_KEY =
             ResourceKey.create(Registries.ITEM, HANDBOOK_ID);
-    public static final int PAGE_COUNT = 64;
+    public static final int PAGE_COUNT = 67;
 
     private static final String KEY = "book.the_emerald_standard.handbook.";
     private static final int CONTENTS_BANKING_PAGE = 3;
@@ -241,6 +241,9 @@ public final class EmeraldHandbook {
         pages.add(sectionPage("bridges",62,blockIcon("oak_planks","block.minecraft.oak_planks","[Bridge]")));
         pages.add(sectionPage("bridge_care",63,itemIcon("emerald","item.minecraft.emerald","[Work]")));
         pages.add(sectionPage("vanilla_buildings",64,blockIcon("oak_planks","block.minecraft.oak_planks","[Homes]")));
+        pages.add(sectionPage("construction_recovery",65,blockIcon("bricks","block.minecraft.bricks","[Work]")));
+        pages.add(sectionPage("walkway_recovery",66,blockIcon("bricks","block.minecraft.bricks","[Path]")));
+        pages.add(sectionPage("bank_styles",67,blockIcon("oak_planks","block.minecraft.oak_planks","[Bank]")));
         if (pages.size() != PAGE_COUNT) {
             throw new IllegalStateException("Handbook page index drift: " + pages.size());
         }

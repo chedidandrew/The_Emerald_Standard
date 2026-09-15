@@ -90,13 +90,32 @@ final class WalkwayConnectionsSelfTest {
             require(WalkwayConnections.advance(level,request,60000,2)==0&&level.getBlockState(supplied).isAir(),
                     "completed path regenerated after reload");
             // Routing never treats arbitrary flat land as a successful destination.
-            var noRoad=new WalkwayConnections.Request(village,2,origin.asLong(),origin.offset(0,0,10),
+            var noRoad=new WalkwayConnections.Request(UUID.fromString("213d76ce-c50e-4f08-864b-324ad22287a2"),2,origin.asLong(),origin.offset(0,0,10),
                     origin.offset(44,0,10),true,legacy,List.of(),List.of(),false);
             try(var claim=VillageDevelopmentProtection.register(c -> c.position().getX()<origin.getX()+10)) {
                 for(int i=0;i<300;i++)WalkwayConnections.advance(level,noRoad,70000+i*20L,2);
             }
             require(!decoded.job(noRoad.key()).done()&&decoded.job(noRoad.key()).plan().isEmpty(),
                     "unreachable destination was marked connected");
+            require(decoded.failures(noRoad.key())==3,"three unsuccessful surveys defer the route");
+            String deferredReason=decoded.job(noRoad.key()).reason();
+            for(int i=0;i<20;i++) WalkwayConnections.advance(level,noRoad,77000+i*100L,2);
+            require(decoded.job(noRoad.key()).reason().equals(deferredReason)
+                    && !Boolean.TRUE.equals(WalkwayConnections.report(level,noRoad.key()).get("activeSearch")),
+                    "unchanged deferred route must stop surveying");
+            var retrySaved=WalkwayConnectionLedger.CODEC.parse(NbtOps.INSTANCE,
+                    WalkwayConnectionLedger.CODEC.encodeStart(NbtOps.INSTANCE,decoded).getOrThrow()).getOrThrow();
+            require(retrySaved.failures(noRoad.key())==3,"retry limit survives serialization");
+            level.setBlock(origin.offset(8,0,10),Blocks.COARSE_DIRT.defaultBlockState(),3);
+            WalkwayConnections.advance(level,noRoad,79500,2);
+            require(decoded.failures(noRoad.key())<3,"changed terrain reopens this route only");
+            var alternate=new WalkwayConnections.Request(village,9,origin.asLong(),origin.offset(0,0,10),
+                    origin.offset(44,0,10),true,legacy,List.of(),List.of(),false);
+            try(var claim=VillageDevelopmentProtection.register(c -> c.position().getX()<origin.getX()+10)) {
+                for(int i=0;i<400&&!decoded.job(alternate.key()).done();i++)
+                    WalkwayConnections.advance(level,alternate,90000+i*20L,2);
+            }
+            require(decoded.job(alternate.key()).done(),"later attempt can join a verified existing route instead of unreachable original road");
             BlockPos foot=origin.offset(3,0,-10);
             var direct=new WalkwayConnections.Request(village,3,origin.asLong(),foot,foot.east(8),
                     false,Set.of(),List.of(),List.of(),true);

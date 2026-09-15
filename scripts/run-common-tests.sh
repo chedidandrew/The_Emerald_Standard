@@ -16,6 +16,7 @@ javac --release 21 -cp "$BUILD" -d "$BUILD" \
 javac --release 21 -cp "$BUILD" -d "$BUILD" "${TEST_SOURCES[@]}"
 
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VanillaConstructionRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ConstructionRecoveryRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.DistrictGrowthReviewRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.CompactVillageGrowthRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageTerritoryRegressionTest
