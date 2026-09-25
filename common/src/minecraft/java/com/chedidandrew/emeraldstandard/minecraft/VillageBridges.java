@@ -29,8 +29,7 @@ final class VillageBridges {
                 &&s.isFaceSturdy(level,p,Direction.UP)&&level.getBlockEntity(p)==null;
     }
     static boolean clear(BlockState s) {
-        return s.isAir()||s.is(Blocks.SHORT_GRASS)||s.is(Blocks.FERN)||s.is(Blocks.DEAD_BUSH)
-                ||s.is(Blocks.SNOW)||s.is(net.minecraft.tags.BlockTags.FLOWERS)&&!s.hasBlockEntity();
+        return VegetationCompatibility.open(s);
     }
     static boolean replaceable(ServerLevel level,BlockPos p,BlockState before,BlockState after) {
         if(level.getBlockEntity(p)!=null)return false;

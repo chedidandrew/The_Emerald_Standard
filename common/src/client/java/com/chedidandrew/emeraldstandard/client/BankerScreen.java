@@ -364,7 +364,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         browserSearch.setHint(Component.literal("Search name, ticker, sector"));
         browserSearch.setResponder(value -> { browser.query=value; browser.page=0; rebuildWidgets(); });
         addRenderableWidget(browserSearch);
-        detailButton("Type: "+friendly(browser.filter.name()),190,54,118,()->{
+        detailButton("Filter: "+friendly(browser.filter.name()),190,54,118,()->{
             browser.filter=InvestmentBrowser.Filter.values()[(browser.filter.ordinal()+1)%InvestmentBrowser.Filter.values().length];
             browser.page=0;rebuildWidgets();
         });
@@ -386,7 +386,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 discardAmountDraft();marketBrowser=false;selectAndRefresh(BankerMenu.BUTTON_ASSET_BASE+index);
             });
             quoteButton.setTooltip(GuiTooltips.widget(Component.literal(asset.name()+" | "+asset.sector()+"\n")
-                .append(assetTypeLabel(asset)).append(Component.literal(" | ")).append(riskLabel(asset))));
+                .append(assetTypeLabel(asset)).append(Component.literal(" | ")).append(riskLabel(asset))
+                .append(Component.literal(companyProfileText(asset)))));
             quoteButtons.put(index,quoteButton);
             detailButton(browser.favorites.contains(asset.ticker())?"-*":"+*",222,y,32,()->{
                 browser.toggle(index);
@@ -3691,6 +3692,11 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             return label;
         }
         return Component.literal("[").append(label.copy()).append("]");
+    }
+
+    private static String companyProfileText(EconomyEngine.Asset asset) {
+        var p=com.chedidandrew.emeraldstandard.core.CompanyProfiles.get(asset.ticker());
+        return p==null?"":"\nOperating size: "+friendly(p.size().name())+" | "+p.business()+"\n"+p.outlook();
     }
 
     private static Component riskLabel(EconomyEngine.Asset asset) {

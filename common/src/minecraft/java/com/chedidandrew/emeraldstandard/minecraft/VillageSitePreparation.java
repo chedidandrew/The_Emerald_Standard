@@ -24,30 +24,15 @@ final class VillageSitePreparation {
     }
 
     static boolean naturalLeaves(BlockState state) {
-        return state.getBlock() instanceof LeavesBlock
-                && state.hasProperty(LeavesBlock.PERSISTENT) && !state.getValue(LeavesBlock.PERSISTENT);
+        return VegetationCompatibility.leaves(state);
     }
 
     static boolean naturalLog(BlockState state) {
-        return state.is(BlockTags.LOGS)
-                && !BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().startsWith("stripped_");
+        return VegetationCompatibility.log(state);
     }
 
     static boolean vegetation(BlockState state) {
-        // Crops/farmland and persistent (player-placed) leaves are intentionally not included.
-        return torch(state) || naturalLeaves(state)
-                || state.is(BlockTags.FLOWERS) || state.getBlock() instanceof net.minecraft.world.level.block.SaplingBlock
-                || state.is(Blocks.AZALEA) || state.is(Blocks.FLOWERING_AZALEA)
-                || state.is(Blocks.SHORT_GRASS) || state.is(Blocks.TALL_GRASS)
-                || state.is(Blocks.FERN) || state.is(Blocks.LARGE_FERN) || state.is(Blocks.DEAD_BUSH)
-                || state.is(Blocks.SWEET_BERRY_BUSH) || state.is(Blocks.BAMBOO)
-                || state.is(Blocks.BAMBOO_SAPLING) || state.is(Blocks.SUGAR_CANE)
-                || state.is(Blocks.CACTUS) || state.is(Blocks.VINE)
-                || state.is(Blocks.BROWN_MUSHROOM) || state.is(Blocks.RED_MUSHROOM)
-                || state.is(Blocks.SNOW) || state.is(Blocks.MOSS_CARPET)
-                || state.is(Blocks.LEAF_LITTER) || state.is(Blocks.BUSH)
-                || state.is(Blocks.FIREFLY_BUSH) || state.is(Blocks.SHORT_DRY_GRASS)
-                || state.is(Blocks.TALL_DRY_GRASS);
+        return !VegetationCompatibility.forbidden(state) && (torch(state) || VegetationCompatibility.plant(state));
     }
 
     static boolean clearable(ServerLevel level, BlockPos pos) {
@@ -64,9 +49,7 @@ final class VillageSitePreparation {
     }
 
     static boolean dryNaturalGround(BlockState state) {
-        return VillageProsperityManager.isNaturalProjectGround(state)
-                || state.is(Blocks.GRAVEL) || state.is(Blocks.DEEPSLATE)
-                || state.is(Blocks.TUFF) || state.is(Blocks.CALCITE);
+        return VegetationCompatibility.naturalGround(state);
     }
 
     static final class Survey {
@@ -74,6 +57,8 @@ final class VillageSitePreparation {
         private final Map<BlockPos, Set<BlockPos>> trees = new HashMap<>();
         private final Map<BlockPos, Boolean> surroundings = new HashMap<>();
         private final Map<Long, Integer> surfaces = new HashMap<>();
+        private String failure="No loaded admissible surface";
+        String failure() { return failure; }
 
         Survey(ServerLevel level) { this.level = level; }
 
@@ -85,7 +70,9 @@ final class VillageSitePreparation {
         boolean clearable(BlockPos pos) {
             if (!loaded(pos)) return false;
             BlockState state = level.getBlockState(pos);
-            if (state.hasBlockEntity() || !state.getFluidState().isEmpty()) return false;
+            if (VegetationCompatibility.forbidden(state)
+                    || DevelopmentLandProtection.recordedPlacement(level,pos,state)
+                    || DevelopmentLandProtection.excludes(level,pos,pos)) return false;
             return vegetation(state) || (naturalLog(state) && !tree(pos).isEmpty());
         }
 
@@ -94,13 +81,22 @@ final class VillageSitePreparation {
             long key = BlockPos.asLong(x, 0, z);
             if (surfaces.containsKey(key)) return surfaces.get(key);
             if (!level.hasChunk(x >> 4, z >> 4)) return null;
+            var columnKey=new SiteSurveyRejections.ColumnKey(x,z);
+            Object cached=SiteSurveyRejections.get(level,columnKey,x,z,34,1200);
+            if(cached instanceof String detail) { failure=detail;return null; }
             int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
             for (int y = top; y >= Math.max(level.getMinY(), top - 64); y--) {
                 BlockPos pos = new BlockPos(x, y, z);
                 BlockState state = level.getBlockState(pos);
                 if (state.isAir() || clearable(pos)) continue;
-                if (state.hasBlockEntity() || !state.getFluidState().isEmpty() || !dryNaturalGround(state))
+                if (state.hasBlockEntity() || !state.getFluidState().isEmpty() || !dryNaturalGround(state)) {
+                    failure="Blocked by "+BlockStateParser.serialize(state)+" at "+pos.toShortString()
+                            + (VegetationCompatibility.forbidden(state)?"; protected category, contents or fluid"
+                            : DevelopmentLandProtection.recordedPlacement(level,pos,state)?"; recorded player placement"
+                            : "; unsupported vegetation, tree or crafted terrain");
+                    SiteSurveyRejections.remember(level,columnKey,x,z,34,failure);
                     return null;
+                }
                 surfaces.put(key, y + 1);
                 return y + 1;
             }
@@ -129,7 +125,7 @@ final class VillageSitePreparation {
             Set<BlockPos> logs = new LinkedHashSet<>();
             ArrayDeque<BlockPos> queue = new ArrayDeque<>();
             queue.add(start.immutable()); logs.add(start.immutable());
-            boolean canopy = false, vertical = false, safe = true, floating = false;
+            boolean canopy = false, vertical = false, safe = true;
             while (!queue.isEmpty() && safe) {
                 BlockPos pos = queue.removeFirst();
                 if (logs.size() > 2048 || Math.abs(pos.getX() - start.getX()) > 32
@@ -141,8 +137,9 @@ final class VillageSitePreparation {
                 boolean upright = state.hasProperty(RotatedPillarBlock.AXIS)
                         && state.getValue(RotatedPillarBlock.AXIS) == Direction.Axis.Y;
                 vertical |= upright;
-                if (DevelopmentLandProtection.oldTimberFrame(level,pos)) { safe=false; break; }
-                floating |= upright && level.getBlockState(pos.below()).isAir();
+                if (DevelopmentLandProtection.oldTimberFrame(level,pos)
+                        || DevelopmentLandProtection.recordedPlacement(level,pos,state)
+                        || DevelopmentLandProtection.excludes(level,pos,pos)) { safe=false; break; }
                 for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) for (int y = -2; y <= 2; y++) {
                     BlockPos nearby = pos.offset(x, y, z);
                     if (!loaded(nearby)) { safe = false; continue; }
@@ -152,7 +149,7 @@ final class VillageSitePreparation {
                             && naturalLog(other) && logs.add(nearby)) queue.addLast(nearby);
                 }
             }
-            Set<BlockPos> result = safe && vertical && (canopy || floating) ? Set.copyOf(logs) : Set.of();
+            Set<BlockPos> result = safe && vertical && canopy ? Set.copyOf(logs) : Set.of();
             for (BlockPos pos : logs) trees.put(pos, result);
             return result;
         }

@@ -189,9 +189,8 @@ final class ConstructionSitePresentation {
                 && pos.getZ() >= s.corner().getZ()-1 && pos.getZ() <= s.maximum().getZ()+1);
     }
     static boolean replaceablePlant(BlockState state) {
-        return state.isAir() || state.is(Blocks.SHORT_GRASS) || state.is(Blocks.FERN) || state.is(Blocks.DEAD_BUSH)
-                || state.is(Blocks.SNOW) || tallPlant(state)
-                || (state.is(BlockTags.SMALL_FLOWERS) && !(state.getBlock() instanceof DoublePlantBlock));
+        return VegetationCompatibility.open(state)
+                && (!(state.getBlock() instanceof DoublePlantBlock) || tallPlant(state));
     }
     static boolean tallPlant(BlockState state) {
         return (state.is(Blocks.TALL_GRASS) || state.is(Blocks.LARGE_FERN))

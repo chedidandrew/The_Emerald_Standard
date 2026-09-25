@@ -22,7 +22,19 @@ public final class InvestmentGrowth {
         };
         double a = draw(StrictMath.pow(unit(seed, period, symbol), power));
         double b = draw(StrictMath.pow(unit(seed, period + 1, symbol), power));
-        return a + (b - a) * t;
+        // Operating earnings assumptions, not an extra size premium or a promised CAGR.
+        double operating = switch(symbol) {
+            case "RSDN", "BRCK" -> .015;
+            case "ENDR", "MCRT" -> .035;
+            case "DPMN" -> .055;
+            case "NSPC" -> .040;
+            case "POTN" -> .050;
+            case "GLDH" -> .030;
+            case "IRNG" -> .020;
+            case "AURM" -> -.025;
+            default -> 0;
+        };
+        return Math.max(.001,Math.min(.15,a + (b - a) * t + operating));
     }
     public static double turbulence(long seed, long day) {
         // Multi-week volatility clusters; neither saving nor opening a screen samples RNG.

@@ -27,6 +27,12 @@ final class WalkwayConnections {
     private record Node(BlockPos pos,int cost,int score) {}
     private record Crossing(BlockPos from,int cost,VillageBridgeSurvey survey) {}
     private static final Map<ServerLevel,Map<String,Search>> SEARCHES=new WeakHashMap<>();
+    static void resourcesReloaded(net.minecraft.server.MinecraftServer server) {
+        for(var level:server.getAllLevels()) {
+            SEARCHES.remove(level);
+            var ledger=get(level);ledger.attempts.clear();ledger.nextReview.clear();ledger.setDirty();
+        }
+    }
     private static final class Search {
         final Request request;
         final VillageBridges.Context bridgeContext;
@@ -54,7 +60,7 @@ final class WalkwayConnections {
     }
     static boolean due(ServerLevel level,long tick) {
         var ledger=get(level);
-        int interval = EmeraldConfig.current().forcedVillageDevelopment() ? 2 : 20;
+        int interval = EmeraldConfig.current().forcedVillageDevelopment() ? 2 : 5;
         return ledger.lastTick==Long.MIN_VALUE || tick<ledger.lastTick || tick-ledger.lastTick>=interval;
     }
     static boolean acquire(ServerLevel level,long tick) {
@@ -450,7 +456,7 @@ final class WalkwayConnections {
             }
             if(!bridge.done())return VillageBridges.advance(level,r,bridges,id,budget);
         }
-        budget=Math.min(2,budget);
+        budget=Math.min(16,budget);
         if(job.centers()<1||job.centers()>job.plan().size()||job.plan().size()>4096
                 ||job.cursor()>job.plan().size()+job.centers()) {
             failed(level,r,job,tick,"Invalid saved connection plan; resurveying");return 0;
@@ -574,8 +580,7 @@ final class WalkwayConnections {
         return get(level).matchesPaving(p,s)||existingSurface(r,p,s);
     }
     private static boolean clear(BlockState s) {
-        return s.isAir()||s.getFluidState().isEmpty()&&s.canBeReplaced()&&!s.hasBlockEntity()
-                &&!(s.getBlock() instanceof LeavesBlock);
+        return VegetationCompatibility.open(s);
     }
     private static boolean loaded(ServerLevel level,BlockPos p) {
         for(int x=(p.getX()-1)>>4;x<=(p.getX()+1)>>4;x++)

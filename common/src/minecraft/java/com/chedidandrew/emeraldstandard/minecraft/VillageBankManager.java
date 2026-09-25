@@ -840,7 +840,7 @@ public final class VillageBankManager {
             if(!parsed.disconnected().contains(i)
                     && !SupportedConstructionOrder.supportedNow(level,siteOrigin,supportCell,parsed.supports())
                     && !nativeOrder) { supportWait=true; continue; }
-            if (!VillageConstructionOccupancy.mayChange(level,cell.position(),current,cell.state())) {
+            if (!VillageConstructionOccupancy.mayBuild(level,cell.position(),current,cell.state())) {
                 occupied = true; continue;
             }
             ownership.claim(ownershipJob,cell.position(),cell.state(),storage&&!handled&&!plan.legacyLootSuppressed());
@@ -1195,8 +1195,8 @@ public final class VillageBankManager {
                     || !level.getFluidState(ground).isEmpty()
                     || level.getBlockEntity(feet) != null
                     || level.getBlockEntity(head) != null
-                    || (!feetState.isAir() && !feetState.canBeReplaced())
-                    || (!headState.isAir() && !headState.canBeReplaced())
+                    || (!feetState.isAir() && !VegetationCompatibility.open(feetState))
+                    || (!headState.isAir() && !VegetationCompatibility.open(headState))
                     || !level.getBlockState(ground).isFaceSturdy(level, ground, Direction.UP)) {
                 continue;
             }
@@ -2734,7 +2734,7 @@ public final class VillageBankManager {
             boolean compatibleClearance = expected.isAir()
                     && VillageBankPlacementPolicy.preservesOutdoorClearance(
                             current.isAir(),
-                            current.canBeReplaced(),
+                            VegetationCompatibility.open(current),
                             level.getFluidState(entry.getKey()).isEmpty(),
                             level.getBlockEntity(entry.getKey()) != null);
             boolean sameMaterial = current.is(expected.getBlock());
@@ -2743,7 +2743,7 @@ public final class VillageBankManager {
                     && !compatibleWorkstation
                     && !compatibleClearance
                     && !expected.isAir()
-                    && (current.canBeReplaced() || current.isAir())) {
+                    && (VegetationCompatibility.open(current) || current.isAir())) {
                 mismatches++;
             }
             int x = entry.getKey().getX() - origin.getX();
@@ -2949,7 +2949,7 @@ public final class VillageBankManager {
                 continue;
             }
             if (!isLoaded(level, placement.position())
-                    || (!existing.isAir() && !existing.canBeReplaced())
+                    || (!existing.isAir() && !VegetationCompatibility.open(existing))
                     || level.getBlockEntity(placement.position()) != null
                     || !level.getFluidState(placement.position()).isEmpty()
                     || !VillageDevelopmentProtection.mayPlace(
@@ -3132,7 +3132,7 @@ public final class VillageBankManager {
                 return y + 1;
             }
             if (state.isAir()
-                    || state.canBeReplaced()
+                    || VegetationCompatibility.open(state)
                     || state.is(palette.stairs())
                     || state.is(palette.foundation())) {
                 continue;
@@ -3168,7 +3168,7 @@ public final class VillageBankManager {
                     return null;
                 }
                 BlockState current = level.getBlockState(headroom);
-                if (!current.isAir() && !current.canBeReplaced()) {
+                if (!current.isAir() && !VegetationCompatibility.open(current)) {
                     return null;
                 }
             }
@@ -3202,7 +3202,7 @@ public final class VillageBankManager {
             }
             if (!current.equals(foundation)
                     && !current.isAir()
-                    && !current.canBeReplaced()) {
+                    && !VegetationCompatibility.open(current)) {
                 return null;
             }
             result.add(new BankPlacement(target, foundation));
@@ -3229,7 +3229,7 @@ public final class VillageBankManager {
             if (current.equals(foundation)) {
                 continue;
             }
-            if ((current.isAir() || current.canBeReplaced())
+            if ((current.isAir() || VegetationCompatibility.open(current))
                     && level.getBlockEntity(target) == null
                     && level.getFluidState(target).isEmpty()) {
                 result.add(new BankPlacement(target, foundation));
@@ -3252,7 +3252,7 @@ public final class VillageBankManager {
                     return false;
                 }
                 BlockState state = level.getBlockState(position);
-                if (!state.isAir() && !state.canBeReplaced()) {
+                if (!state.isAir() && !VegetationCompatibility.open(state)) {
                     return false;
                 }
             }
@@ -3321,7 +3321,7 @@ public final class VillageBankManager {
                 return BankBuildResult.failed();
             }
             BlockState existing = level.getBlockState(placement.position());
-            if ((!existing.isAir() && !existing.canBeReplaced())
+            if ((!existing.isAir() && !VegetationCompatibility.open(existing))
                     || !level.getFluidState(placement.position()).isEmpty()
                     || level.getBlockEntity(placement.position()) != null
                     || !VillageDevelopmentProtection.mayPlace(

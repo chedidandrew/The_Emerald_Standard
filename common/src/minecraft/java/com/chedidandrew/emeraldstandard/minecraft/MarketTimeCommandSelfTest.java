@@ -47,6 +47,19 @@ public final class MarketTimeCommandSelfTest {
             long before=e.economicDay();
             dispatcher.execute("time add -24000",source);
             check(e.economicDay()>=before,"negative add rolled back");
+            dispatcher.execute("time set night",source);
+            long sleepDay=e.economicDay();
+            var sleepQuote=e.marketSnapshot().prices();
+            server.clockManager().moveToTimeMarker(server.overworld().dimensionType().defaultClock().orElseThrow(),
+                    net.minecraft.world.clock.ClockTimeMarkers.WAKE_UP_FROM_SLEEP);
+            e.tick(server.overworld().getGameTime(),server.overworld().getOverworldClockTime());
+            check(e.economicDay()>sleepDay&&!sleepQuote.equals(e.marketSnapshot().prices()),
+                    "Native sleep wake-up did not advance the live market");
+            long wakeDay=e.economicDay();
+            var wakeQuote=e.marketSnapshot().prices();
+            e.tick(server.overworld().getGameTime(),server.overworld().getOverworldClockTime());
+            check(e.economicDay()==wakeDay&&wakeQuote.equals(e.marketSnapshot().prices()),
+                    "Wake-up was counted twice");
             var display=e.marketDisplay("RSDN","VILX","RSDN",false);
             ItemStack book=new ItemStack(Items.WRITTEN_BOOK);
             book.set(DataComponents.WRITTEN_BOOK_CONTENT,new WrittenBookContent(Filterable.passThrough("TES:market:2"),"Exchange",0,

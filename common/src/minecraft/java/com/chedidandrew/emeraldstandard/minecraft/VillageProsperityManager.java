@@ -634,7 +634,7 @@ public final class VillageProsperityManager {
                     ConstructionWorkStatus.blocked(level,village.villageId,project.projectId,pos,project.originPos);
                     return changed;
                 }
-                if (!VillageConstructionOccupancy.mayChange(level,pos,current,after)) {
+                if (!VillageConstructionOccupancy.mayBuild(level,pos,current,after)) {
                     ConstructionWorkStatus.occupied(level,economy,village.villageId,project.projectId,pos,project.originPos,after);
                     ConstructionDiagnostics.record(village.villageId+"/"+project.projectId,"waiting_for_entities",
                             finished,project.sitePreparationPlan.cells().size(),level.getGameTime(),"Preserving occupied terrain and footing");
@@ -763,7 +763,7 @@ public final class VillageProsperityManager {
                 if (forced) remainingBlockBudget -= initialPathBudget - pathBudget;
             }
             int roadBudget = forced ? remainingBlockBudget : task.equals("roads")
-                    ? ConstructionTimeRuntime.allowance("roads:" + village.villageId, gameTime, config) : 0;
+                    ? ConstructionTimeRuntime.roadAllowance(gameTime, config) : 0;
             if (roadBudget > 0) {
                 int connectionWrites = materializeOneWalkwayConnection(level, economy, village, excludedProjectLots,
                         managedBankLots, gameTime, Math.min(16, roadBudget));
@@ -1159,7 +1159,7 @@ public final class VillageProsperityManager {
                     physicalObstruction = true;
                     break;
                 }
-                if (!VillageConstructionOccupancy.mayChange(level,target,current,placement.state)) {
+                if (!VillageConstructionOccupancy.mayBuild(level,target,current,placement.state)) {
                     if(!entityWait) occupiedAt=target;
                     entityWait = true;
                     ConstructionWorkStatus.occupied(level,economy,village.villageId,project.projectId,
@@ -2049,7 +2049,7 @@ public final class VillageProsperityManager {
                     || !level.getFluidState(position).isEmpty()) {
                 return null;
             }
-            if (state.isAir() || state.canBeReplaced() || VillageSitePreparation.clearable(level, position)) {
+            if (state.isAir() || VegetationCompatibility.open(state) || VillageSitePreparation.clearable(level, position)) {
                 continue;
             }
             return isEntranceApproachGround(state) ? y + 1 : null;
@@ -2228,8 +2228,8 @@ public final class VillageProsperityManager {
             BlockState headState = level.getBlockState(head);
             if (!level.getFluidState(feet).isEmpty()
                     || !level.getFluidState(head).isEmpty()
-                    || (!feetState.isAir() && !feetState.canBeReplaced())
-                    || (!headState.isAir() && !headState.canBeReplaced())
+                    || (!feetState.isAir() && !VegetationCompatibility.open(feetState))
+                    || (!headState.isAir() && !VegetationCompatibility.open(headState))
                     || !level.getBlockState(ground).isFaceSturdy(level, ground, Direction.UP)) {
                 continue;
             }
@@ -2641,7 +2641,7 @@ public final class VillageProsperityManager {
         return current != null
                 && !hasBlockEntity
                 && protectionAllowed
-                && (current.isAir() || current.canBeReplaced());
+                && (current.isAir() || VegetationCompatibility.open(current));
     }
 
     private static boolean isSafeTemplateUpgradeTarget(
@@ -2858,7 +2858,7 @@ public final class VillageProsperityManager {
                     isVillageTrailGround(current),
                     current.is(Blocks.COARSE_DIRT));
         }
-        return current.isAir() || current.canBeReplaced();
+        return current.isAir() || VegetationCompatibility.open(current);
     }
 
     /**
@@ -2921,7 +2921,7 @@ public final class VillageProsperityManager {
             BlockState state = level.getBlockState(above);
             if (level.getBlockEntity(above) != null
                     || !level.getFluidState(above).isEmpty()
-                    || (!state.isAir() && !state.canBeReplaced())) {
+                    || (!state.isAir() && !VegetationCompatibility.open(state))) {
                 return false;
             }
         }
@@ -3446,7 +3446,7 @@ public final class VillageProsperityManager {
                 return SiteSurveyRejections.remember(level, surveyKey, centerX, centerZ, surveyRadius,
                         new ProjectSiteSearch(null, VillageMaterializationPolicy.SiteAvailability.UNSAFE,
                         SiteSearchDiagnostics.Reason.GROUND_OR_TERRAIN,
-                        "Column has no admissible dry natural ground (water, protected/crafted ground or unremovable vegetation may reject it)",
+                        survey.failure(),
                         new BlockPos(column.x(), 0, column.z())));
             }
             surfaces.add(surface);
@@ -6897,21 +6897,7 @@ public final class VillageProsperityManager {
     }
 
     static boolean isNaturalProjectGround(BlockState state) {
-        return state.is(BlockTags.DIRT)
-                || state.is(Blocks.GRASS_BLOCK)
-                || state.is(Blocks.PODZOL)
-                || state.is(Blocks.MYCELIUM)
-                || state.is(Blocks.SAND)
-                || state.is(Blocks.RED_SAND)
-                || state.is(Blocks.STONE)
-                || state.is(Blocks.ANDESITE)
-                || state.is(Blocks.DIORITE)
-                || state.is(Blocks.GRANITE)
-                || state.is(Blocks.GRAVEL)
-                || state.is(Blocks.DEEPSLATE)
-                || state.is(Blocks.TUFF)
-                || state.is(Blocks.CALCITE)
-                || state.is(Blocks.SNOW_BLOCK);
+        return VegetationCompatibility.naturalGround(state);
     }
 
     /**

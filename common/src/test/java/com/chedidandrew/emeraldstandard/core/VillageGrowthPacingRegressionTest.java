@@ -53,8 +53,8 @@ public final class VillageGrowthPacingRegressionTest {
         var attacked = starter(8);
         attacked.lastIncidentCause = VillageProsperityEngine.IncidentCause.RAID;
         VillageProsperityEngine.advanceOneDay(attacked, 79, 1, true, true, false);
-        require(attacked.lifecycle == VillageProsperityEngine.Lifecycle.THREATENED,
-                "A genuine day-zero attack still has its safety cooldown");
+        require(attacked.lifecycle != VillageProsperityEngine.Lifecycle.THREATENED,
+                "A day-zero attack should finish mourning after one quiet day");
         testSleepingClock();
         testCatchUp();
         System.out.println("PASS VillageGrowthPacingRegressionTest (starter cadence, sleep, caps, conservation)");

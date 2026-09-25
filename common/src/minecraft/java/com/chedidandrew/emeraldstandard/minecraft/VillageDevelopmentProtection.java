@@ -50,6 +50,10 @@ public final class VillageDevelopmentProtection {
             return false;
         }
         String bridge = VillageBridgeLedger.get(level).reservation(position);
+        if (!existing.equals(proposed) && (existing.is(VegetationCompatibility.NEVER_CLEAR)
+                || DevelopmentLandProtection.recordedPlacement(level,position,existing)
+                || existing.hasProperty(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)
+                    && existing.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT))) return false;
         if (bridge != null && !bridge.equals(bridgePermit)) return false;
         if (DevelopmentLandProtection.excludes(level,position,position)
                 || DevelopmentLandProtection.playerBuild(level,position)) return false;

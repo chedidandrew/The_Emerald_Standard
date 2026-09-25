@@ -20,7 +20,7 @@ public final class StockIndexRegressionTest {
         require(StockIndex.CONSTITUENTS.size()==12,"twelve companies required");
         require(!StockIndex.CONSTITUENTS.contains("TREA") && !StockIndex.CONSTITUENTS.contains("VCIX")
                 && !StockIndex.CONSTITUENTS.contains("GOLD"),"non-company in stock basket");
-        for(double w:StockIndex.weights(s).values())close(w,1.0/12,"equal starting capitalization");
+        require(StockIndex.weights(s).get("GLDH")>StockIndex.weights(s).get("FISH"),"deliberate company sizes");
         s.prices.put("TREA",400.0);s.prices.put("GOLD",400.0);s.prices.put("VCIX",400.0);
         StockIndex.reprice(s);close(s.prices.get("VILX"),100,"non-company prices moved VILX");
         for(String ticker:StockIndex.CONSTITUENTS)s.prices.put(ticker,90.0);
@@ -30,8 +30,9 @@ public final class StockIndexRegressionTest {
         // The old eight-stock basket omitted every specialist; each must now contribute.
         for(String ticker:List.of("AURM","BRCK","FISH","VENT")) {
             var specialist=EconomyState.fresh(73,0,0);
+            double initialWeight=StockIndex.weights(specialist).get(ticker);
             specialist.prices.put(ticker,220.0);StockIndex.reprice(specialist);
-            close(specialist.prices.get("VILX"),110,"specialist omitted: "+ticker);
+            close(specialist.prices.get("VILX"),100+120*initialWeight,"specialist omitted: "+ticker);
         }
         for(String ticker:StockIndex.CONSTITUENTS)s.prices.put(ticker,90.0);
         s.prices.put("RSDN",3000.0);StockIndex.reprice(s);
@@ -66,8 +67,10 @@ public final class StockIndexRegressionTest {
                 double expected=StockIndex.weights(s).entrySet().stream().mapToDouble(e->
                         e.getValue()*InvestmentGrowth.target(s.seed,s.economicDay,e.getKey())).sum();
                 close(StockIndex.growthTarget(s,s.economicDay),expected,"inherited target");
-                require(expected>=.01-1e-12 && expected<=.15+1e-12,"fundamental target out of range");
-                require(outstanding.equals(s.stockIndexShares),"daily rebalancing changed simulated float");
+                require(expected>=.001-1e-12 && expected<=.15+1e-12,"fundamental target out of range");
+                if(s.economicDay%365!=0) require(outstanding.equals(s.stockIndexShares),"unexpected daily rebalance");
+                else require(StockIndex.weights(s).values().stream().allMatch(w->w<=.200000001),"annual cap failed");
+                outstanding=new LinkedHashMap<>(s.stockIndexShares);
             }
             s.validate();
         }
@@ -95,7 +98,7 @@ public final class StockIndexRegressionTest {
             for(var e:values.entrySet())close(account.shares.get(e.getKey())*s.prices.get(e.getKey()),e.getValue(),"split changed owned value");
             require(basis.equals(account.shareCostBasisMicro),"split changed cost basis");
             close(s.prices.get("VILX"),before.get("VILX"),"split appears in daily news");
-            close(s.stockIndexShares.get("RSDN"),1000,"stock split did not adjust company float");
+            close(s.companySharesOutstanding.get("RSDN"),50000,"stock split did not adjust company float");
             s.validate();
             var clone=s.copy();clone.advanceOneDay();s.advanceOneDay();
             require(s.prices.equals(clone.prices)&&s.stockIndexShares.equals(clone.stockIndexShares),"post-split replay diverged");
@@ -130,9 +133,9 @@ public final class StockIndexRegressionTest {
                     && migrated.account(RegressionTestSupport.PLAYER).shares.get("VILX")==4.25
                     && migrated.account(RegressionTestSupport.PLAYER).shareCostBasisMicro.get("VILX")==415_000_000L,"migration changed money/basis");
             require(migrated.priceHistory.get("VILX").equals(s.priceHistory.get("VILX").subList(0,251)),"migration rewrote history");
-            for(double w:StockIndex.weights(migrated).values())close(w,1.0/12,"migration initial weight");
+            var migratedWeights=StockIndex.weights(migrated);
             var before=new HashMap<>(migrated.prices);migrated.advanceOneDay();
-            double factor=StockIndex.CONSTITUENTS.stream().mapToDouble(t->migrated.prices.get(t)/before.get(t)/12).sum();
+            double factor=StockIndex.CONSTITUENTS.stream().mapToDouble(t->migratedWeights.get(t)*migrated.prices.get(t)/before.get(t)).sum();
             close(migrated.prices.get("VILX")/before.get("VILX"),factor,"first migrated day wrong");
             Path converted=root.resolve("converted.properties");migrated.save(converted);
             var reloaded=EconomyState.load(converted,0,0,0);

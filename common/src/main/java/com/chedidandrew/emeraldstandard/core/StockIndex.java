@@ -13,15 +13,46 @@ public final class StockIndex {
 
     private StockIndex() {}
 
-    /** Only new worlds and pre-34 migration may establish equal starting capitalization. */
+    /** New worlds and pre-34 migration establish a profile-weighted basket without a quote jump. */
     static void initialize(EconomyState state) {
+        initializeCompanies(state);
         state.stockIndexShares.clear();
         for (String ticker : CONSTITUENTS) {
-            state.stockIndexShares.put(ticker, 100.0 / positive(state.prices.get(ticker)));
+            state.stockIndexShares.put(ticker, state.companySharesOutstanding.get(ticker));
         }
         // Anchor to the saved quote, not 100: upgrades must not manufacture a return.
         state.stockIndexDivisor = capitalization(state) / positive(state.prices.get("VILX"));
         state.stockIndexStartedDay = state.economicDay;
+    }
+
+    /** Adoption never changes the saved index basket, historical quotes or player-owned shares. */
+    static void initializeCompanies(EconomyState state) {
+        state.companySharesOutstanding.clear();
+        for(String ticker:CONSTITUENTS) state.companySharesOutstanding.put(ticker,
+                CompanyProfiles.get(ticker).startingCapital()/positive(state.prices.get(ticker)));
+        state.stockIndexRebalancedDay=state.economicDay;
+    }
+
+    static void review(EconomyState state) {
+        if(state.economicDay-state.stockIndexRebalancedDay<365)return;
+        double quote=positive(state.prices.get("VILX"));
+        var remaining=new java.util.LinkedHashSet<>(CONSTITUENTS);
+        var weights=new LinkedHashMap<String,Double>();double budget=1;
+        while(!remaining.isEmpty()) {
+            double total=remaining.stream().mapToDouble(t->positive(state.prices.get(t))
+                    *positive(state.companySharesOutstanding.get(t))).sum();
+            var capped=new java.util.ArrayList<String>();
+            for(String t:remaining) if(budget*state.prices.get(t)*state.companySharesOutstanding.get(t)/total>.20)
+                capped.add(t);
+            if(capped.isEmpty()) {
+                for(String t:remaining)weights.put(t,budget*state.prices.get(t)*state.companySharesOutstanding.get(t)/total);
+                break;
+            }
+            for(String t:capped){weights.put(t,.20);budget-=.20;remaining.remove(t);}
+        }
+        for(String t:CONSTITUENTS)state.stockIndexShares.put(t,weights.get(t)/positive(state.prices.get(t)));
+        state.stockIndexDivisor=capitalization(state)/quote;
+        state.stockIndexRebalancedDay=state.economicDay;
     }
 
     private static double positive(Double value) {
@@ -69,6 +100,7 @@ public final class StockIndex {
     static void split(EconomyState state, String ticker, double factor) {
         positive(factor);
         if (state.stockIndexShares.containsKey(ticker)) {
+            state.companySharesOutstanding.computeIfPresent(ticker,(t,shares)->positive(shares*factor));
             state.stockIndexShares.put(ticker, positive(state.stockIndexShares.get(ticker) * factor));
         } else if ("VILX".equals(ticker)) {
             state.stockIndexDivisor = positive(state.stockIndexDivisor * factor);
@@ -76,6 +108,11 @@ public final class StockIndex {
     }
 
     static void validate(EconomyState state) throws IOException {
+        if(!state.companySharesOutstanding.keySet().equals(new java.util.HashSet<>(CONSTITUENTS))
+                ||state.stockIndexRebalancedDay<0||state.stockIndexRebalancedDay>state.economicDay)
+            throw new IOException("Invalid company float/rebalance date");
+        for(double shares:state.companySharesOutstanding.values())
+            if(!Double.isFinite(shares)||shares<=0)throw new IOException("Invalid company float");
         if (!state.stockIndexShares.keySet().equals(new java.util.HashSet<>(CONSTITUENTS))
                 || state.stockIndexStartedDay < 0 || state.stockIndexStartedDay > state.economicDay)
             throw new IOException("Invalid VILX constituents or tracking start day");

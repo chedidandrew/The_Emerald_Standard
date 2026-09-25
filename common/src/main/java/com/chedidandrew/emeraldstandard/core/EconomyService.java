@@ -4960,6 +4960,8 @@ public final class EconomyService {
                     ? Long.MAX_VALUE
                     : account.loanSerial + 1L;
             account.loanSerial = position.serial;
+            position.riskVersion = 1;
+            position.borrower = EconomyEngine.loanBorrower(current.seed,id,position.serial,current.economicDay);
             position.annualRate = EconomyEngine.villagerLoanAnnualYield(
                     current.regime, termDays);
             account.loanPositions.put(position.positionId, position);

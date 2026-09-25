@@ -316,7 +316,7 @@ public final class EconomyEngine {
                     - 2.0 * (savingsAnnualRate(current) - savingsAnnualRate(previous));
             // A reserve business, not a promise to redeem shares for physical gold.
             case "AURM" -> switch (current) {
-                case RECESSION, CRASH -> 0.05 / DAYS_PER_YEAR;
+                case RECESSION, CRASH -> 0.02 / DAYS_PER_YEAR;
                 case BULL, BOOM -> -0.01 / DAYS_PER_YEAR;
                 default -> 0.0;
             };
@@ -404,16 +404,16 @@ public final class EconomyEngine {
         // Index news is already reflected in constituent quotes; never apply a second shock.
         if ("VILX".equals(ticker) || "VCIX".equals(ticker)) return 0.0;
         if(event.ordinal()>=MarketEvent.PORTAL_REOPENING.ordinal()) return switch(event) {
-            case PORTAL_REOPENING -> ticker.equals("NSPC") ? -0.035 : ticker.equals("ENDR") ? 0.045 : 0;
+            case PORTAL_REOPENING -> ticker.equals("NSPC") ? 0.025 : ticker.equals("ENDR") ? 0.045 : 0;
             case RAIL_DISRUPTION -> ticker.equals("MCRT") ? -0.07 : ticker.equals("ENDR") ? -0.025 : 0;
-            case COPPER_GRID_BUILDOUT -> ticker.equals("RSDN") ? 0.055 : ticker.equals("BRCK") ? 0.035 : 0;
-            case COAL_SURPLUS -> ticker.equals("DPMN") ? -0.025 : ticker.equals("MCRT") ? 0.02 : 0;
-            case ENCHANTING_FESTIVAL -> ticker.equals("POTN") ? 0.055 : ticker.equals("ENDR") ? 0.02 : 0;
-            case LUXURY_DEMAND_SLUMP -> ticker.equals("DPMN") ? -0.045 : ticker.equals("AURM") ? 0.015 : 0;
+            case COPPER_GRID_BUILDOUT -> ticker.equals("RSDN") ? 0.055 : ticker.equals("BRCK") ? 0.035 : ticker.equals("MCRT") ? .045 : 0;
+            case COAL_SURPLUS -> ticker.equals("DPMN") ? -0.010 : ticker.equals("MCRT") ? 0.02 : 0;
+            case ENCHANTING_FESTIVAL -> ticker.equals("POTN") ? 0.090 : ticker.equals("ENDR") ? 0.02 : 0;
+            case LUXURY_DEMAND_SLUMP -> ticker.equals("DPMN") ? -0.020 : ticker.equals("AURM") ? 0.015 : 0;
             case FISHERY_RECOVERY -> ticker.equals("FISH") ? 0.075 : ticker.equals("GLDH") ? -0.012 : 0;
-            case POTION_RECALL -> ticker.equals("POTN") ? -0.085 : ticker.equals("IRNG") ? 0.01 : 0;
+            case POTION_RECALL -> ticker.equals("POTN") ? -0.050 : ticker.equals("IRNG") ? 0.01 : 0;
             case BANK_STRESS_TEST -> ticker.equals("BRCK") ? 0.04 : ticker.equals("VENT") ? 0.035 : 0;
-            case REGIONAL_REBUILDING -> ticker.equals("BRCK") ? 0.06 : ticker.equals("IRNG") ? 0.025 : 0;
+            case REGIONAL_REBUILDING -> ticker.equals("BRCK") ? 0.06 : ticker.equals("IRNG") ? 0.025 : ticker.equals("MCRT") ? .12 : 0;
             default -> 0;
         };
         return switch (event) {
@@ -457,7 +457,7 @@ public final class EconomyEngine {
                 default -> -0.050;
             };
             case DEEPVEIN_DISCOVERY -> switch (ticker) {
-                case "DPMN" -> 0.085;
+                case "DPMN" -> 0.110;
                 default -> 0.0;
             };
         };
@@ -532,7 +532,7 @@ public final class EconomyEngine {
             case 30 -> 0.105;
             case 90 -> 0.115;
             case 180 -> 0.120;
-            case 365 -> 0.150;
+            case 365 -> 0.130;
             default -> throw new IllegalArgumentException("Unsupported loan term: " + termDays);
         };
         double regimePremium = switch (regime) {
@@ -549,22 +549,9 @@ public final class EconomyEngine {
 
     /** Opening estimate before future recession/crash stress is known. */
     public static double estimatedLoanDefaultProbability(Regime regime, int termDays) {
-        double baseProbability = switch (termDays) {
-            case 30 -> 0.006;
-            case 90 -> 0.018;
-            case 180 -> 0.035;
-            case 365 -> 0.055;
-            default -> throw new IllegalArgumentException("Unsupported loan term: " + termDays);
-        };
-        double regimeAdjustment = switch (regime) {
-            case EXPANSION, BULL -> 0.0;
-            case BOOM -> 0.002;
-            case STAGNATION -> 0.006;
-            case RECESSION -> 0.018;
-            case CRASH -> 0.050;
-            case RECOVERY -> 0.008;
-        };
-        return clamp(baseProbability + regimeAdjustment, 0.002, 0.35);
+        if(termDays!=30&&termDays!=90&&termDays!=180&&termDays!=365)
+            throw new IllegalArgumentException("Unsupported loan term: "+termDays);
+        return loanProbability(termDays,loanStressIncrement(regime)*termDays);
     }
 
     public static double loanStressIncrement(Regime regime) {
@@ -624,6 +611,42 @@ public final class EconomyEngine {
     public static double compoundDaily(double principal, double annualRate) {
         return principal * (StrictMath.pow(1.0 + annualRate, 1.0 / DAYS_PER_YEAR) - 1.0);
     }
+
+    public static int loanBorrower(long seed, UUID account, long serial, long day) {
+        return (int)(unit(mix(seed ^ account.getMostSignificantBits() ^ Long.rotateLeft(account.getLeastSignificantBits(),17),
+                day,Long.rotateLeft(serial,31) ^ LOAN_SALT))*32);
+    }
+
+    /** Version zero remains byte-for-byte on the historical resolver for already-open contracts. */
+    public static LoanResolution resolveLoanVersioned(long seed, UUID account, long serial, long day,
+            int term, double stress, int version, int borrower) {
+        if(version==0)return resolveLoan(seed,account,serial,day,term,stress);
+        if(version!=1||borrower<0||borrower>=32)throw new IllegalArgumentException("Invalid loan risk contract");
+        if((term!=30&&term!=90&&term!=180&&term!=365)||!Double.isFinite(stress)||stress<0)
+            throw new IllegalArgumentException("Invalid loan exposure");
+        double probability=loanProbability(term,stress);
+        long year=(day+term)/365;
+        long identity=account.getMostSignificantBits()^Long.rotateLeft(account.getLeastSignificantBits(),17)^Long.rotateLeft(serial,31);
+        double z=StrictMath.sqrt(.35)*gaussian(mix(seed,year,LOAN_SALT+borrower/8))
+                +StrictMath.sqrt(.45)*gaussian(mix(seed,year,LOAN_SALT+100+borrower))
+                +StrictMath.sqrt(.20)*gaussian(mix(seed^identity,day,LOAN_SALT+200));
+        if(normalCdf(z)>=probability)return new LoanResolution(LoanOutcome.REPAID,1,probability);
+        double severity=unit(mix(seed,year,LOAN_SALT+300+borrower));
+        if(severity<.12)return new LoanResolution(LoanOutcome.FULL_DEFAULT,0,probability);
+        return new LoanResolution(LoanOutcome.PARTIAL_DEFAULT,
+                .45+.45*unit(mix(seed,year,LOAN_SALT+400+borrower)),probability);
+    }
+    private static double normalCdf(double z) {
+        double a=StrictMath.abs(z),t=1/(1+.2316419*a);
+        double tail=.3989422804014327*StrictMath.exp(-a*a/2)*t*
+                (.319381530+t*(-.356563782+t*(1.781477937+t*(-1.821255978+t*1.330274429))));
+        return z>=0?1-tail:tail;
+    }
+    private static double loanProbability(int term,double stress) {
+        double hazard=-StrictMath.log1p(-.035)*365/180;
+        return -StrictMath.expm1(-(hazard+.40*stress/Math.max(1,term))*term/365.0);
+    }
+
 
     public static double nextCommodityPrice(
             Commodity commodity,

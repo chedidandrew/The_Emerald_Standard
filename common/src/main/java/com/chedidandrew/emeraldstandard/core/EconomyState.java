@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-public static final int FORMAT_VERSION = 41;
+public static final int FORMAT_VERSION = 42;
     /** Ten complete years of daily intervals, plus the opening endpoint. */
     public static final int HISTORY_DAYS = 3_651;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -61,6 +61,8 @@ public static final int FORMAT_VERSION = 41;
     public final Map<String, Double> stockIndexShares = new LinkedHashMap<>();
     public double stockIndexDivisor;
     public long stockIndexStartedDay;
+    public final Map<String, Double> companySharesOutstanding = new LinkedHashMap<>();
+    public long stockIndexRebalancedDay;
     public final Map<String, List<Double>> priceHistory = new LinkedHashMap<>();
     public final Map<String, List<Double>> commodityHistory = new LinkedHashMap<>();
     public final Set<Long> generatedBankRegions = new HashSet<>();
@@ -291,6 +293,8 @@ public static final int FORMAT_VERSION = 41;
     }
 
     public static final class LoanPosition {
+        public int riskVersion;
+        public int borrower;
         public long positionId;
         public long principalMicro;
         public long valueMicro;
@@ -305,6 +309,8 @@ public static final int FORMAT_VERSION = 41;
 
         public LoanPosition copy() {
             LoanPosition copy = new LoanPosition();
+            copy.riskVersion = riskVersion;
+            copy.borrower = borrower;
             copy.positionId = positionId;
             copy.principalMicro = principalMicro;
             copy.valueMicro = valueMicro;
@@ -1152,6 +1158,8 @@ copy.architectureDialect = architectureDialect;
         copy.stockIndexShares.putAll(stockIndexShares);
         copy.stockIndexDivisor = stockIndexDivisor;
         copy.stockIndexStartedDay = stockIndexStartedDay;
+        copy.companySharesOutstanding.putAll(companySharesOutstanding);
+        copy.stockIndexRebalancedDay = stockIndexRebalancedDay;
         priceHistory.forEach((ticker, values) ->
                 copy.priceHistory.put(ticker, new ArrayList<>(values)));
         commodityHistory.forEach((commodity, values) ->
@@ -1330,6 +1338,7 @@ copy.architectureDialect = architectureDialect;
         Map<String,Double> dayOpen=new LinkedHashMap<>(liveMarket.open);
         var closingEvent=liveMarket.closingEvent;
         economicDay++;
+        StockIndex.review(this);
         for (var village : villages.values()) VillageGuardSecurity.refresh(village, economicDay);
         if (villageProsperitySimulationEnabled) {
             VillageExpansion.prepareDay(this);
@@ -1723,13 +1732,13 @@ copy.architectureDialect = architectureDialect;
             }
             if (economicDay >= position.maturityDay) {
                 int termDays = safeTerm(position.openDay, position.maturityDay);
-                EconomyEngine.LoanResolution resolution = EconomyEngine.resolveLoan(
+                EconomyEngine.LoanResolution resolution = EconomyEngine.resolveLoanVersioned(
                         seed,
                         accountId,
                         position.serial,
                         position.openDay,
                         termDays,
-                        position.stress);
+                        position.stress, position.riskVersion, position.borrower);
                 position.valueMicro = scale(position.valueMicro, resolution.recoveryRate());
                 position.recoveryRate = resolution.recoveryRate();
                 position.outcome = resolution.outcome();
@@ -2899,6 +2908,8 @@ copy.architectureDialect = architectureDialect;
     private static void validateLoanPosition(
             UUID id, long key, LoanPosition position, long economicDay) throws IOException {
         if (position == null
+                || position.riskVersion < 0 || position.riskVersion > 1
+                || position.borrower < 0 || position.borrower >= 32
                 || key != position.positionId
                 || position.positionId <= 0L
                 || position.principalMicro <= 0L

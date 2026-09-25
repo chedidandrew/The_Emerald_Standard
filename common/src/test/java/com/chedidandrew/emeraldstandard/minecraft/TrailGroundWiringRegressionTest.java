@@ -46,6 +46,10 @@ public final class TrailGroundWiringRegressionTest {
         }
 
         String natural = methodBody(java, "static boolean isNaturalProjectGround");
+        require(natural.contains("VegetationCompatibility.naturalGround(state)"),
+                "Foundation checks must use shared vegetation classification");
+        natural = methodBody(Files.readString(source.resolveSibling("VegetationCompatibility.java")),
+                "static boolean naturalGround");
         for (String retainedFoundation : List.of(
                 "Blocks.STONE",
                 "Blocks.ANDESITE",

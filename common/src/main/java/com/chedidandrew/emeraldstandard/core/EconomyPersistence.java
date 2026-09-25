@@ -249,6 +249,9 @@ final class EconomyPersistence {
         state.stockIndexShares.forEach((key,value)->properties.setProperty("index.stock.shares."+key,Double.toString(value)));
         properties.setProperty("index.stock.divisor", Double.toString(state.stockIndexDivisor));
         properties.setProperty("index.stock.started_day", Long.toString(state.stockIndexStartedDay));
+        properties.setProperty("index.stock.rebalanced_day",Long.toString(state.stockIndexRebalancedDay));
+        state.companySharesOutstanding.forEach((ticker,shares)->
+                properties.setProperty("company.float."+ticker,Double.toString(shares)));
         state.prices.forEach((key, value) ->
                 properties.setProperty("price." + key, Double.toString(value)));
         state.commodityPrices.forEach((key, value) ->
@@ -594,6 +597,8 @@ final class EconomyPersistence {
         });
         account.loanPositions.forEach((positionId, position) -> {
             String positionPrefix = prefix + "loanpos." + positionId + ".";
+            properties.setProperty(positionPrefix+"risk_version",Integer.toString(position.riskVersion));
+            properties.setProperty(positionPrefix+"borrower",Integer.toString(position.borrower));
             properties.setProperty(positionPrefix + "principal", Long.toString(position.principalMicro));
             properties.setProperty(positionPrefix + "value", Long.toString(position.valueMicro));
             properties.setProperty(positionPrefix + "open", Long.toString(position.openDay));
@@ -817,7 +822,14 @@ final class EconomyPersistence {
                 state.stockIndexStartedDay = requiredLong(properties, "index.stock.started_day");
             }
             if(format<33)state.initializeCommodityIndex();
-            else for(var a:EconomyEngine.ASSETS)if(a.isCommodity())
+            if(format<42) StockIndex.initializeCompanies(state);
+            else {
+                state.companySharesOutstanding.clear();
+                for(String ticker:StockIndex.CONSTITUENTS)state.companySharesOutstanding.put(ticker,
+                        requiredDouble(properties,"company.float."+ticker));
+                state.stockIndexRebalancedDay=requiredLong(properties,"index.stock.rebalanced_day");
+            }
+            if(format>=33) for(var a:EconomyEngine.ASSETS)if(a.isCommodity())
                 state.commodityIndexWeights.put(a.ticker(),requiredDouble(properties,"index.commodity.weight."+a.ticker()));
             for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
                 if (format < 30 && EconomyEngine.isNewCommodity(commodity.id())
@@ -920,6 +932,11 @@ final class EconomyPersistence {
             for (EconomyState.Account account : state.accounts.values()) {
                 EconomyState.ensurePositionCollections(account);
                 PortfolioAnalytics.migrateLegacyBasis(account, state);
+            }
+            if(format>=42)for(var entry:state.accounts.entrySet())for(var loan:entry.getValue().loanPositions.values()) {
+                String prefix="account."+entry.getKey()+".loanpos."+loan.positionId+".";
+                if(!properties.containsKey(prefix+"risk_version")||!properties.containsKey(prefix+"borrower"))
+                    throw new IOException("Missing loan risk contract");
             }
             state.liveMarket=format>=36?LiveMarket.read(properties):LiveMarket.adopt(state);
             state.validate();
@@ -1670,6 +1687,8 @@ final class EconomyPersistence {
             return created;
         });
         switch (field.substring(idEnd + 1)) {
+            case "risk_version" -> position.riskVersion = Integer.parseInt(value);
+            case "borrower" -> position.borrower = Integer.parseInt(value);
             case "principal" -> position.principalMicro = Long.parseLong(value);
             case "value" -> position.valueMicro = Long.parseLong(value);
             case "open" -> position.openDay = Long.parseLong(value);

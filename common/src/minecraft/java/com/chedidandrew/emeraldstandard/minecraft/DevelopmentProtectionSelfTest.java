@@ -38,7 +38,7 @@ final class DevelopmentProtectionSelfTest {
             require(dispatcher.execute("nobuild remove "+commandName,source)==1,"native command removes protection");
             require(VillageDevelopmentProtection.mayPlace(level,owner,1,origin,Blocks.AIR.defaultBlockState(),Blocks.OAK_PLANKS.defaultBlockState()),"removal releases ordinary ground");
             require(!DevelopmentLandProtection.meaningful(Blocks.TORCH.defaultBlockState())
-                    && !DevelopmentLandProtection.meaningful(Blocks.POPPY.defaultBlockState()),"lighting and flowers do not claim land");
+                    && DevelopmentLandProtection.meaningful(Blocks.POPPY.defaultBlockState()),"track player gardens without treating torches as land claims");
             ServerPlayer player=new ServerPlayer(level.getServer(),level,new GameProfile(owner,"LandSmoke"),ClientInformation.createDefault());
             player.setPos(origin.getX()+7,origin.getY()+1,origin.getZ()+3);
             for(int x=0;x<4;x++) {

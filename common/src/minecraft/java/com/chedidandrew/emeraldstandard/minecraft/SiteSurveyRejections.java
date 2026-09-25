@@ -8,13 +8,18 @@ import net.minecraft.world.level.chunk.LevelChunk;
 final class SiteSurveyRejections {
     static final int LIMIT = 2048;
     private static final Map<ServerLevel, Map<Object, Entry>> LEVELS = new IdentityHashMap<>();
+    private static final Map<ServerLevel, Map<Object, Entry>> COLUMNS = new IdentityHashMap<>();
+    record ColumnKey(int x,int z) { }
     private record Stamp(LevelChunk chunk, long revision) {}
     private record Entry(long tick, List<Stamp> stamps, Object rejection) {}
     private SiteSurveyRejections() {}
-    static void reset() { LEVELS.clear(); }
+    static void reset() { LEVELS.clear(); COLUMNS.clear(); }
+    private static Map<ServerLevel,Map<Object,Entry>> cache(Object key) {
+        return key instanceof ColumnKey?COLUMNS:LEVELS;
+    }
 
     static Object get(ServerLevel level, Object key, int x, int z, int radius, int lifetime) {
-        var entries = LEVELS.get(level);
+        var entries = cache(key).get(level);
         if (entries == null) { DebugWork.count("plotCache.miss"); return null; }
         var entry = entries.get(key);
         if (entry == null) { DebugWork.count("plotCache.miss"); return null; }
@@ -30,7 +35,7 @@ final class SiteSurveyRejections {
     }
 
     static <T> T remember(ServerLevel level, Object key, int x, int z, int radius, T rejection) {
-        var entries = LEVELS.computeIfAbsent(level, unused -> new LinkedHashMap<>(32, .75f, true));
+        var entries = cache(key).computeIfAbsent(level, unused -> new LinkedHashMap<>(32, .75f, true));
         entries.put(key, new Entry(level.getGameTime(), stamps(level, x, z, radius), rejection));
         if (entries.size() > LIMIT) {
             entries.remove(entries.keySet().iterator().next());

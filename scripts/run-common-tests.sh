@@ -24,6 +24,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.ExploredTerrainStoreRe
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.client.NewspaperPagingRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.LiveMarketRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.StockIndexRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.InvestmentBalanceRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ConstructionOrderRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ProjectSiteRetryRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.NewspaperMarketUpgradeRegressionTest

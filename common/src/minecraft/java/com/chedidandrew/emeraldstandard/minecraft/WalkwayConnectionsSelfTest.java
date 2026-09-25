@@ -14,6 +14,8 @@ import net.minecraft.world.level.block.state.BlockState;
 /** Real loaded-block routing/persistence tests, invoked only in a disposable server smoke world. */
 final class WalkwayConnectionsSelfTest {
     static void verify(ServerLevel level) {
+        ConstructionEntityClearanceSelfTest.verify(level);
+        VegetationCompatibilitySelfTest.verify(level);
         Map<BlockPos,BlockState> before=new LinkedHashMap<>();
         var old=WalkwayConnectionLedger.CODEC.encodeStart(NbtOps.INSTANCE,WalkwayConnectionLedger.get(level)).getOrThrow();
         BlockPos origin=new BlockPos(1760,level.getMaxY()-24,1760);
@@ -39,8 +41,8 @@ final class WalkwayConnectionsSelfTest {
             for(int z=-2;z<=2;z++)level.setBlock(origin.offset(30,0,z),Blocks.WATER.defaultBlockState(),3);
             var request=new WalkwayConnections.Request(village,1,origin.asLong(),origin,origin.east(44),
                     true,legacy,List.of(),List.of(),false);
-            require(WalkwayConnections.acquire(level,1000)&&!WalkwayConnections.acquire(level,1019)
-                    &&WalkwayConnections.acquire(level,1020),"dimension work gate");
+            require(WalkwayConnections.acquire(level,1000)&&!WalkwayConnections.acquire(level,1004)
+                    &&WalkwayConnections.acquire(level,1005),"dimension work gate");
             BlockPos changed=null;
             boolean reload=false;
             int writes=0;

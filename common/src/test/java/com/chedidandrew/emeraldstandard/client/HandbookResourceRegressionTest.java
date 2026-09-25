@@ -31,13 +31,26 @@ public final class HandbookResourceRegressionTest {
                 "One item selects rolled/open models from synchronized use state");
         for(String name:new String[]{"newspaper","newspaper_open"}) {
             String model=compact(assets.resolve("models/item/"+name+".json"));
-            check(model.contains("\"parent\":\"minecraft:item/generated\"")
+            check(!model.contains("minecraft:item/generated") && model.contains("\"elements\":[")
                     &&model.contains("\"layer0\":\"the_emerald_standard:item/"+name+"\"")
                     &&model.contains("firstperson_lefthand")&&model.contains("firstperson_righthand"),
-                    "Detailed flat sprite with both hand transforms");
+                    "Explicit newspaper edge geometry with both hand transforms");
             var sprite=javax.imageio.ImageIO.read(assets.resolve("textures/item/"+name+".png").toFile());
             check(sprite!=null&&sprite.getWidth()==256&&sprite.getHeight()==256&&sprite.getColorModel().hasAlpha(),
                     "Detailed 256px RGBA newspaper texture");
+            int segments=model.split("\"from\":",-1).length-1;
+            check(segments>0&&segments<=64,"Bounded solid newspaper segments");
+            for(String face:new String[]{"north","south","east","west","up","down"})
+                check(model.split("\""+face+"\":",-1).length-1==segments,"Every paper segment has six closed faces");
+            Matcher edges=Pattern.compile("\"east\":\\{\"uv\":\\[([0-9.]+),([0-9.]+),").matcher(model);
+            int edgeCount=0;
+            while(edges.find()) {
+                int x=(int)(Double.parseDouble(edges.group(1))*16);
+                int y=(int)(Double.parseDouble(edges.group(2))*16);
+                check((sprite.getRGB(x,y)>>>24)>=128,"Side faces cannot sample transparent sprite margins");
+                edgeCount++;
+            }
+            check(edgeCount==segments,"Each segment has an opaque side sample");
             int transparent=0,ink=0,paper=0;
             int minX=256,minY=256,maxX=-1,maxY=-1;
             for(int y=0;y<256;y++)for(int x=0;x<256;x++) {
@@ -193,9 +206,10 @@ public final class HandbookResourceRegressionTest {
                 && language.contains("last observed check") && language.contains("/emerald debug"),
                 "Site-search retries and normal debug capture must stay documented in both handbooks");
         requireResolvableHandbookSprites(handbookSource);
-        check(language.contains("VILX: 12 stocks.") && language.contains("saved simulated shares outstanding")
-                && language.contains("Earlier chart points still show the old method")
-                && language.contains("capitalization-weighted average")
+        check(language.contains("VILX: 12 companies.") && language.contains("saved simulated shares outstanding")
+                && language.contains("Earlier chart points are not recalculated")
+                && language.contains("current basket-weighted average")
+                && language.contains("first annual review waits a full economic year")
                 && !language.contains("original group of companies and a broad-economy component"),
                 "VILX basket, migration and non-guaranteed targets must be explained in both handbooks");
         requireCreativeCatalog(root,language);
@@ -467,6 +481,9 @@ public final class HandbookResourceRegressionTest {
     }
 
     private static void requireHandbookLocalization(String language) {
+        check(language.contains("Operating") || language.contains("operating profiles"),"Company profiles missing");
+        check(language.contains("20%% at that review") && language.contains("eight unrelated bets")
+                        && language.contains("Existing contracts keep"),"Index/lending handbook does not match balance rules");
         check(language.contains("numeric precision") && language.contains("confirm the updated action again")
                         && language.contains("Tiny holdings stay."),
                 "Handbook must explain numeric limits, retained dust and changed confirmations");

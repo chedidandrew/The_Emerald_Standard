@@ -8,7 +8,9 @@ public final class InvestmentBrowserRegressionTest {
         for(var filter:InvestmentBrowser.Filter.values()) {
             b.filter=filter;
             for(int index:b.matches(i->true))
-                check(filter==InvestmentBrowser.Filter.ALL || EconomyEngine.ASSETS.get(index).type().name().equals(filter.name()),"type");
+                check(filter==InvestmentBrowser.Filter.ALL || EconomyEngine.ASSETS.get(index).type().name().equals(filter.name())
+                        || (com.chedidandrew.emeraldstandard.core.CompanyProfiles.get(EconomyEngine.ASSETS.get(index).ticker())!=null
+                        && com.chedidandrew.emeraldstandard.core.CompanyProfiles.get(EconomyEngine.ASSETS.get(index).ticker()).size().name().equals(filter.name())),"type/size");
         }
         b.filter=InvestmentBrowser.Filter.ALL;b.query=" GoLd ";
         check(b.matches(i->true).stream().anyMatch(i->EconomyEngine.ASSETS.get(i).name().contains("Gold")),"case-insensitive search");

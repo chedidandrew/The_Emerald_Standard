@@ -17,7 +17,7 @@ public final class VillageProsperityEngine {
     public static final int RESIDENT_HISTORY_LIMIT = 1024;
     public static final int MARKET_SHADOW_FORMULA_VERSION = 1;
     public static final double RESTORATION_EMERALD_TARGET = 25.0;
-    public static final int INCIDENT_RECOVERY_DAYS = 7;
+    public static final int INCIDENT_RECOVERY_DAYS = 1;
     public static final double GROWTH_FOOD_PER_RESIDENT = 10.0;
     public static final double GROWTH_SAFETY_THRESHOLD = 45.0;
     public static final double SECURITY_PROJECT_THRESHOLD = 42.0;
@@ -287,7 +287,7 @@ public final class VillageProsperityEngine {
         }
 
         if (village.lastIncidentCause == IncidentCause.NONE
-                || day - village.lastIncidentDay > INCIDENT_RECOVERY_DAYS) {
+                || day - village.lastIncidentDay >= INCIDENT_RECOVERY_DAYS) {
             // A bounded, recently observed light-coverage benefit, not a per-torch counter.
             double lighting = village.lightingCoveragePercent / 100.0
                     * clamp(1.0 - Math.max(0L, day - village.lastLightingDay) / 7.0, 0.0, 1.0);
@@ -375,7 +375,7 @@ public final class VillageProsperityEngine {
         if ((village.lifecycle == Lifecycle.DEVASTATED
                         || village.lifecycle == Lifecycle.THREATENED)
                 && population <= 2
-                && sinceIncident > INCIDENT_RECOVERY_DAYS
+                && sinceIncident >= INCIDENT_RECOVERY_DAYS
                 && VillageGuardSecurity.effectiveSafety(village) >= 35.0
                 && village.prosperity >= 20.0) {
             // A settlement with living survivors must have a path back. RECOVERING enables
@@ -384,7 +384,7 @@ public final class VillageProsperityEngine {
             village.lifecycle = Lifecycle.RECOVERING;
             return;
         }
-        if ((village.lastIncidentCause != IncidentCause.NONE && sinceIncident <= INCIDENT_RECOVERY_DAYS)
+        if ((village.lastIncidentCause != IncidentCause.NONE && sinceIncident < INCIDENT_RECOVERY_DAYS)
                 || VillageGuardSecurity.effectiveSafety(village) < 30.0) {
             village.lifecycle = Lifecycle.THREATENED;
         } else if (village.prosperity < 25.0 || population <= 2) {

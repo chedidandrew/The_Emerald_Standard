@@ -1,6 +1,29 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.51
+## Unreleased: 0.4.0-beta.54
+
+- Rebalance established company prospects and event recovery opportunities while retaining speculative losses and AURM's defensive exposure. Savings, CDs, Treasury Fund and commodity formulas are unchanged.
+- Add stable company operating profiles and Large/Medium/Small browser filters. Separate company float from VILX basket quantities; annually cap each constituent at 20% with value-neutral rebalancing.
+- New lending contracts use full-term default exposure and shared borrower/sector risk. Reduce new 365-day quoted base yield from 15% to 13%; preserve existing contract rates and risk rules with saved versioning.
+- Preserve existing prices, history, holdings and index baskets on migration. Update both handbook forms, simulation studies and contract/index regression coverage.
+
+## Previous unreleased candidate: 0.4.0-beta.53
+
+- Share vegetation classification across sites, terrain preparation, construction, walkway paving, bridges, lighting and worksite fences. Add optional Wilder Flowers clovers/wildflowers support and six extensible datapack tags.
+- Preserve recorded player gardens, tall plants and sapling-to-trunk growth, persistent leaves, inventories, protected land and never-clear blocks. Trees require bounded trunk/canopy evidence; isolated floating logs are no longer treated as trees.
+- Reuse negative terrain-column evidence across designs and rotations, invalidating on nearby terrain/chunk changes and successful resource reload. Refresh transient route searches after tag changes without discarding saved construction plans.
+- Include exact blocker states and positions in debug survey evidence, document compatibility limits in both handbook forms, and add real Wilder Flowers native tests.
+
+## Previous unreleased candidate: 0.4.0-beta.52
+
+- Building and terrain crews try nearby loaded, clear ground for blocking non-player creatures. After ten seconds of repeated obstruction at the same cell, placement may proceed through them, potentially causing injury or death. Players and mounts carrying players remain protected; surveys never move entities.
+- Increase walkway paving batches without changing route calculation, saved plans, world protections or the shared construction budget. Walkway and bridge occupancy remains non-destructive.
+- Give both handheld newspaper forms explicit closed edge geometry using the existing artwork.
+- Begin incident Safety recovery after one quiet economic day of mourning. Keep separate extinction/resettlement delays unchanged.
+- Cover Minecraft's native sleep wake-up clock transition and duplicate observations in market tests. It advances quotes correctly in the tested source; no market behavior change is claimed.
+- Update guided and compact handbook explanations, safety warnings and regressions.
+
+## Previous unreleased candidate: 0.4.0-beta.51
 
 - Give new Bank and building walkway connections five distinct, village-matched paving/edging treatments: plains lanes, desert sandstone, savanna earth/terracotta, taiga gravel with mossy verges, and snowy stone paving. Use stable village-wide weathering rather than per-building random palettes.
 - Freeze each new connection's surface style across partial construction and reloads. Preserve older surveys, existing paving, authored entrances, player edits, matching lamps, and bridge designs.

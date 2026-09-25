@@ -12,6 +12,7 @@ public final class VillageProsperityRegressionTest {
 
     public static void main(String[] args) throws Exception {
         testSimulationAndProjects();
+        testOneQuietDay();
         testIndependentToggleBehavior();
         testMarketInfluenceBound();
         testPlayerMarketShadowIsolationAndRelease();
@@ -50,6 +51,22 @@ public final class VillageProsperityRegressionTest {
         testPeacefulGrowth();
         testPeacefulServiceLifecycle();
         System.out.println("PASS VillageProsperityRegressionTest");
+    }
+
+    private static void testOneQuietDay() {
+        EconomyState state=EconomyState.fresh(123L,0L,0L);
+        var v=village(state,8,12);
+        v.safety=50;v.prosperity=60;v.foodSupply=500;
+        v.lastIncidentCause=VillageProsperityEngine.IncidentCause.PLAYER;
+        v.lastIncidentDay=10;
+        VillageProsperityEngine.advanceOneDay(v,123L,10);
+        double mourning=v.safety;
+        VillageProsperityEngine.advanceOneDay(v,123L,11);
+        require(v.safety>mourning,"Safety did not heal after one quiet day");
+        v.lastIncidentDay=12;
+        double before=v.safety;
+        VillageProsperityEngine.advanceOneDay(v,123L,12);
+        require(v.safety<=before,"New incident did not restart mourning");
     }
 
     private static void testSimulationAndProjects() {

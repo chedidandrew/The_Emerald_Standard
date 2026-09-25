@@ -8,7 +8,7 @@ import java.util.function.IntPredicate;
 
 /** Local navigation preferences only. Never places orders or changes server selection. */
 public final class InvestmentBrowser {
-    public enum Filter { ALL, STOCK, COMMODITY, INDEX, FUND }
+    public enum Filter { ALL, STOCK, COMMODITY, INDEX, FUND, LARGE, MEDIUM, SMALL }
     public String query = "";
     public Filter filter = Filter.ALL;
     public boolean favoritesOnly, holdingsOnly;
@@ -19,7 +19,9 @@ public final class InvestmentBrowser {
         List<Integer> result = new ArrayList<>();
         for (int i = 0; i < EconomyEngine.ASSETS.size(); i++) {
             var a = EconomyEngine.ASSETS.get(i);
-            if (filter != Filter.ALL && !filter.name().equals(a.type().name())) continue;
+            var profile=com.chedidandrew.emeraldstandard.core.CompanyProfiles.get(a.ticker());
+            if (filter != Filter.ALL && !filter.name().equals(a.type().name())
+                    && (profile==null||!filter.name().equals(profile.size().name()))) continue;
             if (favoritesOnly && !favorites.contains(a.ticker())) continue;
             if (holdingsOnly && !held.test(i)) continue;
             if (!(a.ticker()+" "+a.name()+" "+a.sector()+" "+a.type()).toLowerCase(Locale.ROOT).contains(q)) continue;

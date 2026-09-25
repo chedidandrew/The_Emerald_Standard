@@ -195,8 +195,7 @@ final class WalkwayLighting {
         return VillageProsperityManager.isNaturalProjectGround(state) && state.isFaceSturdy(level, p, Direction.UP);
     }
     private static boolean clear(BlockState state) {
-        return state.isAir() || state.is(Blocks.SHORT_GRASS) || state.is(Blocks.FERN)
-                || state.is(Blocks.DEAD_BUSH) || state.is(Blocks.SNOW);
+        return VegetationCompatibility.open(state);
     }
     private static BlockPos surface(ServerLevel level, BlockPos column) {
         if (!level.hasChunk(column.getX() >> 4, column.getZ() >> 4)) return null;

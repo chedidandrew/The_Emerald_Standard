@@ -55,8 +55,28 @@ public final class DevelopmentLandProtection {
         }
     }
     static boolean meaningful(BlockState state) {
-        return !state.isAir() && !VillageSitePreparation.vegetation(state) && !VillageSitePreparation.torch(state)
-                && (state.hasBlockEntity() || state.isSolidRender());
+        return !state.isAir() && !VillageSitePreparation.torch(state);
+    }
+    /** Exact sparse provenance, including pending placements and natural plant growth state changes. */
+    static boolean recordedPlacement(ServerLevel level, BlockPos pos, BlockState state) {
+        if (server != level.getServer() || land == null) return false;
+        if (failed) return true;
+        if(state.getBlock() instanceof net.minecraft.world.level.block.DoublePlantBlock
+                &&state.getValue(net.minecraft.world.level.block.DoublePlantBlock.HALF)
+                    ==net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER
+                &&level.getBlockState(pos.below()).is(state.getBlock())
+                &&recordedPlacement(level,pos.below(),level.getBlockState(pos.below())))return true;
+        Observation pending=PENDING.get(level.dimension().identifier()+":"+pos.asLong());
+        if(pending!=null&&pending.state!=null&&pending.state.is(state.getBlock()))return true;
+        String saved=land.placement(level.dimension().identifier().toString(),pos.asLong());
+        String id=net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        if(saved==null)return false;
+        if(saved.equals(id)||saved.startsWith(id+"["))return true;
+        // A planted sapling remains player evidence when it grows into a trunk.
+        String savedId=saved.split("\\[",2)[0];
+        var old=net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(
+                net.minecraft.resources.Identifier.parse(savedId));
+        return old instanceof net.minecraft.world.level.block.SaplingBlock&&VegetationCompatibility.log(state);
     }
     static boolean playerBuild(ServerLevel level, BlockPos pos) {
         if (server != level.getServer() || land == null) return false;

@@ -9,7 +9,7 @@ final class ConstructionTimeRuntime {
     private static final ConstructionCatchUp CATCH_UP = new ConstructionCatchUp();
     private static final ConstructionWorkBudget WORK = new ConstructionWorkBudget();
 
-    static void reset() { CATCH_UP.reset(); WORK.reset(); }
+    static void reset() { CATCH_UP.reset(); WORK.reset(); VillageConstructionOccupancy.reset(); }
 
     static void tick(MinecraftServer server, EmeraldConfig config) {
         long game = server.overworld().getGameTime();
@@ -39,4 +39,10 @@ final class ConstructionTimeRuntime {
     }
     static boolean enter(ConstructionWorkBudget.Lane lane) { return WORK.enter(lane, System.nanoTime()); }
     static boolean hasTime() { return WORK.hasTime(System.nanoTime()); }
+
+    /** Larger road batches on existing construction pulses, inside the same shared server cap. */
+    static int roadAllowance(long game, EmeraldConfig config) {
+        int normal=config.constructionAllowance(game);
+        return normal<=0 ? 0 : WORK.claim(Math.max(8,normal),System.nanoTime());
+    }
 }

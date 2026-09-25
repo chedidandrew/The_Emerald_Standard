@@ -42,6 +42,11 @@ final class ForcedDevelopmentSchedulingSelfTest {
 
             for (int site = 0; site < 2; site++) {
                 BlockPos start = origin.east(site * 48);
+                // Native survival checks inspect adjacent columns without force-loading them.
+                // Explicitly load the local site's halo; the separate remote site stays unloaded.
+                for (int cx=(start.getX()-1)>>4;cx<=(start.getX()+8)>>4;cx++)
+                    for (int cz=(start.getZ()-1)>>4;cz<=(start.getZ()+6)>>4;cz++)
+                        level.getChunk(cx,cz);
                 List<BankConstruction.Cell> cells = new ArrayList<>();
                 for (int x = 0; x < 8; x++) for (int z = 0; z < 6; z++) {
                     BlockPos pos = start.offset(x, 0, z);
@@ -97,6 +102,15 @@ final class ForcedDevelopmentSchedulingSelfTest {
             for (int tick = 1025; tick < 1090; tick++) {
                 clock.setGameTime(tick);
                 VillageDevelopmentRuntime.tick(level.getServer(), economy);
+            }
+            if (!economy.hasGeneratedBankRegion(9100)) {
+                for (int x=0;x<8;x++) for(int z=0;z<6;z++) {
+                    BlockPos pos=origin.offset(x,0,z);
+                    if (!level.getBlockState(pos).is(Blocks.STONE))
+                        System.out.println("Bank scheduling blocker " + pos + " " + level.getBlockState(pos)
+                                + " writable=" + VillageDevelopmentProtection.mayPlace(level,null,9100,pos,
+                                        level.getBlockState(pos),Blocks.STONE.defaultBlockState()));
+                }
             }
             require(economy.hasGeneratedBankRegion(9100), "already-started Bank completes with debug enabled");
             require(economy.pendingBankConstructionsSnapshot().containsKey(9101L)

@@ -50,6 +50,10 @@ public final class DevelopmentLand {
                 result.putAll(chunks.getOrDefault(chunkKey(cx,cz), Map.of()));
         return result;
     }
+    public String placement(String dimension, long position) {
+        var cells=chunk(dimension,position,false);
+        return cells==null?null:cells.get(position);
+    }
     private void commit(String line) throws IOException {
         byte[] bytes = line.getBytes(StandardCharsets.UTF_8); journal.append(bytes); apply(bytes);
         if(++operations%8192==0) compact();
