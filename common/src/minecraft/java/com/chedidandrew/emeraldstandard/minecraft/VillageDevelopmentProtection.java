@@ -40,9 +40,23 @@ public final class VillageDevelopmentProtection {
             BlockPos position,
             BlockState existing,
             BlockState proposed) {
+        return mayPlaceBridge(level,villageId,projectId,position,existing,proposed,null);
+    }
+
+    /** Only the bridge builder holding this exact reservation may develop its footprint. */
+    static boolean mayPlaceBridge(ServerLevel level, UUID villageId, long projectId, BlockPos position,
+            BlockState existing, BlockState proposed, String bridgePermit) {
         if (level == null || position == null || existing == null || proposed == null) {
             return false;
         }
+        String bridge = VillageBridgeLedger.get(level).reservation(position);
+        if (!existing.equals(proposed) && (existing.is(VegetationCompatibility.NEVER_CLEAR)
+                || DevelopmentLandProtection.recordedPlacement(level,position,existing)
+                || existing.hasProperty(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)
+                    && existing.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT))) return false;
+        if (bridge != null && !bridge.equals(bridgePermit)) return false;
+        if (DevelopmentLandProtection.excludes(level,position,position)
+                || DevelopmentLandProtection.playerBuild(level,position)) return false;
         PlacementContext context = new PlacementContext(
                 level, villageId, projectId, position.immutable(), existing, proposed);
         for (PlacementGuard guard : GUARDS) {

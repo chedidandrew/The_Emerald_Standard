@@ -18,6 +18,11 @@ public final class EmeraldStandardFabricClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         MenuScreens.register(BankerMenus.type(), BankerScreen::new);
+        MenuScreens.register(com.chedidandrew.emeraldstandard.minecraft.NewspaperMenu.TYPE,
+                com.chedidandrew.emeraldstandard.client.NewspaperScreen::new);
+        net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry.register(
+                com.chedidandrew.emeraldstandard.minecraft.ConstructionContent.builder,
+                com.chedidandrew.emeraldstandard.client.ConstructionBuilderRenderer::new);
         HandbookReaderItem.registerReader(() -> Minecraft.getInstance().gui.setScreen(new HandbookScreen(null)));
         ClientSmokeSupport.initialized(LOGGER);
         GalleryCaptureSupport.initialized(LOGGER);

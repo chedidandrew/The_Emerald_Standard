@@ -53,10 +53,207 @@ public final class BankerIntegrationSelfTest {
     private BankerIntegrationSelfTest() {
     }
 
+    private static final java.util.Map<net.minecraft.server.MinecraftServer, Sequence> SEQUENCES = new java.util.IdentityHashMap<>();
+    private static final class Sequence {
+        final java.util.ArrayDeque<Runnable> checks;
+        boolean running;
+        int completed;
+        Sequence(List<Runnable> checks) { this.checks = new java.util.ArrayDeque<>(checks); }
+    }
+
+    /** Readiness waits yield real ticks; they never block the server thread or fake native state. */
+    private static final class AwaitFixture implements Runnable {
+        private final java.util.function.BooleanSupplier ready;
+        private long deadline;
+        AwaitFixture(java.util.function.BooleanSupplier ready) { this.ready = ready; }
+        boolean admit() {
+            if (ready.getAsBoolean()) return true;
+            long now = System.nanoTime();
+            if (deadline == 0) deadline = now + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            if (now >= deadline) throw new IllegalStateException("Native fixture entity sections not ready within 10 seconds");
+            return false;
+        }
+        @Override public void run() { }
+    }
+
+    /** Exhaustive CI work must not occupy a single startup tick or disable the watchdog. */
+    @FunctionalInterface public interface CheckedFixture { void run() throws Exception; }
+    public static void schedule(ServerLevel level, CheckedFixture clockCheck) {
+        if (!Boolean.getBoolean("the_emerald_standard.integrationSmoke")) return;
+        var checks = new java.util.ArrayList<Runnable>(); checks.add(() -> {
+            try { clockCheck.run(); }
+            catch (Exception failure) { throw new IllegalStateException("Clock fixture failed", failure); }
+        });
+        checks.add(() -> CreativeContentSelfTest.prepare(level));
+        checks.add(() -> NaturalVillageIdentitySelfTest.prepare(level));
+        checks.add(new AwaitFixture(() -> CreativeContentSelfTest.ready(level) && NaturalVillageIdentitySelfTest.ready(level)));
+        boolean subset = System.getProperties().stringPropertyNames().stream().anyMatch(key ->
+                key.startsWith("the_emerald_standard.") && key.endsWith("SmokeOnly") && Boolean.getBoolean(key));
+        if (subset) checks.add(() -> run(level));
+        else checks.addAll(fullChecks(level));
+        SEQUENCES.put(level.getServer(), new Sequence(checks));
+    }
+
+    public static void stop(net.minecraft.server.MinecraftServer server) {
+        SEQUENCES.remove(server);
+        CreativeContentSelfTest.cleanup(server.overworld());
+        NaturalVillageIdentitySelfTest.cleanup(server.overworld());
+    }
+
+    public static void tick(net.minecraft.server.MinecraftServer server) {
+        var sequence = SEQUENCES.get(server);
+        if (sequence == null || sequence.running) return; // debug boundary fixture deliberately nests a tick
+        // Minecraft's watchdog measures lag against its scheduled next tick, not just the
+        // current callback's duration. Let ordinary empty/catch-up ticks retire a fixture's
+        // schedule debt before admitting another; never rewrite the clock or disable its guard.
+        if (net.minecraft.util.Util.getNanos() - server.getNextTickTime() > 250_000_000L) return;
+        sequence.running = true;
+        long started = System.nanoTime();
+        try {
+            if (sequence.checks.peekFirst() instanceof AwaitFixture wait && !wait.admit()) return;
+            sequence.checks.removeFirst().run(); sequence.completed++;
+            var log = org.slf4j.LoggerFactory.getLogger("the_emerald_standard_smoke");
+            log.info("Server fixture {} completed in {} ms; {} remaining", sequence.completed,
+                    (System.nanoTime()-started)/1_000_000.0, sequence.checks.size());
+            if (sequence.checks.isEmpty()) {
+                stop(server);
+                log.info("The Emerald Standard Banker integration self-test passed");
+            }
+        } catch (RuntimeException | Error failure) {
+            stop(server); throw failure;
+        } finally { sequence.running = false; }
+    }
+
     public static void run(ServerLevel level) {
-        BankerMenuPacketCodecSelfTest.verify();
-        BankerMenuPacketCodecSelfTest.verifyExchangeResourceVisualMapping();
-        verifyInventoryPersistenceGuard();
+        if (Boolean.getBoolean("the_emerald_standard.timedRecoverySmokeOnly")) {
+            TimedConstructionRecoverySelfTest.verify(level,false);
+            TimedConstructionRecoverySelfTest.verify(level,true);
+            TimedConstructionRecoverySelfTest.verify(level,false,false);
+            TimedConstructionRecoverySelfTest.verify(level,true,false);
+            BankStyleSelfTest.verify(level);
+            WalkwayConnectionsSelfTest.verify(level);
+            BankConstructionSelfTest.verify(level); return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.stabilizationSmokeOnly")) {
+            StabilizationSelfTest.verify(level); return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.forcedGrowthSmokeOnly")) {
+            ForcedGrowthSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.districtMapSmokeOnly")) {
+            DistrictMapMenuSelfTest.verify(level);
+            DistrictMapInteractionSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.vanillaConstructionSmokeOnly")) {
+            VanillaConstructionSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.districtGrowthSmokeOnly")) {
+            DistrictGrowthSelfTest.verify(level);
+            ConstructionFinishSelfTest.verify(level);
+            ConstructionSupportRecoverySelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            ConstructionOwnershipSelfTest.verify(level);
+            WalkwayEntranceSelfTest.verify(level);
+            return;
+        }
+        if(Boolean.getBoolean("the_emerald_standard.newsSmokeOnly")) {
+            NewsRuntime.verifyForSmoke(level);return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.walkwayEntranceSmokeOnly")) {
+            WalkwayEntranceSelfTest.verify(level);
+            WalkwayConnectionsSelfTest.verify(level);
+            BankConstructionSelfTest.verify(level);
+            WalkwayLightingSelfTest.verify(level);
+            VillageBridgeSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.benchSmokeOnly")) {
+            try {
+                VillageBankBenchSelfTest.run();
+                RoadsideBenchSelfTest.verify(level);
+            } catch (Exception failure) {
+                throw new IllegalStateException("Bank terrace and roadside bench regression", failure);
+            }
+            BankConstructionSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.smithySmokeOnly")) {
+            SmithyConstructionSelfTest.verify(level);
+            ConstructionFinishSelfTest.verify(level);
+            ConstructionSupportRecoverySelfTest.verify(level);
+            ForcedDevelopmentSchedulingSelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            ConstructionOwnershipSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.bankWalkwaySmokeOnly")) {
+            BankConstructionSelfTest.verify(level);
+            WalkwayConnectionsSelfTest.verify(level);
+            WalkwayLightingSelfTest.verify(level);
+            VillageBridgeSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.bankRadiusSmokeOnly")) {
+            NaturalVillageIdentitySelfTest.run(level);
+            BankActivationRadiusSelfTest.verify(level);
+            BankConstructionSelfTest.verify(level);
+            ForcedDevelopmentSchedulingSelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.bridgeSmokeOnly")) {
+            VillageBridgeSelfTest.verify(level);return;
+        }
+        for (Runnable check : fullChecks(level)) check.run();
+    }
+
+    private static List<Runnable> fullChecks(ServerLevel level) {
+        var checks = new java.util.ArrayList<Runnable>(List.of(
+                () -> StabilizationSelfTest.verifyCore(level),
+                () -> DebugPerformanceSelfTest.verify(level),
+                () -> NaturalVillageIdentitySelfTest.run(level),
+                () -> BankActivationRadiusSelfTest.verify(level),
+                () -> ConstructionFinishSelfTest.verify(level),
+                () -> SmithyConstructionSelfTest.verify(level),
+                () -> ConstructionSupportRecoverySelfTest.verify(level),
+                () -> TimedConstructionRecoverySelfTest.verify(level,false),
+                () -> TimedConstructionRecoverySelfTest.verify(level,true),
+                () -> TimedConstructionRecoverySelfTest.verify(level,false,false),
+                () -> TimedConstructionRecoverySelfTest.verify(level,true,false),
+                () -> BankStyleSelfTest.verify(level),
+                () -> GuardVillagersCompatSelfTest.verify(level),
+                () -> DevelopmentProtectionSelfTest.verify(level),
+                () -> VillageStructureLootSelfTest.verify(level),
+                () -> VillageExpansionSelfTest.verify(level),
+                () -> VillageFoodEnvironmentSelfTest.verify(level),
+                () -> VillagePopulationSelfTest.verify(level),
+                () -> NewspaperItemSelfTest.verify(level),
+                () -> BankConstructionSelfTest.verify(level),
+                () -> ForcedDevelopmentSchedulingSelfTest.verify(level),
+                () -> ConstructionPacingSelfTest.verify(),
+                () -> ConstructionSafetySelfTest.verify(level),
+                () -> ConstructionOwnershipSelfTest.verify(level),
+                () -> WalkwayLightingSelfTest.verify(level),
+                () -> WalkwayConnectionsSelfTest.verify(level),
+                () -> WalkwayEntranceSelfTest.verify(level),
+                () -> VillageBridgeSelfTest.verify(level),
+                () -> CreativeContentSelfTest.verify(level),
+                () -> DistrictMapInteractionSelfTest.verify(level),
+                () -> NewsRuntime.verifyForSmoke(level),
+                () -> BankerMenuPacketCodecSelfTest.verify(),
+                () -> BankerMenuPacketCodecSelfTest.verifyExchangeResourceVisualMapping(),
+                () -> verifyInventoryPersistenceGuard(),
+                () -> UnifiedFundsSelfTest.run(level),
+                () -> verifyBanker(level),
+                () -> VillageBankManager.validateBankTemplate(level)));
+        checks.addAll(VillageProsperityManager.projectTemplateValidationSteps(level));
+        return List.copyOf(checks);
+    }
+
+    private static void verifyBanker(ServerLevel level) {
         require(BankerProfessionSupport.exchangeDeskOrLectern() != Blocks.LECTERN,
                 "The Exchange Desk block was not registered before server startup");
         require(BankerProfessionSupport.registeredBanker().isPresent(),
@@ -264,8 +461,6 @@ public final class BankerIntegrationSelfTest {
                         Blocks.LANTERN.defaultBlockState()),
                 "Rollback ownership accepted a different replacement block");
         verifyProtectionGuards(level);
-        VillageBankManager.validateBankTemplate(level);
-        VillageProsperityManager.validateProjectTemplates(level);
 
         Villager named = create(level);
         named.setCustomName(Component.literal("Keep Me"));

@@ -176,7 +176,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && dialects.contains("validateBankDialectPaletteContract(false);")
                         && dialectMatrix.contains("VillageArchitecture.BiomeDialect.values()")
                         && dialectMatrix.contains("validateCurrentBankBlueprint(")
-                        && exact.contains("validateBankV6Skyline(authored, palette);")
+                        && exact.contains("validateBankV10Skyline(authored, palette);")
                         && exact.contains("validateBankV7ExteriorGardens(authored, palette);")
                         && exact.contains("validateBankInteriorZoning(")
                         && exact.contains("validateBankInteriorLighting(authored, snapshotId);")
@@ -212,12 +212,16 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                                 "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V5 = 5;")
                         && source.contains(
                                 "private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V6 = 6;")
-                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 8;"),
-                "Village Bank structure-version constants drifted from the v2-v8 contract");
+                        && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V8 = 8;")
+                        && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V9 = 9;")
+                        && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V10 = 10;")
+                        && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V11 = 11;")
+                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 12;"),
+                "Village Bank structure-version constants drifted from the v2-v9 contract");
 
         String attempt = methodBody(source, "private static BankBuildAttempt attemptBankBuild(");
-        require(attempt.contains("BankBuildResult build = buildBank("),
-                "A new or replacement Bank can bypass the current production builder");
+        require(attempt.contains("reserveProgressiveBank(") && !attempt.contains("= buildBank("),
+                "A new or replacement Bank must use progressive construction");
 
         String build = methodBody(source, "private static BankBuildResult buildBank(");
         require(build.contains("terrainSupportedBankPlan(level, origin, palette)"),
@@ -299,7 +303,20 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && versionSeven.contains("legacyBankPlanV6(origin, palette)")
                         && versionSeven.contains("appendBankV7ExteriorGardens("),
                 "Frozen v7 construction lost its isolated material/planting composition");
-        String versionEight = methodBody(source, "private static List<BankPlacement> bankPlan(");
+        require(methodBody(source, "private static List<BankPlacement> legacyBankPlanV9(").contains("legacyBankPlanV8(origin, legacyPalette)")
+                        && source.contains("? legacyBankPlanV8(origin, palette)"), "version eight is frozen, version nine sets back the doorway runner");
+        require(methodBody(source, "private static List<BankPlacement> legacyBankPlanV10(").contains("legacyBankPlanV9(origin, legacyPalette)")
+                        && integrity.contains("? legacyBankPlanV9(origin, palette)"), "v9 must remain frozen under the v10 roof correction");
+        require(methodBody(source, "private static List<BankPlacement> legacyBankPlanV11(").contains("legacyBankPlanV10(origin, legacyPalette)")
+                        && integrity.contains("structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V10")
+                        && integrity.contains("? legacyBankPlanV10(origin, palette)"),
+                "v10 must remain frozen under the v11 bench correction");
+        require(methodBody(source, "private static List<BankPlacement> bankPlan(")
+                        .strip().equals("return legacyBankPlanV10(origin, legacyPalette);")
+                        && integrity.contains("structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V11")
+                        && integrity.contains("? legacyBankPlanV11(origin, palette)"),
+                "New Banks restore the original terrace while existing v11 integrity stays frozen");
+        String versionEight = methodBody(source, "private static List<BankPlacement> legacyBankPlanV8(");
         require(versionEight.contains("legacyBankPlanV7(origin, legacyPalette)")
                         && versionEight.contains("Blocks.BRICK_WALL.defaultBlockState()"),
                 "Current v8 Bank chimney pass must layer over the frozen v7 plan");

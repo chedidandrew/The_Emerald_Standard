@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  *
  * <p>The production catalog depends on Minecraft block states and cannot be loaded by the common
  * test classpath. These checks make sure its catalog admission path still exports one palette-free
- * structural silhouette per active revision-7 master to the executable neutral validator.</p>
+ * structural silhouette per active revision-10 master to the executable neutral validator.</p>
  */
 public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
     private static final int ACTIVE_MASTER_TARGET = 52;
@@ -17,7 +17,7 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
             "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/"
                     + "AuthoredVillageStructures.java";
     private static final Pattern ACTIVE_REVISION = Pattern.compile(
-            "LATEST_TEMPLATE_REVISION\\s*=\\s*9\\s*;");
+            "LATEST_TEMPLATE_REVISION\\s*=\\s*10\\s*;");
     private static final Pattern SNAPSHOT_COLLECTION = Pattern.compile(
             "List\\s*<\\s*(?:WholeBuildingDistinctivenessValidator\\s*\\.\\s*)?"
                     + "StructuralSnapshot\\s*>\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*"
@@ -34,7 +34,12 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
         require(Files.isRegularFile(sourceFile),
                 "Missing authored village structures source: " + sourceFile);
         String source = Files.readString(sourceFile);
-        String catalog = methodBody(source, "static void validateCatalog()");
+        String catalog = methodBody(source, "private static void validateCatalogResults(")
+                + methodBody(source, "private static List<VillageArchitecture.BlueprintDescriptor> activeCatalogDescriptors()");
+        require(methodBody(source, "static void validateCatalog()").contains("validateCatalogResults(activeCatalogDescriptors()")
+                        && methodBody(source, "static List<Runnable> catalogValidationSteps()")
+                                .contains("steps.add(() -> validateCatalogResults(results))"),
+                "Both headless and yielding live admission must invoke the aggregate catalog gate");
         String descriptorValidation = methodBody(
                 source,
                 "private static CatalogValidationResult validateCatalogDescriptor(");
@@ -54,7 +59,7 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
             String descriptorValidation,
             String snapshotCollection) {
         require(ACTIVE_REVISION.matcher(source).find(),
-                "The active authored gold masters are not revision 7");
+                "The active authored gold masters are not revision 10");
         require(catalog.contains(
                         "descriptor.templateRevision() == LATEST_TEMPLATE_REVISION")
                         && catalog.contains("activeDescriptors.add(descriptor)"),

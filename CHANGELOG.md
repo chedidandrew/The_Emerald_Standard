@@ -1,5 +1,563 @@
 # Changelog
 
+## Unreleased: 0.4.0-beta.54
+
+- Rebalance established company prospects and event recovery opportunities while retaining speculative losses and AURM's defensive exposure. Savings, CDs, Treasury Fund and commodity formulas are unchanged.
+- Add stable company operating profiles and Large/Medium/Small browser filters. Separate company float from VILX basket quantities; annually cap each constituent at 20% with value-neutral rebalancing.
+- New lending contracts use full-term default exposure and shared borrower/sector risk. Reduce new 365-day quoted base yield from 15% to 13%; preserve existing contract rates and risk rules with saved versioning.
+- Preserve existing prices, history, holdings and index baskets on migration. Update both handbook forms, simulation studies and contract/index regression coverage.
+
+## Previous unreleased candidate: 0.4.0-beta.53
+
+- Share vegetation classification across sites, terrain preparation, construction, walkway paving, bridges, lighting and worksite fences. Add optional Wilder Flowers clovers/wildflowers support and six extensible datapack tags.
+- Preserve recorded player gardens, tall plants and sapling-to-trunk growth, persistent leaves, inventories, protected land and never-clear blocks. Trees require bounded trunk/canopy evidence; isolated floating logs are no longer treated as trees.
+- Reuse negative terrain-column evidence across designs and rotations, invalidating on nearby terrain/chunk changes and successful resource reload. Refresh transient route searches after tag changes without discarding saved construction plans.
+- Include exact blocker states and positions in debug survey evidence, document compatibility limits in both handbook forms, and add real Wilder Flowers native tests.
+
+## Previous unreleased candidate: 0.4.0-beta.52
+
+- Building and terrain crews try nearby loaded, clear ground for blocking non-player creatures. After ten seconds of repeated obstruction at the same cell, placement may proceed through them, potentially causing injury or death. Players and mounts carrying players remain protected; surveys never move entities.
+- Increase walkway paving batches without changing route calculation, saved plans, world protections or the shared construction budget. Walkway and bridge occupancy remains non-destructive.
+- Give both handheld newspaper forms explicit closed edge geometry using the existing artwork.
+- Begin incident Safety recovery after one quiet economic day of mourning. Keep separate extinction/resettlement delays unchanged.
+- Cover Minecraft's native sleep wake-up clock transition and duplicate observations in market tests. It advances quotes correctly in the tested source; no market behavior change is claimed.
+- Update guided and compact handbook explanations, safety warnings and regressions.
+
+## Previous unreleased candidate: 0.4.0-beta.51
+
+- Give new Bank and building walkway connections five distinct, village-matched paving/edging treatments: plains lanes, desert sandstone, savanna earth/terracotta, taiga gravel with mossy verges, and snowy stone paving. Use stable village-wide weathering rather than per-building random palettes.
+- Freeze each new connection's surface style across partial construction and reloads. Preserve older surveys, existing paving, authored entrances, player edits, matching lamps, and bridge designs.
+- Recognize supplied stone paving through exact saved receipts rather than mistaking every natural sandstone or stone block for a road. Keep existing survey, write, protection and no-regeneration limits.
+- Update both handbook forms and cover all five styles, partial reloads, legacy migration, route verification and road receipts in native tests.
+
+## Previous unreleased candidate: 0.4.0-beta.50
+
+- Give each unfinished construction site its own temporary support-recovery window. First revisit supports, then briefly relax TES ordering without bypassing native survival, occupancy, inventories, protected land or loaded-chunk checks. Actual forward progress resets recovery; replaying a consumed prefix does not. New builds start normally.
+- Defer walkway connections after three unsuccessful surveys rather than endlessly repeating unchanged searches. Later attempts may join verified existing routes; safe narrow sections remain supported. Preserve partial paving, keep disconnected routes marked disconnected, and reconsider changed terrain/chunks/connections.
+- Freeze new automatic Banks to the village's saved architectural family rather than the Bank plot's biome. Persist the chosen style through construction and handover. Existing completed Banks are not repainted.
+- Add exact beta.49 Mine/Inn replay fixtures, per-build recovery/expiry checks, deferred/alternate-route tests, five-style Bank persistence checks, and guided/compact handbook explanations.
+
+## Previous unreleased candidate: 0.4.0-beta.49
+
+- Add bounded capture-local subsystem timings, cache counters, scheduler visit/progress evidence, housing-survey details and raw versus gap-adjusted TPS. `/emerald debug profile` adds an owner-requested 60-second JVM profile without toggling gameplay settings.
+- Reuse frozen authored templates in normal construction and relative geometry during site searches. Resolve road materials without generating an entire building. All live terrain, ownership, occupancy and saved-hash safeguards remain.
+- Resume admitted walkway searches before admitting more backlog; keep relevant searches alive and accelerate forced-mode road turns within existing shared work limits.
+- Invalidate path classifications on actual loaded-chunk changes, including non-ticking chunks; previously cached air or walls could survive construction until a villager tried to navigate.
+- Correct client input injection, require first-launch success before restart checks, and derive handbook page counts from the actual renderer. Keep long market descriptions in tooltips and fit compact basket summaries in the dashboard.
+- Give native integration fixtures individual server ticks with the watchdog enabled; initialize shared scheduler admission in isolated construction/sleep fixtures. Reconcile the standalone economy test with the actual VILX basket, without tuning returns to an obsolete assertion.
+- Vary complete market dispatch structures and event-specific reactions, with shorter desk reports between longer stories. Preserve quoted facts, incident continuity, outlet attribution and saved articles.
+- Review/update guided and compact handbooks, candidate identity and save-format documentation. Extended human-play and modpack performance certification remain separate from automated checks.
+
+## Previous unreleased candidate: 0.4.0-beta.48
+
+- Raise the default Village Fund monthly spending allowance to 240 emeralds (8 per economic day) and clarify its settings label/help. Explicit saved world values remain unchanged; update both handbook forms and configuration examples.
+- Fix endless finishing repairs when supplied dirt becomes grass or shaded grass becomes dirt.
+- Admit shallow vanilla foundations above superflat bedrock without making bedrock removable; reproduce the fisher-cottage rejection in native Minecraft.
+- Forced development surveys up to eight candidate centers while shared server time remains, remembers rejected unchanged terrain, retries within 1-5 seconds and explores farther connected parcels after exhausted searches.
+- Keep food/housing surveys active in forced mode and accelerate food-funded settler invitations into verified safe homes. Actual arrivals refresh tier eligibility; normal pace returns when the mode is disabled.
+- Update both handbook forms and add native thin-ground, soil-change, cached-rejection and growth regression checks.
+
+## Previous unreleased candidate: 0.4.0-beta.47
+- Replace district-map marker pages with one continuous geographic view. Panning and zooming request saved sites and borders together; old-world outline complexity no longer pushes buildings onto a hidden page.
+- Focus opens the current district; Overview frames the wider region. Wide/dense views show counted district summaries, with geographic grouping for very large regions, and zooming reveals individual sites.
+- Coalesce and validate camera requests, retain atomic map updates and bounded network/render payloads, cache a lightweight shared map index, and avoid chunk loading or saved-world mutations.
+- Update both handbook forms and add geographic completeness, complex-border, 500-district, packet, navigation and summary-render checks.
+
+## Previous unreleased candidate: 0.4.0-beta.46
+
+- Fix one-direction village growth: search all owned parcels before frontier sites, rank compact connected growth using nearby building/connection metadata, and remove coordinate-order preference.
+- Keep terrain checks to one candidate per pulse; cache bounded lazy candidate orders and persist their identity with the search cursor. Changed layouts restart only unreserved searches, without moving existing buildings.
+- Present Forced instant development as an optional accelerated mode rather than a DEBUG-only setting. Retain explicit confirmation, protected placement and irreversible-world-change warnings.
+- Update both handbook forms and add repeated flat-world, neighboring-district, obstructed-side and saved-search regression coverage.
+
+## Previous unreleased candidate: 0.4.0-beta.45
+
+- Add matching default Minecraft buildings alongside TES designs, with a curated five-family catalog, actual bed capacity, role-aware selection and limited civic spaces.
+- Lock expansion to the natural village's architectural family. Reject changed template resources; optional modded-village expansion remains deferred.
+- Save resolved block states before building, preserving designs across restarts and speed changes. Imported plans use existing protected surveys, construction budgets, ownership and walkway finishing.
+- Keep imported containers empty and suppress template entities. Preserve shallow cellar air; order fluid placement safely, support wall banners correctly and normalize buried paths to stable dirt.
+- Update both handbook formats, project labels and debug diagnostics. See the beta.45 validation record for exact coverage and exclusions.
+
+## Previous unreleased candidate: 0.4.0-beta.44
+
+- Give ordinary Banks, projects and finishing tasks shared, fair admission: up to 64 planned operations/four batches per construction pulse, max 16 per batch, with a cooperative 4 ms window. Individual native operations remain non-preemptible.
+- Resolve compact nearby IDs before copying at most two village snapshots; drain a pending finishing queue with small project contexts instead of a whole-village copy for each completed building.
+- Try five deterministic centers per organic parcel, with at most 240 candidates per sweep. Compare safe rotations by entrance grade, terrain edits and connection direction. Keep reservations and player-edit protections.
+- Growing natural districts favor Houses, retain some Cottages, and allow occasional Inns when trade/market demand and the existing residential mix justify them. Fixed-size legacy districts retain their capacity balance.
+- Builder taps reflect recently placed materials; near-complete work occasionally receives a cosmetic look-over. Town advice explains observed waits and distinguishes final inspection from remaining construction.
+- Update guided/compact handbooks and add common and native regression coverage. See the beta.44 district-growth validation record for exact scope and limitations.
+
+## Previous unreleased candidate: 0.4.0-beta.43
+
+- Fix exhausted headline pools using latest-publication rotation; keep one publisher throughout headline, prose, byline and illustration selection.
+- Give five outlets recurring correspondents and distinct notebook prose. Add 24 rotating letters, classifieds, advice, advertisements and columns, with factual notes separate from the story.
+- Replace unrelated village-food follow-ups with exact crop/store/project subjects. Market continuations require new price information and retain original-report links; never infer repairs from food or prices.
+- Cover recorded construction milestones and verified structural restoration without generating historical events on first observation.
+- Favor the reader's district and topic/outlet variety on the front page. Add Notebook/Read story and Earlier report controls while preserving full archive access, paging, privacy and stable editions.
+- Update both handbook formats and add a controlled thirty-edition editorial corpus and regression suite.
+
+## Previous unreleased candidate: 0.4.0-beta.42
+
+- Fix the compact mine's walkway rejecting its own entrance rail as blocked headroom. Cross dry, collision-free rails over recognized existing paving without removing the track or changing its support; retain claims, fluid, storage and clearance checks.
+- Stop project walkways choosing disconnected buildings as destinations. Join a verified connected building (including a newer one) or survey real village roads instead, so the market does not repeatedly target a stranded mine.
+- Keep saved structures, partial paving receipts and completed player-edited connections intact. Update both handbook formats and add the exact reported mine/market regressions.
+
+## Previous unreleased candidate: 0.4.0-beta.41
+
+- Restore the Bank's six terrace seats to their original orientation. Keep the separate roadside-nook benches facing the paving, unchanged from beta.36.
+- Use Bank blueprint v12 for new plans and gallery builds; keep v11 saved construction and completed Banks unchanged. Preserve every other Bank cell, material and placement order.
+- Update both handbook formats and verify terrace geometry, frozen plans and roadside seats together.
+
+## Previous unreleased candidate: 0.4.0-beta.40
+
+- Fix the corner Smithy repeatedly rewinding to 1,180/1,975 operations when vanilla turns a builder-supplied decorative dirt path beneath ironwork into dirt. Recognize that natural ground transition during construction and support checks in both normal and forced development.
+- Keep frozen plans and construction receipts unchanged, retain no-drop protection for the settled ground, and continue rejecting missing blocks, unrelated replacements and mismatched required floors.
+- Capture frozen design metadata and precise expected/current block states for future repair investigations. Update both handbook formats and add exact-Smithy fresh/resume regressions in both modes.
+- Include the pending beta.38 Bank-activation radius and beta.39 Bank-walkway changes below.
+
+## Previous unreleased candidate: 0.4.0-beta.39
+
+- Include completed Banks, including existing saves and Bank-only villages, in the shared village walkway and lamp queues. Connect their front steps to a real village road or an already-connected expansion building.
+- Preserve the Bank forecourt and entrance steps while opening a narrow paving corridor through its own setback. Keep other Bank sites, protected land and player alterations excluded.
+- Reuse bounded detours, saved partial construction, suitable Infrastructure bridges and village-style lamps without adding another per-dimension work allowance. Keep Bank connection details in debug captures.
+- Update guided and compact handbook coverage and add a full constructed-Bank walkway regression.
+
+## Previous unreleased candidate: 0.4.0-beta.38
+
+- Use Village: development radius for first natural-village discovery, automatic Bank startup, fallback retries, perimeter preparation and continued Bank construction. Associated Banks consistently measure horizontal distance from their original village center; unassociated legacy sites use their saved anchor.
+- Discover loaded natural structure references without entering the vanilla POI boundary. Keep nearby villages and their initial residents separate, and consider all eligible settlements through a capped rotating Bank survey.
+- Retain loaded-only census/site checks, protected plots, construction budgets, saved progress and unique Bank ownership. The separate Banker entity-recovery search is unchanged.
+- Update the setting tooltip and both handbook formats, with native boundary/altitude/multiple-village/no-player/no-force-load tests and distant first-census coverage.
+
+## Previous unreleased candidate: 0.4.0-beta.37
+
+- Add shared village footbridges to the walkway route search. Compare land detours with straight water crossings and verify a complete onward connection before reserving work.
+- Build three-wide raised spans with exterior railings, capped posts, inward-facing village lamps, timber framing or modest masonry/sandstone arches, stair approaches, natural foundations and an open boat channel.
+- Freeze and persist the complete design, reserved footprint, construction and verification progress. Infrastructure materials and treasury costs scale with size, use durable one-shot receipts, and survive debug-mode changes. Multiple crossings queue under a shared crew limit.
+- Respect district ownership, claims, inventories, occupants and player changes. Never force-load chunks, drain waterways or regenerate completed bridges. Keep surveys, validation and placement bounded.
+- Add four world settings (enabled; 48-block default water span; 12-block pier depth; two active crews), bridge diagnostics, both handbook formats, payment/territory regressions and native geometry, route, navigation, interruption and safety checks.
+
+## Previous unreleased candidate: 0.4.0-beta.36
+
+- Correct the separate roadside-nook benches beside Banks and project walkways: the stair's raised back now faces the grass, with the low seat opening onto the paved square. The beta.30 terrace-seat fix did not affect this generator.
+- Preserve materials, footprint, planters, lamps, road stairs and frozen older plans. No automatic edits to completed benches or saved construction.
+- Update both handbook formats and add native regressions for both road lengths, every direction/side, all pocket styles, collision shape, reservations, claims and saved-plan round trips.
+
+## Previous unreleased candidate: 0.4.0-beta.35
+
+- Add native-density pixel grain to construction-fence yellow caps, black bases and hazard rails. Preserve the wooden posts, stepped stripe pattern, all geometry, connection behavior and item shape.
+- Share two opaque 16px material textures across the block and item, with matching particles. No new quads, overlays, animation or runtime work.
+- Update guided and compact fence descriptions; validate source-to-texture import, packaged palettes/UV crops, all connections and native item rendering.
+
+## Previous unreleased candidate: 0.4.0-beta.34
+
+- Fix progressive Banks starving when forced instant development is enabled during construction. Both loaders now share a mode-synchronized dispatcher that alternates first access to the existing global debug budget.
+- Skip distant, unloaded and backing-off Bank sites before round-robin selection; empty dimensions no longer consume project grants. Recheck Bank waits when switching modes without discarding frozen plans or receipts.
+- Keep normal construction pace, player storage/occupancy protections, loaded-only work and completion checks. Add starvation/deadline regression coverage and native mid-build toggle, blocked-site, concurrent Bank and restart checks.
+- Update both handbook formats with mode-switch behavior and limitations.
+
+## Previous unreleased candidate: 0.4.0-beta.33
+
+- Distinguish optional recovery aid for Extinct villages from the 25-emerald requirement for Abandoned villages. Show fully funded and paused resettlement separately, with remaining aid and safe-home guidance.
+- Remove implementation jargon from local bulletins, ordinary Town reports and Fund previews/receipts. Keep costs, financial confirmations and useful site advice; retain raw construction details and build identity in debug captures.
+- Correct both handbook formats and automatic-recovery setting help. Recovery rules, donation allocation, construction and balances are unchanged.
+
+## Previous unreleased candidate: 0.4.0-beta.32
+
+- Overhaul The Emerald Wire with developed, multi-paragraph local reports, seventeen market-event narratives, directional roundups, and two-/seven-day follow-ups. Vary leads, narrative angles and outlet voices; keep tragic coverage restrained.
+- Remove reporting-system boilerplate and explicit tone labels from the newspaper, including legacy display copies. Retain factual quantities, historical comparisons, privacy filtering and all economic safeguards; explain mechanics in the handbook.
+- Add four sepia editorial woodcuts to the cover and both article readers. Reserve illustration space in native text pagination and preserve the full 256-report archive.
+- Update both handbook formats and validate article length/tone, deterministic variety, privacy, legacy rendering, texture assets, long-document transport and native navigation.
+
+## Previous unreleased candidate: 0.4.0-beta.31
+
+- Capture actual whole-server tick work, including end callbacks, in /emerald debug: mean/max MSPT, slow-tick counts, exact recent p50/p95/p99 and observed tick throughput. Keep recorder-overhead metrics separate.
+- Add global saved construction backlog, pending Bank counts, and bounded recently working/waiting observations to time-correlated performance snapshots. No block/chunk scanning or forced loading.
+- Use monotonic sampling deadlines, preserve tick-rate/freeze/sprint context and include forced-development/construction-speed settings. Update both handbook formats and add numeric, native timing, freshness and packaged-report tests.
+
+## Previous unreleased candidate: 0.4.0-beta.30
+
+- Turn the Bank's six front-terrace bench stairs toward the front path, with raised backs toward the building. Preserve their materials, footprint, entrance, roof, lights and planters.
+- Bank blueprint v11 applies only to newly planned Banks and new gallery builds. Retain frozen v10 construction and integrity plans; no automatic edits to completed Banks.
+- Check all five biome palettes, translated origins, the exact six-cell delta and 360 native rotated/mirrored seat shapes. Reject backwards seats in the production admission gate and update handbook guidance.
+
+## Previous unreleased candidate: 0.4.0-beta.29
+
+- Replace runtime child-district charters with one stable identity per loaded natural village structure. New districts grow through connected, irregular 16-block parcels; nearest original-center ownership prevents neighboring natural territories from overlapping.
+- Enforce ownership for building reservations, terrain clearance, Bank discovery, housing and farm surveys. Retain one generated Bank per natural district; growth does not create another Bank or artificial village.
+- Raise new-district limits to 512 project records and simulated residents, remove the six-home cap, and permit population-scaled service buildings. Keep terrain search, map pages and work queues bounded; debug mode permits two unfinished projects so one obstacle does not halt independent work.
+- Render actual territory outlines and update guided/compact handbooks. Format 38 persists the new parcels; old identities remain readable but are not merged or physically removed. Fresh test worlds are recommended.
+- Replay the reported 944/948 Cottage with its missing decorative base through the production recovery path, alongside the 3603/4873 Inn fixture. Omit unsafe never-built optional dressing; preserve essential support, occupants, property and no-drop repair safeguards.
+
+## Previous unreleased candidate: 0.4.0-beta.28
+
+- Route all mod button, field and control tooltip creation through a shared bounded wrapper. Store real line breaks, preserve rich-text styling and full narration, and constrain wrapping to the GUI viewport; short labels remain short.
+- Retain wrapped custom settings/chart/map hovers and exact financial values. Add real-renderer settings label, field and keyboard-focus checks, every editable setting across five widths, and a regression guard against bypassing the shared tooltip factory.
+- Update guided and compact handbook help. No world/economy format, gameplay, recipe or configuration-value change.
+
+## Previous unreleased candidate: 0.4.0-beta.27
+
+- Replace modern builder hard hats and reflective vests with native biome villager workwear and the toolsmith leather-apron overlay. Save and synchronize the seven vanilla biome styles; existing builders adopt a loaded local outfit without respawning.
+- Turn the iron hammer head fore-and-aft to align its striking faces with the vertical arm swing. Retain independent walking/working arms and existing crew behavior.
+- Update both handbook forms, native outfit migration/reload tests and actual-renderer biome/hammer previews. No new item, recipe or economy-format change.
+
+## Previous unreleased candidate: 0.4.0-beta.26
+
+- Add a loaded-only, incremental walkway connection survey for new and existing completed buildings. Route around unsafe cells and connect to an earlier completed entrance or an actual village dirt path instead of treating a truncated legacy path or arbitrary outskirts point as success.
+- Save partial paving and one-shot completion receipts independently of frozen building/trail cursors. Recheck terrain, claims, lots, storage and occupants; preserve edits, avoid chunk forcing, and bound search, verification and block writes.
+- Follow completed detours with the existing palette-matched street lamps, retaining lamp spacing and no-regeneration receipts. Add connection diagnostics to /emerald debug, both handbook forms and native routing/reload/safety regressions.
+- Economy format stays unchanged; a per-dimension walkway-connections SavedData ledger is added.
+
+## Previous unreleased candidate: 0.4.0-beta.25
+
+- Fix an indefinite support wait when an optional decoration depended on a previously skipped foot. Never-supplied unsupported dressing now leaves a safe gap instead of holding required building completion hostage; owned unfinished repairs and required safety fixtures retain their safeguards.
+- Identify the waiting block, support coordinates and actual terrain/chunk state in live construction reports. Include fresh construction observations in /emerald debug captures.
+- Add a native regression reproducing the reported courtyard Inn's frozen 4,873-operation plan and 3,603-operation cursor, plus handbook coverage. No save-format or frozen-blueprint changes.
+
+## Previous unreleased candidate: 0.4.0-beta.24
+
+- Add inward-facing street lamps along completed mod-created walkways, reusing the refined yard-lamp design and each building's village palette. Space stations about ten blocks apart, try either verge and avoid already lit stretches and overlapping route lamps.
+- Backfill older completed paths through a separate, bounded finishing pass without changing building or trail cursors. Place supports before the chain and lantern, preserve ground and traffic clearance, and defer unloaded/occupied cells.
+- Save one-shot lamp receipts and partial plans per dimension. Preserve player edits, storage, claims and reserved lots; never regenerate harvested lamps. Update both handbook forms and add native placement, orientation, reload and safety regressions.
+- Economy format remains 37; a separate walkway-lighting SavedData ledger is added.
+
+## Previous unreleased candidate: 0.4.0-beta.23
+
+- Fix construction-fence z-fighting: stop the wooden stem inside its cap/foot and join solid black/yellow rail sections edge-to-edge instead of overlaying them. Correct both placed blocks and the item model, including corners and junctions.
+- Keep the recipe, collision, drops, connections and construction ownership unchanged. Existing fences pick up the corrected models without rebuilding.
+- Add packaged geometry checks for all 16 connection combinations, neighboring segments, stripe continuity, item consistency and render-face budget; add native above/below previews and review both handbook forms. No save-format change.
+
+## Previous unreleased candidate: 0.4.0-beta.22
+
+- Wrap all custom text hovers using a shared, screen-aware line layout. Chart points show only their timestamp and price; retain transaction math and actionable warnings while moving repeated explanations into the handbook.
+- Record explored surface colors outside the map screen; keep them after chunk unloads, zoom changes and game restarts. Use local world/dimension-scoped region files, bounded memory and background disk I/O without forcing chunks to load.
+- Update both handbook forms and add cache persistence, race, corruption and memory-bound regressions plus native tooltip wrapping checks. Previously visited terrain needs one revisit; no old world-chunk backfill. Economy format remains 37.
+
+## Previous unreleased candidate: 0.4.0-beta.21
+
+- Restore the newspaper concept's broad open-page proportions, folded corner, masthead, village illustration and two article columns. Keep the rolled appearance and synchronized open/close lifecycle.
+- Package both sprites at 256px with uniform, aspect-preserving master sampling and genuine transparency. Retain native-model previews instead of enlarging the low-resolution inventory atlas.
+- Update both handbook forms and appearance regressions, including broad silhouette and exact source-to-texture sampling checks. No recipe, inventory, economy or save-format changes.
+
+## Previous unreleased candidate: 0.4.0-beta.20
+
+- Track exact construction-owned blocks and reserved blueprint cells. Mining and explosions can remove supplied blocks without block loot or XP before handover; completed buildings keep normal editing and drops.
+- Automatically repair unfinished-project damage in a finishing pass, with earlier missing-support recovery. Continue independent safe work around occupants without placing through them or removing their footing.
+- Keep new construction storage empty and locked until one-shot handover loot. Block ordinary hopper access, piston export/import and falling-block/Enderman export; preserve unrelated and supplied inventories.
+- Keep ambiguous legacy Manual Repair records opt-in for investigation rather than regenerating completed remodels. Update both handbook formats and native destruction/recovery tests. Economy format remains 37; a per-dimension construction-ownership SavedData ledger is added.
+
+## Previous unreleased candidate: 0.4.0-beta.19
+
+- Replace the newspaper sprite with the approved rolled edition and a detailed pocket-gazette reading state, using 128px transparent textures and compact first-person transforms for either hand.
+- Scope unfolding to the exact held copy and its reader menu using vanilla synchronized item-use state. Closing, losing or replacing that copy clears the state; no inventory count or persistent component changes are made.
+- Keep the Desk news browser and other newspaper copies unchanged; show a small open-gazette stamp in the portable reader. Update long/compact handbook guidance and texture/lifecycle/render coverage. Save format remains 37.
+
+## Previous unreleased candidate: 0.4.0-beta.18
+
+- Replace the daily population lottery with saved fractional immigration progress, size/condition-based groups, four daily approvals and an eight-settler physical queue.
+- Survey district housing over the whole world height using bounded work and loaded chunks. Track residents by UUID and ownership, retain unverified residents, and checkpoint confirmed home transfers across districts.
+- Require a free intact bed, reachable safe landing and local exposed-threat checks. Journal an arrival identity before entity insertion; never replace villagers merely because they are unloaded.
+- Expose loaded/unverified/queued counts, immigration progress, bed survey and arrival diagnostics in Town and /emerald debug; update both handbook formats. Save format 37; matching client/server builds and a full backup are recommended.
+
+## Previous unreleased candidate: 0.4.0-beta.17
+
+- Bound unreserved project site-search cooldowns to 10, 20 and then 30 seconds at 20 TPS; shorten legacy long waits on activation without moving reserved sites or changing safety checks.
+- Checkpoint candidates rejected during final terrain preparation so repeated failures cannot pin the search to one candidate.
+- Add actual candidate/orientation rejection evidence and all-project search cursors/retry timers to the ordinary /emerald debug capture; improve the Town progress report and both handbook formats. Save format remains 36.
+
+## Previous unreleased candidate: 0.4.0-beta.16
+
+- Make portable newspaper wheel and Previous/Next navigation continuous across the cover, every Contents sheet, long article text and ranked stories, with bounded edition ends and reversible transitions.
+- Remove the fixed Overworld subtitle; retain The Emerald Wire masthead. Add faint deterministic GUI-native paper fibres, creases, folded-corner wear and a small margin tear behind readable ink.
+- Clarify story numbers versus text ranges, preserve the Desk browser and incoming-edition/privacy rules, and update long/compact handbook guidance and native navigation checks. Economy format remains 36.
+
+## Previous unreleased candidate: 0.4.0-beta.15
+
+- Add server-authoritative intraday investment/commodity quotes every 300 game ticks at normal speed. Scale drift, diffusion and event cadence to elapsed economic time; retain daily account/village/news settlement and constituent-derived VILX/VCIX.
+- Add live Today / recorded Yesterday charts and the shared 1 Day, 30 Days, 90 Days, 1 Year, 3 Years, 5 Years, 10 Years, All cycle. Use dated, aligned comparison series, previous-close references and bounded ten-year daily/older sampled history.
+- Capture each actual time command: backward resets move to the next requested sky phase without market rollback; repeated identical named times do not mint sessions. Preserve sleep and bounded forward catch-up, blocking transactions at stale quotes.
+- Migrate without rewriting quotes, holdings or old history. Persist intraday tapes and archives in economy format 36; matching client/server builds and full backups required. Update both handbook formats and native command/chart checks.
+
+## Previous unreleased candidate: 0.4.0-beta.14
+
+- Sequence village projects and Banks from grounded foundations through connected frame, walls and roof, with furnishings and lighting late; upper floors no longer jump ahead merely because they were labeled FOUNDATION.
+- Preserve processed construction prefixes, frozen geometry, container receipts and later append-only upgrades. Persist sequence boundaries before newly ordered work; economy format 35, matching client/server builds and full backups required.
+- Keep terrain preparation and eligible fence preparation ahead of structural work, retain protection/occupancy rules, and update handbook and regression coverage.
+
+## Previous unreleased candidate: 0.4.0-beta.13
+
+- Give automatic builders stable, separated exterior workstations and nearby work focus; remove timed station rotation and repeated path resets.
+- Recover from blocked stations with bounded alternative-route checks, and visibly hammer while settled with individual animation phases.
+- Sustained paused/disabled/blocked work sends crews away after a brief grace period; unseen departures release slots before active jobs admit replacements. Preserve saved fence receipts, unloaded crew identities and Creative-only unassigned visitors.
+- Update long/compact handbook and native walking, crowding, animation, pause/resume, visibility and reload coverage. Save format remains 34; use matching clients/server.
+
+## Previous unreleased candidate: 0.4.0-beta.12
+
+- VILX now tracks all twelve company stocks by simulated market capitalization, with equal starting capital and naturally drifting weights independent of player holdings.
+- Remove VILX's independent price generation, duplicate index news/village effects and upside damping; inherit company fundamentals without guaranteed returns.
+- Persist company float, index divisor and tracking start day; preserve current VILX quote, holdings, cost basis and history on upgrade. Splits adjust capitalization without changing wealth.
+- Update long/compact handbook and regression coverage. Save format 34; back up worlds and use matching beta.12 clients/server. Do not downgrade converted worlds.
+
+## Previous unreleased candidate: 0.4.0-beta.11
+
+- Make Town open the village overview by default, including report shortcuts and revisits from expansion/map; keep the progress report optional and update handbook guidance.
+- Navigation-only change; economy/save format 33, pricing and chart ranges are unchanged.
+
+## Previous unreleased candidate: 0.4.0-beta.10
+- Give the portable newspaper a paper-style cover, significance/recency-ranked stories, clickable contents and two-column reading; keep the Desk's searchable channel browser.
+- Add VCIX, a persisted eight-commodity basket with equal starting capital and drifting weights; rename VILX to Villager Stock Exchange Index without changing its pricing.
+- Show signed green/red daily investment movement and selected-period chart direction.
+- Replace comparison hover buttons with independently scrollable Details and solid/dashed, date-aligned price-return overlays for 30d, 90d, 1y and retained All history.
+- Preserve old holdings/history; new VCIX history begins on upgrade. Fix denomination-split news baselines. Update long and compact handbook guidance.
+- Economy format 33; matching beta.10 clients/server required. Back up worlds before upgrading; do not downgrade.
+
+## Previous unreleased candidate: 0.4.0-beta.9
+
+- Replace the green, rectangular newspaper model with a flat grey paper sprite and black printed marks.
+- Use the vanilla generated-item presentation; update both handbook descriptions and add texture/model regressions.
+- Visual-only update; item ID, recipe, news behavior, save format 32 and beta.8 menu layout are unchanged.
+
+## Previous unreleased candidate: 0.4.0-beta.8
+
+- Bind CD-close, Sell All and lending confirmations to actual server targets and terms; changed terms require fresh confirmation.
+- Reject investment executions that cannot represent a safe share change; settle sales against the actual quantity removed.
+- Preserve tiny owned positions, keep their sale controls available, and explain refused zero-value sales without deleting holdings.
+- Transport investment quotes in 64-bit micro-emeralds so sub-cent and large prices remain usable.
+- Add financial precision, native confirmation, quote-range, GUI and packet regressions; update both handbook forms.
+- Save format remains 32. Use matching beta.8 clients and servers.
+
+## Previous unreleased candidate: 0.4.0-beta.7
+
+### Dashboard, funding and release-verification edge cases
+
+- Share preview/payment eligibility; allow mandatory Restoration grants with optional
+  targeting disabled and reject invalid sponsorship before inventory top-ups.
+- Preserve native search and amount-field selections during refreshes.
+- Exclude completed simulated plans from unfinished construction and prioritize repair/active work.
+- Track exact investment ownership independently of rounding; transmit large holdings with 64-bit cents.
+- Clear stale report/receipt text on new requests and enforce one shared report refresh floor.
+- Verify packaged fingerprints against current source using a shared canonical build-input manifest.
+- Extend native controls, financial, packet and isolated stale-artifact regression coverage.
+- Update both handbook forms. Save format stays 32; matching beta.7 clients/servers are required.
+
+## Previous unreleased candidate: 0.4.0-beta.6
+
+### Five-priority decision support and verification
+
+- Town opens a bounded server-authored progress report with resident checks, construction
+  stages, current project input gaps and waiting-state explanations; Back retains the scores/map.
+- Fund adds read-only allocation/payment previews and accepted-transfer receipts, separating
+  fund credit from economic spending and later physical construction.
+- Market adds searchable/type-filtered browsing, local favorites, holdings filtering and
+  two-listing comparison. Remove a legacy nine-listing quote/holding sync limit.
+- Add repeatable multi-year model/scale/save/restart measurements and native UI/security checks.
+- Cache report wrapping and coalesce rapid requests without losing the last requested view.
+- Embed a shared production-source SHA-256 fingerprint in both artifacts and debug captures.
+- Update long-form guidance and 57 compact handbook pages; correct stale ownership, pacing,
+  investment-calibration and recovery documentation. Save format remains 32.
+
+### Newspaper front page and editorial upgrade
+
+- Add a front page, section filters, full-archive search, unread markers, stable article IDs
+  and explicit new-edition acceptance without reading interruptions.
+- Give outlets distinct coverage/commentary and track developing stories outside the archive.
+- Add daily action bulletins, archive category reserves, server privacy controls and operator
+  community-property designation.
+- Add bounded, validated data-pack wording reloads and a folded newspaper item model.
+- Migrate format 31 articles to format 32 IDs without changing old text or financial state.
+- Update handbook/lectern guidance and native, client and regression coverage.
+
+### The Emerald Wire and variable investment growth
+
+- Add the reusable Village Newspaper (Paper + Ink Sac), dedicated read-only reader,
+  five outlets, outlet/search filters, and a shared bounded archive accessible from Desk News.
+- Add 17 market event families with varied satire, measured price moves and follow-ups.
+  Event cooldowns are independent of reporting; rereading or flooding news cannot move prices.
+- Report evidenced player food removal, crop/building damage, villager deaths, donations,
+  replanting and restocking, with aggregation, property exclusions and bounded persisted observations.
+- Use seeded, smoothly varying positive 1–15% underlying targets for stocks, commodities and
+  the index's broad economy, weighted toward low targets. Actual returns can remain negative.
+  Preserve treasury-fund, savings and CD behavior; update commodity volatility and shared shocks.
+- Migrate to format 31 without rewriting balances, holdings or actual history. Add four
+  handbook sections/pages and the animated newspaper recipe. See docs/EMERALD_WIRE.md.
+
+### District terrain, coverage boundaries and desk placement
+
+- Add a Minecraft-map-color surface layer behind district areas and saved-site markers.
+  Sample only already-loaded client chunks, with a bounded temporary cache and no forced loads.
+  Checkered cells explicitly represent unknown terrain.
+- Show the actual developed survey rectangle around each district, with hover dimensions
+  and coordinate limits. Coverage includes the starter area, developed sites and Bank margins;
+  it is not a land claim and can overlap neighboring coverage.
+- Keep building hover details above area hover, retain the foreground legend, zoom around
+  the pointer, and make Focus frame the current district's area.
+- Crouch-right-click with a main-hand or offhand block passes through to vanilla placement
+  on both loaders. Normal right-click retains banking access. Placement failures do not
+  consume blocks; Creative retains its normal unlimited-item behavior.
+- Update the guided and compact handbook. Multiplayer clients and servers should use
+  this same build because district marker transport now includes coverage and center fields.
+
+### Creative catalog and handbook synchronization
+
+- Add a dedicated The Emerald Standard creative tab, automatically including all mod items,
+  with separate creative-only Banker Villager and Builder Villager spawn eggs.
+- Banker eggs create personal-banking villagers without claiming managed Banks; unassigned
+  egg/summoned Builders persist as idle/wandering visitors without taking automatic crew slots.
+  Native dispensers retain egg data. Banker eggs refuse lossy spawner configuration.
+- Add the Survival caution-fence recipe: four sticks, yellow dye and black dye make four.
+  Player-placed fences drop themselves; owned automatic fences remain non-farmable.
+- Expand the handbook with fence crafting, a third recipe diagram, creative tools and
+  construction-crew lifecycle guidance. Append compact pages without shifting old links.
+  Add a repository working agreement requiring handbook review for future player-facing changes.
+
+### Fence-first construction
+
+- Finish bounded caution-fence preparation before normal Bank or village structural work.
+  Village terrain preparation still precedes fences; builders arrive after perimeter preparation.
+  Persist readiness through reloads, preserving player-removed segments and paused worksites.
+- Wait for occupied or unloaded perimeter cells without spending structural allowances or
+  treating the site as failed. Retain intentional gates and safe exclusions for protected
+  land, unsuitable footing and neighboring footprints. Debug acceleration keeps its existing
+  no-new-presentation behavior.
+- Safely replace and restore both halves of vanilla tall grass and large ferns, checking
+  protection on both cells and preserving player changes during cleanup.
+
+### Commodity investments and investment types
+
+- Add eight cash-settled commodity listings to the existing Market selector: Gold, Iron,
+  Coal, Diamond, Copper, Redstone, Lapis Lazuli, and Netherite Scrap. Stocks retain their
+  existing behavior; commodity holdings track their underlying resource quote exactly.
+- Label every listing Stock, Index, Fund, or Commodity. Use units for commodity holdings
+  and previews; explain that purchases/sales settle in cash, not physical resources.
+- Reuse server-authoritative combined Bank Cash/inventory-emerald spending and portfolio
+  accounting. Move investment selector buttons to a disjoint packet range so an expanded
+  catalog cannot intercept Trade controls.
+- Upgrade to economy format 30, preserving old prices, holdings, funds and history.
+  Newly listed investments begin with today's quote, not synthetic past performance.
+  Back up worlds and use matching client/server builds; older builds cannot read format 30.
+
+### Cross-feature edge-case fixes
+
+- Fix save/reload rejection after player-caused villager casualties in guarded villages. Serialize matching guard-free market-shadow source data and cached scores; narrowly recover affected format-28 shadows while retaining corruption checks and player balances. Introduced in save format 29.
+- Give food observations independent persisted chunk timestamps. Partial scans cannot renew an old farm indefinitely; delayed scan results cannot replace newer observations. Preserve unknown food briefly, then age it out.
+- Track observed guard UUID ownership across districts, expiring stale entries. A moving guard cannot be credited to both its old and new district. Add a bounded read-only mobility check for tiny cages and exclude passengers.
+- Retain paused/disabled/repair-waiting sites' crew/fence ledgers, stop work animation and new presentation placement, and reject surplus returning workers. Completion still restores owned natural blocks safely.
+- Replace recurring full-village presentation copies with cached unfinished-site metadata and rotate at most 16 loaded presentation sites per pass. Food scan liveness checks no longer copy a whole village/market.
+- Extend regression and real-Minecraft fixtures for these combinations; see [edge-case validation](docs/reviews/2026-09-11-edge-case-fixes.md).
+
+### Optional Guard Villagers compatibility
+
+- Recognize the Fabric and NeoForge editions' registered guards without a hard dependency or external-class linkage. Eligible nearby guards add temporary Safety (+2 each, capped at +12 by default), used by growth, production, emergency advice/spending and the Town display.
+- Add a world-local toggle, per-guard points and maximum bonus with setting help and Reset support. Explain observed guards in the Town tooltip and handbook.
+- Reuse loaded village censuses and the nearest-district index; do not load chunks, alter guard AI/equipment, count them as residents or stack points on repeat scans. Discard observations on restart/config apply; unobserved bonuses fade within seven economic days.
+- Add core conservation-of-base-score, config/reload and real-entity optional-dependency tests. See [compatibility notes](docs/GUARD_VILLAGERS.md) for supported identities and the upstream NeoForge advancement warning.
+
+### District planning map
+
+- Add Town → District map: north-up saved district centers, owned Banks and recorded building footprints, with construction-state colors, resident/housing tooltips and world coordinates.
+- Add drag/arrow panning, wheel/button zoom, Fit page and Focus controls. Page through 96 markers at a time without imposing a city-size cap.
+- Map snapshots refresh every five seconds only while open, with throttled page requests and revision-bracketed signed-coordinate transport. No chunk loading, terrain scanning, financial actions or ownership changes.
+
+
+### Stable Bank village ownership
+
+- Preserve the generated Bank's assigned village through personal-desk fallback, including Town/Fund routing when Banker operation is restricted. Prevent discovery from reassigning an existing Bank to another village.
+- Exclude authored Bank bells and Bankers from settlement discovery. Census identified villages at their saved center; defer incomplete resident-chunk coverage.
+- Reconcile only proven empty Bank-bell records without population/development history or ambiguous spent resources. Atomically preserve unspent purpose-specific gifts, reserves, principal and donor receipts; retain all buildings and player accounts. Persist format-28 identity redirects so the repair is restart-safe and cannot duplicate starter resources.
+- Ignore cosmetic roof orientation/material edits when assessing operation. Check essential workstations, cabinetry, wooden doors, floors and access; report specific failures. Major missing structure remains eligible for the existing demolition policy; no automatic repair of player edits.
+
+### Faster starter villages and skipped-night construction
+
+- Fix false first-week threat status caused by treating the default day-zero incident timestamp as an actual attack.
+- Give healthy young settlements bounded local construction supplies, two daily work shifts and more reliable early settlers. Target one to two small structures per day; taper labor/supplies through the first eight lifetime projects and with city size. Preserve ordinary safety, food, housing, protection and funding rules.
+- Limit ordinary physical admission to two unfinished development sites per district (repair-required sites do not block the queue). Keep the configurable default of two blocks per second for each site; existing projects are preserved.
+- Let recently active Banks and development sites catch up after sleeping. Share at most 32 extra block opportunities per pulse, eight per site, with rotating scheduling, a soft time budget and no chunk forcing. Cap temporary credit to one skipped half-day; reset it between sessions/mode or rate changes.
+- Expand the handbook with starter-drive and sleeping explanations. Add economic cadence, real Bank placement, large-queue fairness, clock/restart and terrain/occupancy safety coverage.
+
+### Expanded player handbook
+
+- Rewrite all 16 reader chapters into guided prose with 55 sections, practical examples and dedicated long-form localization, preserving compact legacy/lectern pages.
+- Explain all seven Fund purposes, grant/endowment/sponsorship differences, actual input conversions, reserve rules and spending pace. Clarify Town's Prosperity/Safety, housing, tiers, outputs, food sources, expansion and upkeep.
+- Expand banking, investments, Savings/CDs, lending, trading, construction, recovery and glossaries. Keep inventory-aware spending guidance and animated recipe cards.
+- Make a selected search result jump to its matching section. Add real-font/scroll/search checks at multiple GUI/text scales and regression checks tying numerical funding examples to the economy.
+
+### Inventory-aware payments
+
+- Spend ordinary inventory emeralds directly on investments, Savings deposits, CDs, lending and all Village Fund gift types. Cash pays first; only the shortfall is taken, with fractional change retained in Bank Cash. Explicit deposits remain optional.
+- Update affordability, All, exact-amount validation, previews, tooltips and onboarding. Preserve named/custom items; exclude cursor and nested-container contents. Keep Savings separate and reject closed/out-of-range menu actions.
+- Save transaction-specific inventory receipts before bank credits, checkpoint actual withdrawal delivery before refunding overflow, and recover idempotently without guessing from item totals. Fail closed on unresolved/legacy ambiguous journals. A completed top-up remains cash if the subsequent purchase fails.
+- Add conservation, persistence-failure and restart/replay tests, real inventory/menu checks on both loaders, and inventory-only Fund/Market/Bank GUI fixtures. See [combined spending](docs/UNIFIED_SPENDING.md).
+
+### Opt-in forced village development (debug)
+
+- Add a world-local, off-by-default forced-development toggle with a permanent-world-change warning and explicit confirmation before Apply. Cancel/Escape do not enable it; Reset disables it in the draft.
+- Bypass food, prosperity, safety-score, resources/upkeep, labor/tier delays and growth approvals. Rapid batches replace the normal per-site rate; loaded neighborhoods can branch without a city-size cap. Disable preserves buildings, terrain changes, loot and pending work.
+- Share a bounded, lag-aware construction allowance across Banks/projects. Rotate nearby work, cache at most 32 templates, index reserved/retired lots and back off costly terrain searches/charter saves. Retain no-build/player ownership, occupancy and physical terrain checks; never force-load distant chunks or spawn extra debug residents.
+- Add core opt-in/persistence/scale tests, real-world paused zero-resource construction/occupancy tests and native-widget confirmation/cancel/reset tests. See [forced development](docs/FORCED_DEVELOPMENT.md) for limits and backup precautions.
+
+### Roof stair audit and clearer settings (unreleased)
+
+- Correct outward-facing bottom roof stairs on new Banks, mine adits and wharf warehouses. Audit all 52 authored templates and five biome dialects, keeping furniture/chair backs, entry stairs and intentional inverted trim unchanged. New Bank and authored blueprint revision 10 preserves historical plans and already-built structures.
+- Replace the two locked construction controls with editable blocks per second per site (default 2, range 1–100). Apply the independent tick-distributed rate to Banks, village projects, clearance and finishing; do not bank unused work. Legacy configurations keep their former two-block behavior unless the new key is set.
+- Add explanatory hover help to all 26 setting labels and controls, including effects, units/ranges and defaults. Add Reset beside Apply/Done: reset every page's draft to mod defaults, Apply to save the current world, and reset local reader size immediately. Remote/title screens cannot modify world settings.
+- Add native-widget all-page Reset/label-hover tests at two GUI scales, rate/config persistence tests and exact stair-only version/rotation/mirror regressions.
+
+### Temporary construction fences and visiting builders (unreleased)
+
+- Register a real connected caution-fence block on Fabric and NeoForge, with yellow/black tape rails, grounded wooden posts and access gaps. Place only on safe loaded ground outside the building footprint; respect protection and occupied cells.
+- Persist each fence's displaced low plant/snow state and site ownership. Restore surviving owned fence cells when the job ends, including after chunk reload; never overwrite a player's replacement or rebuild a manually broken barrier. Do not clear trees, gardens, farmland or storage just to erect tape.
+- Replace folded-arm villager/display worksite effects with dedicated visiting builder entities: modeled hard hats, reflective vests, trousers, boots, independently animated arms and hammers. Assign one to four workers by site footprint; walk along real paths, stop hammering when work pauses and leave after completion.
+- Prefer concealed arrivals at least 16 blocks from players, checking all nearby viewers and sight lines. Delay arrivals when no suitable route/hidden location exists. Departing crews disappear only when unseen; saved assignments prevent duplicate crews on ordinary reload. Camera concealment remains a server-side approximation, not a guarantee for third-person/freecam views.
+- Keep construction's independent two-operations-per-second pace, economy, resources and villager population unchanged. Add native-server restoration, connection, ownership, crew save/load, walking, pause, visibility and departure regressions, plus actual-renderer client previews/animation assertions. See [construction crews](docs/CONSTRUCTION_CREWS.md).
+
+### Investment variety and dashboard layout (unreleased)
+
+- Add five specialist investments: rate-sensitive TREA, defensive AURM, cyclical BRCK, seasonal FISH and jump-risk VENT. Preserve existing ticker order, original company return models and VILX weights. Add distinct event responses and capped construction/fishing/exploration village drifts.
+- Fix City expansion text/control overlap with one full-width panel, wrapped status/advice and separate lower action rows. Clarify zero-cash investing and first-day history; show behavior notes and volatility-aware risk labels on Market.
+- Derive investment menu-data ranges from catalog size and test real packet round trips. Upgrade to economy format 27: old listings/holdings/history survive, new listings start at 100 E with no fictional history. Keep a whole-world backup; do not downgrade the updated save or mix old/new client and server jars.
+- Extend the handbook and opt-in client smoke with actual-font fit checks and production dashboard screenshots at two GUI scales; add pricing, migration, corruption, restart and diversity regressions.
+
+### Earlier beta.5 work
+
+- Save per-container Bank loot receipts before attaching loot; never recreate issued/adopted storage when broken during unfinished construction. Preserve replacement inventories. Older unfinished plans without provenance finish remaining storage empty. Economy format 26 retains the previous format-25 data and adds these receipts; back up before upgrading.
+- Defer live-occupied construction cells and occupied footing for players, villagers and animals. Recheck at the existing construction cadence without rejecting the lot, accumulating obstruction failures or triggering founding-home relocation. Apply checks to buildings, progressive Banks, terrain preparation, roads, approaches and managed connection updates; items and cosmetic displays do not stall construction.
+- Add real-server Bank break/empty/replacement/restart and legacy-loot regressions, entity wait/resume tests for Banks and ordinary projects, and a loaded/unloaded food census plus checkpoint/restart regression. Retain the prior per-chunk food-cache fix: unknown chunks do not become empty observations.
+
+- Add built-in `/nobuild add <name> <x1> <z1> <x2> <z2>`, `list` and owner/operator `remove`. Persist inclusive full-height, dimension-local areas; protect new lots and stop overlapping pending construction without removing existing blocks. No third-party claim mod is required.
+- Record meaningful native player block placements and removals; protect connected surviving clusters and recognize older supported raw-log frames. Ordinary torches and vegetation do not reserve a lot. Preserve existing storage/crafted-block guards; ambiguous old dirt/vegetation builds still need explicit zones.
+- Recover a persistently obstructed founding home once per district after five loaded, unpaused minutes. Preserve partial lots, transfer unused escrow and charge the consumed share again. Let other eligible districts expand instead of freezing the entire city behind that home.
+- Align project and Bank workers with construction eligibility; wait on temporary blockages and release mod-owned routes for paused, abandoned, repair-required or unavailable work. Preserve unrelated villager navigation.
+- Cache loaded villager/display membership and chunk food observations; distribute food surveys and reduce their cell budget under lag. Keep each site's independent two-operations-per-second pace. Journal changed district fields between full snapshots, retaining checksums and synchronous financial saves. Economy format 25 introduced recovery evidence and food caches (retained in format 26); back up the entire world before upgrading.
+
+- Fix villager head clearance at new Bank entrances by setting the first carpet row back in Bank revision 9. Preserve revision-8 and earlier structures/plans unchanged.
+- Add background construction diagnostics and safe stalled-site recovery. Persist a write-ahead start marker in economy format 24 so only provably untouched reservations may relocate; partial work and player edits stay protected. Pace stalled Bank retries.
+- Retain up to two builder assignments per site with native saved entity tags. Add cosmetic delivery loads, ground-supported scaffolding/material displays, and exact mod-owned cleanup; no new construction-management UI, inventory transfers, or free item drops.
+- Stagger fresh village lots deterministically and add optional supported roadside squares, gardens and gathering nooks alongside existing branching connections. Preserve reserved geometry and the two-operations-per-second site pace.
+- Add actionable upkeep advice in the existing City expansion details and representative real-villager walking regressions. See [background village life](docs/BACKGROUND_VILLAGE_LIFE.md) for behavior, compatibility and testing limits.
+
+- Add frozen, terrain-graded primary connections for fresh village projects and short north approach extensions for fresh Banks. Smooth up to two blocks of road cut/fill, orient stairs uphill, support raised landings and preserve existing shared roads. Unsafe optional connections do not veto building growth; this is not a bridge/rerouting system.
+- Finish suitable new hillside lot borders with grounded, biome-palette retaining courses that follow the original slope. Preserve authored structures and entrances. Save original/final terrain states in economy format 23; read older format-22 clearance plans unchanged. All terrain work shares each site's existing two-blocks-per-second pace.
+- Add 100 seeded grade-profile regressions, real-server terrain finishing/restart/storage/claim tests and read-only route surveys on natural seed-generated terrain.
+
+- Make new Banks and village projects share natural vegetation clearance: tall connected trunks and branches, natural leaves, flowers, grass and common bushes no longer require an empty lot. Freeze approved removals before construction, preserve storage/crafted evidence and recheck protection for every mutation.
+- Add bounded hillside leveling (up to four blocks cut and four filled, eight blocks total surface variation), median-grade floors and four-way orientation fallback for managed village projects. Preserve authored geometry, existing buildings and the four-block support/entrance limit. Banks retain their fixed north-facing blueprint.
+- Persist project clearance plans in economy format 22. Clearing uses each site's existing two-operations-per-second budget; restarts resume frozen intent, not a permissive new excavation survey. Add real-server wooded-hillside construction, branch/treehouse, claim/storage, orientation fallback, unloaded-frontier and cut/fill regressions. See [terrain development](docs/TERRAIN_DEVELOPMENT.md).
+
+- Expand food coverage with the district's developed building footprint plus nearby farm/pen space; remove the vertical cutoff, assign overlapping sources once, and skip non-crop loaded sections within the shared scan budget.
+- Add saved progressive Bank plans in economy format 21, with restart recovery, protected edits and completion-gated Banker finalization. Only newly placed storage receives initial loot; existing matching containers are never seeded. Completed existing Banks are preserved.
+- Give every active construction site one block operation every ten server ticks (2/second at 20 TPS), independent of concurrent sites. Normalize legacy speed keys to this rate; retain loaded/protected/economic gates. Prefer flatter new entrance approaches and keep existing interiors/thresholds unchanged. See [construction details](docs/PROGRESSIVE_CONSTRUCTION.md).
+
+- Add automatic food-production bonuses from nearby growing crops and living livestock. Weight crop maturity and baby animals, reduce the bonus after harvesting/removal, use diminishing returns and fade stale observations. Share a bounded loaded-chunk scan across ticks, attribute overlapping farms to one district, stack with Peaceful and show food-source status in the Banker dashboard. Persist observations in economy format 20 with zero-bonus defaults for older saves; existing architecture and storage remain unchanged.
+- Add automatic, open-ended city expansion through bounded districts, funded starter homes and real settler queues. Use tier-3 entry, short sustained-health/cooldown gates, easier Peaceful thresholds and no fixed city district cap. Share municipal surpluses; superlinear administration and unpaid-upkeep pressure naturally taper expansion without demolishing buildings or creating player debt.
+- Add Banker > Village > City expansion with Automatic (default), Approval required and Paused modes, readable waiting reasons, upkeep and sampled outdoor light coverage. Enforce world-owner/server-operator authority on the server; omit expansion-direction and no-build-zone setup.
+- Let new project sites clear ordinary torches and recognizable natural tree remnants with bounded, persisted preparation. Keep real construction, inventories, workstations and protection vetoes intact; retain shallow-terrain bridging and never retro-clear existing structures. Add a capped, freshness-limited safety-recovery bonus for distributed block-light coverage.
+- Add district links, approvals, counters, lighting and preparation progress in format 19 (superseded by format 21); preserve existing architecture. Settler attempts default to 600 ticks. The later per-site construction rate above supersedes the initial shared eight-block budget.
+
+- Automatically apply an easier village-growth profile on Peaceful: 1.75x production, 35% lower food consumption, 3.5x development-point generation and workforce contribution, 20x eligible settler growth chance, faster safety/prosperity recovery and a reachable 100 prosperity target. Suppress local harvest/trade setbacks on Peaceful only. This difficulty profile retains the shared Easy/Normal/Hard baseline, per-district housing/project caps and real-housing requirement; the city features above apply on all difficulties.
+- Refresh difficulty from the authoritative world before startup catch-up and each server tick on both loaders; use the same profile for market-isolation shadows. No direct player-money grant.
+- Add ten vanilla-format loot tables for new project and Bank chests/barrels: household, inn, warehouse, mine, market, smithy, granary, guard post, Exchange Hall and Bank. Use 2–4 low-value rolls per container; no enchanted gear, diamonds, netherite or emerald windfalls. Preserve existing inventories and deferred tables; never refill old storage. Progressive Banks seed only freshly placed containers after durable plan reservation.
+- Add deterministic growth/bounds/difficulty-switch and district lifecycle/persistence tests, real-Minecraft site-policy and loot registry/roll/NBT tests, packaged-table checks and updated growth documentation. Geometry and saved architecture revisions are unchanged.
+
 ## Beta.4 handbook and configuration validation
 
 - Retain the new responsive 16-chapter handbook, search/navigation, 80–120% local text preference (90% default), original item/lectern compatibility, optional Fabric Mod Menu and NeoForge Settings integrations, and validated editor for all 27 world settings. Economy format remains 18; existing beta.3/beta.4 saves and one-time book delivery state are preserved.

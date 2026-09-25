@@ -1,6 +1,9 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
+import com.chedidandrew.emeraldstandard.core.BankConstruction;
+import net.minecraft.commands.arguments.blocks.BlockStateParser;
+import net.minecraft.core.registries.Registries;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageArchitecture;
 import com.chedidandrew.emeraldstandard.core.WholeBuildingBlueprint.Voxel;
@@ -58,6 +61,13 @@ import net.minecraft.world.phys.AABB;
  * existing worlds without replacing vanilla village pools or requiring a new world.</p>
  */
 public final class VillageBankManager {
+    private static final Map<Long, ParsedBankConstruction> CONSTRUCTION_CACHE = new HashMap<>();
+    private static final Map<Long, Long> CONSTRUCTION_RETRY = new HashMap<>();
+    private static final ForcedDevelopmentWorkBudget.Rotation CONSTRUCTION_ROTATION = new ForcedDevelopmentWorkBudget.Rotation();
+    private static boolean lastForcedDevelopment;
+    private record ParsedBankConstruction(BankConstruction plan, List<BankPlacement> before,
+            List<BankPlacement> after, List<Integer> order, Map<BlockPos,List<SupportedConstructionOrder.Cell>> supports,
+            Set<Integer> disconnected) { }
     private static final int BANK_WIDTH = 13;
     private static final int BANK_DEPTH = 11;
     private static final int BANK_HEIGHT = 11;
@@ -73,10 +83,15 @@ public final class VillageBankManager {
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V5 = 5;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V6 = 6;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V7 = 7;
-    private static final int BANK_STRUCTURE_VERSION = 8;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V8 = 8;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V9 = 9;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V10 = 10;
+    private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V11 = 11;
+    private static final int BANK_STRUCTURE_VERSION = 12;
     private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
     private static final long BANK_UPGRADE_RETRY_INTERVAL_TICKS = 2_400L;
-    private static final int FALLBACK_BANK_RECOVERY_RADIUS = 192;
+    private static final int BANKER_RECOVERY_SEARCH_RADIUS = 192;
+    private static final int MAX_BANK_VILLAGES_PER_SCAN = 4;
     private static final int MAX_FALLBACK_BANK_RECOVERIES_PER_SCAN = 4;
     private static final int BANKER_DEATH_RETRIES_PER_PASS = 4;
     private static final int BANKER_CONVERSION_RETRIES_PER_TICK = 1;
@@ -107,6 +122,10 @@ public final class VillageBankManager {
 
     /** Clears world-session-only retry pacing between integrated or dedicated server instances. */
     public static void resetRuntimeState() {
+        CONSTRUCTION_CACHE.clear();
+        CONSTRUCTION_RETRY.clear();
+        CONSTRUCTION_ROTATION.reset();
+        lastForcedDevelopment = false;
         LAST_FALLBACK_BANK_RETRY_TICK.clear();
         LAST_BANK_UPGRADE_RETRY_TICK.clear();
         PENDING_BANKER_DEATHS.clear();
@@ -303,6 +322,7 @@ public final class VillageBankManager {
     public static void tick(MinecraftServer server, EconomyService economy) {
         EmeraldConfig config = EmeraldConfig.current();
         ServerLevel level = server.overworld();
+        ConstructionTimeRuntime.tick(server, config);
         long gameTime = level.getGameTime();
         retryPendingBankerDeathSaveBarriers(server, economy);
         // Conversion callbacks run immediately before Minecraft inserts the new entity. Restart
@@ -315,12 +335,70 @@ public final class VillageBankManager {
             return;
         }
         retryPendingBankerConversions(server, economy);
+        boolean forcedDevelopment = config.forcedVillageDevelopment();
+        if (forcedDevelopment != lastForcedDevelopment) {
+            // Fence/economic waits from the previous mode are not placement failures.
+            // Recheck the live safety rules immediately; never discard construction receipts.
+            CONSTRUCTION_RETRY.clear();
+            lastForcedDevelopment = forcedDevelopment;
+        }
+        if (config.villageBanksEnabled() && !economy.isCatchingUp()
+                && (forcedDevelopment ? gameTime % 2 == 0 : config.constructionAllowance(gameTime) > 0)) {
+            var pendingSites = new ArrayList<>(economy.pendingBankConstructionsSnapshot().entrySet());
+            pendingSites.sort(java.util.Map.Entry.comparingByKey());
+            pendingSites.removeIf(entry -> CONSTRUCTION_RETRY.getOrDefault(entry.getKey(), 0L) > gameTime
+                    || !isLoaded(level, BlockPos.of(entry.getValue().origin()))
+                    || !bankWorkActive(level, economy, entry.getValue().villageId(),
+                            BlockPos.of(entry.getValue().origin()), config.villageDevelopmentRadius()));
+            if (forcedDevelopment && !pendingSites.isEmpty())
+                pendingSites = new ArrayList<>(List.of(pendingSites.get(
+                        CONSTRUCTION_ROTATION.next("banks", pendingSites.size()))));
+            if (!forcedDevelopment && !pendingSites.isEmpty()) {
+                if (!ConstructionTimeRuntime.enter(com.chedidandrew.emeraldstandard.core.ConstructionWorkBudget.Lane.BANK))
+                    pendingSites.clear();
+                else {
+                    var rotated = new ArrayList<>(pendingSites);
+                    int first = CONSTRUCTION_ROTATION.next("normal-banks", pendingSites.size());
+                    java.util.Collections.rotate(rotated, -first);
+                    pendingSites = new ArrayList<>(rotated.subList(0, Math.min(2, rotated.size())));
+                }
+            }
+            for (var entry : pendingSites) {
+                if (CONSTRUCTION_RETRY.getOrDefault(entry.getKey(), 0L) > gameTime) continue;
+                BlockPos origin = BlockPos.of(entry.getValue().origin());
+                if (bankWorkActive(level, economy, entry.getValue().villageId(),
+                        origin, config.villageDevelopmentRadius())) {
+                    int changed = 0;
+                    int allowance = forcedDevelopment ? ForcedDevelopmentRuntime.claim(server)
+                            : ConstructionTimeRuntime.allowance("bank:" + entry.getKey() + ":" + entry.getValue().origin(),
+                                    gameTime, config);
+                    DebugWork.job("bank:" + entry.getKey(), gameTime,
+                            allowance == 0 ? "shared_budget_exhausted" : "selected", false);
+                    if (allowance == 0) continue;
+                    for (; allowance > 0; allowance--) {
+                        if (forcedDevelopment && changed > 0 && !ForcedDevelopmentRuntime.hasTime()) break;
+                        if (!forcedDevelopment && changed > 0
+                                && !ConstructionTimeRuntime.hasTime()) break;
+                        int step = advanceBankConstruction(level, economy, entry.getKey(), entry.getValue());
+                        changed += step;
+                        if (step == 0) break;
+                    }
+                    if (changed > 0) DebugWork.job("bank:" + entry.getKey(), gameTime, "placed_blocks", true);
+                    if (changed == 0 && economy.pendingBankConstructionsSnapshot().containsKey(entry.getKey()))
+                        CONSTRUCTION_RETRY.put(entry.getKey(), gameTime
+                                + (ConstructionDiagnostics.waitingForEntities("bank:" + entry.getKey())
+                                || ConstructionDiagnostics.preparingFence("bank:" + entry.getKey()) ? 10L : 200L));
+                    else CONSTRUCTION_RETRY.remove(entry.getKey());
+                }
+            }
+        }
         if (gameTime % config.villageScanIntervalTicks() != 0L) {
             return;
         }
         // A canonical death is an already-observed lifecycle fact, so finish persisting it even
         // if Bank generation was disabled after the event. Work and synchronous saves are bounded.
         retryPendingBankerDeaths(economy);
+        reconcileBankBellVillages(level, economy, gameTime / config.villageScanIntervalTicks());
         if (!config.villageBanksEnabled()) {
             return;
         }
@@ -328,39 +406,15 @@ public final class VillageBankManager {
         Set<Long> processedBanks = new HashSet<>();
         VillageBankPlacementPolicy.UpgradeAttemptGate bankUpgradeGate =
                 new VillageBankPlacementPolicy.UpgradeAttemptGate();
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (player.level() != level) {
-                continue;
-            }
-            BlockPos playerPosition = player.blockPosition();
-            // POI village membership is height-sensitive. Project the discovery probe to the
-            // terrain so a player flying over (or testing above) a village still discovers it,
-            // and never persist an airborne fallback anchor.
-            BlockPos villageProbe = surfaceVillageProbe(level, playerPosition);
-            boolean insideVanillaVillage = level.isVillage(playerPosition)
-                    || level.isVillage(villageProbe);
-            EconomyService.VillageSnapshot village = economy.nearestVillageSnapshot(
-                    "minecraft:overworld",
-                    villageProbe.asLong(),
-                    insideVanillaVillage ? 72.0 : FALLBACK_BANK_RECOVERY_RADIUS);
-            if (!VillageBankPlacementPolicy.shouldProbeVillage(
-                    insideVanillaVillage, village != null)) {
-                continue;
-            }
-            if (village == null
-                    && (config.villageProsperitySimulationEnabled()
-                            || config.villageVisualProgressionEnabled())) {
-                // Prosperity discovery owns the stable settlement center and identity. Its
-                // default census is slower than the bank scan, so wait instead of permanently
-                // keying a new bank from whichever player's position happened to be seen first.
-                continue;
-            }
-            UUID villageId = village == null ? null : village.village().villageId;
-            // The player's location is only a discovery probe. Once the prosperity system has a
-            // stable settlement identity, its persisted center owns keying and site selection.
-            BlockPos villagePosition = village == null
-                    ? villageProbe
-                    : BlockPos.of(village.village().centerPos);
+        // Bank-only worlds still need natural identity discovery, not a player's POI position.
+        if (!config.villageProsperitySimulationEnabled() && !config.villageVisualProgressionEnabled())
+            VillageProsperityManager.scanLoadedVillages(level, economy, config);
+        List<BankVillageTarget> targets = activeBankVillages(level, economy, config.villageDevelopmentRadius());
+        int firstTarget = targets.isEmpty() ? 0 : CONSTRUCTION_ROTATION.next("bank-survey", targets.size());
+        for (int i = 0; i < Math.min(MAX_BANK_VILLAGES_PER_SCAN, targets.size()); i++) {
+            BankVillageTarget target = targets.get((firstTarget + i) % targets.size());
+            UUID villageId = target.villageId();
+            BlockPos villagePosition = target.center();
             long bankKey = bankKeyForVillage(
                     economy,
                     "minecraft:overworld",
@@ -370,6 +424,7 @@ public final class VillageBankManager {
             if (!processedBanks.add(bankKey)) {
                 continue;
             }
+            if (economy.pendingBankConstructionsSnapshot().containsKey(bankKey)) continue;
             if (economy.hasGeneratedBankRegion(bankKey)) {
                 Long packedAnchor = economy.generatedBankAnchor(bankKey);
                 BlockPos anchor = packedAnchor == null
@@ -508,10 +563,12 @@ public final class VillageBankManager {
                 .stream()
                 .filter(entry -> VillageBankPlacementPolicy.shouldRetryPersistedFallback(
                         economy.isFallbackBankRegion(entry.getKey())))
-                .filter(entry -> hasNearbyRecoveryPlayer(level, BlockPos.of(entry.getValue())))
+                .filter(entry -> bankWorkActive(level, economy, economy.villageIdForBankRegion(entry.getKey()),
+                        BlockPos.of(entry.getValue()), EmeraldConfig.current().villageDevelopmentRadius()))
                 .sorted(Comparator.comparingLong(entry ->
                         nearestRecoveryPlayerDistanceSquared(
-                                level, BlockPos.of(entry.getValue()))))
+                                level, bankActivationAnchor(level, economy,
+                                        economy.villageIdForBankRegion(entry.getKey()), BlockPos.of(entry.getValue())))))
                 .toList();
         int attempts = 0;
         for (Map.Entry<Long, Long> entry : nearbyFallbacks) {
@@ -526,8 +583,8 @@ public final class VillageBankManager {
             }
 
             LAST_FALLBACK_BANK_RETRY_TICK.put(bankKey, gameTime);
-            BlockPos villageAnchor = BlockPos.of(entry.getValue());
             UUID villageId = economy.villageIdForBankRegion(bankKey);
+            BlockPos villageAnchor = bankActivationAnchor(level, economy, villageId, BlockPos.of(entry.getValue()));
             BankBuildAttempt retry = attemptBankBuild(
                     level,
                     economy,
@@ -546,9 +603,31 @@ public final class VillageBankManager {
         }
     }
 
-    private static boolean hasNearbyRecoveryPlayer(ServerLevel level, BlockPos anchor) {
-        return nearestRecoveryPlayerDistanceSquared(level, anchor)
-                <= (long) FALLBACK_BANK_RECOVERY_RADIUS * FALLBACK_BANK_RECOVERY_RADIUS;
+    record BankVillageTarget(UUID villageId, BlockPos center) {}
+
+    /** Enumerate all eligible settlements, not just the closest one to each player. */
+    static List<BankVillageTarget> activeBankVillages(ServerLevel level, EconomyService economy, int radius) {
+        var positions = level.players().stream().map(p -> p.blockPosition().asLong()).toList();
+        List<BankVillageTarget> result = new ArrayList<>();
+        for (UUID id : economy.developmentVillageIdsNear(level.dimension().identifier().toString(), positions, radius)) {
+            Long packed = economy.villageCenterPosition(id, level.dimension().identifier().toString());
+            if (packed == null) continue;
+            BlockPos center = BlockPos.of(packed);
+            if (bankWorkActive(level, economy, id, center, radius)) result.add(new BankVillageTarget(id, center));
+        }
+        result.sort(Comparator.comparing(BankVillageTarget::villageId));
+        return List.copyOf(result);
+    }
+
+    static BlockPos bankActivationAnchor(ServerLevel level, EconomyService economy, UUID villageId, BlockPos fallback) {
+        Long center = economy.villageCenterPosition(villageId, level.dimension().identifier().toString());
+        return center == null ? fallback : BlockPos.of(center);
+    }
+
+    static boolean bankWorkActive(ServerLevel level, EconomyService economy, UUID villageId, BlockPos fallback, int radius) {
+        BlockPos center = bankActivationAnchor(level, economy, villageId, fallback);
+        return level.players().stream().anyMatch(player -> VillageBankPlacementPolicy.recoveryActive(
+                center.getX(), center.getZ(), player.blockPosition().getX(), player.blockPosition().getZ(), radius));
     }
 
     private static long nearestRecoveryPlayerDistanceSquared(
@@ -564,7 +643,7 @@ public final class VillageBankManager {
                     anchor.getZ(),
                     position.getX(),
                     position.getZ(),
-                    FALLBACK_BANK_RECOVERY_RADIUS)) {
+                    EmeraldConfig.current().villageDevelopmentRadius())) {
                 continue;
             }
             long dx = (long) position.getX() - anchor.getX();
@@ -582,6 +661,8 @@ public final class VillageBankManager {
             long bankKey,
             List<Long> excludedPackedAnchors,
             boolean recoverySearch) {
+        if (economy.pendingBankConstructionsSnapshot().containsKey(bankKey))
+            return new BankBuildAttempt(null, BankBuildResult.failed(), false, true);
         BankPlotSearch plotSearch = findBankPlots(
                 level,
                 economy,
@@ -590,10 +671,8 @@ public final class VillageBankManager {
                 excludedPackedAnchors,
                 recoverySearch);
         for (BlockPos candidate : plotSearch.candidates()) {
-            BankBuildResult build = buildBank(level, candidate, villageId, bankKey);
-            if (build.built()) {
-                return new BankBuildAttempt(
-                        candidate, build, plotSearch.complete(), true);
+            if (reserveProgressiveBank(level, economy, candidate, villageId, bankKey)) {
+                return new BankBuildAttempt(null, BankBuildResult.failed(), false, true);
             }
         }
         return new BankBuildAttempt(
@@ -601,6 +680,207 @@ public final class VillageBankManager {
                 BankBuildResult.failed(),
                 plotSearch.complete(),
                 !plotSearch.candidates().isEmpty());
+    }
+
+    static List<Long> pendingBankAnchors(EconomyService economy) {
+        return economy.pendingBankConstructionsSnapshot().values().stream()
+                .map(BankConstruction::bankerAnchor).toList();
+    }
+
+    static boolean reserveProgressiveBank(ServerLevel level, EconomyService economy,
+            BlockPos origin, UUID villageId, long key) {
+        ensureBankTemplateValidated();
+        var dialect = bankDialect(level,economy,villageId,origin);
+        var palette = paletteFor(dialect);
+        List<BankPlacement> authored = terrainSupportedBankPlan(level, origin, palette);
+        if (authored == null) return false;
+        var survey = new VillageSitePreparation.Survey(level);
+        Set<BlockPos> volume = new HashSet<>();
+        for (int x = BANK_PLOT_MIN_X; x <= BANK_PLOT_MAX_X; x++)
+            for (int z = BANK_PLOT_MIN_Z; z <= BANK_PLOT_MAX_Z; z++)
+                for (int y = 0; y <= BANK_HEIGHT; y++) volume.add(origin.offset(x, y, z));
+        for (BankPlacement cell : authored) {
+            if (!isLoaded(level, cell.position())) return false;
+            if (!isNaturalBankGround(level.getBlockState(cell.position())) || cell.position().getY() >= origin.getY())
+                volume.add(cell.position());
+            if (cell.state().getBlock() instanceof StairBlock) {
+                volume.add(cell.position().above()); volume.add(cell.position().above(2));
+            }
+        }
+        var preparation = survey.freeze(volume, origin.getY(), villageId, key);
+        if (DevelopmentLandProtection.excludes(level,origin.offset(BANK_PLOT_MIN_X,0,BANK_PLOT_MIN_Z),
+                origin.offset(BANK_PLOT_MAX_X,0,BANK_PLOT_MAX_Z))) return false;
+        if (preparation == null) return false;
+        Set<BlockPos> occupied = authored.stream().map(BankPlacement::position)
+                .collect(java.util.stream.Collectors.toSet());
+        List<BlockPos> approach = new ArrayList<>();
+        for (int z = BANK_PLOT_MIN_Z - 1; z >= BANK_PLOT_MIN_Z - 8; z--)
+            approach.add(origin.offset(BANK_WIDTH / 2, 0, z));
+        Integer arrival = survey.surface(approach.getFirst().getX(), approach.getFirst().getZ());
+        preparation = VillageTerrainFinishing.finish(level, preparation, origin,
+                BANK_PLOT_MIN_X, BANK_PLOT_MAX_X, BANK_PLOT_MIN_Z, BANK_PLOT_MAX_Z,
+                occupied, approach, arrival == null ? origin.getY() : arrival,
+                palette.foundation().defaultBlockState(),
+                palette.stairs().defaultBlockState(), villageId, key);
+        Map<BlockPos, BlockState> finalCells = new LinkedHashMap<>();
+        for (var cell : preparation.cells()) finalCells.put(BlockPos.of(cell.position()),
+                VillageTerrainFinishing.state(level, cell.after()));
+        Map<Long, String> approvedTerrainStates = new HashMap<>();
+        for (var cell : preparation.cells()) approvedTerrainStates.put(cell.position(), cell.after());
+        for (BankPlacement cell : authored) finalCells.put(cell.position(), cell.state());
+        List<BankConstruction.Cell> frozen = new ArrayList<>();
+        for (var cell : finalCells.entrySet().stream()
+                .sorted(Comparator.<Map.Entry<BlockPos, BlockState>>comparingInt(e -> e.getValue().isAir() ? 0 : 1)
+                        .thenComparingInt(e -> e.getValue().isAir() ? -e.getKey().getY() : e.getKey().getY())).toList()) {
+            BlockPos pos = cell.getKey();
+            if (!isLoaded(level, pos)) return false;
+            BlockState existing = level.getBlockState(pos);
+            boolean approvedTerrain = BlockStateParser.serialize(cell.getValue()).equals(approvedTerrainStates.get(pos.asLong()));
+            if ((!approvedTerrain && !existing.isAir() && !survey.clearable(pos) && !survey.excavatable(pos, origin.getY())) || existing.hasBlockEntity()
+                    || !level.getFluidState(pos).isEmpty()
+                    || !VillageDevelopmentProtection.mayPlace(level, villageId, key, pos, existing, cell.getValue()))
+                return false;
+            frozen.add(new BankConstruction.Cell(pos.asLong(), BlockStateParser.serialize(existing),
+                    BlockStateParser.serialize(cell.getValue())));
+        }
+        return economy.reserveBankConstruction(key, new BankConstruction(origin.asLong(),
+                origin.offset(BANK_WIDTH / 2, 1, BANK_DEPTH - 2).asLong(), villageId,
+                BANK_STRUCTURE_VERSION, frozen, Set.of(), false, dialect.id()));
+    }
+
+    static VillageArchitecture.BiomeDialect bankDialect(ServerLevel level,EconomyService economy,UUID villageId,BlockPos origin) {
+        var village=villageId==null?null:economy.developmentVillageSnapshot(villageId);
+        return village!=null&&!village.village().architectureDialect.isBlank()
+                ? VillageArchitecture.BiomeDialect.fromId(village.village().architectureDialect)
+                : VillageProsperityManager.biomeDialect(level,village==null?origin:BlockPos.of(village.village().centerPos));
+    }
+
+    /** One authored operation; callers supply the configured independent allowance per site. */
+    static int advanceBankConstruction(ServerLevel level, EconomyService economy, long key, BankConstruction plan) {
+        // Callers may retain a geometry snapshot; receipts must always come from live saved authority.
+        BankConstruction authoritative = economy.pendingBankConstructionsSnapshot().get(key);
+        if (authoritative == null || authoritative.origin() != plan.origin()
+                || !authoritative.cells().equals(plan.cells())) return 0;
+        plan = authoritative;
+        // Recovered from the durable plan after restart; never infer a new style for an old plan.
+        BankStyleLedger.get(level).remember(plan.origin(),plan.style());
+        BlockPos siteOrigin = BlockPos.of(plan.origin());
+        if (DevelopmentLandProtection.excludes(level,siteOrigin.offset(BANK_PLOT_MIN_X,0,BANK_PLOT_MIN_Z),
+                siteOrigin.offset(BANK_PLOT_MAX_X,0,BANK_PLOT_MAX_Z))) {
+            ConstructionDiagnostics.record("bank:"+key,"protected",0,plan.cells().size(),level.getGameTime(),"No-build zone overlaps reserved Bank lot");
+            return 0;
+        }
+        var village = plan.villageId() == null ? null : economy.developmentVillageSnapshot(plan.villageId());
+        if (!economy.forcedVillageDevelopment() && village != null
+                && !com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.villageEligible(village.village())) return 0;
+        if (!economy.forcedVillageDevelopment() && EmeraldConfig.current().villageVisualProgressionEnabled()
+                && !ConstructionSitePresentation.fenceReady(level, VillageConstructionActivity.bankTag(key, plan.origin()))) {
+            ConstructionDiagnostics.record("bank:" + key, "preparing_fence", 0, plan.cells().size(),
+                    level.getGameTime(), "Preparing safe perimeter before Bank construction");
+            return 0;
+        }
+        ParsedBankConstruction parsed = CONSTRUCTION_CACHE.get(key);
+        if (parsed == null || !parsed.plan().equals(plan)) {
+            List<BankPlacement> before = new ArrayList<>(), after = new ArrayList<>();
+            try {
+                var blocks = level.registryAccess().lookupOrThrow(Registries.BLOCK);
+                for (var cell : plan.cells()) {
+                    BlockPos pos = BlockPos.of(cell.position());
+                    before.add(new BankPlacement(pos, BlockStateParser.parseForBlock(blocks, cell.before(), false).blockState()));
+                    after.add(new BankPlacement(pos, BlockStateParser.parseForBlock(blocks, cell.after(), false).blockState()));
+                }
+            } catch (com.mojang.brigadier.exceptions.CommandSyntaxException ex) { return 0; }
+            var cells=after.stream().map(c->new SupportedConstructionOrder.Cell(c.position().subtract(siteOrigin),c.state(),-1)).toList();
+            var sequence=SupportedConstructionOrder.sequence(cells,List.of(0,cells.size()));
+            var supports=SupportedConstructionOrder.supportPalette(cells);
+            parsed = new ParsedBankConstruction(plan, before, after, sequence.indices(),Map.copyOf(supports),sequence.disconnected());
+            CONSTRUCTION_CACHE.put(key, parsed);
+        }
+        String ownershipJob=ConstructionOwnership.bank(key,plan.origin());
+        var recovery=ConstructionRecovery.site(level,ownershipJob);
+        boolean nativeOrder=recovery.mode(level.getGameTime())==com.chedidandrew.emeraldstandard.core.ConstructionRecoveryWindow.Mode.NATIVE_ORDER;
+        var ownership=ConstructionOwnership.get(level);
+        ownership.begin(economy,ownershipJob,plan.villageId(),key,plan.origin(),true);
+        for(var cell:parsed.after()) ownership.reserve(ownershipJob,cell.position(),cell.state());
+        boolean unfinished = false;
+        boolean occupied = false;
+        boolean supportWait = false, hardWait = false;
+        int matched = 0;
+        var ordered=new ArrayList<>(parsed.order());
+        var currentParsed=parsed;
+        ordered.sort(java.util.Comparator.comparingInt(i -> {
+            var c=currentParsed.after().get(i);
+            return ConstructionOwnership.owned(level,c.position(),c.state()) ? 1 : 0;
+        }));
+        for (int i : ordered) {
+            BankPlacement cell = parsed.after().get(i);
+            if (!isLoaded(level, cell.position())) { unfinished = true; hardWait = true; continue; }
+            BlockState current = level.getBlockState(cell.position());
+            boolean storage = plan.cells().get(i).storage();
+            boolean handled = plan.handledStorage().contains(cell.position().asLong());
+            if (isOwnedBankPlacement(current, cell.state())) {
+                // Adopted containers keep their contents and permanently close this loot opportunity.
+                if (storage && !handled && !economy.markBankStorageHandled(key,plan,cell.position().asLong())) {
+                    unfinished = true; continue;
+                }
+                matched++; continue;
+            }
+            unfinished = true;
+            // Preserve player removal: no repeat loot and no infinite free replacement chest blocks.
+            // Issued legacy storage can be rebuilt empty; new loot waits for handover.
+            // Never overwrite player edits or containers. A blocked cell remains pending.
+            if ((!VillageSitePreparation.matchesRemoval(current, plan.cells().get(i).before())
+                        && !current.isAir())
+                    || current.hasBlockEntity()
+                    || !level.getFluidState(cell.position()).isEmpty()
+                    || !VillageDevelopmentProtection.mayPlace(level, plan.villageId(), key,
+                            cell.position(), current, cell.state())) { hardWait=true; continue; }
+            if (!ConstructionRecovery.survives(level,cell.position(),cell.state())) { supportWait=true; continue; }
+            var supportCell=new SupportedConstructionOrder.Cell(cell.position().subtract(siteOrigin),cell.state(),-1);
+            if(!parsed.disconnected().contains(i)
+                    && !SupportedConstructionOrder.supportedNow(level,siteOrigin,supportCell,parsed.supports())
+                    && !nativeOrder) { supportWait=true; continue; }
+            if (!VillageConstructionOccupancy.mayBuild(level,cell.position(),current,cell.state())) {
+                occupied = true; continue;
+            }
+            ownership.claim(ownershipJob,cell.position(),cell.state(),storage&&!handled&&!plan.legacyLootSuppressed());
+            // Defer neighbor-shape updates so a door/bed's second half can arrive next pulse.
+            if (level.setBlock(cell.position(), cell.state(), cell.state().isAir() ? Block.UPDATE_ALL
+                    : Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)) {
+                // No loot or usable inventory is exposed during construction, including repairs.
+                if (storage) economy.markBankStorageHandled(key,plan,cell.position().asLong());
+                ConstructionDiagnostics.record("bank:" + key, "building", matched + 1, parsed.after().size(),
+                        level.getGameTime(), "automatic progressive construction");
+                ConstructionWorkCue.placed(VillageConstructionActivity.bankTag(key, plan.origin()),
+                        cell.state(), matched + 1, parsed.after().size(), level.getGameTime());
+                recovery.observe(level.getGameTime(),0,false,false);
+                return 1;
+            }
+        }
+        if (unfinished) {
+            recovery.observe(level.getGameTime(),0,supportWait&&!hardWait&&!occupied,false);
+            ConstructionDiagnostics.record("bank:" + key, occupied ? "waiting_for_entities" : "retry_in_place", matched, parsed.after().size(),
+                    level.getGameTime(), occupied ? "Living entity occupies a placement or its supporting floor; retry shortly"
+                            : "unloaded, protected, changed or not-yet-supported cells; preserving saved work");
+            return 0;
+        }
+        BlockPos anchor = BlockPos.of(plan.bankerAnchor());
+        if (!ownership.prepareHandover(level,ownershipJob,VillageStructureLoot.key("bank"))
+                || !flushBankChunks(level) || !economy.markGeneratedBankRegion(key, anchor.asLong(),
+                plan.villageId(), plan.version())) return 0;
+        ownership.grantHandoverLoot(level,ownershipJob,VillageStructureLoot.key("bank"));
+        ownership.finish(ownershipJob);
+        ConstructionRecovery.finish(level,ownershipJob);
+        for (BankPlacement cell : parsed.after()) {
+            level.updateNeighborsAt(cell.position(), cell.state().getBlock(), null);
+        }
+        CONSTRUCTION_CACHE.remove(key);
+        CONSTRUCTION_RETRY.remove(key);
+        ConstructionDiagnostics.record("bank:" + key, "complete", parsed.after().size(), parsed.after().size(),
+                level.getGameTime(), "Bank saved and commissioned");
+        ensureBanker(level, anchor, true, key, economy);
+        LAST_FALLBACK_BANK_RETRY_TICK.remove(key);
+        return 0;
     }
 
     private static boolean persistBuiltBank(
@@ -630,6 +910,11 @@ public final class VillageBankManager {
             // an orphaned structure after a crash.
             flushBankChunks(level);
             return false;
+        }
+        // Only after the durable bank authority succeeds: failed builds/rollbacks cannot drop loot.
+        for (BankMutation mutation : attempt.build().placements()) {
+            VillageStructureLoot.assignNewStorage(level, mutation.placement().position(),
+                    VillageStructureLoot.key("bank"));
         }
         ensureBanker(level, bankerPosition, true, bankKey, economy);
         LAST_FALLBACK_BANK_RETRY_TICK.remove(bankKey);
@@ -776,10 +1061,10 @@ public final class VillageBankManager {
         // Migration and save-retry states can leave a scoped Banker loaded far from the eventual
         // safe Bank. Look broadly for that exact entity before considering an ordinary villager.
         double scopedSearchRadius = generatedStructure
-                ? FALLBACK_BANK_RECOVERY_RADIUS
+                ? BANKER_RECOVERY_SEARCH_RADIUS
                 : 48.0;
         AABB scopedSearch = new AABB(bankerAnchor).inflate(scopedSearchRadius,
-                FALLBACK_BANK_RECOVERY_RADIUS,
+                BANKER_RECOVERY_SEARCH_RADIUS,
                 scopedSearchRadius);
         Villager existing = level.getEntitiesOfClass(
                 Villager.class,
@@ -910,8 +1195,8 @@ public final class VillageBankManager {
                     || !level.getFluidState(ground).isEmpty()
                     || level.getBlockEntity(feet) != null
                     || level.getBlockEntity(head) != null
-                    || (!feetState.isAir() && !feetState.canBeReplaced())
-                    || (!headState.isAir() && !headState.canBeReplaced())
+                    || (!feetState.isAir() && !VegetationCompatibility.open(feetState))
+                    || (!headState.isAir() && !VegetationCompatibility.open(headState))
                     || !level.getBlockState(ground).isFaceSturdy(level, ground, Direction.UP)) {
                 continue;
             }
@@ -1911,7 +2196,7 @@ public final class VillageBankManager {
         boolean exchangeDesk = BankerProfessionSupport.isExchangeDesk(clickedState);
         if (!workstation) {
             return new BankDeskAccess(
-                    null, BankWorkstationAccessPolicy.Decision.IGNORE);
+                    null, BankWorkstationAccessPolicy.Decision.IGNORE, null);
         }
         Long activeRegionKey = null;
         BlockPos activeAnchor = null;
@@ -1960,7 +2245,7 @@ public final class VillageBankManager {
             case PERSONAL, PERSONAL_UNSAFE_BANK -> clicked;
             default -> null;
         };
-        return new BankDeskAccess(accessPoint, decision);
+        return new BankDeskAccess(accessPoint, decision, retiredCounter ? null : activeRegionKey);
     }
 
     /** Compatibility accessor for callers that only need the resolved menu position. */
@@ -2039,6 +2324,10 @@ public final class VillageBankManager {
         }
 
         UUID stableVillageId = villageId;
+        Long pending = economy.pendingBankConstructionsSnapshot().entrySet().stream()
+                .filter(e -> stableVillageId.equals(e.getValue().villageId())).map(Map.Entry::getKey)
+                .min(Long::compareUnsigned).orElse(null);
+        if (pending != null) return pending;
         Long existing = economy.generatedBankAnchorsSnapshot().keySet().stream()
                 .filter(key -> stableVillageId.equals(economy.villageIdForBankRegion(key)))
                 .min(Long::compareUnsigned)
@@ -2047,11 +2336,13 @@ public final class VillageBankManager {
             return existing;
         }
 
-        if (!economy.hasGeneratedBankRegion(legacyKey)) {
+        if (!economy.hasGeneratedBankRegion(legacyKey)
+                && !economy.pendingBankConstructionsSnapshot().containsKey(legacyKey)) {
             return legacyKey;
         }
         UUID legacyVillage = economy.villageIdForBankRegion(legacyKey);
-        if (legacyVillage == null || legacyVillage.equals(villageId)) {
+        if (!economy.pendingBankConstructionsSnapshot().containsKey(legacyKey)
+                && (legacyVillage == null || legacyVillage.equals(villageId))) {
             return legacyKey;
         }
 
@@ -2063,8 +2354,9 @@ public final class VillageBankManager {
         // legacy key that belongs to a different village.
         for (long attempt = 0L; ; attempt++) {
             long candidate = mix64(identity + attempt * 0x9E3779B97F4A7C15L);
-            if (!economy.hasGeneratedBankRegion(candidate)
-                    || villageId.equals(economy.villageIdForBankRegion(candidate))) {
+            if (!economy.pendingBankConstructionsSnapshot().containsKey(candidate)
+                    && (!economy.hasGeneratedBankRegion(candidate)
+                    || villageId.equals(economy.villageIdForBankRegion(candidate)))) {
                 return candidate;
             }
         }
@@ -2082,6 +2374,7 @@ public final class VillageBankManager {
                 economy.villageProjectLotExclusions("minecraft:overworld");
         List<Long> excludedBanks = new ArrayList<>();
         excludedBanks.addAll(economy.generatedBankAnchorsSnapshot().values());
+        excludedBanks.addAll(pendingBankAnchors(economy));
         economy.retiredBankAnchorsSnapshot().values().forEach(excludedBanks::addAll);
         if (excludedPackedAnchors != null) {
             excludedBanks.addAll(excludedPackedAnchors);
@@ -2111,7 +2404,11 @@ public final class VillageBankManager {
                                 regionKey)));
             }
         }
-        candidates.sort(Comparator.comparing(BankPlotCandidate::priority));
+        candidates.sort(Comparator.comparingInt((BankPlotCandidate c) -> {
+            var profiles = sampleNaturalEntranceProfiles(level, c.origin());
+            return profiles == null ? Integer.MAX_VALUE : profiles.stream().flatMap(List::stream)
+                    .mapToInt(h -> Math.abs(h)).sum();
+        }).thenComparing(BankPlotCandidate::priority));
         return new BankPlotSearch(
                 candidates.stream().map(BankPlotCandidate::origin).toList(), complete);
     }
@@ -2218,37 +2515,36 @@ public final class VillageBankManager {
         int originZ = centerZ - BANK_DEPTH / 2;
         int minimumSurface = Integer.MAX_VALUE;
         int maximumSurface = Integer.MIN_VALUE;
+        var survey = new VillageSitePreparation.Survey(level);
+        List<Integer> surfaces = new ArrayList<>();
         for (int x = originX + BANK_PLOT_MIN_X; x <= originX + BANK_PLOT_MAX_X; x++) {
             for (int z = originZ + BANK_PLOT_MIN_Z; z <= originZ + BANK_PLOT_MAX_Z; z++) {
                 if (!level.hasChunk(Math.floorDiv(x, 16), Math.floorDiv(z, 16))) {
                     return null;
                 }
-                int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-                BlockPos ground = new BlockPos(x, surface - 1, z);
-                BlockState groundState = level.getBlockState(ground);
-                if (groundState.isAir()
-                        || level.getBlockEntity(ground) != null
-                        || !level.getFluidState(ground).isEmpty()
-                        || !isNaturalBankGround(groundState)) {
-                    return null;
-                }
+                Integer surface = survey.surface(x, z);
+                if (surface == null) return null;
+                surfaces.add(surface);
                 minimumSurface = Math.min(minimumSurface, surface);
                 maximumSurface = Math.max(maximumSurface, surface);
             }
         }
-        if (!TerrainFoundationPlan.supportsTerrainRange(
-                minimumSurface,
-                maximumSurface,
-                TerrainFoundationPlan.MAX_TERRAIN_DROP)) {
-            return null;
+        var floor = TerrainFoundationPlan.levelledFloor(surfaces);
+        if (floor.isEmpty()) return null;
+        int floorY = floor.getAsInt();
+        // Prefer a level north approach; cutting the back of a hill must not bury the entrance.
+        for (int x = BANK_WIDTH / 2 - BANK_ENTRANCE_HALF_WIDTH;
+                x <= BANK_WIDTH / 2 + BANK_ENTRANCE_HALF_WIDTH; x++) {
+            Integer approach = survey.surface(originX + x, originZ - 3);
+            if (approach == null) return null;
+            floorY = Math.max(floorY, approach);
         }
+        if (floorY > minimumSurface + TerrainFoundationPlan.MAX_TERRAIN_DROP) return null;
 
-        // Level the floor at the highest sampled surface and bridge only small natural drops with
-        // authored foundations. Paths, farmland, player floors, containers, and structures remain
-        // invalid ground and are never adopted into the bank.
+        // Cut/fill only new lots. The authored Bank and its legacy foundation geometry stay unchanged.
         BlockPos origin = new BlockPos(
                 originX,
-                maximumSurface,
+                floorY,
                 originZ);
         List<List<Integer>> entranceProfiles = sampleNaturalEntranceProfiles(level, origin);
         if (entranceProfiles == null
@@ -2261,12 +2557,7 @@ public final class VillageBankManager {
             for (int z = BANK_PLOT_MIN_Z; z <= BANK_PLOT_MAX_Z; z++) {
                 for (int y = 0; y <= BANK_HEIGHT; y++) {
                     BlockPos position = origin.offset(x, y, z);
-                    BlockState state = level.getBlockState(position);
-                    if (!VillageBankPlacementPolicy.acceptsVolumeCell(
-                            state.isAir(),
-                            state.canBeReplaced(),
-                            level.getFluidState(position).isEmpty(),
-                            level.getBlockEntity(position) != null)) {
+                    if (!survey.available(position, floorY)) {
                         return null;
                     }
                 }
@@ -2278,6 +2569,7 @@ public final class VillageBankManager {
     /** Samples each lane independently so a cross-slope cannot leave part of a wide stair afloat. */
     private static List<List<Integer>> sampleNaturalEntranceProfiles(
             ServerLevel level, BlockPos origin) {
+        var survey = new VillageSitePreparation.Survey(level);
         List<List<Integer>> profiles = new ArrayList<>(BANK_ENTRANCE_HALF_WIDTH * 2 + 1);
         for (int lane = -BANK_ENTRANCE_HALF_WIDTH;
                 lane <= BANK_ENTRANCE_HALF_WIDTH;
@@ -2295,16 +2587,8 @@ public final class VillageBankManager {
                 if (!level.hasChunk(Math.floorDiv(worldX, 16), Math.floorDiv(worldZ, 16))) {
                     return null;
                 }
-                int surface = level.getHeight(
-                        Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, worldX, worldZ);
-                BlockPos ground = new BlockPos(worldX, surface - 1, worldZ);
-                BlockState groundState = level.getBlockState(ground);
-                if (groundState.isAir()
-                        || level.getBlockEntity(ground) != null
-                        || !level.getFluidState(ground).isEmpty()
-                        || !isNaturalBankGround(groundState)) {
-                    return null;
-                }
+                Integer surface = survey.surface(worldX, worldZ);
+                if (surface == null) return null;
                 int offset = surface - origin.getY();
                 if (offset < -TerrainFoundationPlan.MAX_TERRAIN_DROP || offset > 0) {
                     return null;
@@ -2326,6 +2610,10 @@ public final class VillageBankManager {
                 || state.is(Blocks.ANDESITE)
                 || state.is(Blocks.DIORITE)
                 || state.is(Blocks.GRANITE)
+                || state.is(Blocks.GRAVEL)
+                || state.is(Blocks.DEEPSLATE)
+                || state.is(Blocks.TUFF)
+                || state.is(Blocks.CALCITE)
                 || state.is(Blocks.SNOW_BLOCK);
     }
 
@@ -2347,6 +2635,51 @@ public final class VillageBankManager {
                         && east.is(Blocks.CHISELED_BOOKSHELF));
     }
 
+    /** Exact reserved bell cells, including old sites; independent of whether the bell was broken. */
+    static Map<Long, Long> generatedBankBellRegions(EconomyService economy) {
+        Map<Long, Long> bells = new HashMap<>();
+        economy.generatedBankAnchorsSnapshot().forEach((key, anchor) -> {
+            int version = economy.generatedBankStructureVersion(key);
+            if (version < LEGACY_BANK_STRUCTURE_VERSION || economy.isFallbackBankRegion(key)) return;
+            addBankBells(bells, key, BlockPos.of(anchor), version);
+            // Old versions may have occupied either forecourt when the Bank was retired.
+            for (long retired : economy.retiredBankAnchors(key)) {
+                addBankBells(bells, key, BlockPos.of(retired), 2);
+                addBankBells(bells, key, BlockPos.of(retired), version);
+            }
+        });
+        economy.pendingBankConstructionsSnapshot().forEach((key, plan) ->
+                addBankBells(bells, key, BlockPos.of(plan.origin()).offset(
+                        BANK_WIDTH / 2, 1, BANK_DEPTH - 2), BANK_STRUCTURE_VERSION));
+        return bells;
+    }
+
+    private static void addBankBells(Map<Long, Long> bells, long key, BlockPos anchor, int version) {
+        BlockPos origin = anchor.offset(-BANK_WIDTH / 2, -1, -(BANK_DEPTH - 2));
+        bells.put(origin.offset(2, 2, version >= 5 ? -3 : -1).asLong(), key);
+        if (version >= 4) bells.put(origin.offset(BANK_WIDTH / 2, 9, BANK_DEPTH / 2).asLong(), key);
+    }
+
+    /** At most eight loaded candidates and one durable repair per discovery pass; no chunk loads. */
+    private static void reconcileBankBellVillages(ServerLevel level, EconomyService economy, long pass) {
+        var bells = new ArrayList<>(generatedBankBellRegions(economy).entrySet());
+        bells.sort(Map.Entry.comparingByKey());
+        for (int i = 0; i < Math.min(8, bells.size()); i++) {
+            var bell = bells.get((int) Math.floorMod(pass * 8 + i, bells.size()));
+            BlockPos position = BlockPos.of(bell.getKey());
+            if (!isLoaded(level, position) || level.players().stream()
+                    .noneMatch(p -> p.blockPosition().distSqr(position) <= 256.0 * 256.0)) continue;
+            UUID id = economy.villageIdAt("minecraft:overworld", bell.getKey());
+            if (id == null || id.equals(economy.villageIdForBankRegion(bell.getValue()))) continue;
+            if (economy.reconcileEmptyBankBellVillage(id, bell.getValue(), bell.getKey())) {
+                System.out.println("[The Emerald Standard] Reconciled empty Bank-bell village "
+                        + id + " into " + economy.villageIdForBankRegion(bell.getValue())
+                        + "; structures and player accounts unchanged.");
+                break;
+            }
+        }
+    }
+
     /** Inspects the authored Bank without changing or force-loading any world state. */
     private static BankIntegrity inspectManagedBankIntegrity(
             ServerLevel level, BlockPos bankerAnchor, int structureVersion) {
@@ -2359,12 +2692,20 @@ public final class VillageBankManager {
                 origin.getX() + BANK_WIDTH / 2,
                 origin.getZ() + BANK_DEPTH / 2)) {
             return new BankIntegrity(
-                    false, VillageMaterializationPolicy.IntegrityDecision.UNSAFE);
+                    false, VillageMaterializationPolicy.IntegrityDecision.UNSAFE, "Bank chunks are not loaded; inspection deferred.");
         }
         BankPalette palette = paletteFor(level, origin);
         Map<BlockPos, BlockState> authored = new HashMap<>();
         List<BankPlacement> expectedPlan = structureVersion >= BANK_STRUCTURE_VERSION
                 ? bankPlan(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V11
+                        ? legacyBankPlanV11(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V10
+                        ? legacyBankPlanV10(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V9
+                        ? legacyBankPlanV9(origin, palette)
+                : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V8
+                ? legacyBankPlanV8(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V7
                         ? legacyBankPlanV7(origin, palette)
                 : structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V6
@@ -2379,8 +2720,10 @@ public final class VillageBankManager {
         for (BankPlacement placement : expectedPlan) {
             authored.put(placement.position(), placement.state());
         }
-        int mismatches = appendBankApproachIntegrityPlan(
-                level, origin, palette, authored) ? 0 : 3;
+        boolean approachValid = appendBankApproachIntegrityPlan(level, origin, palette, authored);
+        int mismatches = 0;
+        String problem = approachValid ? "" : "Entrance approach has missing support or blocked access.";
+        if (!hasBankCounterFrame(level, bankerAnchor)) problem = "The Bank counter cabinetry is missing.";
         for (Map.Entry<BlockPos, BlockState> entry : authored.entrySet()) {
             BlockState current = level.getBlockState(entry.getKey());
             BlockState expected = entry.getValue();
@@ -2391,20 +2734,76 @@ public final class VillageBankManager {
             boolean compatibleClearance = expected.isAir()
                     && VillageBankPlacementPolicy.preservesOutdoorClearance(
                             current.isAir(),
-                            current.canBeReplaced(),
+                            VegetationCompatibility.open(current),
                             level.getFluidState(entry.getKey()).isEmpty(),
                             level.getBlockEntity(entry.getKey()) != null);
-            if (!bankStructuralStateMatches(current, expected)
+            boolean sameMaterial = current.is(expected.getBlock());
+            if (!sameMaterial
                     && !compatibleLegacyCounter
                     && !compatibleWorkstation
-                    && !compatibleClearance) {
+                    && !compatibleClearance
+                    && !expected.isAir()
+                    && (VegetationCompatibility.open(current) || current.isAir())) {
                 mismatches++;
             }
+            int x = entry.getKey().getX() - origin.getX();
+            int y = entry.getKey().getY() - origin.getY();
+            int z = entry.getKey().getZ() - origin.getZ();
+            boolean centralAccess = x == BANK_WIDTH / 2 && z >= -2 && z <= BANK_DEPTH - 4
+                    && y >= 1 && y <= 2;
+            boolean floor = y == 0 && x >= 0 && x < BANK_WIDTH && z >= 0 && z < BANK_DEPTH;
+            String failure = "";
+            if (BankerProfessionSupport.isBankWorkstation(expected) && !compatibleWorkstation) {
+                failure = "Bank workstation is missing";
+            } else if (expected.getBlock() instanceof DoorBlock
+                    && (!(current.getBlock() instanceof DoorBlock)
+                            || current.getValue(DoorBlock.HALF) != expected.getValue(DoorBlock.HALF)
+                            || current.is(Blocks.IRON_DOOR))) {
+                failure = "Entrance needs a usable wooden door";
+            } else if (centralAccess && expected.isAir() && !compatibleClearance
+                    && !current.getCollisionShape(level, entry.getKey()).isEmpty()) {
+                failure = "Entrance/lobby access is obstructed";
+            } else if (floor && current.getCollisionShape(level, entry.getKey()).isEmpty()) {
+                failure = "Bank floor has a hole";
+            }
+            if ((floor || centralAccess) && (!level.getFluidState(entry.getKey()).isEmpty()
+                    || current.is(Blocks.FIRE) || current.is(Blocks.SOUL_FIRE)
+                    || current.is(Blocks.MAGMA_BLOCK) || current.is(Blocks.CACTUS)
+                    || current.getBlock() instanceof net.minecraft.world.level.block.CampfireBlock)) {
+                failure = "Bank access contains a hazard";
+            }
+            if (!failure.isEmpty() && problem.isEmpty())
+                problem = failure + " at " + entry.getKey().toShortString() + ".";
         }
-        return new BankIntegrity(
-                true,
-                VillageMaterializationPolicy.assessIntegrity(
-                        authored.size(), mismatches));
+        for (int z = 0; z <= BANK_DEPTH - 4 && problem.isEmpty(); z++) {
+            for (int y = 1; y <= 2; y++) {
+                BlockPos cell = origin.offset(BANK_WIDTH / 2, y, z);
+                BlockState state = level.getBlockState(cell);
+                var collision = state.getCollisionShape(level, cell);
+                boolean thinFloorCovering = y == 1 && !collision.isEmpty()
+                        && collision.max(Direction.Axis.Y) <= 0.125;
+                if (!(state.getBlock() instanceof DoorBlock) && !collision.isEmpty() && !thinFloorCovering) {
+                    problem = "Entrance/lobby access is obstructed at " + cell.toShortString() + ".";
+                    break;
+                }
+            }
+        }
+        var demolition = VillageMaterializationPolicy.assessIntegrity(authored.size(), mismatches);
+        if (demolition == VillageMaterializationPolicy.IntegrityDecision.RELOCATE)
+            return new BankIntegrity(true, demolition, "Large portions of the Bank are missing.");
+        if (problem.isEmpty() && mismatches >= 12)
+            problem = "Bank shell is damaged (" + mismatches + " missing authored blocks).";
+        return new BankIntegrity(true, problem.isEmpty()
+                ? VillageMaterializationPolicy.IntegrityDecision.INTACT
+                : VillageMaterializationPolicy.IntegrityDecision.UNSAFE, problem);
+    }
+
+    public static String bankOperationProblem(ServerLevel level, EconomyService economy, Long key) {
+        if (key == null) return "";
+        Long anchor = economy.generatedBankAnchor(key);
+        return anchor == null ? "No assigned Bank structure."
+                : inspectManagedBankIntegrity(level, BlockPos.of(anchor),
+                        economy.generatedBankStructureVersion(key)).problem();
     }
 
     /** Reconstructs terrain-dependent authored stairs/supports without changing the world. */
@@ -2550,7 +2949,7 @@ public final class VillageBankManager {
                 continue;
             }
             if (!isLoaded(level, placement.position())
-                    || (!existing.isAir() && !existing.canBeReplaced())
+                    || (!existing.isAir() && !VegetationCompatibility.open(existing))
                     || level.getBlockEntity(placement.position()) != null
                     || !level.getFluidState(placement.position()).isEmpty()
                     || !VillageDevelopmentProtection.mayPlace(
@@ -2571,6 +2970,10 @@ public final class VillageBankManager {
             BlockState original = level.getBlockState(placement.position());
             if (original.equals(placement.state())) {
                 continue;
+            }
+            if (!VillageConstructionOccupancy.mayChange(level,placement.position(),original,placement.state())) {
+                rollbackBank(level,placed);
+                return;
             }
             boolean changed = level.setBlock(placement.position(), placement.state(), 3);
             BlockState applied = level.getBlockState(placement.position());
@@ -2729,7 +3132,7 @@ public final class VillageBankManager {
                 return y + 1;
             }
             if (state.isAir()
-                    || state.canBeReplaced()
+                    || VegetationCompatibility.open(state)
                     || state.is(palette.stairs())
                     || state.is(palette.foundation())) {
                 continue;
@@ -2765,7 +3168,7 @@ public final class VillageBankManager {
                     return null;
                 }
                 BlockState current = level.getBlockState(headroom);
-                if (!current.isAir() && !current.canBeReplaced()) {
+                if (!current.isAir() && !VegetationCompatibility.open(current)) {
                     return null;
                 }
             }
@@ -2799,7 +3202,7 @@ public final class VillageBankManager {
             }
             if (!current.equals(foundation)
                     && !current.isAir()
-                    && !current.canBeReplaced()) {
+                    && !VegetationCompatibility.open(current)) {
                 return null;
             }
             result.add(new BankPlacement(target, foundation));
@@ -2826,7 +3229,7 @@ public final class VillageBankManager {
             if (current.equals(foundation)) {
                 continue;
             }
-            if ((current.isAir() || current.canBeReplaced())
+            if ((current.isAir() || VegetationCompatibility.open(current))
                     && level.getBlockEntity(target) == null
                     && level.getFluidState(target).isEmpty()) {
                 result.add(new BankPlacement(target, foundation));
@@ -2849,7 +3252,7 @@ public final class VillageBankManager {
                     return false;
                 }
                 BlockState state = level.getBlockState(position);
-                if (!state.isAir() && !state.canBeReplaced()) {
+                if (!state.isAir() && !VegetationCompatibility.open(state)) {
                     return false;
                 }
             }
@@ -2898,7 +3301,7 @@ public final class VillageBankManager {
                 level, villageId, bankKey, position, current, updated)) {
             return false;
         }
-        return level.setBlock(
+        return VillageConstructionOccupancy.setBlock(level,
                         position,
                         updated,
                         Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE)
@@ -2918,7 +3321,7 @@ public final class VillageBankManager {
                 return BankBuildResult.failed();
             }
             BlockState existing = level.getBlockState(placement.position());
-            if ((!existing.isAir() && !existing.canBeReplaced())
+            if ((!existing.isAir() && !VegetationCompatibility.open(existing))
                     || !level.getFluidState(placement.position()).isEmpty()
                     || level.getBlockEntity(placement.position()) != null
                     || !VillageDevelopmentProtection.mayPlace(
@@ -2935,7 +3338,7 @@ public final class VillageBankManager {
         List<BankMutation> placed = new ArrayList<>(plan.size());
         for (BankPlacement placement : plan) {
             BlockState original = level.getBlockState(placement.position());
-            boolean changed = level.setBlock(placement.position(), placement.state(), 3);
+            boolean changed = VillageConstructionOccupancy.setBlock(level,placement.position(), placement.state(), 3);
             BlockState applied = level.getBlockState(placement.position());
             if (!changed || !applied.equals(placement.state())) {
                 // Some integrations can report a failed/cancelled placement after mutating the
@@ -2962,6 +3365,7 @@ public final class VillageBankManager {
     /** Adds only the air/replaceable foundation cells needed to bridge a shallow natural lot. */
     private static List<BankPlacement> terrainSupportedBankPlan(
             ServerLevel level, BlockPos origin, BankPalette palette) {
+        var survey = new VillageSitePreparation.Survey(level);
         List<BankPlacement> base = bankPlan(origin, palette);
         List<List<Integer>> profiles = sampleNaturalEntranceProfiles(level, origin);
         Optional<List<VillageBankPlacementPolicy.EntranceStep>> steps = profiles == null
@@ -2986,8 +3390,10 @@ public final class VillageBankManager {
                         origin.offset(x, step.yOffset(), step.zOffset()), stair));
             }
         }
-        if (!hasEntranceHeadroom(level, result)) {
-            return null;
+        for (BankPlacement cell : result) {
+            if (!(cell.state().getBlock() instanceof StairBlock)) continue;
+            if (!survey.available(cell.position().above(), origin.getY())
+                    || !survey.available(cell.position().above(2), origin.getY())) return null;
         }
         List<TerrainFoundationPlan.Cell> authored = result.stream()
                 .map(placement -> placement.position().subtract(origin))
@@ -3014,7 +3420,7 @@ public final class VillageBankManager {
                 groundedColumns.add(column);
                 continue;
             }
-            if (!current.isAir() && !current.canBeReplaced()) {
+            if (!current.isAir() && !survey.clearable(target)) {
                 return null;
             }
             result.add(new BankPlacement(target, palette.foundation().defaultBlockState()));
@@ -3693,7 +4099,7 @@ public final class VillageBankManager {
     }
 
     /** Only the two exposed upper brick courses change; the full roof mount and smoke cap stay. */
-    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette legacyPalette) {
+    private static List<BankPlacement> legacyBankPlanV8(BlockPos origin, BankPalette legacyPalette) {
         return legacyBankPlanV7(origin, legacyPalette).stream().map(placement -> {
             BlockPos relative = placement.position().subtract(origin);
             if (relative.getX() == 2 && relative.getZ() == BANK_DEPTH - 4
@@ -3703,6 +4109,57 @@ public final class VillageBankManager {
             }
             return placement;
         }).toList();
+    }
+
+    /** Set the runner back from the lintel: a 1.95-high villager cannot step onto carpet under a two-block doorway. */
+    private static List<BankPlacement> legacyBankPlanV9(BlockPos origin, BankPalette legacyPalette) {
+        return legacyBankPlanV8(origin, legacyPalette).stream().filter(placement -> {
+            BlockPos relative = placement.position().subtract(origin);
+            return !(relative.getY() == 1 && relative.getZ() == 1
+                    && Math.abs(relative.getX() - BANK_WIDTH / 2) <= 1
+                    && placement.state().is(Blocks.CARPET.green()));
+        }).toList();
+    }
+
+    /** V10: the tall side of a roof stair points uphill. Chairs and inverted cornices stay put. */
+    private static List<BankPlacement> legacyBankPlanV10(BlockPos origin, BankPalette legacyPalette) {
+        Block roofStairs = bankV7Palette(legacyPalette).roofStairs();
+        return legacyBankPlanV9(origin, legacyPalette).stream().map(placement -> {
+            BlockState state = placement.state();
+            if (placement.position().getY() - origin.getY() >= 5
+                    && state.is(roofStairs) && state.getValue(StairBlock.HALF) == Half.BOTTOM) {
+                return new BankPlacement(placement.position(),
+                        state.setValue(StairBlock.FACING, state.getValue(StairBlock.FACING).getOpposite()));
+            }
+            return placement;
+        }).toList();
+    }
+
+    /**
+     * V11: the six forecourt seats open toward the front path (-Z), with their high backs
+     * toward the Bank (+Z). Preserve every other cell, order and material in the frozen plan.
+     * Never rotate arbitrary low stairs: the entrance and carved capitals are not benches.
+     */
+    private static List<BankPlacement> legacyBankPlanV11(BlockPos origin, BankPalette legacyPalette) {
+        return legacyBankPlanV10(origin, legacyPalette).stream().map(placement -> {
+            if (isBankForecourtSeat(placement.position().subtract(origin))) {
+                return new BankPlacement(placement.position(),
+                        placement.state().setValue(StairBlock.FACING, Direction.SOUTH));
+            }
+            return placement;
+        }).toList();
+    }
+
+    /** V12 restores the original terrace seating only; roadside nooks use their own generator. */
+    private static List<BankPlacement> bankPlan(BlockPos origin, BankPalette legacyPalette) {
+        return legacyBankPlanV10(origin, legacyPalette);
+    }
+
+    private static boolean isBankForecourtSeat(BlockPos relative) {
+        if (relative.getY() != 1 || relative.getZ() != -4) return false;
+        int x = relative.getX();
+        return x == 0 || x == 1 || x == 3
+                || x == BANK_WIDTH - 4 || x == BANK_WIDTH - 2 || x == BANK_WIDTH - 1;
     }
 
     /** New-only, idempotent palette projection; integrity checks for v2-v6 never call this. */
@@ -4681,8 +5138,8 @@ public final class VillageBankManager {
                                         && roofState.is(palette.roofStairs())
                                         && roofState.getValue(StairBlock.FACING)
                                                 == (z < BANK_DEPTH / 2
-                                                        ? Direction.NORTH
-                                                        : Direction.SOUTH);
+                                                        ? Direction.SOUTH
+                                                        : Direction.NORTH);
                 if (!correctSurface) {
                     throw new IllegalStateException(
                             "Village Bank roof is not continuous at "
@@ -4690,7 +5147,8 @@ public final class VillageBankManager {
                 }
             }
         }
-        validateBankV6Skyline(authored, palette);
+        validateBankV10Skyline(authored, palette);
+        validateBankForecourtSeats(authored, palette);
         validateBankV7ExteriorGardens(authored, palette);
         for (int x = 0; x < BANK_WIDTH; x++) {
             if (!authored.containsKey(new BlockPos(x, 5, 0))
@@ -4815,8 +5273,21 @@ public final class VillageBankManager {
         }
     }
 
+    /** Keep the original terrace composition distinct from the inward-opening roadside nooks. */
+    private static void validateBankForecourtSeats(
+            Map<BlockPos, BlockState> authored, BankPalette palette) {
+        for (int x : new int[] {0, 1, 3, BANK_WIDTH - 4, BANK_WIDTH - 2, BANK_WIDTH - 1}) {
+            BlockPos position = new BlockPos(x, 1, -4);
+            BlockState expected = palette.roofStairs().defaultBlockState()
+                    .setValue(StairBlock.FACING, Direction.NORTH);
+            if (!expected.equals(authored.get(position))) {
+                throw new IllegalStateException("Village Bank terrace must retain its original seat direction at " + position);
+            }
+        }
+    }
+
     /** Proves the new roof feature has continuous bearing, enclosed glazing and one weather cap. */
-    private static void validateBankV6Skyline(
+    private static void validateBankV10Skyline(
             Map<BlockPos, BlockState> authored, BankPalette palette) {
         int centerX = BANK_WIDTH / 2;
         int centerZ = BANK_DEPTH / 2;
@@ -4851,10 +5322,10 @@ public final class VillageBankManager {
         for (int z = -1; z <= 3; z++) {
             for (int side : new int[] {-1, 1}) {
                 requireBankStair(authored, new BlockPos(centerX + side * 2, 8, z),
-                        palette.roofStairs(), side < 0 ? Direction.WEST : Direction.EAST,
+                        palette.roofStairs(), side < 0 ? Direction.EAST : Direction.WEST,
                         "dormer lower sealed slope");
                 requireBankStair(authored, new BlockPos(centerX + side, 9, z),
-                        palette.roofStairs(), side < 0 ? Direction.WEST : Direction.EAST,
+                        palette.roofStairs(), side < 0 ? Direction.EAST : Direction.WEST,
                         "dormer upper sealed slope");
             }
             requireBankBlock(authored, new BlockPos(centerX, 10, z),
@@ -5230,6 +5701,8 @@ public final class VillageBankManager {
     }
 
     private static BankPalette paletteFor(ServerLevel level, BlockPos origin) {
+        var saved = BankStyleLedger.get(level).style(origin.asLong());
+        if (saved != null) return paletteFor(saved);
         var biome = level.getBiome(origin);
         if (biome.is(BiomeTags.HAS_VILLAGE_DESERT)) {
             return paletteFor(VillageArchitecture.BiomeDialect.DESERT);
@@ -5462,12 +5935,12 @@ public final class VillageBankManager {
     }
 
     private record BankIntegrity(
-            boolean complete, VillageMaterializationPolicy.IntegrityDecision decision) {
+            boolean complete, VillageMaterializationPolicy.IntegrityDecision decision, String problem) {
     }
 
     /** Result consumed by both loaders so recognized but unavailable counters are not silent. */
     public record BankDeskAccess(
-            BlockPos accessPoint, BankWorkstationAccessPolicy.Decision decision) {
+            BlockPos accessPoint, BankWorkstationAccessPolicy.Decision decision, Long bankRegionKey) {
     }
 
     private record BankBuildResult(boolean built, List<BankMutation> placements) {

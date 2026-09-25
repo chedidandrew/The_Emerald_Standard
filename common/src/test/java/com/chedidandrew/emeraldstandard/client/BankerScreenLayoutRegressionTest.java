@@ -14,6 +14,7 @@ public final class BankerScreenLayoutRegressionTest {
         testOverviewValuesStayOutsideChart();
         testOverviewSummaryRowsDoNotCollide();
         testVillageDetailRowsStayInsidePanels();
+        testExpansionAndInvestmentDescriptionLayout();
         testMarketSelectorDoesNotCoverChart();
         testMarketRowsDoNotCollide();
         testMarketHoverRegionsAreDistinct();
@@ -24,6 +25,36 @@ public final class BankerScreenLayoutRegressionTest {
         testActivityRowsStayAboveFooter();
         testNewsLayout();
         System.out.println("PASS Banker screen layout regression tests");
+    }
+
+    private static void testExpansionAndInvestmentDescriptionLayout() {
+        for (float scale : new float[] {BankerScreenScale.MIN_SCALE, 1.0F, BankerScreenScale.MAX_SCALE}) {
+            int textHeight = BankerScreenScale.logicalSpanForNativePixels(9, scale);
+            BankerScreenLayout.Rect[] regions = {
+                new BankerScreenLayout.Rect(18, BankerScreenLayout.EXPANSION_TITLE_Y, 284, textHeight),
+                new BankerScreenLayout.Rect(18, BankerScreenLayout.EXPANSION_REASON_Y, 284, 12 + textHeight),
+                new BankerScreenLayout.Rect(18, BankerScreenLayout.EXPANSION_UPKEEP_Y, 284, textHeight),
+                new BankerScreenLayout.Rect(18, BankerScreenLayout.EXPANSION_LIGHTING_Y, 284, textHeight),
+                new BankerScreenLayout.Rect(18, BankerScreenLayout.EXPANSION_FOOD_Y, 284, textHeight),
+                new BankerScreenLayout.Rect(18, BankerScreenLayout.EXPANSION_ADVICE_Y, 284, 12 + textHeight),
+                new BankerScreenLayout.Rect(12, BankerScreenLayout.EXPANSION_MODE_Y, 296, 18),
+                new BankerScreenLayout.Rect(12, BankerScreenLayout.EXPANSION_FOOTER_Y, 296, textHeight),
+                new BankerScreenLayout.Rect(12, BankerScreenLayout.EXPANSION_ACTION_Y, 296, 12)
+            };
+            for (int i = 0; i < regions.length; i++) {
+                require(regions[i].bottom() <= BankerScreenLayout.HEIGHT - 5, "Expansion escaped screen");
+                for (int j = i + 1; j < regions.length; j++)
+                    require(!regions[i].overlaps(regions[j]), "Expansion overlap at scale " + scale);
+            }
+            BankerScreenLayout.Rect behavior = new BankerScreenLayout.Rect(14,
+                    BankerScreenLayout.MARKET_BEHAVIOR_Y, BankerScreenLayout.MARKET_META_WIDTH,
+                    (BankerScreenLayout.MARKET_BEHAVIOR_LINES - 1) * BankerScreenLayout.MARKET_BEHAVIOR_LINE_STEP
+                            + textHeight);
+            require(behavior.y() >= BankerScreenLayout.MARKET_RISK_Y + textHeight
+                    && behavior.bottom() <= BankerScreenLayout.MARKET_ACTION_Y
+                    && behavior.right() < BankerScreenLayout.MARKET_CHART_X,
+                    "Investment behavior overlaps controls, risk or chart");
+        }
     }
 
     private static void testOverviewValuesStayOutsideChart() {

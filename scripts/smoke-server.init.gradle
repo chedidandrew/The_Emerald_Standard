@@ -1,5 +1,9 @@
 gradle.beforeProject { project ->
     project.pluginManager.withPlugin('fabric-loom') {
+        def compatibilityJar = System.getenv('TES_TEST_VEGETATION_JAR')
+        if (compatibilityJar) {
+            project.dependencies.add('runtimeOnly', project.files(compatibilityJar))
+        }
         def targetPath = project.providers.gradleProperty('tesSmokeGameDir').get()
         project.extensions.getByName('loom').runs.named('server').configure {
             runDirectory = project.file(targetPath)

@@ -32,6 +32,11 @@ JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.clientSmoke=tru
 status=$?
 set -e
 if [[ $status -ne 0 ]]; then break; fi
+# The client can log a failed assertion and still stop with status zero. Do not run the
+# restart fixture against preferences the failed first process never finished saving.
+expected=1
+if [[ "$restart" == true ]]; then expected=2; fi
+bash "$ROOT/scripts/verify-client-smoke-log.sh" "$LOADER" "$LOG_FILE" "$status" "$expected"
 done
 
 bash "$ROOT/scripts/verify-client-smoke-log.sh" "$LOADER" "$LOG_FILE" "$status"

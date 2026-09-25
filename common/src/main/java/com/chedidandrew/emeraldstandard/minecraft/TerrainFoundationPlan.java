@@ -19,6 +19,19 @@ public final class TerrainFoundationPlan {
      * deeper authored supports and entrance steps on otherwise untouched terrain.</p>
      */
     public static final int MAX_TERRAIN_DROP = 4;
+    /** New lots may cut four blocks above their floor as well as fill four below it. */
+    public static final int MAX_TERRAIN_CUT = 4;
+
+    /** Median balances earthworks; the clamp guarantees existing four-block supports still reach. */
+    public static java.util.OptionalInt levelledFloor(List<Integer> surfaces) {
+        if (surfaces == null || surfaces.isEmpty()) return java.util.OptionalInt.empty();
+        List<Integer> sorted = surfaces.stream().sorted().toList();
+        int min = sorted.getFirst(), max = sorted.getLast();
+        if ((long) max - min > MAX_TERRAIN_DROP + MAX_TERRAIN_CUT)
+            return java.util.OptionalInt.empty();
+        return java.util.OptionalInt.of(Math.clamp(sorted.get(sorted.size() / 2),
+                max - MAX_TERRAIN_CUT, min + MAX_TERRAIN_DROP));
+    }
 
     private static final Comparator<Column> COLUMN_ORDER = Comparator
             .comparingInt(Column::z)

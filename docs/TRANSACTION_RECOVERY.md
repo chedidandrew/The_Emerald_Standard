@@ -8,45 +8,36 @@ The mod uses a durable journal that survives restart and records enough informat
 
 ## Deposit and resource exchange
 
-1. Save a `PREPARED` journal with the original inventory count and intended bank credit.
-2. Remove the items from the live player inventory.
-3. Save the bank credit and move the journal to `BANK_COMMITTED`.
-4. Serialize the affected player through Minecraft's normal root `saveWithoutId` NBT path, write
-   only that player's `.dat`, require the checked safe replacement to succeed, and read back an
-   identical `Inventory` payload.
-5. Synchronously persist removal of the `BANK_COMMITTED` journal before returning success and
-   allowing later inventory changes.
+1. Persist a PREPARED journal with a unique transaction ID and intended bank credit.
+2. Remove ordinary items, then save an ID/applied-delta receipt in the same player NBT as inventory.
+3. Checkpoint and read back both inventory and receipt before committing bank credit.
+4. Persist BANK_COMMITTED, then durably clear the journal before returning success.
 
-Recovery behavior:
-
-- `PREPARED` with unchanged inventory: clear the intent with no bank credit.
-- `PREPARED` with items already saved as removed: restore the missing items, flush player data, and clear the intent.
-- `BANK_COMMITTED` with the old inventory restored: remove only the transaction quantity, flush player data, and clear the journal.
-- `BANK_COMMITTED` with the new inventory already saved: clear the journal without another item change.
+A PREPARED receipt proves exactly which removed items need restoring. A committed credit
+requires the matching removal receipt; contradictory or missing evidence is retained for
+operator review. Current item totals are not proof that a later legitimate stack is duplicated.
+Legacy pending journals without receipts fail closed rather than guessing from counts.
 
 ## Withdrawal
 
-1. Debit bank cash and save a `BANK_COMMITTED` withdrawal journal.
-2. Insert as many emeralds as fit in the inventory.
-3. Refund any undelivered amount to bank cash and reduce the journal to the delivered quantity.
-4. Perform the same checked, target-player-only save and persisted-inventory comparison.
-5. Synchronously persist removal of the committed journal before returning success.
-
-Recovery behavior:
-
-- If the bank debit survived but the delivered emeralds did not, restore only the missing transaction quantity.
-- If the inventory already contains the expected delivered quantity, clear the journal without adding more.
-- A full inventory leaves undelivered emeralds in bank cash.
-
-If any rollback or committed recovery cannot fit all protected items, the mod inserts only what fits, saves that partial restoration, and retains the journal for the exact remainder. It never drops recovery items into the world where despawning, lava, other players, or chunk unloading could destroy the guarantee. Free inventory space and interact again or run `/emerald recover` to continue.
+Persist the cash debit and withdrawal intent first. Measure actual inventory insertion, save
+the delivery receipt and inventory together, then refund only the undelivered remainder and
+clear the journal durably. Full inventory leaves undelivered value in Bank Cash. Creative
+mode's insertion return value is not trusted without observing the actual item delta.
 
 ## Idempotence and blocking
 
-Reconciliation may safely run on login, logout, `/emerald recover`, or before another bank command. The journal is retained until both sides are confirmed. Normal account mutations are blocked while a pending inventory transaction exists, preventing a second financial action from obscuring recovery.
+Login, logout, recovery commands and banking entry points may reconcile pending work. A
+transaction ID plus its recorded applied delta prevents replaying a committed delivery.
+One pending journal is allowed per player. If a transfer cannot settle, the player is
+disconnected to prevent death or ordinary inventory changes while recovery is unresolved.
+Reconnect after transient faults; persistent disk or contradictory-receipt faults require
+the server owner. Recovery does not drop protected items.
 
-GUI financial actions also use a short configurable game-tick cooldown to absorb duplicate button packets and click spam. This is independent from the journal and does not change balances by itself.
-
-The recovery comparison is intentionally capped by the original transaction quantity. It never removes or grants more than the journaled amount.
+GUI cooldowns, current-menu/distance checks and exact-amount confirmation are additional
+guards, not a replacement for the journal. Inventory top-ups settle before the requested
+investment or gift. If that second operation fails, the top-up remains withdrawable Bank Cash;
+it is neither lost nor automatically spent on restart.
 
 ## Why the transaction checkpoint writes one player directly
 
@@ -56,12 +47,12 @@ transaction checkpoint therefore mirrors that version's player-data algorithm wi
 `saveWithoutId` supplies the same root NBT, including the current `DataVersion` and loader-added
 entity attachments; `NbtIo.writeCompressed` synchronizes the temporary file; and
 `Util.safeReplaceOrMoveFile` reports whether the `.dat`/`.dat_old` rotation succeeded. Reading the
-new file back and comparing its complete `Inventory` tag is the final condition for clearing the
+new file back and comparing its complete `Inventory` and receipt-bearing `Tags` payloads is the final condition for clearing the
 journal. The replaced target file is forced again, and the containing directory is forced where
 the filesystem provider supports directory channels. Journal removal is then committed to the
 economy file before the operation succeeds. If the server stops in the narrow interval between the
 verified player save and journal cleanup, gameplay has not resumed and login recovery can safely
-reconcile the still-current expected count.
+reconcile the matching transaction receipt.
 
 This extra durability checkpoint intentionally saves player NBT only. Statistics, advancements,
 and loader-level notifications remain owned by Minecraft's normal autosave/logout lifecycle; they
@@ -86,6 +77,10 @@ external change uses the strict validation path before the old file may replace 
 - Unknown journal item identifiers are retained for administrator investigation instead of being silently discarded
 - If the player data flush fails, the journal remains active and the next login or bank command retries reconciliation
 
-## Remaining limitation
+## Remaining limitations
 
-A persistent player-data storage failure can leave a journal active while the player remains online. The quantity cap and pre-transaction count keep recovery bounded, but large production servers should treat persistent player-save failures as a storage fault and resolve them before allowing continued play. A later server-focused release can add an administrator quarantine or disconnect policy for that condition.
+Persistent storage failure is an operational fault, not something a GUI can repair. Do not
+edit receipts or restore only one side of a transfer. Restore a consistent whole-world backup.
+Hostile mods, operator edits and disk corruption fall outside ordinary transaction guarantees.
+Finish pending transfers before upgrading and retain a backup; never downgrade a newer save.
+See [inventory-aware spending](UNIFIED_SPENDING.md) for user-facing behavior.

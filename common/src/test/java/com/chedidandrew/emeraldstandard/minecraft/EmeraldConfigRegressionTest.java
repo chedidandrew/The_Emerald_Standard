@@ -37,6 +37,21 @@ public final class EmeraldConfigRegressionTest {
 
         Path path = directory.resolve(FILE_NAME);
         Properties properties = read(path);
+        String fundKey = "village_prosperity.max_monthly_treasury_spending";
+        require(defaults.prosperityFundMaximumMonthlySpending() == 240
+                        && "240".equals(properties.getProperty(fundKey))
+                        && "240".equals(EmeraldConfig.defaults().values().get(fundKey)),
+                "New-world, saved and Reset Fund defaults must be 240 emeralds per month");
+        EconomyService defaultService = new EconomyService();
+        defaults.applyTo(defaultService);
+        require(defaultService.prosperityFundPolicy().dailySpendingCapMicro() == 8_000_000L,
+                "240 monthly emeralds must yield exactly 8 daily, not 240 daily");
+        properties.remove(fundKey);
+        write(path, properties);
+        require(EmeraldConfig.load(directory).prosperityFundMaximumMonthlySpending() == 240,
+                "A missing Fund setting must receive the new default");
+        // Existing worlds keep their explicit old value; changing a default is not a migration.
+        properties.setProperty(fundKey, "24");
         require(properties.containsKey("market.events_enabled")
                         && properties.containsKey("economic_clock.offline_progression_enabled")
                         && properties.containsKey("economic_clock.max_offline_days")
@@ -68,6 +83,15 @@ public final class EmeraldConfigRegressionTest {
                         && legacyService.prosperityFundPolicy().dailySpendingCapMicro()
                                 == 800_000L,
                 "Legacy 24-E monthly setting did not retain its exact routine cap");
+        require("24".equals(read(path).getProperty(fundKey)),
+                "Loading an existing world must not overwrite its saved 24-E allowance");
+        properties.setProperty(fundKey, "2400");
+        write(path, properties);
+        EmeraldConfig customFund = EmeraldConfig.load(directory);
+        customFund.applyTo(legacyService);
+        require(customFund.prosperityFundMaximumMonthlySpending() == 2400
+                        && legacyService.prosperityFundPolicy().dailySpendingCapMicro() == 80_000_000L,
+                "Custom Fund allowances must retain their value and monthly conversion");
 
         properties.setProperty("market.events_enabled", "false");
         properties.setProperty("economic_clock.offline_progression_enabled", "false");

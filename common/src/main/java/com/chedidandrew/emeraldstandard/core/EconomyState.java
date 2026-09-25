@@ -15,9 +15,9 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-    public static final int FORMAT_VERSION = 18;
-    /** Five in-game years, shared by market, commodity, and personal history views. */
-    public static final int HISTORY_DAYS = 1_825;
+public static final int FORMAT_VERSION = 42;
+    /** Ten complete years of daily intervals, plus the opening endpoint. */
+    public static final int HISTORY_DAYS = 3_651;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
     public static final int MAX_FUND_LEDGER_ENTRIES = 256;
     public static final int MAX_TERM_POSITIONS = 8;
@@ -34,8 +34,8 @@ public final class EconomyState {
     public static final int ENTRANCE_APPROACH_VERSION = 1;
     /** Bounded stair, landing, and support cells for one modular entrance. */
     public static final int MAX_ENTRANCE_APPROACH_CELLS = 64;
-    /** Maximum deterministic candidates in one failure-expanded project-site sweep. */
-    public static final int MAX_PROJECT_SITE_SEARCH_CANDIDATES = 256;
+    /** Maximum candidates in a resumable sweep, not a per-tick work allowance. */
+    public static final int MAX_PROJECT_SITE_SEARCH_CANDIDATES = VillageSiteCandidates.MAX_CANDIDATES;
 
     public long seed;
     public long economicDay;
@@ -44,12 +44,25 @@ public final class EconomyState {
     /** Last commandable Overworld-clock observation included in economic progress. */
     public long lastOverworldClockTicks;
     public long pendingEconomicMillis;
+    public LiveMarket liveMarket;
     public EconomyEngine.Regime regime;
     public EconomyEngine.MarketEvent lastMarketEvent = EconomyEngine.MarketEvent.NONE;
     public long lastMarketEventDay;
 
     public final Map<String, Double> prices = new LinkedHashMap<>();
     public final Map<String, Double> commodityPrices = new LinkedHashMap<>();
+    public final Map<String, Double> commodityReferences = new LinkedHashMap<>();
+    public final List<NewsWire.Article> news = new ArrayList<>();
+    public NewsEditorial.Editor editor = new NewsEditorial.Editor();
+    public final Map<EconomyEngine.MarketEvent,Long> eventCooldowns = new java.util.EnumMap<>(EconomyEngine.MarketEvent.class);
+    /** Buy-and-hold commodity basket: initially equal capital, never player inventory weights. */
+    public final Map<String,Double> commodityIndexWeights=new LinkedHashMap<>();
+    /** Persistent simulated company shares; never copied from a player's portfolio. */
+    public final Map<String, Double> stockIndexShares = new LinkedHashMap<>();
+    public double stockIndexDivisor;
+    public long stockIndexStartedDay;
+    public final Map<String, Double> companySharesOutstanding = new LinkedHashMap<>();
+    public long stockIndexRebalancedDay;
     public final Map<String, List<Double>> priceHistory = new LinkedHashMap<>();
     public final Map<String, List<Double>> commodityHistory = new LinkedHashMap<>();
     public final Set<Long> generatedBankRegions = new HashSet<>();
@@ -63,6 +76,8 @@ public final class EconomyState {
     public final Set<Long> fallbackBankRegions = new HashSet<>();
     /** Stable village identities associated with bank-region markers. */
     public final Map<Long, UUID> bankRegionVillageIds = new HashMap<>();
+    /** One-hop redirects for proven empty Bank-bell records; never a spatial village merge. */
+    public final Map<UUID, UUID> villageIdentityRedirects = new HashMap<>();
     /** Canonical managed Banker entity per region; retained while that entity is unloaded. */
     public final Map<Long, UUID> bankRegionBankerIds = new HashMap<>();
     /** Last generated anchor durably assigned to each canonical Banker. */
@@ -84,6 +99,7 @@ public final class EconomyState {
      * tuple commits, rolls back to its immediate source, or retires as a confirmed death.</p>
      */
     public final Map<Long, PendingBankerConversion> pendingBankerConversions = new HashMap<>();
+    public final Map<Long, BankConstruction> pendingBankConstructions = new HashMap<>();
     /** Persistent abstract village economies and development backlogs. */
     public final Map<UUID, VillageRecord> villages = new LinkedHashMap<>();
     /** Pre-incident market contributions held while player-damaged villages recover. */
@@ -100,6 +116,9 @@ public final class EconomyState {
      */
     transient Path persistedFile;
     transient byte[] persistedFileFingerprint;
+    transient long persistedEconomicDay;
+    transient DurableJournal villageJournal;
+    transient Map<UUID,java.util.Properties> journalVillageBaselines = new HashMap<>();
 
     public enum InventoryTransactionKind {
         DEPOSIT,
@@ -166,6 +185,8 @@ public final class EconomyState {
         public long bankDeltaMicro;
         public long createdEconomicDay;
         public long createdWallClockMs;
+        /** Inventory and this transaction's applied delta are checkpointed together in player NBT. */
+        public boolean receiptTracked;
 
         public int inventoryDelta() {
             return kind == InventoryTransactionKind.WITHDRAWAL ? itemCount : -itemCount;
@@ -192,6 +213,7 @@ public final class EconomyState {
             copy.bankDeltaMicro = bankDeltaMicro;
             copy.createdEconomicDay = createdEconomicDay;
             copy.createdWallClockMs = createdWallClockMs;
+            copy.receiptTracked = receiptTracked;
             return copy;
         }
     }
@@ -271,6 +293,8 @@ public final class EconomyState {
     }
 
     public static final class LoanPosition {
+        public int riskVersion;
+        public int borrower;
         public long positionId;
         public long principalMicro;
         public long valueMicro;
@@ -285,6 +309,8 @@ public final class EconomyState {
 
         public LoanPosition copy() {
             LoanPosition copy = new LoanPosition();
+            copy.riskVersion = riskVersion;
+            copy.borrower = borrower;
             copy.positionId = positionId;
             copy.principalMicro = principalMicro;
             copy.valueMicro = valueMicro;
@@ -534,6 +560,8 @@ public final class EconomyState {
                 VillageProsperityEngine.ResidentStatus.ACTIVE;
         public long lastSeenDay;
         public long lastKnownPos;
+        public long homePos;
+        public boolean immigrant;
 
         public ResidentRecord copy() {
             ResidentRecord copy = new ResidentRecord();
@@ -542,6 +570,8 @@ public final class EconomyState {
             copy.status = status;
             copy.lastSeenDay = lastSeenDay;
             copy.lastKnownPos = lastKnownPos;
+            copy.homePos = homePos;
+            copy.immigrant = immigrant;
             return copy;
         }
     }
@@ -593,6 +623,8 @@ public final class EconomyState {
         public boolean economicComplete;
         public long originPos;
         public int materializedBlocks;
+        /** V1 ordered ranges; first cut preserves the historical consumed prefix. */
+        public final List<Integer> constructionOrderCuts = new ArrayList<>();
         public int totalBlocks;
         public boolean materializedComplete;
         public boolean blocked;
@@ -611,6 +643,8 @@ public final class EconomyState {
         public int materializationFailures;
         /** Next deterministic site candidate to inspect in the active bounded sweep. */
         public int siteSearchCursor;
+        /** Ranking identity; changed territory/connection metadata restarts only an unreserved search. */
+        public long siteSearchLayoutKey;
         /** Whether the active sweep has encountered at least one unloaded candidate. */
         public boolean siteSearchSawUnloadedCandidate;
         /** Immutable generator contract. Missing pre-format-10 data remains legacy_v1. */
@@ -639,7 +673,20 @@ public final class EconomyState {
         public String designDressingId = "";
         /** Versioned canonical placement hash; blank until the physical plan is first frozen. */
         public int designPlanHashVersion;
-        public String designPlanHash = "";
+public String designPlanHash = "";
+        /** Immutable resolved vanilla cells; null for all existing TES schemas. */
+        public VanillaConstructionPlan vanillaPlan;
+        public int housingGain() { return vanillaPlan == null ? type.housingGain() : vanillaPlan.beds(); }
+        /** Old projects are never retroactively cleared. New reservations opt in explicitly. */
+        public boolean sitePreparationComplete = true;
+        public int sitePreparationCursor;
+        public SitePreparationPlan sitePreparationPlan;
+        /** Write-ahead evidence: old saves conservatively count as already started. */
+        public boolean constructionStarted = true;
+        /** Counts only observed, loaded physical obstruction; not economic or offline waiting. */
+        public long obstructionLoadedTicks;
+        /** Exactly one automatically funded founding-home replacement is allowed. */
+        public boolean foundingRecoveryUsed;
         /** Frozen route endpoint so mutable village metadata cannot reorder the saved plan. */
         public boolean trailAnchorSet;
         public long trailAnchorPos;
@@ -674,6 +721,7 @@ public final class EconomyState {
             copy.economicComplete = economicComplete;
             copy.originPos = originPos;
             copy.materializedBlocks = materializedBlocks;
+            copy.constructionOrderCuts.addAll(constructionOrderCuts);
             copy.totalBlocks = totalBlocks;
             copy.materializedComplete = materializedComplete;
             copy.blocked = blocked;
@@ -686,6 +734,7 @@ public final class EconomyState {
             copy.retryAfterGameTick = retryAfterGameTick;
             copy.materializationFailures = materializationFailures;
             copy.siteSearchCursor = siteSearchCursor;
+            copy.siteSearchLayoutKey = siteSearchLayoutKey;
             copy.siteSearchSawUnloadedCandidate = siteSearchSawUnloadedCandidate;
             copy.designSchema = designSchema;
             copy.designSeed = designSeed;
@@ -702,7 +751,14 @@ public final class EconomyState {
             copy.designPaletteId = designPaletteId;
             copy.designDressingId = designDressingId;
             copy.designPlanHashVersion = designPlanHashVersion;
-            copy.designPlanHash = designPlanHash;
+copy.designPlanHash = designPlanHash;
+            copy.vanillaPlan = vanillaPlan;
+            copy.sitePreparationComplete = sitePreparationComplete;
+            copy.sitePreparationCursor = sitePreparationCursor;
+            copy.sitePreparationPlan = sitePreparationPlan;
+            copy.constructionStarted = constructionStarted;
+            copy.obstructionLoadedTicks = obstructionLoadedTicks;
+            copy.foundingRecoveryUsed = foundingRecoveryUsed;
             copy.trailAnchorSet = trailAnchorSet;
             copy.trailAnchorPos = trailAnchorPos;
             copy.trailMaterializedBlocks = trailMaterializedBlocks;
@@ -801,6 +857,10 @@ public final class EconomyState {
         /** Monotonic legacy aggregate, including each economically completed project gain once. */
         public int housingCapacity;
         public int pendingSettlers;
+        public double immigrationProgress;
+        public long lastImmigrationDay = -1;
+        /** Bed-head positions by completely surveyed chunk; unloaded chunks retain evidence. */
+        public final Map<Long, List<Long>> housingChunks = new LinkedHashMap<>();
         public int developmentTier;
         public int collapseCount;
         public int hostileCasualties;
@@ -824,9 +884,39 @@ public final class EconomyState {
         public long projectSerial;
         /** Persistent ordinal used to rotate fairly across currently due visual projects. */
         public long visualProjectSelectionCursor;
+        public UUID cityId;
+        public VillageExpansion.Mode expansionMode = VillageExpansion.Mode.AUTOMATIC;
+        public boolean expansionApproved;
+        public boolean districtFounding;
+        public boolean organicTerritory;
+        public final Set<Long> territoryCells = new java.util.TreeSet<>();
+        /** One-shot Infrastructure debits; shared bridge jobs retain these across restarts. */
+        public final Set<String> bridgeFundingReceipts = new java.util.TreeSet<>();
+        public int expansionHealthyDays;
+        public long lastExpansionDay;
+        public long expansionSerial;
+        public long expansionSiteCursor;
+        /** Derived, non-authoritative census. */
+        public int cityDistrictCount = 1;
+        public boolean expansionWaitingForHome;
+        public boolean cityUpkeepDeficit;
+        public int expansionUpkeepShortfalls;
+        public int lightingCoveragePercent;
+        // Session-local observations: never persist a guard count/bonus after removal or restart.
+        public int observedGuards, observedGuardBonus;
+        public double guardSafetyBonus;
+        public long lastGuardObservationDay;
+        public long lastLightingDay;
+        public double observedCropUnits;
+        public double observedLivestockUnits;
+        public long lastFoodSourcesDay;
+        /** Last complete observation per chunk; absence/unloading is not a zero-food observation. */
+        public final Map<Long,VillageFoodSupply.ChunkObservation> foodChunks = new HashMap<>();
         /** Shared authored language; biome dialect is locked when the first managed lot is reserved. */
         public String architectureCharacter = "";
-        public String architectureDialect = "";
+public String architectureDialect = "";
+        /** Positively identified vanilla structure family. Blank means no vanilla imports. */
+        public String naturalVillageStyle = "";
         public final ProsperityFund prosperityFund = new ProsperityFund();
         public final Map<UUID, ResidentRecord> residents = new LinkedHashMap<>();
         public final List<VillageProject> projects = new ArrayList<>();
@@ -920,6 +1010,9 @@ public final class EconomyState {
             copy.observedHousingCapacity = observedHousingCapacity;
             copy.housingCapacity = housingCapacity;
             copy.pendingSettlers = pendingSettlers;
+            copy.immigrationProgress = immigrationProgress;
+            copy.lastImmigrationDay = lastImmigrationDay;
+            housingChunks.forEach((key,beds) -> copy.housingChunks.put(key,List.copyOf(beds)));
             copy.developmentTier = developmentTier;
             copy.collapseCount = collapseCount;
             copy.hostileCasualties = hostileCasualties;
@@ -942,8 +1035,34 @@ public final class EconomyState {
             copy.restorationFunded = restorationFunded;
             copy.projectSerial = projectSerial;
             copy.visualProjectSelectionCursor = visualProjectSelectionCursor;
+            copy.cityId = cityId;
+            copy.organicTerritory = organicTerritory;
+            copy.territoryCells.addAll(territoryCells);
+            copy.bridgeFundingReceipts.addAll(bridgeFundingReceipts);
+            copy.expansionMode = expansionMode;
+            copy.expansionApproved = expansionApproved;
+            copy.districtFounding = districtFounding;
+            copy.expansionHealthyDays = expansionHealthyDays;
+            copy.lastExpansionDay = lastExpansionDay;
+            copy.expansionSerial = expansionSerial;
+            copy.expansionSiteCursor = expansionSiteCursor;
+            copy.cityDistrictCount = cityDistrictCount;
+            copy.expansionWaitingForHome = expansionWaitingForHome;
+            copy.cityUpkeepDeficit = cityUpkeepDeficit;
+            copy.expansionUpkeepShortfalls = expansionUpkeepShortfalls;
+            copy.lightingCoveragePercent = lightingCoveragePercent;
+            copy.observedGuards = observedGuards;
+            copy.observedGuardBonus = observedGuardBonus;
+            copy.guardSafetyBonus = guardSafetyBonus;
+            copy.lastGuardObservationDay = lastGuardObservationDay;
+            copy.lastLightingDay = lastLightingDay;
+            copy.observedCropUnits = observedCropUnits;
+            copy.observedLivestockUnits = observedLivestockUnits;
+            copy.lastFoodSourcesDay = lastFoodSourcesDay;
+            copy.foodChunks.putAll(foodChunks);
             copy.architectureCharacter = architectureCharacter;
-            copy.architectureDialect = architectureDialect;
+copy.architectureDialect = architectureDialect;
+            copy.naturalVillageStyle = naturalVillageStyle;
             ProsperityFund fundCopy = prosperityFund.copy();
             copy.prosperityFund.spendableMicro.putAll(fundCopy.spendableMicro);
             copy.prosperityFund.fastTrackSpendableMicro.putAll(
@@ -981,14 +1100,19 @@ public final class EconomyState {
         state.lastOverworldClockTicks = Math.max(0L, overworldClockTicks);
         state.regime = EconomyEngine.initialRegime(seed);
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
-            state.prices.put(asset.ticker(), 100.0);
-            state.priceHistory.put(asset.ticker(), new ArrayList<>(List.of(100.0)));
+            double initial = EconomyEngine.initialAssetPrice(asset);
+            state.prices.put(asset.ticker(), initial);
+            state.priceHistory.put(asset.ticker(), new ArrayList<>(List.of(initial)));
         }
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
             state.commodityPrices.put(commodity.id(), commodity.anchorPrice());
+            state.commodityReferences.put(commodity.id(), commodity.anchorPrice());
             state.commodityHistory.put(
                     commodity.id(), new ArrayList<>(List.of(commodity.anchorPrice())));
         }
+        state.initializeCommodityIndex();
+        StockIndex.initialize(state);
+        state.liveMarket=LiveMarket.adopt(state);
         return state;
     }
 
@@ -1013,17 +1137,29 @@ public final class EconomyState {
 
     public EconomyState copy() {
         EconomyState copy = new EconomyState();
+        copy.pendingBankConstructions.putAll(pendingBankConstructions);
         copy.seed = seed;
         copy.economicDay = economicDay;
         copy.lastWallClockMs = lastWallClockMs;
         copy.lastGameTicks = lastGameTicks;
         copy.lastOverworldClockTicks = lastOverworldClockTicks;
         copy.pendingEconomicMillis = pendingEconomicMillis;
+        copy.liveMarket=liveMarket==null?null:liveMarket.copy();
         copy.regime = regime;
         copy.lastMarketEvent = lastMarketEvent;
         copy.lastMarketEventDay = lastMarketEventDay;
         copy.prices.putAll(prices);
         copy.commodityPrices.putAll(commodityPrices);
+        copy.commodityReferences.putAll(commodityReferences);
+        copy.news.addAll(news);
+        copy.editor=editor.copy();
+        copy.eventCooldowns.putAll(eventCooldowns);
+        copy.commodityIndexWeights.putAll(commodityIndexWeights);
+        copy.stockIndexShares.putAll(stockIndexShares);
+        copy.stockIndexDivisor = stockIndexDivisor;
+        copy.stockIndexStartedDay = stockIndexStartedDay;
+        copy.companySharesOutstanding.putAll(companySharesOutstanding);
+        copy.stockIndexRebalancedDay = stockIndexRebalancedDay;
         priceHistory.forEach((ticker, values) ->
                 copy.priceHistory.put(ticker, new ArrayList<>(values)));
         commodityHistory.forEach((commodity, values) ->
@@ -1035,6 +1171,7 @@ public final class EconomyState {
                 copy.retiredBankAnchors.put(region, new ArrayList<>(anchors)));
         copy.fallbackBankRegions.addAll(fallbackBankRegions);
         copy.bankRegionVillageIds.putAll(bankRegionVillageIds);
+        copy.villageIdentityRedirects.putAll(villageIdentityRedirects);
         copy.bankRegionBankerIds.putAll(bankRegionBankerIds);
         copy.bankRegionBankerAnchors.putAll(bankRegionBankerAnchors);
         copy.pendingBankerDeaths.putAll(pendingBankerDeaths);
@@ -1057,12 +1194,17 @@ public final class EconomyState {
             copy.pendingInventoryTransactions.put(entry.getKey(), entry.getValue().copy());
         }
         copy.persistedFile = persistedFile;
+        copy.persistedEconomicDay = persistedEconomicDay;
+        copy.villageJournal = villageJournal;
+        copy.journalVillageBaselines = journalVillageBaselines;
         copy.persistedFileFingerprint = persistedFileFingerprint == null
                 ? null : persistedFileFingerprint.clone();
         return copy;
     }
 
     void rememberPersistedFile(Path path, byte[] fingerprint) {
+        persistedEconomicDay = economicDay;
+        journalVillageBaselines = new HashMap<>();
         persistedFile = normalizedPath(path);
         persistedFileFingerprint = fingerprint.clone();
     }
@@ -1177,102 +1319,57 @@ public final class EconomyState {
             long dailyFundSpendingCapMicro,
             boolean fastTrackCapitalEnabled,
             boolean marketEventsEnabled) {
+        advanceOneDay(villageProsperitySimulationEnabled, villageVisualProgressionEnabled,
+                villageMarketIntegrationEnabled, villageAutomaticRecoveryEnabled, prosperityFundEnabled,
+                endowmentAnnualPayoutRate, emergencyReserveFraction, dailyFundSpendingCapMicro,
+                fastTrackCapitalEnabled, marketEventsEnabled, false);
+    }
+
+    public void advanceOneDay(
+            boolean villageProsperitySimulationEnabled, boolean villageVisualProgressionEnabled,
+            boolean villageMarketIntegrationEnabled, boolean villageAutomaticRecoveryEnabled,
+            boolean prosperityFundEnabled, double endowmentAnnualPayoutRate,
+            double emergencyReserveFraction, long dailyFundSpendingCapMicro,
+            boolean fastTrackCapitalEnabled, boolean marketEventsEnabled, boolean peacefulVillageGrowth) {
         if (economicDay == Long.MAX_VALUE) {
             throw new IllegalStateException("Economic day range is exhausted");
         }
+        advanceMarketToSlot(LiveMarket.SLOTS,villageProsperitySimulationEnabled && villageMarketIntegrationEnabled,marketEventsEnabled);
+        Map<String,Double> dayOpen=new LinkedHashMap<>(liveMarket.open);
+        var closingEvent=liveMarket.closingEvent;
         economicDay++;
+        StockIndex.review(this);
+        for (var village : villages.values()) VillageGuardSecurity.refresh(village, economicDay);
         if (villageProsperitySimulationEnabled) {
+            VillageExpansion.prepareDay(this);
             for (VillageRecord village : villages.values()) {
                 VillageProsperityEngine.advanceOneDay(
                         village,
                         seed,
                         economicDay,
                         villageAutomaticRecoveryEnabled,
-                        villageVisualProgressionEnabled);
+                        villageVisualProgressionEnabled,
+                        peacefulVillageGrowth);
             }
+            VillageExpansion.shareSupplies(this, peacefulVillageGrowth);
+            for (VillageRecord village : villages.values()) VillageExpansion.finishDay(village, peacefulVillageGrowth);
+            VillageExpansion.prepareDay(this);
             for (VillageMarketShadow shadow : villageMarketShadows.values()) {
                 VillageProsperityEngine.advanceMarketShadow(
                         shadow,
                         seed,
                         economicDay,
-                        villageAutomaticRecoveryEnabled);
+                        villageAutomaticRecoveryEnabled,
+                        peacefulVillageGrowth);
             }
         }
         releaseRecoveredMarketShadows();
-        VillageProsperityEngine.VillageFundamentals villageFundamentals =
-                villageProsperitySimulationEnabled && villageMarketIntegrationEnabled
-                        ? VillageProsperityEngine.aggregateFundamentals(
-                                villages.values(), villageMarketShadows, economicDay)
-                        : VillageProsperityEngine.VillageFundamentals.neutral();
-        regime = EconomyEngine.nextRegime(regime, seed, economicDay);
-        double marketReturn = EconomyEngine.marketReturn(regime, seed, economicDay);
-        EconomyEngine.MarketEvent event = marketEventsEnabled
-                ? EconomyEngine.marketEvent(seed, economicDay, regime)
-                : EconomyEngine.MarketEvent.NONE;
-        if (event != EconomyEngine.MarketEvent.NONE) {
-            lastMarketEvent = event;
-            lastMarketEventDay = economicDay;
+        if(closingEvent!=EconomyEngine.MarketEvent.NONE) {
+            eventCooldowns.put(closingEvent,economicDay);lastMarketEvent=closingEvent;lastMarketEventDay=economicDay;
         }
-
-        Map<String, Double> constituentReturns = new HashMap<>();
-        for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
-            if (asset.ticker().equals("VILX")) {
-                continue;
-            }
-            double current = prices.getOrDefault(asset.ticker(), 100.0);
-            double baseReturn = EconomyEngine.assetReturn(
-                    asset,
-                    marketReturn,
-                    seed,
-                    economicDay,
-                    VillageProsperityEngine.assetAnnualDrift(
-                            asset.ticker(), villageFundamentals));
-            double eventReturn = EconomyEngine.eventAssetReturn(event, asset.ticker());
-            double realizedReturn = (1.0 + baseReturn) * (1.0 + eventReturn) - 1.0;
-            double next = current * (1.0 + realizedReturn);
-            prices.put(asset.ticker(), boundedPrice(next));
-            constituentReturns.put(asset.ticker(), realizedReturn);
-        }
-        double constituentReturn = constituentReturns.entrySet().stream()
-                .mapToDouble(entry -> EconomyEngine.vilxWeight(entry.getKey()) * entry.getValue())
-                .sum();
-        // VILX is rebalanced from its displayed constituents while the hidden broad-economy
-        // factor supplies diversification that no eight-company sample can provide alone.
-        double vilxBaseReturn = 0.85 * marketReturn
-                + 0.15 * constituentReturn
-                + EconomyEngine.eventAssetReturn(event, "VILX");
-        double vilxVillageDaily = StrictMath.expm1(
-                StrictMath.log1p(VillageProsperityEngine.assetAnnualDrift(
-                                "VILX", villageFundamentals))
-                        / EconomyEngine.DAYS_PER_YEAR);
-        double vilxReturn = (1.0 + vilxBaseReturn) * (1.0 + vilxVillageDaily) - 1.0;
-        double currentVilx = prices.getOrDefault("VILX", 100.0);
-        double nextVilx = currentVilx * (1.0 + vilxReturn);
-        List<Double> vilxHistory = priceHistory.get("VILX");
-        if (vilxHistory != null && vilxHistory.size() >= EconomyEngine.DAYS_PER_YEAR) {
-            double trailingYearPrice = vilxHistory.get(
-                    vilxHistory.size() - EconomyEngine.DAYS_PER_YEAR);
-            nextVilx = EconomyEngine.dampenVilxUpside(
-                    trailingYearPrice, currentVilx, nextVilx);
-        }
-        prices.put("VILX", boundedPrice(nextVilx));
-        normalizeHighPrices();
-        recordCurrentPrices();
-
-        for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
-            double current = commodityPrices.getOrDefault(commodity.id(), commodity.anchorPrice());
-            double next = EconomyEngine.nextCommodityPrice(
-                    commodity,
-                    current,
-                    regime,
-                    seed,
-                    economicDay,
-                    VillageProsperityEngine.commodityAnnualSupplyPressure(
-                            commodity.id(), villageFundamentals));
-            next *= 1.0 + EconomyEngine.eventCommodityReturn(event, commodity.id());
-            commodityPrices.put(commodity.id(), boundedPrice(next));
-        }
-        recordCurrentCommodities();
+        recordCurrentCommodities();recordCurrentPrices();
+        NewsWire.day(this,closingEvent,dayOpen);
+        liveMarket.close(this);
 
         if (prosperityFundEnabled) {
             for (VillageRecord village : villages.values()) {
@@ -1293,6 +1390,47 @@ public final class EconomyState {
         for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
             advanceAccount(entry.getKey(), entry.getValue());
             PortfolioAnalytics.recordNetWorth(entry.getValue(), this, economicDay);
+        }
+    }
+
+    /** Advance only quotes. Daily village/account settlement stays in advanceOneDay. */
+    void advanceMarketToSlot(int target,boolean villageIntegration,boolean events) {
+        if(target<0||target>LiveMarket.SLOTS)throw new IllegalArgumentException("Invalid live slot");
+        if(liveMarket==null)liveMarket=LiveMarket.adopt(this);
+        if(target<=liveMarket.slot)return;
+        if(economicDay==Long.MAX_VALUE)throw new IllegalStateException("Economic day range exhausted");
+        long priceDay=economicDay+1;
+        var fundamentals=villageIntegration?villageFundamentals():VillageProsperityEngine.VillageFundamentals.neutral();
+        final double fraction=1.0/LiveMarket.SLOTS;
+        while(liveMarket.slot<target) {
+            int slot=liveMarket.slot+1;
+            if(slot==1) {liveMarket.previousRegime=regime;regime=EconomyEngine.nextRegime(regime,seed,priceDay);}
+            Map<String,Double> before=new LinkedHashMap<>(prices);
+            var event=events&&slot==LiveMarket.SLOTS?EconomyEngine.marketEvent(seed,priceDay,regime):EconomyEngine.MarketEvent.NONE;
+            Long previousEvent=eventCooldowns.get(event);
+            if(previousEvent!=null&&priceDay-previousEvent<30)event=EconomyEngine.MarketEvent.NONE;
+            if(slot==LiveMarket.SLOTS)liveMarket.closingEvent=event;
+            double marketReturn=EconomyEngine.marketReturn(regime,seed,priceDay,fraction,slot);
+            for(var asset:EconomyEngine.ASSETS) {
+                if(asset.type()==EconomyEngine.AssetType.INDEX||asset.isCommodity())continue;
+                double move=EconomyEngine.assetReturn(asset,marketReturn,seed,priceDay,
+                        VillageProsperityEngine.assetAnnualDrift(asset.ticker(),fundamentals),
+                        liveMarket.previousRegime,regime,fraction,slot);
+                prices.put(asset.ticker(),boundedPrice(prices.get(asset.ticker())*(1+move)*(1+EconomyEngine.eventAssetReturn(event,asset.ticker()))));
+            }
+            StockIndex.reprice(this);
+            for(var commodity:EconomyEngine.COMMODITIES) {
+                double reference=commodityReferences.get(commodity.id());
+                if(!commodity.id().equals("emerald_ore"))reference=Math.min(1e9,reference*StrictMath.exp(
+                        StrictMath.log1p(InvestmentGrowth.target(seed,priceDay,commodity.id()))/EconomyEngine.DAYS_PER_YEAR*fraction));
+                commodityReferences.put(commodity.id(),reference);
+                double next=EconomyEngine.nextCommodityPrice(commodity,commodityPrices.get(commodity.id()),regime,seed,priceDay,
+                        VillageProsperityEngine.commodityAnnualSupplyPressure(commodity.id(),fundamentals),reference,fraction,slot);
+                commodityPrices.put(commodity.id(),boundedPrice(next*(1+EconomyEngine.eventCommodityReturn(event,commodity.id()))));
+            }
+            for(var asset:EconomyEngine.ASSETS)if(asset.isCommodity())prices.put(asset.ticker(),commodityPrices.get(asset.commodityId()));
+            advanceCommodityIndex(before);normalizeHighPrices(before);
+            liveMarket.slot=slot;liveMarket.record(this);
         }
     }
 
@@ -1353,6 +1491,22 @@ public final class EconomyState {
     }
 
     public void validate() throws IOException {
+        for(var cooldown:eventCooldowns.entrySet())
+            if(cooldown.getKey()==EconomyEngine.MarketEvent.NONE||cooldown.getValue()==null
+                    ||cooldown.getValue()<0||cooldown.getValue()>economicDay)
+                throw new IOException("Invalid market event cooldown");
+        NewsEditorial.validate(this);
+        if(news.size()>NewsWire.LIMIT) throw new IOException("News archive exceeds limit");
+        long lastNewsDay=-1;
+        for(var article:news) {
+            if(article==null||article.day()<lastNewsDay||article.day()>economicDay)
+                throw new IOException("News chronology is invalid");
+            lastNewsDay=article.day();
+        }
+        for (var plan : pendingBankConstructions.values()) {
+            if (plan == null || (plan.villageId() != null && !villages.containsKey(plan.villageId())))
+                throw new IOException("Invalid pending Bank owner");
+        }
         if (regime == null
                 || lastMarketEvent == null
                 || economicDay < 0L
@@ -1367,10 +1521,18 @@ public final class EconomyState {
         }
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
             validatePrice("asset " + asset.ticker(), prices.get(asset.ticker()));
+            if (asset.isCommodity() && !prices.get(asset.ticker()).equals(commodityPrices.get(asset.commodityId()))) {
+                throw new IOException("Commodity investment quote mismatch: " + asset.ticker());
+            }
         }
         for (EconomyEngine.Commodity commodity : EconomyEngine.COMMODITIES) {
             validatePrice("commodity " + commodity.id(), commodityPrices.get(commodity.id()));
+            validatePrice("commodity reference " + commodity.id(), commodityReferences.get(commodity.id()));
         }
+        validateCommodityIndex();
+        StockIndex.validate(this);
+        if(liveMarket==null)throw new IOException("Missing live market state");
+        liveMarket.validate(this);
         validateHistory();
         for (Long region : generatedBankRegions) {
             if (region == null) {
@@ -1418,6 +1580,13 @@ public final class EconomyState {
                     || fallbackBankRegions.contains(entry.getKey())) {
                 throw new IOException(
                         "Retired Bank anchor exists without a current authored Bank");
+            }
+        }
+        for (var entry : villageIdentityRedirects.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null
+                    || villages.containsKey(entry.getKey()) || !villages.containsKey(entry.getValue())
+                    || villageIdentityRedirects.containsKey(entry.getValue())) {
+                throw new IOException("Invalid village identity redirect");
             }
         }
         for (Map.Entry<Long, UUID> entry : bankRegionVillageIds.entrySet()) {
@@ -1499,6 +1668,17 @@ public final class EconomyState {
         }
         for (Map.Entry<UUID, VillageRecord> entry : villages.entrySet()) {
             validateVillage(entry.getKey(), entry.getValue(), economicDay);
+            VillageRecord v = entry.getValue();
+            if (v.cityId != null) {
+                VillageRecord root = villages.get(v.cityId);
+                if (root == null || root.cityId != null || !root.dimensionKey.equals(v.dimensionKey))
+                    throw new IOException("Invalid district parent");
+            }
+            if (v.expansionUpkeepShortfalls < 0 || v.expansionUpkeepShortfalls > 30)
+                throw new IOException("Invalid district upkeep history");
+            if (v.lightingCoveragePercent < 0 || v.lightingCoveragePercent > 100
+                    || v.lastLightingDay < 0 || v.lastLightingDay > economicDay)
+                throw new IOException("Invalid lighting observation");
         }
         for (Map.Entry<UUID, VillageMarketShadow> entry : villageMarketShadows.entrySet()) {
             validateMarketShadow(entry.getKey(), entry.getValue(), economicDay);
@@ -1552,13 +1732,13 @@ public final class EconomyState {
             }
             if (economicDay >= position.maturityDay) {
                 int termDays = safeTerm(position.openDay, position.maturityDay);
-                EconomyEngine.LoanResolution resolution = EconomyEngine.resolveLoan(
+                EconomyEngine.LoanResolution resolution = EconomyEngine.resolveLoanVersioned(
                         seed,
                         accountId,
                         position.serial,
                         position.openDay,
                         termDays,
-                        position.stress);
+                        position.stress, position.riskVersion, position.borrower);
                 position.valueMicro = scale(position.valueMicro, resolution.recoveryRate());
                 position.recoveryRate = resolution.recoveryRate();
                 position.outcome = resolution.outcome();
@@ -1734,7 +1914,7 @@ public final class EconomyState {
         boolean emergency = village.lifecycle == VillageProsperityEngine.Lifecycle.ABANDONED
                 || village.lifecycle == VillageProsperityEngine.Lifecycle.EXTINCT
                 || village.foodSupply < Math.max(2.0, village.population * 0.5)
-                || village.safety < 25.0;
+                || VillageGuardSecurity.effectiveSafety(village) < 25.0;
         if (emergency && fund.emergencyReserveMicro > 0L) {
             DonationPurpose purpose = village.lifecycle
                             == VillageProsperityEngine.Lifecycle.ABANDONED
@@ -1853,7 +2033,7 @@ public final class EconomyState {
         };
     }
 
-    static DonationPurpose donationPurposeForProject(VillageProject project) {
+    public static DonationPurpose donationPurposeForProject(VillageProject project) {
         if (project == null || project.type == null) {
             return DonationPurpose.INFRASTRUCTURE;
         }
@@ -2137,13 +2317,48 @@ public final class EconomyState {
         return day > Long.MAX_VALUE - addition ? Long.MAX_VALUE : day + addition;
     }
 
-    private void normalizeHighPrices() {
+
+    void initializeCommodityIndex() {
+        commodityIndexWeights.clear();
+        long count=EconomyEngine.ASSETS.stream().filter(EconomyEngine.Asset::isCommodity).count();
+        for(var asset:EconomyEngine.ASSETS)if(asset.isCommodity())commodityIndexWeights.put(asset.ticker(),1.0/count);
+    }
+    private void advanceCommodityIndex(Map<String,Double> before) {
+        double factor=0;
+        Map<String,Double> next=new LinkedHashMap<>();
+        for(var entry:commodityIndexWeights.entrySet()) {
+            double value=entry.getValue()*prices.get(entry.getKey())/before.get(entry.getKey());
+            next.put(entry.getKey(),value);factor+=value;
+        }
+        prices.put("VCIX",boundedPrice(prices.get("VCIX")*factor));
+        final double total=factor;
+        next.replaceAll((ticker,value)->value/total);
+        commodityIndexWeights.clear();commodityIndexWeights.putAll(next);
+    }
+    private void validateCommodityIndex() throws IOException {
+        double sum=0;int count=0;
+        for(var a:EconomyEngine.ASSETS)if(a.isCommodity()) {
+            count++;Double weight=commodityIndexWeights.get(a.ticker());
+            if(weight==null||!Double.isFinite(weight)||weight<0||weight>1)throw new IOException("Invalid commodity index weight");
+            sum+=weight;
+        }
+        if(commodityIndexWeights.size()!=count||Math.abs(sum-1)>1e-9)throw new IOException("Invalid commodity index basket");
+    }
+
+    private void normalizeHighPrices(Map<String,Double> before) {
         for (EconomyEngine.Asset asset : EconomyEngine.ASSETS) {
+            if (asset.isCommodity()) continue;
             double price = prices.get(asset.ticker());
             if (price <= 1_000_000.0) {
                 continue;
             }
+            StockIndex.split(this, asset.ticker(), 1_000.0);
+            if(liveMarket!=null)liveMarket.split(asset.ticker(),1_000.0);
             prices.put(asset.ticker(), price / 1_000.0);
+            before.computeIfPresent(asset.ticker(),(ticker,value)->value/1_000.0);
+            editor.stories.replaceAll((id,story)->story.ticker().equals(asset.ticker())
+                    ?new NewsEditorial.Story(story.source(),story.day(),story.family(),story.headline(),story.outlet(),
+                        story.village(),story.ticker(),story.baseline()/1_000.0,story.stage(),story.lastChange()):story);
             List<Double> history = priceHistory.get(asset.ticker());
             if (history != null) {
                 history.replaceAll(value -> value / 1_000.0);
@@ -2163,6 +2378,7 @@ public final class EconomyState {
                     asset.ticker(), ignored -> new ArrayList<>());
             history.add(prices.get(asset.ticker()));
             while (history.size() > HISTORY_DAYS) {
+                liveMarket.archive(asset.ticker(),economicDay-history.size()+1,history.getFirst());
                 history.remove(0);
             }
         }
@@ -2174,6 +2390,7 @@ public final class EconomyState {
                     commodity.id(), ignored -> new ArrayList<>());
             history.add(commodityPrices.get(commodity.id()));
             while (history.size() > HISTORY_DAYS) {
+                liveMarket.archive("~"+commodity.id(),economicDay-history.size()+1,history.getFirst());
                 history.remove(0);
             }
         }
@@ -2205,7 +2422,7 @@ public final class EconomyState {
         }
     }
 
-    private static void validateVillage(UUID id, VillageRecord village, long economicDay)
+    static void validateVillage(UUID id, VillageRecord village, long economicDay)
             throws IOException {
         if (id == null
                 || village == null
@@ -2216,14 +2433,14 @@ public final class EconomyState {
                 || village.lifecycle == null
                 || village.lastIncidentCause == null
                 || village.population < 0
-                || village.population > VillageProsperityEngine.MAX_ABSTRACT_POPULATION
+                || village.population > VillageProsperityEngine.populationLimit(village)
                 || village.observedPopulation < 0
                 || village.observedHousingCapacity < 0
                 || village.housingCapacity < 0
                 || village.observedHousingCapacity > village.housingCapacity
                 || village.pendingSettlers < 0
                 || village.pendingSettlers
-                        > VillageProsperityEngine.MAX_ABSTRACT_POPULATION - village.population
+                        > VillageProsperityEngine.populationLimit(village) - village.population
                 || village.developmentTier < 0
                 || village.developmentTier > 5
                 || village.discoveredDay < 0L
@@ -2242,7 +2459,19 @@ public final class EconomyState {
                 || village.marketSuppressedUntilDay < 0L
                 || village.projectSerial < 0L
                 || village.visualProjectSelectionCursor < 0L
+                || village.expansionMode == null
+                || village.expansionHealthyDays < 0 || village.expansionHealthyDays > 30
+                || village.lastExpansionDay < 0 || village.lastExpansionDay > economicDay
+                || village.expansionSerial < 0 || village.expansionSiteCursor < 0
+                || village.villageId.equals(village.cityId)
+                || !Double.isFinite(village.observedCropUnits) || village.observedCropUnits < 0
+                || village.observedCropUnits > 1_000_000
+                || !Double.isFinite(village.observedLivestockUnits) || village.observedLivestockUnits < 0
+                || village.observedLivestockUnits > 1_000_000
+                || village.lastFoodSourcesDay < 0 || village.lastFoodSourcesDay > economicDay
                 || village.architectureCharacter == null
+|| village.naturalVillageStyle == null
+                || (!village.naturalVillageStyle.isBlank() && !VillageArchitecture.isKnownDialect(village.naturalVillageStyle))
                 || village.architectureDialect == null
                 || (!village.architectureCharacter.isBlank()
                         && !VillageArchitecture.isKnownCharacter(village.architectureCharacter))
@@ -2254,7 +2483,25 @@ public final class EconomyState {
                 || village.environmentalCasualties < 0) {
             throw new IOException("Invalid village record " + id);
         }
+        if (village.lastImmigrationDay < -1 || village.lastImmigrationDay > economicDay
+                || village.housingChunks.size() > 4096
+                || village.housingChunks.values().stream().mapToInt(List::size).sum() > 4096)
+            throw new IOException("Invalid district census/immigration " + id);
+        Set<Long> surveyedBeds=new HashSet<>();
+        for (var entry:village.housingChunks.entrySet()) {
+            if(entry.getKey()==null || entry.getValue()==null)throw new IOException("Invalid housing chunk "+id);
+            for(Long pos:entry.getValue()) {
+                if(pos==null || !surveyedBeds.add(pos))throw new IOException("Duplicate housing bed "+id);
+                long chunk=((long)(unpackX(pos)>>4)&0xffffffffL)|((long)(unpackZ(pos)>>4)<<32);
+                if(chunk!=entry.getKey())throw new IOException("Housing bed outside saved chunk "+id);
+            }
+        }
+        validateFiniteRange("immigration progress", village.immigrationProgress, 0.0, 1.0);
         validateFiniteRange("village prosperity", village.prosperity, 0.0, 100.0);
+        for (var entry : village.foodChunks.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null || entry.getValue().day() > economicDay)
+                throw new IOException("Invalid dated food observation " + id);
+        }
         validateFiniteRange("village safety", village.safety, 0.0, 100.0);
         validateFiniteRange("village food", village.foodSupply, 0.0, 20_000.0);
         validateFiniteRange("village materials", village.materialSupply, 0.0, 20_000.0);
@@ -2274,9 +2521,20 @@ public final class EconomyState {
             validateFiniteRange("village output", output, 0.0, 1_000_000.0);
         }
         if (village.residents.size() > VillageProsperityEngine.RESIDENT_HISTORY_LIMIT
-                || village.projects.size() > VillageProsperityEngine.MAX_PROJECTS_PER_VILLAGE
+                || village.projects.size() > VillageProsperityEngine.projectLimit(village)
+                || village.territoryCells.size() > VillageTerritory.MAX_CELLS
+                || village.bridgeFundingReceipts.size() > VillageBridgeFunding.MAX_RECEIPTS
                 || village.incidents.size() > VillageProsperityEngine.INCIDENT_HISTORY_LIMIT) {
             throw new IOException("Village record exceeds bounded history limits " + id);
+        }
+        for (long parcel : village.territoryCells) {
+            if (VillageTerritory.cx(parcel) < -2_097_152 || VillageTerritory.cx(parcel) > 2_097_151
+                    || VillageTerritory.cz(parcel) < -2_097_152 || VillageTerritory.cz(parcel) > 2_097_151)
+                throw new IOException("Invalid village territory parcel " + id);
+        }
+        for (String receipt : village.bridgeFundingReceipts) {
+            try { UUID.fromString(receipt); }
+            catch (IllegalArgumentException malformed) { throw new IOException("Invalid bridge funding receipt", malformed); }
         }
         for (Map.Entry<UUID, ResidentRecord> residentEntry : village.residents.entrySet()) {
             ResidentRecord resident = residentEntry.getValue();
@@ -2297,11 +2555,16 @@ public final class EconomyState {
             if (project == null
                     || project.type == null
                     || project.designSchema == null
-                    || !VillageArchitecture.isKnownSchema(project.designSchema)
+|| !VillageArchitecture.isKnownSchema(project.designSchema)
+                    || (VanillaConstructionPlan.SCHEMA.equals(project.designSchema) != (project.vanillaPlan != null))
+                    || (project.vanillaPlan != null && (!project.vanillaPlan.style().equals(village.architectureDialect)
+                            || !project.vanillaPlan.eligible(project.type)))
                     || project.designTemplateId == null
                     || project.designPaletteId == null
                     || project.designDressingId == null
                     || project.designPlanHash == null
+                    || project.sitePreparationCursor < 0 || project.sitePreparationCursor > 1_000_000
+                    || project.obstructionLoadedTicks < 0 || project.obstructionLoadedTicks > 24_000
                     || project.projectId <= previousProject
                     || project.approvedDay < 0L
                     || project.approvedDay > economicDay
@@ -2313,6 +2576,7 @@ public final class EconomyState {
                     || project.materializedBlocks < 0
                     || project.totalBlocks < 0
                     || project.materializedBlocks > project.totalBlocks
+                    || !ConstructionOrderState.valid(project.constructionOrderCuts, project.totalBlocks)
                     || project.trailMaterializedBlocks < 0
                     || project.trailTotalBlocks < 0
                     || project.trailMaterializedBlocks > project.trailTotalBlocks
@@ -2482,7 +2746,7 @@ public final class EconomyState {
                 || shadow.capturedDay > economicDay
                 || shadow.minimumReleaseDay < shadow.capturedDay
                 || shadow.recoveryPopulation <= 0
-                || shadow.recoveryPopulation > VillageProsperityEngine.MAX_ABSTRACT_POPULATION
+                || shadow.recoveryPopulation > VillageProsperityEngine.populationLimit(villages.get(villageId))
                 || shadow.counterfactualVillage == null
                 || !villageId.equals(shadow.counterfactualVillage.villageId)
                 || !Double.isFinite(shadow.weight)
@@ -2644,6 +2908,8 @@ public final class EconomyState {
     private static void validateLoanPosition(
             UUID id, long key, LoanPosition position, long economicDay) throws IOException {
         if (position == null
+                || position.riskVersion < 0 || position.riskVersion > 1
+                || position.borrower < 0 || position.borrower >= 32
                 || key != position.positionId
                 || position.positionId <= 0L
                 || position.principalMicro <= 0L

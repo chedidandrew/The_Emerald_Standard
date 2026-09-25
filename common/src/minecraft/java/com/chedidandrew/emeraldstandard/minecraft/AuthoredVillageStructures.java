@@ -74,7 +74,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 9;
+    static final int LATEST_TEMPLATE_REVISION = 10;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
     private static final Map<String, Object> LIGHTING_COMPOSITION_LOCKS =
@@ -98,7 +98,7 @@ final class AuthoredVillageStructures {
             throw new IllegalArgumentException(
                     "Unknown Blueprint V2 revision " + templateRevision + " for " + templateId);
         }
-        Materials materials = palette(materials(character, dialect, templateRevision), paletteId);
+        Materials materials = planMaterials(templateRevision, paletteId, character, dialect);
         Builder base = new Builder(Set.of());
         base.templateRevision = templateRevision;
         Metadata metadata = new Metadata();
@@ -272,6 +272,9 @@ final class AuthoredVillageStructures {
                     List.of(base.values(), stageOne.values(), stageTwo.values()));
         }
 
+        if (templateRevision >= 10) {
+            AuthoredStairRefinements.apply(base, templateId);
+        }
         Blueprint blueprint = new Blueprint(
                 templateId,
                 templateRevision,
@@ -311,6 +314,14 @@ final class AuthoredVillageStructures {
                 character,
                 dialect,
                 0L);
+    }
+
+    /** Identical frozen palette without allocating or validating the entire building geometry. */
+    static Materials planMaterials(int revision, String paletteId,
+            VillageArchitecture.Character character, VillageArchitecture.BiomeDialect dialect) {
+        if (revision < 1 || revision > LATEST_TEMPLATE_REVISION)
+            throw new IllegalArgumentException("Unknown Blueprint V2 revision " + revision);
+        return palette(materials(character, dialect, revision), paletteId);
     }
 
     private static Materials materials(
@@ -10079,6 +10090,31 @@ final class AuthoredVillageStructures {
         return true;
     }
 
+    /** The same refined yard lamp, rotated so its arm faces a public walkway. */
+    static List<Cell> walkwayLamp(Materials materials, Direction facing) {
+        if (facing.getAxis().isVertical()) throw new IllegalArgumentException("Horizontal lamp facing required");
+        Builder stage = new Builder(Set.of());
+        stage.templateRevision = 3;
+        if (!tryDressingLamp(stage, 0, 0, materials)) throw new IllegalStateException("Empty lamp stage");
+        net.minecraft.world.level.block.Rotation rotation = switch (facing) {
+            case WEST -> net.minecraft.world.level.block.Rotation.NONE;
+            case NORTH -> net.minecraft.world.level.block.Rotation.CLOCKWISE_90;
+            case EAST -> net.minecraft.world.level.block.Rotation.CLOCKWISE_180;
+            default -> net.minecraft.world.level.block.Rotation.COUNTERCLOCKWISE_90;
+        };
+        return stage.values().stream().map(cell -> {
+            BlockPos pos = new BlockPos(cell.x(), cell.y(), cell.z()).rotate(rotation);
+            return new Cell(pos.getX(), pos.getY(), pos.getZ(), cell.state().rotate(rotation), cell.phase());
+        }).sorted(Comparator.comparingInt((Cell cell) -> cell.state().is(Blocks.LANTERN) ? 2
+                        : cell.state().is(Blocks.IRON_CHAIN) ? 1 : 0)
+                .thenComparingInt(Cell::y).thenComparingInt(Cell::z).thenComparingInt(Cell::x)).toList();
+    }
+
+    static Materials walkwayMaterials(VillageArchitecture.Character character,
+            VillageArchitecture.BiomeDialect dialect) {
+        return materials(character, dialect, 4);
+    }
+
     private static boolean tryDressingLamp(Builder stage, int x, int z, Materials p) {
         int armStepX = ((x + z) & 1) == 0 ? (x < 0 ? 1 : -1) : 0;
         int armStepZ = armStepX == 0 ? -1 : 0;
@@ -11389,6 +11425,22 @@ final class AuthoredVillageStructures {
     }
 
     static void validateCatalog() {
+        validateCatalogResults(activeCatalogDescriptors().parallelStream()
+                .map(AuthoredVillageStructures::validateCatalogDescriptor).toList());
+    }
+
+    /** Live CI yields between masters; no async world work or weaker palette coverage. */
+    static List<Runnable> catalogValidationSteps() {
+        List<CatalogValidationResult> results = new ArrayList<>();
+        List<Runnable> steps = new ArrayList<>();
+        for (var descriptor : activeCatalogDescriptors()) {
+            steps.add(() -> results.add(validateCatalogDescriptor(descriptor)));
+        }
+        steps.add(() -> validateCatalogResults(results));
+        return List.copyOf(steps);
+    }
+
+    private static List<VillageArchitecture.BlueprintDescriptor> activeCatalogDescriptors() {
         List<VillageArchitecture.BlueprintDescriptor> activeDescriptors = new ArrayList<>();
         for (VillageProsperityEngine.ProjectType type
                 : VillageProsperityEngine.ProjectType.values()) {
@@ -11400,14 +11452,10 @@ final class AuthoredVillageStructures {
             }
         }
 
-        // This smoke-only gate intentionally exercises the entire palette/dressing matrix. Each
-        // descriptor is self-contained and all Minecraft block states are immutable, so validate
-        // independent masters concurrently and then consume results in stable catalog order. A
-        // broken master still produces the same deterministic aggregate admission failure without
-        // monopolizing the server thread long enough to trip its watchdog.
-        List<CatalogValidationResult> results = activeDescriptors.parallelStream()
-                .map(AuthoredVillageStructures::validateCatalogDescriptor)
-                .toList();
+        return List.copyOf(activeDescriptors);
+    }
+
+    private static void validateCatalogResults(List<CatalogValidationResult> results) {
         List<StructuralSnapshot> activeStructuralSnapshots = new ArrayList<>();
         List<String> catalogFailures = new ArrayList<>();
         for (CatalogValidationResult result : results) {

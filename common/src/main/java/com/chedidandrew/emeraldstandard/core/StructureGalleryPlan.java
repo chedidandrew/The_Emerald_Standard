@@ -271,7 +271,7 @@ public final class StructureGalleryPlan {
 
     private static void appendControlledBlueprintLab(List<Entry> entries) {
         VillageArchitecture.BlueprintDescriptor descriptor =
-                VillageArchitecture.requireBlueprint("house_cross_01", 9);
+                VillageArchitecture.requireBlueprint("house_cross_01", 10);
         int column = 0;
 
         // Stage axis. The final entry is the shared reference for every later comparison.

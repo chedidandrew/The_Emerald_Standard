@@ -54,7 +54,7 @@ public final class VillageArchitectureRegressionTest {
             for (VillageArchitecture.BlueprintDescriptor descriptor : descriptors) {
                 catalogSize++;
                 require(descriptor.type() == type
-                                && descriptor.templateRevision() == 9
+                                && descriptor.templateRevision() == 10
                                 && descriptor.width() > 0
                                 && descriptor.depth() > 0
                                 && descriptor.height() > 0
@@ -228,7 +228,7 @@ public final class VillageArchitectureRegressionTest {
             VillageArchitecture.BlueprintScale scale,
             boolean mirrorable) {
         VillageArchitecture.BlueprintDescriptor descriptor =
-                VillageArchitecture.requireBlueprint(templateId, 9);
+                VillageArchitecture.requireBlueprint(templateId, 10);
         require(descriptor.type() == type
                         && descriptor.width() == width
                         && descriptor.depth() == depth
@@ -236,7 +236,7 @@ public final class VillageArchitectureRegressionTest {
                         && descriptor.scale() == scale
                         && descriptor.mirrorable() == mirrorable
                         && VillageArchitecture.blueprints(type).contains(descriptor),
-                templateId + "@9 lost its active role, scale, envelope, or mirror contract");
+                templateId + "@10 lost its active role, scale, envelope, or mirror contract");
         VillageArchitecture.BlueprintDescriptor historical =
                 VillageArchitecture.requireBlueprint(templateId, 2);
         require(historical.width() == width && historical.depth() == depth
@@ -267,6 +267,7 @@ public final class VillageArchitectureRegressionTest {
             UUID villageId = UUID.fromString("00000000-0000-0000-0000-00000000b201");
             EconomyState state = EconomyState.fresh(2_201L, 0L, 0L);
             state.economicDay = 3L;
+            state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
             EconomyState.VillageRecord village = state.village(villageId);
             village.architectureCharacter = VillageArchitecture.Character.FORMAL.id();
             VillageArchitecture.BlueprintSelection selection =
@@ -326,6 +327,7 @@ public final class VillageArchitectureRegressionTest {
             // assign a Blueprint V2 template or change its construction recipe/cursor.
             EconomyState modularState = EconomyState.fresh(2_202L, 0L, 0L);
             modularState.economicDay = 3L;
+            modularState.liveMarket=LiveMarket.adopt(modularState); // Explicit synthetic fixture date.
             EconomyState.VillageRecord modularVillage = modularState.village(villageId);
             modularVillage.architectureCharacter = VillageArchitecture.Character.RUSTIC.id();
             VillageArchitecture.Recipe recipe = VillageArchitecture.choose(
@@ -394,6 +396,7 @@ public final class VillageArchitectureRegressionTest {
             UUID villageId = UUID.fromString("00000000-0000-0000-0000-00000000b202");
             EconomyState state = EconomyState.fresh(2_203L, 0L, 0L);
             state.economicDay = 1L;
+            state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
             EconomyState.VillageRecord village = state.village(villageId);
             village.architectureCharacter = VillageArchitecture.Character.FORMAL.id();
             VillageArchitecture.BlueprintSelection selection =
@@ -759,6 +762,7 @@ public final class VillageArchitectureRegressionTest {
         try {
             EconomyState state = EconomyState.fresh(4401L, 0L, 0L);
             state.economicDay = 2L;
+            state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
             UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000004401");
             EconomyState.VillageRecord village = state.village(villageId);
             village.architectureCharacter = VillageArchitecture.Character.RUSTIC.id();
@@ -895,6 +899,7 @@ public final class VillageArchitectureRegressionTest {
         try {
             EconomyState state = EconomyState.fresh(4_402L, 0L, 0L);
             state.economicDay = 2L;
+            state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
             UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000004402");
             EconomyState.VillageRecord village = state.village(villageId);
             village.architectureCharacter = VillageArchitecture.Character.RUSTIC.id();
@@ -1151,6 +1156,7 @@ public final class VillageArchitectureRegressionTest {
         try {
             EconomyState state = EconomyState.fresh(45L, 0L, 0L);
             state.economicDay = 2L;
+            state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
             UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000004511");
             EconomyState.VillageRecord village = state.village(villageId);
             village.architectureCharacter = VillageArchitecture.Character.RUSTIC.id();
@@ -1372,6 +1378,7 @@ public final class VillageArchitectureRegressionTest {
         try {
             EconomyState state = EconomyState.fresh(46L, 0L, 0L);
             state.economicDay = 2L;
+            state.liveMarket=LiveMarket.adopt(state); // Explicit synthetic fixture date.
             UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000004612");
             EconomyState.VillageRecord village = state.village(villageId);
             village.architectureCharacter = VillageArchitecture.Character.MERCANTILE.id();

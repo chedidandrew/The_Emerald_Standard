@@ -18,6 +18,12 @@ public final class TerrainFoundationPlanRegressionTest {
         testTransformedAnnexGroundContactEnvelope();
         testSuspendedAuthorityDoesNotOwnCosmeticFooting();
         testTerrainRangeBounds();
+        require(TerrainFoundationPlan.levelledFloor(List.of(64, 64, 64, 68, 72)).orElseThrow() == 68,
+                "Eight-block hillside needs four cut/four fill, not a towering foundation");
+        require(TerrainFoundationPlan.levelledFloor(List.of(64, 64, 65, 68)).orElseThrow() == 65,
+                "Median floor should favor the surrounding walking level");
+        require(TerrainFoundationPlan.levelledFloor(List.of(64, 73)).isEmpty(), "Cliff must be rejected");
+        require(TerrainFoundationPlan.levelledFloor(List.of()).isEmpty(), "No samples cannot approve a lot");
         System.out.println("PASS terrain foundation planning regressions");
     }
 

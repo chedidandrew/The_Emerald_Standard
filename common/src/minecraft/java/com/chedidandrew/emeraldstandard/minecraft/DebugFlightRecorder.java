@@ -4,6 +4,7 @@ import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageArchitecture;
+import com.chedidandrew.emeraldstandard.core.VanillaBuildingCatalog;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.debug.DebugCapturePolicy;
 import com.chedidandrew.emeraldstandard.debug.DebugReportFiles;
@@ -37,7 +38,7 @@ import org.slf4j.LoggerFactory;
 /**
  * One-command, time-bounded diagnostic flight recorder for mod testing.
  *
- * <p>When disabled this class performs only a constant-time map lookup from the loader tick hook.
+ * <p>When disabled only constant-time capture checks run; no samples or report files are written.
  * During a capture it writes incremental JSON Lines so a crash still leaves useful evidence, then
  * packages a privacy-conscious ZIP report when the timer expires or the command is run again.</p>
  */
@@ -47,16 +48,17 @@ public final class DebugFlightRecorder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("the_emerald_standard_debug");
     private static final String MOD_VERSION =
-            DebugReportFiles.runtimeVersion(DebugFlightRecorder.class);
+            com.chedidandrew.emeraldstandard.core.BuildIdentity.display();
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss", Locale.ROOT).withZone(ZoneOffset.UTC);
     private static final Map<MinecraftServer, Session> SESSIONS = new WeakHashMap<>();
-    private static final long SAMPLE_INTERVAL_TICKS = 20L;
-    private static final long SNAPSHOT_INTERVAL_TICKS = 600L;
-    private static final long STATUS_INTERVAL_TICKS = 400L;
+    private static final long SAMPLE_INTERVAL_NANOS = 1_000_000_000L; // monotonic nanoseconds
+    private static final long SNAPSHOT_INTERVAL_NANOS = 30_000_000_000L;
+    private static final long STATUS_INTERVAL_NANOS = 20_000_000_000L;
     private static final int NEWLINE_BYTES =
             System.lineSeparator().getBytes(StandardCharsets.UTF_8).length;
     private static final Set<String> PUBLIC_CONFIG_KEYS = Set.of(
+            EmeraldConfig.BRIDGES_ENABLED, EmeraldConfig.BRIDGE_LENGTH, EmeraldConfig.BRIDGE_DEPTH, EmeraldConfig.BRIDGE_JOBS,
             "village_banks.enabled",
             "village_banks.scan_interval_ticks",
             "village_banks.region_size",
@@ -74,6 +76,8 @@ public final class DebugFlightRecorder {
             "village_prosperity.development_radius",
             "village_prosperity.construction_interval_ticks",
             "village_prosperity.construction_blocks_per_tick",
+            "village_prosperity.construction_blocks_per_second",
+            "village_prosperity.forced_instant_development",
             "village_prosperity.settler_spawn_interval_ticks",
             "village_prosperity.donations_enabled",
             "village_prosperity.endowments_enabled",
@@ -160,16 +164,18 @@ public final class DebugFlightRecorder {
                     player.blockPosition(),
                     economy);
             SESSIONS.put(server, session);
+            DebugWork.activate(session.workMeasurements);
             session.event("capture", "started", fields(
                     "durationMinutes", minutes,
                     "tester", session.ownerName,
                     "playerUuid", session.ownerId,
                     "modVersion", MOD_VERSION,
+                    "sourceSha256", com.chedidandrew.emeraldstandard.core.BuildIdentity.fingerprint(),
                     "reportId", id));
             session.sample(server, economy, true);
-            session.nextSampleTick = gameTick + SAMPLE_INTERVAL_TICKS;
-            session.nextSnapshotTick = gameTick + SNAPSHOT_INTERVAL_TICKS;
-            session.nextStatusTick = gameTick + STATUS_INTERVAL_TICKS;
+            session.nextSampleAtNanos = System.nanoTime() + SAMPLE_INTERVAL_NANOS;
+            session.nextSnapshotAtNanos = System.nanoTime() + SNAPSHOT_INTERVAL_NANOS;
+            session.nextStatusAtNanos = System.nanoTime() + STATUS_INTERVAL_NANOS;
             LOGGER.info(
                     "The Emerald Standard debug capture {} started for {} for {} minute(s)",
                     id,
@@ -181,10 +187,40 @@ public final class DebugFlightRecorder {
                     null,
                     "Full debug capture started for " + minutes
                             + " minute(s). Reproduce the issue now. Run /emerald debug again to stop early; "
-                            + "/emerald debug mark adds an optional moment marker.");
+                            + "Stay near the affected district: candidate rejection reasons, search progress and retry timers are included automatically.");
         } catch (IOException | RuntimeException exception) {
             LOGGER.error("Could not start The Emerald Standard debug capture", exception);
+            Session failed = SESSIONS.remove(server);
+            DebugWork.deactivate();
+            if (failed != null) {
+                try { failed.writer.close(); } catch (IOException ignored) { }
+            }
             return CommandResult.failure("Debug capture could not start: " + message(exception));
+        }
+    }
+
+    /** Add one bounded, opt-in JVM profile without changing the world or development mode. */
+    public static synchronized CommandResult profile(ServerPlayer player, EconomyService economy) {
+        if (player == null || player.level().getServer() == null)
+            return CommandResult.failure("A server-side player is required.");
+        var server = player.level().getServer();
+        if (!SESSIONS.containsKey(server)) {
+            var started = toggle(player, economy, DEFAULT_MINUTES);
+            if (!started.success()) return started;
+        }
+        var session = SESSIONS.get(server);
+        if (!DebugCapturePolicy.isOwner(session.ownerId, player.getUUID()))
+            return CommandResult.failure("Only the capture owner can add a runtime profile.");
+        if (session.profile != null)
+            return CommandResult.failure("This capture already contains a runtime profile; start a new capture for another sample.");
+        try {
+            session.profile = DebugJvmProfile.start(session.sessionDirectory);
+            session.event("capture", "runtime_profile_started", fields("seconds", 60, "maxRetainedMiB", 16));
+            return new CommandResult(true, false, null,
+                    "Runtime profile started for up to 60 seconds. The debug ZIP will include JVM thread/stack, allocation and GC samples across Minecraft and installed mods. Profiling adds overhead; no world settings were changed.");
+        } catch (IOException | RuntimeException | LinkageError failure) {
+            session.captureErrors.add("Runtime profile unavailable: " + message(failure));
+            return CommandResult.failure("Runtime profile could not start; ordinary debug capture is still active: " + message(failure));
         }
     }
 
@@ -245,6 +281,20 @@ public final class DebugFlightRecorder {
         }
     }
 
+    /** Opaque capture identity prevents a mid-tick start/stop from recording a partial tick. */
+    public static synchronized Object activeCapture(MinecraftServer server) {
+        return SESSIONS.get(server);
+    }
+
+    public static synchronized void completedServerTick(
+            MinecraftServer server, Object capture, long elapsedNanos, boolean completed) {
+        Session session = SESSIONS.get(server);
+        if (session != null && session == capture) {
+            long end = System.nanoTime();
+            session.serverTicks.recordBoundary(end - elapsedNanos, end, completed);
+        }
+    }
+
     /** Called once per server tick by each loader. It is nearly free when no capture is active. */
     public static synchronized void tick(MinecraftServer server, EconomyService economy) {
         Session session = SESSIONS.get(server);
@@ -253,7 +303,7 @@ public final class DebugFlightRecorder {
         }
         long recorderStarted = System.nanoTime();
         long now = System.currentTimeMillis();
-        long gameTick = server.overworld().getGameTime();
+        long sampleClock = System.nanoTime();
         try {
             if (now >= session.endsAtMs) {
                 ServerPlayer owner = server.getPlayerList().getPlayer(session.ownerId);
@@ -269,15 +319,15 @@ public final class DebugFlightRecorder {
                 notifyPlayer(owner, result.message());
                 return;
             }
-            if (gameTick >= session.nextSampleTick) {
+            if (sampleClock >= session.nextSampleAtNanos) {
                 session.sample(server, economy, false);
-                session.nextSampleTick = gameTick + SAMPLE_INTERVAL_TICKS;
+                session.nextSampleAtNanos = sampleClock + SAMPLE_INTERVAL_NANOS;
             }
-            if (gameTick >= session.nextSnapshotTick) {
+            if (sampleClock >= session.nextSnapshotAtNanos) {
                 session.recordFullSnapshot(server, economy, "periodic_snapshot");
-                session.nextSnapshotTick = gameTick + SNAPSHOT_INTERVAL_TICKS;
+                session.nextSnapshotAtNanos = sampleClock + SNAPSHOT_INTERVAL_NANOS;
             }
-            if (gameTick >= session.nextStatusTick) {
+            if (sampleClock >= session.nextStatusAtNanos) {
                 ServerPlayer owner = server.getPlayerList().getPlayer(session.ownerId);
                 if (owner != null) {
                     long seconds = Math.max(0L, (session.endsAtMs - now + 999L) / 1_000L);
@@ -288,7 +338,7 @@ public final class DebugFlightRecorder {
                             seconds % 60L,
                             session.eventCount)));
                 }
-                session.nextStatusTick = gameTick + STATUS_INTERVAL_TICKS;
+                session.nextStatusAtNanos = sampleClock + STATUS_INTERVAL_NANOS;
             }
         } catch (IOException | RuntimeException exception) {
             session.captureErrors.add("Tick capture failed: " + message(exception));
@@ -424,7 +474,7 @@ public final class DebugFlightRecorder {
             return;
         }
         try {
-            session.event("village", "loaded_census", villageFields(village));
+            session.event("village", "loaded_census", villageFields(village, server.overworld().getGameTime(), server));
         } catch (IOException exception) {
             session.captureErrors.add("Village census event failed: " + message(exception));
         }
@@ -533,6 +583,11 @@ public final class DebugFlightRecorder {
             return CommandResult.failure("No debug capture is active.");
         }
         SESSIONS.remove(server);
+        DebugWork.deactivate();
+        if (session.profile != null) {
+            try { session.profile.close(); }
+            catch (RuntimeException failure) { session.captureErrors.add("Profile finalization failed: " + message(failure)); }
+        }
         Path report = null;
         try {
             session.event("capture", "stopping", fields("reason", reason));
@@ -773,7 +828,40 @@ public final class DebugFlightRecorder {
                 "catchUpDays", portfolio.catchUpDaysRemaining());
     }
 
-    private static Map<String, Object> villageFields(EconomyState.VillageRecord village) {
+    private static Map<String,Object> bridgeReport(MinecraftServer server,EconomyState.VillageRecord village) {
+        for(var level:server.getAllLevels())if(level.dimension().identifier().toString().equals(village.dimensionKey)) {
+            var jobs=VillageBridgeLedger.get(level).jobs.values().stream()
+                    .filter(j->j.plan().village().equals(village.villageId.toString())).toList();
+            return fields("total",jobs.size(),"active",jobs.stream().filter(j->j.funded()&&!j.done()&&!j.altered()).count(),
+                    "queued",jobs.stream().filter(j->!j.funded()&&!j.altered()).count(),
+                    "complete",jobs.stream().filter(VillageBridgeLedger.Job::done).count(),
+                    "altered",jobs.stream().filter(VillageBridgeLedger.Job::altered).count(),
+                    "crossings",jobs.stream().map(j->VillageBridges.report(level,j.plan().id())).toList());
+        }
+        return Map.of();
+    }
+
+    private static List<Map<String,Object>> bankWalkwayReport(MinecraftServer server, EconomyState.VillageRecord village) {
+        String prefix = village.villageId + "/" + BankWalkways.PROJECT + "/";
+        for (var level : server.getAllLevels()) {
+            if (level.dimension().identifier().toString().equals(village.dimensionKey))
+                return WalkwayConnectionLedger.get(level).jobs.keySet().stream().filter(key -> key.startsWith(prefix))
+                        .sorted().limit(64).map(key -> fields("key", key, "connection", WalkwayConnections.report(level, key))).toList();
+        }
+        return List.of();
+    }
+
+    private static Map<String,Object> walkwayConnectionReport(MinecraftServer server,
+            EconomyState.VillageRecord village,EconomyState.VillageProject project) {
+        for(var level:server.getAllLevels()) {
+            if(level.dimension().identifier().toString().equals(village.dimensionKey))
+                return WalkwayConnections.report(level,WalkwayConnectionLedger.key(
+                        village.villageId,project.projectId,project.originPos));
+        }
+        return Map.of("reason","Dimension unavailable");
+    }
+
+    private static Map<String, Object> villageFields(EconomyState.VillageRecord village, long gameTick, MinecraftServer server) {
         if (village == null) {
             return fields("present", false);
         }
@@ -814,6 +902,40 @@ public final class DebugFlightRecorder {
                                 : positionMap(BlockPos.of(active.originPos)));
         return fields(
                 "present", true,
+                "currentServerGameTick", gameTick,
+                "infrastructureBridges",bridgeReport(server,village),
+                "vanillaCatalog",fields("available",VanillaBuildingCatalog.plans().size(),
+                        "rejected",VanillaVillageBuildings.diagnostics(),"naturalStyle",village.naturalVillageStyle),
+                "bankWalkwayConnections",bankWalkwayReport(server,village),
+                "projects", village.projects.stream().map(p -> fields(
+                        "projectId", p.projectId, "type", p.type, "template", p.vanillaPlan == null ? p.designTemplateId : p.vanillaPlan.templateId(),
+                        "vanillaPlan",p.vanillaPlan == null ? Map.of() : fields("hash",p.vanillaPlan.hash(),
+                                "style",p.vanillaPlan.style(),"role",p.vanillaPlan.role(),"beds",p.vanillaPlan.beds(),
+                                "cells",p.vanillaPlan.cells().size()),
+                        "frozenDesign", fields("schema",p.designSchema,"revision",p.designTemplateRevision,
+                                "palette",p.designPaletteId,"dressing",p.designDressingId,"seed",p.designSeed,
+                                "stage",p.designStage,"rotation",p.designRotation,"mirrored",p.designMirrored,
+                                "signature",p.designSignature,"hash",p.designPlanHash,"hashVersion",p.designPlanHashVersion,
+                                "character",village.architectureCharacter,"dialect",village.architectureDialect,
+                                "orderCuts",List.copyOf(p.constructionOrderCuts)),
+                        "originPacked", p.originPos, "complete", p.materializedComplete,
+                        "manualRepairRequired", p.manualRepairRequired, "abstractOnly", p.abstractOnly,
+                        "eligible", com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.eligible(village,p),
+                        "economicProgress", p.economicProgress, "constructionStarted", p.constructionStarted,
+                        "materializedBlocks", p.materializedBlocks, "totalBlocks", p.totalBlocks,
+                        "siteSearchCursor", p.siteSearchCursor,
+                        "siteSearchCandidates", village.organicTerritory
+                                ? com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.order(village,
+                                        EmeraldConfig.current().forcedVillageDevelopment()
+                                                ? 1 + Math.min(3, p.materializationFailures) : 1).size()
+                                : VillageNeighborhoodPlan.offsets(p.materializationFailures,village.villageId).size(),
+                        "siteSearchSawUnloaded", p.siteSearchSawUnloadedCandidate,
+                        "failedSweepsOrMaterializations", p.materializationFailures,
+                        "retryAfterGameTick", p.retryAfterGameTick,
+                        "retryRemainingTicks", com.chedidandrew.emeraldstandard.core.ProjectSiteRetry.remaining(gameTick,p.retryAfterGameTick),
+                        "walkwayConnection", walkwayConnectionReport(server,village,p),
+                        "observedWork", ConstructionDiagnostics.report(village.villageId+"/"+p.projectId,gameTick),
+                        "observedSearch", SiteSearchDiagnostics.report(village.villageId+"/"+p.projectId))).toList(),
                 "villageId", village.villageId,
                 "dimension", village.dimensionKey,
                 "center", positionMap(BlockPos.of(village.centerPos)),
@@ -825,6 +947,9 @@ public final class DebugFlightRecorder {
                 "developmentTier", village.developmentTier,
                 "prosperity", village.prosperity,
                 "safety", village.safety,
+                "effectiveSafety", com.chedidandrew.emeraldstandard.core.VillageGuardSecurity.effectiveSafety(village),
+                "observedGuards", village.observedGuards,
+                "guardSafetyBonus", village.guardSafetyBonus,
                 "food", village.foodSupply,
                 "materials", village.materialSupply,
                 "treasury", village.treasury,
@@ -853,6 +978,13 @@ public final class DebugFlightRecorder {
                 "restorationFund", village.restorationFund,
                 "marketSuppressedUntilDay", village.marketSuppressedUntilDay,
                 "residentsTracked", village.residents.size(),
+                "immigrationProgress", village.immigrationProgress,
+                "lastImmigrationDay", village.lastImmigrationDay,
+                "unverifiedResidents", village.residents.values().stream().filter(r ->
+                        r.status==VillageProsperityEngine.ResidentStatus.UNVERIFIED).count(),
+                "surveyedBedHeads", village.housingChunks.values().stream().mapToInt(List::size).sum(),
+                "arrivalStatus", VillagePopulationEnvironment.status(village.villageId),
+                "housingSurvey", VillagePopulationEnvironment.report(village),
                 "incidentsTracked", village.incidents.size(),
                 "projectBacklog", village.visualBacklog(),
                 "activeProject", project);
@@ -962,12 +1094,20 @@ public final class DebugFlightRecorder {
         final Path timeline;
         final BufferedWriter writer;
         final EconomyService economy;
+        DebugJvmProfile profile;
         final List<String> captureErrors = new ArrayList<>();
         final List<String> validationWarnings = new ArrayList<>();
         final Map<String, Integer> projectMilestones = new HashMap<>();
-        long nextSampleTick;
-        long nextSnapshotTick;
-        long nextStatusTick;
+        long nextSampleAtNanos;
+        long nextSnapshotAtNanos;
+        long nextStatusAtNanos;
+        final com.chedidandrew.emeraldstandard.debug.ServerTickMetrics serverTicks =
+                new com.chedidandrew.emeraldstandard.debug.ServerTickMetrics(System.nanoTime());
+        final com.chedidandrew.emeraldstandard.debug.WorkMeasurements workMeasurements =
+                new com.chedidandrew.emeraldstandard.debug.WorkMeasurements();
+        Map<String, Object> latestConstruction = Map.of();
+        long maximumObservedWorkingSites;
+        long maximumUnfinishedSites;
         int eventCount;
         int markerCount;
         int bankActionCount;
@@ -1027,9 +1167,9 @@ public final class DebugFlightRecorder {
             this.economy = economy;
             this.lastDimension = lastDimension;
             this.lastPosition = lastPosition.immutable();
-            this.nextSampleTick = startedGameTick;
-            this.nextSnapshotTick = startedGameTick;
-            this.nextStatusTick = startedGameTick;
+            this.nextSampleAtNanos = System.nanoTime();
+            this.nextSnapshotAtNanos = System.nanoTime();
+            this.nextStatusAtNanos = System.nanoTime();
         }
 
         void event(String category, String event, Map<String, Object> details) throws IOException {
@@ -1077,6 +1217,16 @@ public final class DebugFlightRecorder {
                     lastDimension = dimensionKey(owner);
                     lastPosition = owner.blockPosition().immutable();
                 }
+                latestConstruction = new LinkedHashMap<>(economy.constructionWorkloadSnapshot());
+                latestConstruction.putAll(ConstructionDiagnostics.workloadSnapshot(System.nanoTime()));
+                maximumObservedWorkingSites = Math.max(maximumObservedWorkingSites,
+                        ((Number) latestConstruction.get("recentlyWorkingSites")).longValue());
+                maximumUnfinishedSites = Math.max(maximumUnfinishedSites,
+                        ((Number) latestConstruction.get("unfinishedPhysicalSitesIncludingBanks")).longValue());
+                event("performance", "server_workload", fields(
+                        "serverTicks", serverPerformance(server),
+                        "subsystems", workMeasurements.snapshot(),
+                        "construction", latestConstruction));
                 latestMarket = economy.marketSnapshot();
                 latestPortfolio = economy.portfolioSnapshot(ownerId);
                 if (watchedVillageId == null && lastPosition != null) {
@@ -1130,14 +1280,14 @@ public final class DebugFlightRecorder {
 
                 String villageFingerprint = latestVillage == null
                         ? "none"
-                        : json(villageFields(latestVillage.village()));
+                        : json(villageFields(latestVillage.village(), server.overworld().getGameTime(), server));
                 if (force || !villageFingerprint.equals(previousVillageFingerprint)) {
                     event("village", "village_state_changed", latestVillage == null
                             ? fields(
                                     "present", false,
                                     "dimension", lastDimension,
                                     "playerPosition", positionMap(lastPosition))
-                            : villageFields(latestVillage.village()));
+                            : villageFields(latestVillage.village(), server.overworld().getGameTime(), server));
                     previousVillageFingerprint = villageFingerprint;
                 }
 
@@ -1154,6 +1304,15 @@ public final class DebugFlightRecorder {
                 sampleTotalNanos += elapsed;
                 sampleMaximumNanos = Math.max(sampleMaximumNanos, elapsed);
             }
+        }
+
+        Map<String, Object> serverPerformance(MinecraftServer server) {
+            Map<String, Object> result = new LinkedHashMap<>(serverTicks.snapshot(System.nanoTime()));
+            result.put("configuredTickRate", server.tickRateManager().tickrate());
+            result.put("frozen", server.tickRateManager().isFrozen());
+            result.put("sprinting", server.tickRateManager().isSprinting());
+            result.put("attribution", "Whole server tick work, not TES-only or client FPS. Includes capture overhead during measured ticks.");
+            return result;
         }
 
         void recordFullSnapshot(
@@ -1184,7 +1343,7 @@ public final class DebugFlightRecorder {
                                     : latestPortfolio),
                     "village", latestVillage == null
                             ? fields("present", false)
-                            : villageFields(latestVillage.village()),
+                            : villageFields(latestVillage.village(), server.overworld().getGameTime(), server),
                     "persistence", fields(
                             "format", EconomyState.FORMAT_VERSION,
                             "knownVillages", state == null ? 0 : state.villages.size(),
@@ -1263,6 +1422,9 @@ public final class DebugFlightRecorder {
                             + "Events: " + eventCount + "\n"
                             + "Markers: " + markerCount + "\n"
                             + "Watched village: " + Objects.toString(watchedVillageId, "none") + "\n"
+                            + "Server tick performance: " + json(serverPerformance(server)) + "\n"
+                            + "Latest construction counts: " + json(latestConstruction) + "\n"
+                            + "Peak recently working sites: " + maximumObservedWorkingSites + "\n"
                             + "Capture errors: " + captureErrors.size() + "\n"
                             + "Validation warnings: " + validationWarnings.size() + "\n");
             writeText(sessionDirectory.resolve("validation.txt"), validation.text);
@@ -1282,12 +1444,19 @@ public final class DebugFlightRecorder {
             writeText(sessionDirectory.resolve("village-snapshot.json"),
                     json(latestVillage == null
                             ? fields("present", false)
-                            : villageFields(latestVillage.village())) + "\n");
+                            : villageFields(latestVillage.village(), server.overworld().getGameTime(), server)) + "\n");
             double averageMs = sampleCount == 0
                     ? 0.0
                     : sampleTotalNanos / 1_000_000.0 / sampleCount;
             writeText(sessionDirectory.resolve("performance-summary.json"),
                     json(fields(
+                            "serverTicks", serverPerformance(server),
+                            "subsystems", workMeasurements.snapshot(),
+                            "runtimeProfile", profile == null ? "not requested" : "runtime-profile.jfr (opt-in, up to 60 seconds; adds profiling overhead)",
+                            "construction", latestConstruction,
+                            "maximumObservedWorkingSites", maximumObservedWorkingSites,
+                            "maximumUnfinishedSites", maximumUnfinishedSites,
+                            "recorderMetricsMeaning", "The legacy sample/recorder/write/copy fields below measure overlapping debug overhead, not server MSPT",
                             "samples", sampleCount,
                             "averageSampleMs", averageMs,
                             "maximumSampleMs", sampleMaximumNanos / 1_000_000.0,

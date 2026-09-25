@@ -281,7 +281,7 @@ public final class VillageDashboardPolicy {
 
     private static boolean hasRecentIncident(Snapshot snapshot) {
         return snapshot.incidentCause() != VillageProsperityEngine.IncidentCause.NONE
-                && snapshot.incidentAgeDays() <= RECENT_INCIDENT_DAYS;
+                && snapshot.incidentAgeDays() < RECENT_INCIDENT_DAYS;
     }
 
     private static boolean foodBlocksGrowth(Snapshot snapshot) {

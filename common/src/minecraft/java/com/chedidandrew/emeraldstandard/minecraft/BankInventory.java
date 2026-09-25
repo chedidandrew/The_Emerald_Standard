@@ -117,7 +117,7 @@ final class BankInventory {
                 slot < player.getInventory().getContainerSize() && remaining > 0;
                 slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
-            if (stack.getItem() == item) {
+            if (isOrdinaryItem(stack, item)) {
                 int removed = Math.min(remaining, stack.getCount());
                 stack.shrink(removed);
                 remaining -= removed;
@@ -156,11 +156,17 @@ final class BankInventory {
         int count = 0;
         for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
-            if (stack.getItem() == item) {
+            if (isOrdinaryItem(stack, item)) {
                 count += stack.getCount();
             }
         }
         return count;
+    }
+
+    // Preserve renamed items and modded component data; restoring a plain item would lose it.
+    static boolean isOrdinaryItem(ItemStack stack, Item item) {
+        return !stack.isEmpty() && stack.getItem() == item
+                && ItemStack.isSameItemSameComponents(stack, new ItemStack(item));
     }
 
     record ExchangeResource(Item item, String quoteId, String journalKey) {

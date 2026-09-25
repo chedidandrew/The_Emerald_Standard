@@ -1,0 +1,93 @@
+package com.chedidandrew.emeraldstandard.minecraft;
+
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import java.util.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.saveddata.*;
+
+/** Separate connector progress: never rewrite frozen historical paving/building cursors. */
+final class WalkwayConnectionLedger extends SavedData {
+    record Step(long pos,BlockState ground,BlockState lower,BlockState upper,String bridge) {
+        Step(long pos,BlockState ground,BlockState lower,BlockState upper) { this(pos,ground,lower,upper,""); }
+        static final Codec<Step> CODEC=RecordCodecBuilder.create(i->i.group(
+                Codec.LONG.fieldOf("pos").forGetter(Step::pos),
+                BlockState.CODEC.fieldOf("ground").forGetter(Step::ground),
+                BlockState.CODEC.fieldOf("lower").forGetter(Step::lower),
+                BlockState.CODEC.fieldOf("upper").forGetter(Step::upper),
+                Codec.STRING.optionalFieldOf("bridge","").forGetter(Step::bridge)).apply(i,Step::new));
+    }
+    record Job(List<Step> plan,int centers,int cursor,Set<Long> supplied,boolean done,long retry,String reason) {
+        static final Codec<Job> CODEC=RecordCodecBuilder.create(i->i.group(
+                Step.CODEC.listOf().fieldOf("plan").forGetter(Job::plan),
+                Codec.intRange(0,512).fieldOf("centers").forGetter(Job::centers),
+                Codec.intRange(0,8192).fieldOf("cursor").forGetter(Job::cursor),
+                Codec.LONG.listOf().fieldOf("supplied").forGetter(j->new ArrayList<>(j.supplied())),
+                Codec.BOOL.fieldOf("done").forGetter(Job::done),
+                Codec.LONG.fieldOf("retry").forGetter(Job::retry),
+                Codec.STRING.fieldOf("reason").forGetter(Job::reason)).apply(i,
+                        (p,n,c,s,d,r,t)->new Job(p,n,c,new LinkedHashSet<>(s),d,r,t)));
+        Job { plan=List.copyOf(plan); supplied=Set.copyOf(supplied); }
+        static Job fresh() { return new Job(List.of(),0,0,Set.of(),false,0,"Awaiting loaded route survey"); }
+        Job retry(long tick,String why) { return new Job(List.of(),0,0,supplied,false,tick+100,why); }
+    }
+    record Attempts(int failures,long terrain) {
+        static final Codec<Attempts> CODEC=RecordCodecBuilder.create(i->i.group(
+                Codec.intRange(0,3).fieldOf("failures").forGetter(Attempts::failures),
+                Codec.LONG.fieldOf("terrain").forGetter(Attempts::terrain)).apply(i,Attempts::new));
+    }
+    static final Codec<WalkwayConnectionLedger> CODEC=RecordCodecBuilder.create(i->i.group(
+            Codec.unboundedMap(Codec.STRING,Job.CODEC).fieldOf("jobs").forGetter(s->s.jobs),
+            Codec.unboundedMap(Codec.STRING,Attempts.CODEC).optionalFieldOf("attempts",Map.of()).forGetter(s->s.attempts),
+            Codec.unboundedMap(Codec.STRING,Codec.STRING).optionalFieldOf("styles",Map.of()).forGetter(s->s.styles),
+            Codec.unboundedMap(Codec.STRING,BlockState.CODEC).optionalFieldOf("paving",Map.of()).forGetter(s->s.paving))
+            .apply(i,WalkwayConnectionLedger::new));
+    static final SavedDataType<WalkwayConnectionLedger> TYPE=new SavedDataType<>(
+            Identifier.fromNamespaceAndPath("the_emerald_standard","walkway_connections"),
+            WalkwayConnectionLedger::new,CODEC,DataFixTypes.LEVEL);
+    final Map<String,Job> jobs=new LinkedHashMap<>();
+    final Map<String,Attempts> attempts=new HashMap<>();
+    final Map<String,String> styles=new HashMap<>();
+    // Exact supplied states, not a global whitelist of naturally occurring sandstone/stone.
+    // Retain receipts after removal: they confer read-only road recognition, never repair rights.
+    final Map<String,BlockState> paving=new HashMap<>();
+    final Map<String,Long> nextReview=new HashMap<>();
+    final Map<UUID,Integer> rotation=new HashMap<>();
+    long lastTick=Long.MIN_VALUE;
+    WalkwayConnectionLedger() {}
+    WalkwayConnectionLedger(Map<String,Job> jobs) { this.jobs.putAll(jobs); }
+    WalkwayConnectionLedger(Map<String,Job> jobs,Map<String,Attempts> attempts) {
+        this(jobs); this.attempts.putAll(attempts);
+    }
+    WalkwayConnectionLedger(Map<String,Job> jobs,Map<String,Attempts> attempts,
+            Map<String,String> styles,Map<String,BlockState> paving) {
+        this(jobs,attempts); this.styles.putAll(styles); this.paving.putAll(paving);
+    }
+    String freezeStyle(String key,String requested,boolean desert) {
+        if(!styles.containsKey(key)) {
+            // Existing surveys and partially paved roads keep their historical surface recipe.
+            styles.put(key,jobs.containsKey(key)||requested.isEmpty()
+                    ? (desert?"legacy_desert":"legacy_temperate") : requested); setDirty();
+        }
+        return styles.get(key);
+    }
+    void recordPaving(BlockPos pos,BlockState state) {
+        paving.put(Long.toString(pos.asLong()),state); setDirty();
+    }
+    boolean matchesPaving(BlockPos pos,BlockState state) {
+        return state.equals(paving.get(Long.toString(pos.asLong())));
+    }
+    int failures(String key) { return attempts.getOrDefault(key,new Attempts(0,0)).failures(); }
+    static WalkwayConnectionLedger get(ServerLevel level) { return level.getDataStorage().computeIfAbsent(TYPE); }
+    static String key(UUID village,long project,long origin) { return village+"/"+project+"/"+origin; }
+    Job job(String key) { return jobs.getOrDefault(key,Job.fresh()); }
+    void put(String key,Job job) { jobs.put(key,job); if(job.done()) attempts.remove(key); setDirty(); }
+    List<BlockPos> route(String key) {
+        Job j=job(key);
+        return j.done() ? j.plan().stream().limit(j.centers()).map(s->BlockPos.of(s.pos())).toList() : List.of();
+    }
+}

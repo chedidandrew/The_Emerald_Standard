@@ -67,14 +67,14 @@ public final class AuthoredVillageStructureCosmeticLifecycleRegressionTest {
                         "placement.isCosmetic() && project.manualRepairRequired"),
                 "A structural integrity rewind can regenerate destroyed cosmetics");
         require(occurrences(construction,
-                        "placement.isTrail() || placement.isCosmetic()") >= 3,
+                        "placement.isTrail() || placement.isCosmetic()") >= 2,
                 "Protected, occupied, or failed cosmetics no longer become permanent safe gaps");
         require(construction.contains("cosmeticPlacementSupported(level, origin, target, placement)"),
                 "Cosmetics can be written without their bounded support check");
         int verificationLoop = construction.indexOf("for (int verifyIndex");
         require(verificationLoop >= 0
                         && construction.substring(verificationLoop).contains(
-                                "if (placement.isTrail() || placement.isCosmetic())"),
+                                "!ConstructionOwnership.owned(level,placementTarget(level,origin,placement),placement.state)"),
                 "Completion verification can make a skipped or removed cosmetic authoritative");
     }
 

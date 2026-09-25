@@ -1,9 +1,11 @@
 package com.chedidandrew.emeraldstandard.client;
 
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
+import com.chedidandrew.emeraldstandard.core.VillageDistrictMap;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageDashboardPolicy;
+import com.chedidandrew.emeraldstandard.core.VillageRecoveryGuidance;
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine;
 import com.chedidandrew.emeraldstandard.minecraft.BankerAmountSelection;
 import com.chedidandrew.emeraldstandard.minecraft.BankerMenu;
@@ -12,11 +14,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.Tooltip;
+
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
@@ -46,6 +49,22 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private int tab = BankerMenu.TAB_OVERVIEW;
     private int bankView = BANK_VIEW_TRANSFERS;
+    private boolean marketBrowser, watchlistLoaded;
+    private List<Component> wrappedBriefingSource = List.of();
+    private List<FormattedCharSequence> wrappedBriefingLines = List.of();
+    private float wrappedBriefingScale = -1;
+    private final InvestmentBrowser browser = new InvestmentBrowser();
+    private int browserCompare = -1, briefingMode, briefingScroll;
+    private EditBox browserSearch;
+    private String browserNotice = "";
+    private boolean expansionDetails;
+    private boolean districtMap;
+    private boolean mapDragging;
+    private boolean mapFitted;
+    private VillageDistrictMap.View lastMapRequest;
+    private int mapRequestTicks;
+    private final DistrictMapViewport mapViewport = new DistrictMapViewport();
+    private final DistrictTerrainLayer mapTerrain = new DistrictTerrainLayer();
     private int seenStatusRevision;
     private int seenInteractiveState;
     private int statusDisplayTicks;
@@ -57,6 +76,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private String amountDraft;
     private boolean amountDraftDirty;
     private float interfaceScale = 1.0F;
+    private final int[] compareScroll={0,0};
+    private int compareRange=0;
+    private final java.util.Map<Integer,Button> quoteButtons=new java.util.HashMap<>();
     private int tooltipMouseX;
     private int tooltipMouseY;
 
@@ -69,11 +91,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     @Override
     protected void init() {
+        wrappedBriefingScale = -1;
         super.init();
         interfaceScale = BankerScreenScale.fit(width, height, WIDTH, HEIGHT);
         leftPos = BankerScreenScale.origin(width, WIDTH, interfaceScale);
         topPos = BankerScreenScale.origin(height, HEIGHT, interfaceScale);
         amountActionButtons.clear();
+        browserSearch = null;
+        quoteButtons.clear();
         amountField = null;
         amountApplyButton = null;
         amountCancelButton = null;
@@ -106,23 +131,21 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             int selectedTab = index;
             Button tabButton = Button.builder(
                             tabs[index],
-                            button -> {
-                                discardAmountDraft();
-                                tab = selectedTab;
-                                rebuildWidgets();
-                            })
+                            button -> selectTab(selectedTab))
                     .bounds(
                             x + index * BankerScreenLayout.TAB_STEP,
                             y,
                             BankerScreenLayout.TAB_WIDTH,
                             BankerScreenLayout.TAB_HEIGHT)
-                    .tooltip(Tooltip.create(tabTooltips[index]))
+                    .tooltip(GuiTooltips.widget(tabTooltips[index]))
                     .build();
             // Selection is shown by the gold indicator drawn below the tab. Brackets
             // made longer names exceed their fixed button interiors at common GUI scales.
             addRenderableWidget(tabButton);
         }
 
+        if (briefingMode != 0) { addBriefingButtons(); scaleWidgetsToInterface(); return; }
+        if (tab == BankerMenu.TAB_MARKET && marketBrowser) { addBrowserButtons(); scaleWidgetsToInterface(); return; }
         if (pageUsesTransactionAmount()) {
             addAmountControls();
         }
@@ -135,6 +158,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case BankerMenu.TAB_FUND -> addFundButtons();
             case TAB_ACTIVITY -> addActivityButtons();
             case TAB_NEWS -> {
+                addRenderableWidget(Button.builder(Component.literal("Read The Emerald Wire"),
+                        b->sendMenuButton(BankerMenu.BUTTON_NEWSPAPER))
+                        .bounds(leftPos+20,topPos+HEIGHT-34,230,20).build());
             }
             default -> {
             }
@@ -188,7 +214,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         amountField.setHint(tr("amount.input_hint"));
         amountField.setValue(amountDraft);
         amountField.setResponder(this::amountDraftChanged);
-        amountField.setTooltip(Tooltip.create(tr("tooltip.amount_input")));
+        amountField.setTooltip(GuiTooltips.widget(tr("tooltip.amount_input")));
         addRenderableWidget(amountField);
 
         amountApplyButton = addRenderableWidget(Button.builder(
@@ -198,7 +224,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         y,
                         BankerScreenLayout.AMOUNT_APPLY_WIDTH,
                         BankerScreenLayout.AMOUNT_CONTROL_HEIGHT)
-                .tooltip(Tooltip.create(tr("tooltip.amount_apply")))
+                .tooltip(GuiTooltips.widget(tr("tooltip.amount_apply")))
                 .build());
         amountCancelButton = addRenderableWidget(Button.builder(
                         tr("amount.cancel"), button -> cancelTypedAmount())
@@ -207,7 +233,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         y,
                         BankerScreenLayout.AMOUNT_CANCEL_WIDTH,
                         BankerScreenLayout.AMOUNT_CONTROL_HEIGHT)
-                .tooltip(Tooltip.create(tr("tooltip.amount_cancel")))
+                .tooltip(GuiTooltips.widget(tr("tooltip.amount_cancel")))
                 .build());
         Component allLabel = selectedLabel(tr("amount.all"), allAmountIsApplied());
         amountAllButton = addRenderableWidget(Button.builder(
@@ -217,7 +243,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         y,
                         BankerScreenLayout.AMOUNT_ALL_WIDTH,
                         BankerScreenLayout.AMOUNT_CONTROL_HEIGHT)
-                .tooltip(Tooltip.create(tr("tooltip.amount_all")))
+                .tooltip(GuiTooltips.widget(tr("tooltip.amount_all")))
                 .build());
         updateAmountControlState();
     }
@@ -249,13 +275,242 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 rebuildWidgets();
                             })
                     .bounds(leftPos + 204, y, 104, 18)
-                    .tooltip(Tooltip.create(tr("tooltip.manage_transfers")))
+                    .tooltip(GuiTooltips.widget(tr("tooltip.manage_transfers")))
                     .build());
         }
         addHistoryRangeButton();
     }
 
+    private java.nio.file.Path watchlistPath() {
+        return minecraft.gameDirectory.toPath().resolve("config/the_emerald_standard-watchlist.properties");
+    }
+
+    private Button detailButton(String label, int x, int y, int width, Runnable action) {
+        return addRenderableWidget(Button.builder(Component.literal(label), b -> action.run())
+                .bounds(leftPos+x, topPos+y, width, 16).build());
+    }
+
+    private void selectTab(int selectedTab) {
+        discardAmountDraft();
+        if (districtMap) closeDistrictMap();
+        marketBrowser = false;
+        briefingMode = 0;
+        briefingScroll = 0;
+        sendMenuButton(BankerMenu.BUTTON_REPORT_CLOSE);
+        tab = selectedTab;
+        // Every Town entry starts at the overview, including revisits from its subpages.
+        if (tab == BankerMenu.TAB_VILLAGE) expansionDetails = false;
+        rebuildWidgets();
+    }
+
+    private void openBriefing(int mode) {
+        discardAmountDraft();
+        marketBrowser = false; briefingMode = mode; briefingScroll = 0;
+        sendMenuButton(mode); rebuildWidgets();
+    }
+
+    private void addBriefingButtons() {
+        detailButton("Back", 12, 207, 70, () -> {
+            briefingMode = 0; sendMenuButton(BankerMenu.BUTTON_REPORT_CLOSE); rebuildWidgets();
+        });
+        detailButton("Up", 86, 207, 38, () -> { briefingScroll = Math.max(0, briefingScroll-6); });
+        detailButton("Down", 128, 207, 48, () -> { briefingScroll += 6; });
+        detailButton("Town", 180, 207, 60, () -> selectTab(BankerMenu.TAB_VILLAGE));
+        detailButton("Fund", 244, 207, 64, () -> {
+            briefingMode=0; tab=BankerMenu.TAB_FUND; sendMenuButton(BankerMenu.BUTTON_REPORT_CLOSE); rebuildWidgets();
+        });
+    }
+
+    private void drawBriefing(GuiGraphicsExtractor graphics) {
+        var pages = menu.briefingPages(briefingMode);
+        if (wrappedBriefingScale != interfaceScale || !wrappedBriefingSource.equals(pages)) {
+            List<FormattedCharSequence> lines = new ArrayList<>();
+            if (pages.isEmpty()) lines.add(Component.literal("Waiting for the server report...").getVisualOrderText());
+            for (Component paragraph : pages) {
+                lines.addAll(font.split(paragraph, BankerScreenScale.scaled(284,interfaceScale)));
+                lines.add(Component.empty().getVisualOrderText());
+            }
+            wrappedBriefingSource = List.copyOf(pages); wrappedBriefingScale = interfaceScale;
+            wrappedBriefingLines = List.copyOf(lines);
+        }
+        var lines = wrappedBriefingLines;
+        int step = (int)Math.ceil((font.lineHeight+3)/interfaceScale);
+        int visible = Math.max(1, 120/step);
+        briefingScroll = Math.max(0,Math.min(briefingScroll,Math.max(0,lines.size()-visible)));
+        for(int i=0;i<visible && briefingScroll+i<lines.size();i++)
+            drawNativeText(graphics,lines.get(briefingScroll+i),18,56+i*step,TEXT,false);
+        drawTextWithin(graphics,Component.literal("Up/Down | "+(briefingScroll+1)+" / "+Math.max(1,lines.size())),
+                14,182,292,MUTED,false);
+        // Compiled build identity remains available through /emerald debug, not the report.
+    }
+
+    private void addBrowserButtons() {
+        if (!watchlistLoaded) {
+            watchlistLoaded = true;
+            try { browser.load(watchlistPath()); }
+            catch (java.io.IOException e) { browserNotice = "Watchlist could not be loaded."; }
+        }
+        if (browserCompare >= 0 && browser.comparison >= 0) {
+            detailButton("Range: "+MarketDisplay.LABELS[compareRange],12,185,176,()->{
+                compareRange=(compareRange+1)%MarketDisplay.RANGES.length;rebuildWidgets();
+            });
+            if(compareRange==0)detailButton(menu.historyYesterday()?"Yesterday":"Today - Live",194,185,114,()->selectAndRefresh(BankerMenu.BUTTON_HISTORY_SESSION));
+            detailButton("Back to listings",12,207,140,()->{browserCompare=-1;rebuildWidgets();});
+            detailButton("Market",166,207,142,()->{marketBrowser=false;rebuildWidgets();});
+            return;
+        }
+        browserSearch = new EditBox(font,leftPos+12,topPos+54,172,18,Component.literal("Search investments"));
+        browserSearch.setMaxLength(80); browserSearch.setValue(browser.query);
+        browserSearch.setHint(Component.literal("Search name, ticker, sector"));
+        browserSearch.setResponder(value -> { browser.query=value; browser.page=0; rebuildWidgets(); });
+        addRenderableWidget(browserSearch);
+        detailButton("Filter: "+friendly(browser.filter.name()),190,54,118,()->{
+            browser.filter=InvestmentBrowser.Filter.values()[(browser.filter.ordinal()+1)%InvestmentBrowser.Filter.values().length];
+            browser.page=0;rebuildWidgets();
+        });
+        detailButton(browser.favoritesOnly?"Favorites: On":"Favorites: All",12,76,96,()->{
+            browser.favoritesOnly=!browser.favoritesOnly;browser.page=0;rebuildWidgets();
+        });
+        detailButton(browser.holdingsOnly?"Holdings only":"All holdings",112,76,94,()->{
+            browser.holdingsOnly=!browser.holdingsOnly;browser.page=0;rebuildWidgets();
+        });
+        detailButton(browser.comparison<0?"Compare: choose":"Clear compare",210,76,98,()->{
+            browser.comparison=-1;rebuildWidgets();
+        });
+        var matches=browser.matches(menu::ownsAsset);
+        int maxPage=Math.max(0,(matches.size()-1)/5); browser.page=Math.max(0,Math.min(maxPage,browser.page));
+        for(int row=0;row<5 && browser.page*5+row<matches.size();row++) {
+            int index=matches.get(browser.page*5+row), y=98+row*18;
+            var asset=EconomyEngine.ASSETS.get(index);
+            Button quoteButton=detailButton((browser.favorites.contains(asset.ticker())?"* ":"")+asset.ticker()+" - "+asset.name(),12,y,205,()->{
+                discardAmountDraft();marketBrowser=false;selectAndRefresh(BankerMenu.BUTTON_ASSET_BASE+index);
+            });
+            quoteButton.setTooltip(GuiTooltips.widget(Component.literal(asset.name()+" | "+asset.sector()+"\n")
+                .append(assetTypeLabel(asset)).append(Component.literal(" | ")).append(riskLabel(asset))
+                .append(Component.literal(companyProfileText(asset)))));
+            quoteButtons.put(index,quoteButton);
+            detailButton(browser.favorites.contains(asset.ticker())?"-*":"+*",222,y,32,()->{
+                browser.toggle(index);
+                try { browser.save(watchlistPath()); browserNotice="Watchlist saved locally."; }
+                catch(java.io.IOException e) { browserNotice="Could not save watchlist; this visit still works."; }
+                rebuildWidgets();
+            }).setTooltip(GuiTooltips.widget(Component.literal("Toggle favorite")));
+            detailButton(browser.comparison==index?"Pinned":"Compare",258,y,50,()->{
+                if(browser.comparison<0)browser.comparison=index;
+                else if(browser.comparison!=index){
+                    browserCompare=index;compareScroll[0]=compareScroll[1]=0;
+                    sendMenuButton(BankerMenu.BUTTON_COMPARE_LEFT+browser.comparison);
+                    sendMenuButton(BankerMenu.BUTTON_COMPARE_RIGHT+browserCompare);
+                }
+                rebuildWidgets();
+            }).setTooltip(GuiTooltips.widget(Component.literal("Choose two investments to compare")));
+        }
+        detailButton("Market",12,207,94,()->{marketBrowser=false;rebuildWidgets();});
+        detailButton("<",112,207,42,()->{browser.page--;rebuildWidgets();}).active=browser.page>0;
+        detailButton(">",158,207,42,()->{browser.page++;rebuildWidgets();}).active=browser.page<maxPage;
+        detailButton("Clear search",206,207,102,()->{
+            browser.query="";browser.filter=InvestmentBrowser.Filter.ALL;browser.favoritesOnly=false;browser.holdingsOnly=false;browser.page=0;rebuildWidgets();
+        });
+    }
+
+
+    private com.chedidandrew.emeraldstandard.client.MarketDisplay.Quote dailyQuote(int index) {
+        var snapshot=menu.marketDisplay();return snapshot==null?null:snapshot.quote(EconomyEngine.ASSETS.get(index).ticker());
+    }
+    private String dailyLabel(int index) {
+        var q=dailyQuote(index);return q==null||!q.known()?"--":String.format(Locale.ROOT,"%+.2f%%",q.daily());
+    }
+    private int dailyColor(int index){var q=dailyQuote(index);return q==null||!q.known()||q.daily()==0?MUTED:q.daily()>0?POSITIVE:NEGATIVE;}
+    private net.minecraft.ChatFormatting dailyFormat(int index){
+        var q=dailyQuote(index);return q==null||!q.known()||q.daily()==0?net.minecraft.ChatFormatting.GRAY
+                :q.daily()>0?net.minecraft.ChatFormatting.GREEN:net.minecraft.ChatFormatting.RED;
+    }
+    private void drawComparison(GuiGraphicsExtractor g) {
+        int[] choices={browser.comparison,browserCompare};
+        int step=(int)Math.ceil((font.lineHeight+2)/interfaceScale);
+        int visible=Math.max(1,42/step);
+        for(int c=0;c<2;c++) {
+            int index=choices[c],x=14+c*152;var a=EconomyEngine.ASSETS.get(index);
+            drawTextWithin(g,Component.literal(a.ticker()+" | "+a.name()),x,55,138,c==0?0xFF65BFFF:0xFFF4B65D,false);
+            drawTextWithin(g,Component.literal(dailyLabel(index)+" today | "+money(menu.assetPrice(index))),x,55+step,138,dailyColor(index),false);
+            Component detail=Component.literal("Details: ").append(assetTypeLabel(a)).append(" | ").append(riskLabel(a))
+                .append("\n"+a.sector()+" | Holding: "+holdingLabel(index)+"\n")
+                .append(tr("market.behavior."+a.ticker().toLowerCase(Locale.ROOT)))
+                .append("\nQuotes are not forecasts. Scroll this side to read more.");
+            var lines=font.split(detail,BankerScreenScale.scaled(132,interfaceScale));
+            compareScroll[c]=Math.min(compareScroll[c],Math.max(0,lines.size()-visible));
+            for(int i=0;i<visible&&i+compareScroll[c]<lines.size();i++)
+                drawNativeText(g,lines.get(i+compareScroll[c]),x,78+i*step,TEXT,false);
+            if(lines.size()>visible) {
+                g.fill(x+136,78,x+137,120,0xFF456B5A);
+                int y=78+(int)(34.0*compareScroll[c]/Math.max(1,lines.size()-visible));
+                g.fill(x+135,y,x+138,y+8,GOLD);
+            }
+        }
+        g.fill(12,125,308,181,PANEL_DARK);g.outline(12,125,296,56,0xFF456B5A);
+        var snapshot=menu.marketDisplay();
+        if(snapshot==null||!snapshot.left().equals(EconomyEngine.ASSETS.get(choices[0]).ticker())
+                ||!snapshot.right().equals(EconomyEngine.ASSETS.get(choices[1]).ticker())) {
+            drawTextWithin(g,Component.literal("Loading aligned price history..."),16,146,284,MUTED,false);return;
+        }
+        var curve=snapshot.curves().get(compareRange);
+        if(curve.left().size()<2) {
+            drawTextWithin(g,Component.literal("History starts when observed; waiting for the next quote."),16,146,284,MUTED,false);return;
+        }
+        double min=100,max=100;
+        for(double v:curve.left()){min=Math.min(min,v);max=Math.max(max,v);}
+        for(double v:curve.right()){min=Math.min(min,v);max=Math.max(max,v);}
+        if(max-min<0.02){min-=0.01;max+=0.01;}
+        int baseline=164-(int)(24*(100-min)/(max-min));
+        g.fill(14,baseline,306,baseline+1,0xFF456B5A);
+        plotComparison(g,curve.left(),curve.positions(),min,max,0xFF65BFFF,false);
+        plotComparison(g,curve.right(),curve.positions(),min,max,0xFFF4B65D,true);
+        drawTextWithin(g,Component.literal((compareRange==0?(snapshot.yesterday()?"Yesterday":"Today - Live")+" | ":"")+"Since Day "+curve.firstDay()+" | start = 100"),
+                16,128,282,MUTED,false);
+        drawTextWithin(g,Component.literal(snapshot.left()+" "+String.format(Locale.ROOT,"%+.2f%%",curve.left().getLast()-100)),
+                14,170,142,0xFF65BFFF,false);
+        drawTextWithin(g,Component.literal(snapshot.right()+" "+String.format(Locale.ROOT,"%+.2f%%",curve.right().getLast()-100)),
+                166,170,138,0xFFF4B65D,false);
+    }
+    private void plotComparison(GuiGraphicsExtractor g,java.util.List<Double> points,java.util.List<Double> positions,double min,double max,int color,boolean dashed) {
+        for(int i=1;i<points.size();i++) {
+            int x0=15+(int)(positions.get(i-1)*289),x1=15+(int)(positions.get(i)*289);
+            int y0=164-(int)(24*(points.get(i-1)-min)/(max-min)),y1=164-(int)(24*(points.get(i)-min)/(max-min));
+            // Dashed second series remains distinguishable even when both curves coincide.
+            int count=Math.max(Math.abs(x1-x0),Math.abs(y1-y0));
+            for(int j=0;j<=count;j++)if(!dashed||((x0+j)/3)%2==0){
+                int x=x0+(x1-x0)*j/Math.max(1,count),y=y0+(y1-y0)*j/Math.max(1,count);
+                g.fill(x,y,x+1,y+1,color);
+            }
+        }
+    }
+
+    private String holdingLabel(int index) {
+        return menu.ownsAsset(index) && menu.assetHoldingValue(index) < 0.01
+                ? "<0.01 E" : money(menu.assetHoldingValue(index));
+    }
+
+    private void drawBrowser(GuiGraphicsExtractor graphics) {
+        if (browserCompare >= 0 && browser.comparison >= 0) {
+            drawComparison(graphics);
+            return;
+        }
+        for(var entry:quoteButtons.entrySet()) {
+            var a=EconomyEngine.ASSETS.get(entry.getKey());
+            String label=(browser.favorites.contains(a.ticker())?"* ":"")+a.ticker()+" "+dailyLabel(entry.getKey())+" - "+a.name();
+            entry.getValue().setMessage(Component.literal(label).withStyle(dailyFormat(entry.getKey())));
+        }
+        var matches=browser.matches(menu::ownsAsset);
+        String status=matches.isEmpty()?"No matching investments. Clear search or filters."
+                : matches.size()+" listings | Page "+(browser.page+1)+" / "+Math.max(1,(matches.size()+4)/5)
+                    +(browser.comparison>=0?" | Compare: "+EconomyEngine.ASSETS.get(browser.comparison).ticker():"");
+        drawTextWithin(graphics,Component.literal(browserNotice.isEmpty()?status:browserNotice),14,191,292,MUTED,false);
+    }
+
     private void addMarketButtons() {
+        detailButton("Browse / compare",12,BankerScreenLayout.MARKET_ACTION_Y,94,()->{
+            discardAmountDraft();marketBrowser=true;browserCompare=-1;browserNotice="";rebuildWidgets();
+        });
         int index = menu.selectedAssetIndex();
         int previous = (index + EconomyEngine.ASSETS.size() - 1)
                 % EconomyEngine.ASSETS.size();
@@ -271,7 +526,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         topPos + BankerScreenLayout.MARKET_SELECTOR_Y,
                         BankerScreenLayout.MARKET_ARROW_WIDTH,
                         BankerScreenLayout.MARKET_SELECTOR_HEIGHT)
-                .tooltip(Tooltip.create(tr("tooltip.previous_asset",
+                .tooltip(GuiTooltips.widget(tr("tooltip.previous_asset",
                         previousAsset.ticker(), previousAsset.name())))
                 .build());
         addRenderableWidget(Button.builder(
@@ -282,8 +537,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         topPos + BankerScreenLayout.MARKET_SELECTOR_Y,
                         BankerScreenLayout.MARKET_ASSET_WIDTH,
                         BankerScreenLayout.MARKET_SELECTOR_HEIGHT)
-                .tooltip(Tooltip.create(tr("tooltip.market_asset",
-                        selected.name(), selected.sector(), riskLabel(selected))))
+                .tooltip(GuiTooltips.widget(tr("tooltip.market_asset",
+                        selected.name(), selected.sector(), riskLabel(selected), assetTypeLabel(selected))))
                 .build());
         addRenderableWidget(Button.builder(
                         Component.literal(">"),
@@ -293,7 +548,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         topPos + BankerScreenLayout.MARKET_SELECTOR_Y,
                         BankerScreenLayout.MARKET_ARROW_WIDTH,
                         BankerScreenLayout.MARKET_SELECTOR_HEIGHT)
-                .tooltip(Tooltip.create(tr("tooltip.next_asset",
+                .tooltip(GuiTooltips.widget(tr("tooltip.next_asset",
                         nextAsset.ticker(), nextAsset.name())))
                 .build());
         int y = topPos + BankerScreenLayout.MARKET_ACTION_Y;
@@ -301,13 +556,13 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         Button buy = addActionButton(
                 tr("action.invest"), leftPos + 112, y, 58,
                 BankerMenu.ACTION_BUY, marketBuyPreview());
-        buy.active = ready && selectedWholeAmount(menu.cash()) > 0
+        buy.active = ready && selectedWholeAmount(menu.spendingPower()) > 0
                 && menu.selectedAssetPrice() > 0.0;
         trackAmountAction(buy);
         Button sellQuarter = addActionButton(
                 tr("action.sell_quarter"), leftPos + 174, y, 62,
                 BankerMenu.ACTION_SELL_QUARTER, marketSalePreview(0.25));
-        sellQuarter.active = ready && menu.selectedShares() > 0.0;
+        sellQuarter.active = ready && menu.ownsAsset(menu.selectedAssetIndex());
         Button sellAll = addConfirmingActionButton(
                 menu.confirmationAction() == BankerMenu.ACTION_SELL_ALL
                         ? tr("action.confirm")
@@ -317,7 +572,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 68,
                 BankerMenu.ACTION_SELL_ALL,
                 marketSalePreview(1.0));
-        sellAll.active = ready && menu.selectedShares() > 0.0;
+        sellAll.active = ready && menu.ownsAsset(menu.selectedAssetIndex());
         addHistoryRangeButton();
     }
 
@@ -355,7 +610,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                             topPos + BankerScreenLayout.BANKING_SUBTAB_Y,
                             BankerScreenLayout.BANKING_SUBTAB_WIDTH,
                             BankerScreenLayout.BANKING_SUBTAB_HEIGHT)
-                    .tooltip(Tooltip.create(explanations[index]))
+                    .tooltip(GuiTooltips.widget(explanations[index]))
                     .build());
         }
     }
@@ -378,7 +633,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         Button toSavings = addActionButton(
                 tr("action.cash_to_savings"), leftPos + 12, secondaryY, 145,
                 BankerMenu.ACTION_SAVINGS_DEPOSIT, cashToSavingsPreview());
-        toSavings.active = ready && selectedWholeAmount(menu.cash()) > 0;
+        toSavings.active = ready && selectedWholeAmount(menu.spendingPower()) > 0;
         trackAmountAction(toSavings);
         Button fromSavings = addActionButton(
                 tr("action.savings_to_cash"), leftPos + 163, secondaryY, 145,
@@ -395,7 +650,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         Button openCd = addActionButton(
                 tr("action.invest_new_cd"), leftPos + 12, y, 145,
                 BankerMenu.ACTION_OPEN_CD, openCdPreview());
-        openCd.active = ready && selectedWholeAmount(menu.cash()) > 0
+        openCd.active = ready && selectedWholeAmount(menu.spendingPower()) > 0
                 && menu.cdCount()
                         < EconomyState.MAX_TERM_POSITIONS;
         trackAmountAction(openCd);
@@ -425,7 +680,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 145,
                 BankerMenu.ACTION_FUND_LENDING,
                 fundLoanPreview());
-        fund.active = ready && selectedWholeAmount(menu.cash()) > 0
+        fund.active = ready && selectedWholeAmount(menu.spendingPower()) > 0
                 && menu.lendingCount()
                         < EconomyState.MAX_TERM_POSITIONS;
         trackAmountAction(fund);
@@ -444,13 +699,13 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         Component.literal("<"),
                         button -> selectAndRefresh(BankerMenu.BUTTON_RESOURCE_BASE + previous))
                 .bounds(leftPos + 22, topPos + 76, 24, 20)
-                .tooltip(Tooltip.create(tr("tooltip.previous_resource")))
+                .tooltip(GuiTooltips.widget(tr("tooltip.previous_resource")))
                 .build());
         addRenderableWidget(Button.builder(
                         Component.literal(">"),
                         button -> selectAndRefresh(BankerMenu.BUTTON_RESOURCE_BASE + next))
                 .bounds(leftPos + 274, topPos + 76, 24, 20)
-                .tooltip(Tooltip.create(tr("tooltip.next_resource")))
+                .tooltip(GuiTooltips.widget(tr("tooltip.next_resource")))
                 .build());
         Button exchange = addActionButton(
                 tr("action.exchange_to_cash"), leftPos + 112, topPos + 165, 96,
@@ -463,13 +718,260 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void addVillageButtons() {
-        // Contributions use a separate Fund page and a server-owned exact draft.
+        if (districtMap) { addDistrictMapButtons(); return; }
+        if (!menu.hasVillage()) return;
+        addRenderableWidget(Button.builder(tr(expansionDetails ? "expansion.back" : "expansion.title"),
+                button -> { expansionDetails = !expansionDetails; rebuildWidgets(); })
+                .bounds(leftPos + 12, topPos + (expansionDetails
+                        ? BankerScreenLayout.EXPANSION_ACTION_Y : 174), 140, 12).build());
+        if (!expansionDetails) {
+            detailButton("What next? Progress report",12,198,296,()->openBriefing(BankerMenu.BUTTON_TOWN_REPORT));
+            addRenderableWidget(Button.builder(tr("map.open"), button -> {
+                districtMap = true; mapFitted = false; lastMapRequest = null; mapRequestTicks = 0;
+                sendMenuButton(BankerMenu.BUTTON_MAP_OPEN); rebuildWidgets();
+            }).bounds(leftPos + 166, topPos + 174, 142, 12)
+                    .tooltip(GuiTooltips.widget(tr("map.help"))).build());
+            return;
+        }
+        for (int i = 0; i < 3; i++) {
+            int mode = i;
+            Button choice = Button.builder(tr("expansion.mode." +
+                    com.chedidandrew.emeraldstandard.core.VillageExpansion.Mode.values()[i].name().toLowerCase(Locale.ROOT)),
+                    button -> selectAndRefresh(BankerMenu.ACTION_EXPANSION_AUTOMATIC + mode))
+                    .bounds(leftPos + 12 + i * 100, topPos + BankerScreenLayout.EXPANSION_MODE_Y, 96, 18)
+                    .tooltip(GuiTooltips.widget(tr(menu.mayManageExpansion()
+                            ? "expansion.funding" : "expansion.permissions"))).build();
+            choice.active = menu.mayManageExpansion() && menu.expansionMode().ordinal() != i && transactionsAvailable();
+            addRenderableWidget(choice);
+        }
+        Button approve = Button.builder(tr("expansion.approve"), button ->
+                selectAndRefresh(BankerMenu.ACTION_EXPANSION_APPROVE_ONCE))
+                .bounds(leftPos + 166, topPos + BankerScreenLayout.EXPANSION_ACTION_Y, 142, 12).build();
+        approve.active = menu.mayManageExpansion() && menu.expansionMode() ==
+                com.chedidandrew.emeraldstandard.core.VillageExpansion.Mode.APPROVAL && transactionsAvailable();
+        addRenderableWidget(approve);
+    }
+
+    private void closeDistrictMap() {
+        districtMap = false; mapDragging = false;
+        mapTerrain.close();
+        sendMenuButton(BankerMenu.BUTTON_MAP_CLOSE);
+    }
+
+    @Override
+    public void removed() {
+        mapTerrain.close();
+        super.removed();
+    }
+
+    private void mapButton(String label, int x, int width, Runnable action) {
+        addRenderableWidget(Button.builder(tr(label), button -> action.run())
+                .bounds(leftPos + x, topPos + 213, width, 12)
+                .tooltip(GuiTooltips.widget(tr(label + "_help"))).build());
+    }
+
+    private void addDistrictMapButtons() {
+        mapButton("map.back", 12, 64, () -> { closeDistrictMap(); rebuildWidgets(); });
+        mapButton("map.zoom_out", 80, 30, () -> mapViewport.zoom(0.8));
+        mapButton("map.zoom_in", 114, 30, () -> mapViewport.zoom(1.25));
+        mapButton("map.fit", 148, 95, () -> mapViewport.fit(menu.districtMap()));
+        mapButton("map.home", 247, 61, () -> {
+            var p = menu.districtMap();
+            mapViewport.focus(p);
+        });
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (districtMap && event.button() == 0 && DistrictMapViewport.contains(
+                logicalMouseX(event.x()) - leftPos, logicalMouseY(event.y()) - topPos)) {
+            mapDragging = true; return true;
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double deltaX, double deltaY) {
+        if (districtMap && mapDragging) {
+            mapViewport.pan(deltaX / interfaceScale, deltaY / interfaceScale); return true;
+        }
+        return super.mouseDragged(event, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (mapDragging) { mapDragging = false; return true; }
+        return super.mouseReleased(event);
+    }
+
+    private static int mapColor(VillageDistrictMap.Marker m) {
+        if (m.kind() == VillageDistrictMap.DISTRICT || m.kind() == VillageDistrictMap.TERRITORY)
+            return m.status() == VillageDistrictMap.CURRENT ? GOLD : TEXT;
+        if (m.kind() == VillageDistrictMap.SUMMARY) return m.status() == VillageDistrictMap.CURRENT ? GOLD : 0xFF78BBF2;
+        if (m.kind() == VillageDistrictMap.BANK) return 0xFFCF9CFF;
+        return switch (m.status()) {
+            case VillageDistrictMap.BUILDING -> GOLD;
+            case VillageDistrictMap.PLANNED -> 0xFF78BBF2;
+            case VillageDistrictMap.BLOCKED -> NEGATIVE;
+            default -> EMERALD;
+        };
+    }
+
+    private Component mapMarkerTitle(VillageDistrictMap.Marker m) {
+        if (m.kind() == VillageDistrictMap.DISTRICT) return tr("map.district", m.district());
+        if (m.kind() == VillageDistrictMap.BANK) return tr("map.bank");
+        if (m.kind() == VillageDistrictMap.SUMMARY) return m.extra() == 1 ? tr("map.district", m.district()) : tr("map.count", m.extra());
+        var imported = com.chedidandrew.emeraldstandard.core.VanillaConstructionPlan.labelKind(m.extra());
+        if (imported != null) return tr("village.vanilla." + imported.name().toLowerCase(Locale.ROOT));
+        var types = VillageProsperityEngine.ProjectType.values();
+        return m.extra() >= 0 && m.extra() < types.length ? projectLabel(types[m.extra()]) : tr("map.site");
+    }
+
+    private void drawDistrictMap(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        var page = menu.districtMap();
+        if (!mapFitted && page != VillageDistrictMap.EMPTY) {
+            mapFitted = true; mapViewport.focus(page);
+        }
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(leftPos, topPos);
+        try {
+            int x = DistrictMapViewport.X, y = DistrictMapViewport.Y;
+            int right = x + DistrictMapViewport.WIDTH, bottom = y + DistrictMapViewport.HEIGHT;
+            graphics.fill(x, y, right, bottom, PANEL_DARK);
+            mapTerrain.draw(graphics, mapViewport);
+            graphics.outline(x, y, right - x, bottom - y, 0xFF456B5A);
+            double step = 16;
+            while (step * mapViewport.scale() < 16) step *= 2;
+            double pixels = step * mapViewport.scale();
+            for (double gridX = x + ((mapViewport.x(0) - x) % pixels + pixels) % pixels;
+                    gridX < right; gridX += pixels)
+                graphics.fill((int) gridX, y + 1, (int) gridX + 1, bottom - 1, 0x4020342B);
+            for (double gridY = y + ((mapViewport.y(0) - y) % pixels + pixels) % pixels;
+                    gridY < bottom; gridY += pixels)
+                graphics.fill(x + 1, (int) gridY, right - 1, (int) gridY + 1, 0x4020342B);
+            VillageDistrictMap.Marker hovered = null;
+            double nearest = Double.MAX_VALUE;
+            // Survey areas beneath every landmark. Clipping must not create fake boundary edges.
+            for (var m : page.markers()) {
+                if(m.kind()==VillageDistrictMap.DISTRICT && m.extra()==-1) continue;
+                if(m.kind()!=VillageDistrictMap.DISTRICT && m.kind()!=VillageDistrictMap.TERRITORY) continue;
+                double lx = mapViewport.x(m.minX()), rx = mapViewport.x((double) m.maxX() + 1);
+                double ty = mapViewport.y(m.minZ()), by = mapViewport.y((double) m.maxZ() + 1);
+                if (rx < x || lx > right || by < y || ty > bottom) continue;
+                int left = (int) Math.max(x + 1, lx), top = (int) Math.max(y + 1, ty);
+                int endX = (int) Math.min(right - 1, rx), endY = (int) Math.min(bottom - 1, by);
+                int color = mapColor(m);
+                graphics.fill(left, top, endX, endY, (color & 0xFFFFFF) | 0x22000000);
+                if(m.kind()==VillageDistrictMap.TERRITORY) {
+                    if(m.extra()==1) graphics.fill(left,top,Math.max(left+1,endX),Math.max(top+1,endY),color);
+                    continue;
+                }
+                if (lx >= x + 1) graphics.fill(left, top, left + 1, endY, color);
+                if (rx <= right - 1) graphics.fill(endX - 1, top, endX, endY, color);
+                if (ty >= y + 1) graphics.fill(left, top, endX, top + 1, color);
+                if (by <= bottom - 1) graphics.fill(left, endY - 1, endX, endY, color);
+                if (DistrictMapViewport.contains(mouseX, mouseY) && mouseX >= left && mouseX < endX
+                        && mouseY >= top && mouseY < endY) {
+                    double distance = Math.hypot(mouseX - mapViewport.x(m.x()), mouseY - mapViewport.y(m.z()));
+                    if (distance < nearest) { hovered = m; nearest = distance; }
+                }
+            }
+            // Any exact building/center hit takes precedence over the broader coverage tooltip.
+            nearest = Double.MAX_VALUE;
+            // Footprints first, then point landmarks. Never draw outside the map rectangle.
+            for (int layer = VillageDistrictMap.SUMMARY; layer >= VillageDistrictMap.DISTRICT; layer--) {
+                if (layer == VillageDistrictMap.TERRITORY) continue;
+                for (var m : page.markers()) {
+                    if (m.kind() != layer) continue;
+                    double cx = mapViewport.x(m.x()), cy = mapViewport.y(m.z());
+                    double radius = m.kind() == VillageDistrictMap.SUMMARY ? 5 : m.kind() == VillageDistrictMap.PROJECT ? 2 : 3;
+                    boolean point = m.kind() != VillageDistrictMap.PROJECT;
+                    double lx = point ? cx - radius : Math.min(cx - radius, mapViewport.x(m.minX()));
+                    double ly = point ? cy - radius : Math.min(cy - radius, mapViewport.y(m.minZ()));
+                    double rx = point ? cx + radius : Math.max(cx + radius, mapViewport.x((double) m.maxX() + 1));
+                    double by = point ? cy + radius : Math.max(cy + radius, mapViewport.y((double) m.maxZ() + 1));
+                    if (rx <= x + 1 || lx >= right - 1 || by <= y + 1 || ly >= bottom - 1) continue;
+                    int left = (int) Math.max(x + 1, lx), top = (int) Math.max(y + 1, ly);
+                    int width = Math.max(1, (int) Math.min(right - 1, rx) - left);
+                    int height = Math.max(1, (int) Math.min(bottom - 1, by) - top);
+                    int color = mapColor(m);
+                    graphics.outline(left - 1, top - 1, width + 2, height + 2, 0xFF132219);
+                    graphics.fill(left, top, left + width, top + height, (color & 0xFFFFFF) | 0x55000000);
+                    graphics.outline(left, top, width, height, color);
+                    if (m.kind() == VillageDistrictMap.SUMMARY && cx >= x + 3 && cx < right - 40
+                            && cy >= y + 12 && cy < bottom - 12)
+                        drawTextWithin(graphics, Component.literal((m.extra() == 1 ? "D" + m.district() : m.extra() + "D")
+                                + ": " + m.value()), (int) cx + 6, (int) cy - 10, 40, color, true);
+                    if (m.kind() == VillageDistrictMap.DISTRICT
+                            && cx >= x + 3 && cx < right - 28 && cy >= y + 12 && cy < bottom - 12)
+                        drawTextWithin(graphics, Component.literal("D" + m.district()),
+                                (int) cx + 4, (int) cy - 10, 24, color, true);
+                    if (DistrictMapViewport.contains(mouseX, mouseY) && mouseX >= left - 2
+                            && mouseX <= left + width + 2 && mouseY >= top - 2 && mouseY <= top + height + 2) {
+                        double distance = Math.hypot(mouseX - cx, mouseY - cy);
+                        if (distance <= nearest) { hovered = m; nearest = distance; }
+                    }
+                }
+            }
+            // The screen is tied to a nearby desk in the player's current dimension.
+            if (minecraft.player != null && menu.hasVillage()) {
+                int px = (int) Math.round(mapViewport.x(minecraft.player.getX()));
+                int py = (int) Math.round(mapViewport.y(minecraft.player.getZ()));
+                if (DistrictMapViewport.contains(px - 3, py - 3) && DistrictMapViewport.contains(px + 3, py + 3)) {
+                    graphics.fill(px - 3, py, px + 4, py + 1, 0xFF36EBED);
+                    graphics.fill(px, py - 3, px + 1, py + 4, 0xFF36EBED);
+                }
+            }
+            drawTextWithin(graphics, tr("map.title"), 12, 55, 205, GOLD, false);
+            graphics.fill(x + 2, y + 2, x + 128, y + 12, 0xD0132219);
+            drawTextWithin(graphics, ExploredTerrainRuntime.error().isEmpty()?tr("map.terrain")
+                    :Component.literal("Terrain cache unavailable"), x + 4, y + 3, 123, TEXT, false);
+            graphics.fill(179, 75, 220, 87, 0xD0132219);
+            drawTextWithin(graphics, tr("map.north"), 181, 77, 37, MUTED, true);
+            drawTextWithin(graphics, tr(page.summary() ? "map.overview" : "map.details"), 230, 55, 78, TEXT, false);
+            drawTextWithin(graphics, tr("map.count", page.districts()), 230, 76, 78, TEXT, false);
+            String[] legend = page.summary() ? new String[]{"current", "groups"}
+                    : new String[]{"current", "districts", "banks", "built", "building", "planned", "blocked", "player"};
+            int[] colors = page.summary() ? new int[]{GOLD, 0xFF78BBF2}
+                    : new int[]{GOLD, TEXT, 0xFFCF9CFF, EMERALD, GOLD, 0xFF78BBF2, NEGATIVE, 0xFF36EBED};
+            for (int i = 0; i < legend.length; i++)
+                drawTextWithin(graphics, tr("map.legend." + legend[i]), 230, 89 + i * 10, 78, colors[i], false);
+            if (page.summary()) drawWrappedText(graphics, tr("map.summary_help"), 230, 116, 78, 11, 5, MUTED);
+            drawTextWithin(graphics, tr("map.unsited", page.unsited()), 230, 174, 78, MUTED, false);
+            drawTextWithin(graphics, tr("map.grid", (long) step), 230, 184, 78, MUTED, false);
+            boolean updating = lastMapRequest != null && !lastMapRequest.equals(page.view());
+            drawTextWithin(graphics, tr(updating ? "map.updating" : page.summary() ? "map.summary_hint" : "map.hint"),
+                    12, 199, 296, MUTED, false);
+            if (page.markers().isEmpty())
+                drawWrappedText(graphics, tr(!menu.hasVillage() ? "map.unavailable"
+                        : page == VillageDistrictMap.EMPTY ? "map.loading" : "map.empty"),
+                        30, 120, 170, 12, 3, MUTED);
+            if (hovered != null) {
+                var m = hovered;
+                Component detail = m.kind() == VillageDistrictMap.DISTRICT
+                        ? m.extra() < 0 ? tr("map.residents_count", m.value()) : tr("map.residents", m.value(), m.extra())
+                        : tr("map.status." + m.status());
+                Component text = mapMarkerTitle(m).copy().append("\n")
+                        .append(tr("map.district", m.district())).append(" | ").append(detail)
+                        .append("\nX: " + (int) m.x() + "  Z: " + (int) m.z());
+                if (m.kind() == VillageDistrictMap.PROJECT) text = text.copy().append("\n")
+                        .append(tr("map.progress", m.value()));
+                if (m.kind() == VillageDistrictMap.DISTRICT && m.extra()>=0) text = text.copy().append("\n")
+                        .append(tr("map.coverage", (long) m.maxX() - m.minX() + 1, (long) m.maxZ() - m.minZ() + 1))
+                        .append("\nX: " + m.minX() + " .. " + m.maxX() + "  Z: " + m.minZ() + " .. " + m.maxZ());
+                if (m.kind() == VillageDistrictMap.SUMMARY) text = mapMarkerTitle(m).copy()
+                        .append("\n").append(tr("map.summary_sites", m.value())).append("\n").append(tr("map.summary_hint"));
+                GuiTooltips.show(graphics, font, text, tooltipMouseX, tooltipMouseY);
+            }
+        } finally { graphics.pose().popMatrix(); }
     }
 
     private void addFundButtons() {
         if (!menu.hasVillage()) {
             return;
         }
+        detailButton("Preview",12,165,78,()->openBriefing(BankerMenu.BUTTON_FUND_PREVIEW));
+        detailButton("Receipt",94,165,84,()->openBriefing(BankerMenu.BUTTON_FUND_RECEIPT));
         boolean restoration = menu.villageLifecycle()
                 == VillageProsperityEngine.Lifecycle.ABANDONED
                 || menu.villageLifecycle() == VillageProsperityEngine.Lifecycle.EXTINCT;
@@ -499,7 +1001,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         .append(fundContributionPreview()));
         contributionButton.active = transactionsAvailable()
                 && menu.fundAvailable()
-                && menu.donationDraft() > 0
+                && menu.donationDraft() > 0 && menu.paymentPlan(menu.donationDraft()) != null
                 && !(menu.fundTypeIndex() == 2 && menu.fundableProjectTypeOrdinal() < 0);
         trackAmountAction(contributionButton);
 
@@ -507,7 +1009,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         tr("fund.type_button", fundTypeLabel()),
                         button -> selectAndRefresh(BankerMenu.BUTTON_FUND_TYPE))
                 .bounds(leftPos + 12, topPos + BankerScreenLayout.FUND_CONTROL_Y, 140, 18)
-                .tooltip(Tooltip.create(fundTypeExplanation()))
+                .tooltip(GuiTooltips.widget(fundTypeExplanation()))
                 .build();
         typeButton.active = menu.fundAvailable() && menu.availableFundTypeCount() > 1;
         addRenderableWidget(typeButton);
@@ -521,7 +1023,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         tr("fund.purpose_button", fundPurposeLabel()),
                         button -> selectAndRefresh(BankerMenu.BUTTON_FUND_PURPOSE))
                 .bounds(leftPos + 168, topPos + BankerScreenLayout.FUND_CONTROL_Y, 140, 18)
-                .tooltip(Tooltip.create(fundPurposeTooltip(purposeState)))
+                .tooltip(GuiTooltips.widget(fundPurposeTooltip(purposeState)))
                 .build();
         purposeButton.active = purposeState
                 == BankerScreenLayout.FundPurposeTooltipState.CYCLABLE;
@@ -529,6 +1031,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void addHistoryRangeButton() {
+        if(tab==BankerMenu.TAB_MARKET&&menu.historyRangeIndex()==0)
+            addRenderableWidget(Button.builder(Component.literal(menu.historyYesterday()?"Yesterday":"Live today"),b->selectAndRefresh(BankerMenu.BUTTON_HISTORY_SESSION))
+                .bounds(leftPos+205,topPos+48,59,12).tooltip(GuiTooltips.widget(Component.literal("Switch Today / Yesterday"))).build());
         addRenderableWidget(Button.builder(
                         Component.literal(historyRangeLabel()),
                         button -> selectAndRefresh(BankerMenu.BUTTON_HISTORY_RANGE))
@@ -537,7 +1042,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         topPos + BankerScreenLayout.HISTORY_BUTTON_Y,
                         BankerScreenLayout.HISTORY_BUTTON_WIDTH,
                         BankerScreenLayout.HISTORY_BUTTON_HEIGHT)
-                .tooltip(Tooltip.create(tr("tooltip.history_range")))
+                .tooltip(GuiTooltips.widget(tr("tooltip.history_range")))
                 .build());
     }
 
@@ -552,7 +1057,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         topPos + BankerScreenLayout.ACTIVITY_FILTER_Y,
                         BankerScreenLayout.ACTIVITY_FILTER_WIDTH,
                         BankerScreenLayout.ACTIVITY_FILTER_HEIGHT)
-                .tooltip(Tooltip.create(tr("activity.filter_tooltip")))
+                .tooltip(GuiTooltips.widget(tr("activity.filter_tooltip")))
                 .build());
 
         Button newer = Button.builder(
@@ -563,7 +1068,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         topPos + BankerScreenLayout.ACTIVITY_SCROLL_UP_Y,
                         BankerScreenLayout.ACTIVITY_SCROLL_BUTTON_WIDTH,
                         BankerScreenLayout.ACTIVITY_SCROLL_BUTTON_HEIGHT)
-                .tooltip(Tooltip.create(tr("activity.newer")))
+                .tooltip(GuiTooltips.widget(tr("activity.newer")))
                 .build();
         newer.active = menu.canScrollActivityNewer();
         addRenderableWidget(newer);
@@ -576,7 +1081,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         topPos + BankerScreenLayout.ACTIVITY_SCROLL_DOWN_Y,
                         BankerScreenLayout.ACTIVITY_SCROLL_BUTTON_WIDTH,
                         BankerScreenLayout.ACTIVITY_SCROLL_BUTTON_HEIGHT)
-                .tooltip(Tooltip.create(tr("activity.older")))
+                .tooltip(GuiTooltips.widget(tr("activity.older")))
                 .build();
         older.active = menu.canScrollActivityOlder();
         addRenderableWidget(older);
@@ -604,7 +1109,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 (cd ? BankerMenu.BUTTON_CD_TERM_BASE
                                         : BankerMenu.BUTTON_LENDING_TERM_BASE) + nextIndex))
                 .bounds(leftPos + 67, topPos + relativeY, 65, 18)
-                .tooltip(Tooltip.create(tooltip))
+                .tooltip(GuiTooltips.widget(tooltip))
                 .build());
     }
 
@@ -639,7 +1144,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 ? BankerMenu.BUTTON_CD_POSITION
                                 : BankerMenu.BUTTON_LENDING_POSITION))
                 .bounds(leftPos + 136, topPos + relativeY, 172, 18)
-                .tooltip(Tooltip.create(tooltip))
+                .tooltip(GuiTooltips.widget(tooltip))
                 .build();
         position.active = count > 1;
         addRenderableWidget(position);
@@ -661,7 +1166,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         label,
                         button -> sendMenuButton(id))
                 .bounds(x, y, width, 18)
-                .tooltip(Tooltip.create(explanation))
+                .tooltip(GuiTooltips.widget(explanation))
                 .build();
         addRenderableWidget(widget);
         return widget;
@@ -673,7 +1178,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         label,
                         button -> confirmOrSend(id))
                 .bounds(x, y, width, 18)
-                .tooltip(Tooltip.create(explanation))
+                .tooltip(GuiTooltips.widget(explanation))
                 .build();
         addRenderableWidget(widget);
         return widget;
@@ -761,7 +1266,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         }
         int available = (int) Math.min(
                 EconomyService.MAX_WHOLE_EMERALD_TRANSACTION,
-                Math.max(0L, (long) Math.floor(menu.cash())));
+                Math.max(0L, (long) Math.floor(menu.spendingPower())));
         return available > 0 && menu.donationDraft() == available;
     }
 
@@ -788,7 +1293,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private boolean amountSelectionAvailable() {
         return tab != BankerMenu.TAB_FUND
-                || (menu.hasVillage() && menu.fundAvailable() && menu.cash() >= 1.0);
+                || (menu.hasVillage() && menu.fundAvailable() && menu.spendingPower() >= 1.0);
     }
 
     private void trackAmountAction(Button button) {
@@ -809,6 +1314,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private boolean pageUsesTransactionAmount() {
+        if (briefingMode != 0 || (tab == BankerMenu.TAB_MARKET && marketBrowser)) return false;
         return tab == BankerMenu.TAB_OVERVIEW
                 || tab == BankerMenu.TAB_MARKET
                 || tab == BankerMenu.TAB_BANKING
@@ -818,18 +1324,39 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     @Override
     protected void rebuildWidgets() {
-        boolean restoreAmountFocus = amountField != null && amountField.isFocused();
-        int cursor = amountField == null ? 0 : amountField.getCursorPosition();
+        EditBox previousSearch = browserSearch, previousAmount = amountField;
+        boolean searchFocused = previousSearch != null && previousSearch.isFocused();
+        boolean amountFocused = previousAmount != null && previousAmount.isFocused();
         super.rebuildWidgets();
-        if (restoreAmountFocus && amountField != null) {
-            setFocused(amountField);
-            amountField.setCursorPosition(Math.min(cursor, amountField.getValue().length()));
-        }
+        browserSearch = retainEditingField(previousSearch, browserSearch, searchFocused);
+        amountField = retainEditingField(previousAmount, amountField, amountFocused);
+    }
+
+    private EditBox retainEditingField(EditBox previous, EditBox replacement, boolean wasFocused) {
+        if (!wasFocused || previous == null || replacement == null
+                || !previous.getValue().equals(replacement.getValue())) return replacement;
+        // Keep the native editor object: cursor, selection direction, IME and horizontal scroll
+        // must survive refreshes. Restoring only the cursor selects/deletes the remaining suffix.
+        removeWidget(replacement);
+        previous.setX(replacement.getX()); previous.setY(replacement.getY());
+        previous.setWidth(replacement.getWidth()); previous.setHeight(replacement.getHeight());
+        addRenderableWidget(previous);
+        setFocused(previous);
+        return previous;
     }
 
     @Override
     protected void containerTick() {
         super.containerTick();
+        if (districtMap && mapFitted && ++mapRequestTicks >= 5) {
+            mapRequestTicks = 0;
+            var view = mapViewport.request();
+            if (!view.equals(lastMapRequest)) {
+                for (int button : com.chedidandrew.emeraldstandard.core.DistrictMapRequest.encode(view))
+                    sendMenuButton(button);
+                lastMapRequest = view;
+            }
+        }
         int revision = menu.statusRevision();
         int state = interactiveState();
         if (statusDisplayTicks > 0) {
@@ -838,6 +1365,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         if (revision != seenStatusRevision || state != seenInteractiveState) {
             if (revision != seenStatusRevision) {
                 statusDisplayTicks = 60;
+                if (tab==BankerMenu.TAB_FUND && (menu.statusCode()==14 || menu.statusCode()==17 || menu.statusCode()==18)) {
+                    briefingMode=BankerMenu.BUTTON_FUND_RECEIPT;briefingScroll=0;
+                }
             }
             seenStatusRevision = revision;
             seenInteractiveState = state;
@@ -848,6 +1378,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private int interactiveState() {
         int result = 1;
         result = 31 * result + menu.statusRevision();
+        result = 31 * result + (menu.historyYesterday()?1:0);
+        result = 31 * result + menu.historyRangeIndex();
         result = 31 * result + menu.confirmationAction();
         result = 31 * result + menu.catchUpDays();
         result = 31 * result + menu.physicalEmeralds();
@@ -863,6 +1395,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         result = 31 * result + Double.hashCode(menu.cash());
         result = 31 * result + Double.hashCode(menu.savings());
         result = 31 * result + Double.hashCode(menu.selectedShares());
+        result = 31 * result + (menu.ownsAsset(menu.selectedAssetIndex()) ? 1 : 0);
         result = 31 * result + Double.hashCode(menu.selectedAssetPrice());
         result = 31 * result + Double.hashCode(menu.selectedHoldingValue());
         result = 31 * result + menu.selectedResourceCount();
@@ -885,6 +1418,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         result = 31 * result + menu.activityPageCount();
         result = 31 * result + menu.activityTotalCount();
         result = 31 * result + menu.activityFilterIndex();
+        result = 31 * result + menu.expansionMode().ordinal();
+        result = 31 * result + (menu.mayManageExpansion() ? 1 : 0);
         return result;
     }
 
@@ -912,6 +1447,16 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (districtMap) {
+            switch (event.key()) {
+                case InputConstants.KEY_ESCAPE -> { closeDistrictMap(); rebuildWidgets(); return true; }
+                case InputConstants.KEY_LEFT -> { mapViewport.pan(20, 0); return true; }
+                case InputConstants.KEY_RIGHT -> { mapViewport.pan(-20, 0); return true; }
+                case InputConstants.KEY_UP -> { mapViewport.pan(0, 20); return true; }
+                case InputConstants.KEY_DOWN -> { mapViewport.pan(0, -20); return true; }
+                case InputConstants.KEY_HOME -> { mapViewport.fit(menu.districtMap()); return true; }
+            }
+        }
         if (amountField != null && amountField.isFocused()) {
             if (event.key() == InputConstants.KEY_RETURN
                     || event.key() == InputConstants.KEY_NUMPADENTER) {
@@ -934,6 +1479,21 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             double verticalAmount) {
         double logicalMouseX = logicalMouseX(mouseX);
         double logicalMouseY = logicalMouseY(mouseY);
+        if(briefingMode!=0 && verticalAmount!=0) { briefingScroll+=verticalAmount>0?-3:3;return true; }
+        if(marketBrowser&&browserCompare>=0&&browser.comparison>=0&&tab==BankerMenu.TAB_MARKET&&verticalAmount!=0) {
+            int col=logicalMouseX-leftPos<160?0:1;
+            if(logicalMouseY-topPos>=77&&logicalMouseY-topPos<=123)
+                compareScroll[col]=Math.max(0,compareScroll[col]+(verticalAmount>0?-3:3));
+            return true;
+        }
+        if(marketBrowser && tab==BankerMenu.TAB_MARKET && verticalAmount!=0) {
+            browser.page+=verticalAmount>0?-1:1;rebuildWidgets();return true;
+        }
+        if (districtMap && DistrictMapViewport.contains(logicalMouseX - leftPos, logicalMouseY - topPos)) {
+            if (verticalAmount != 0) mapViewport.zoomAt(verticalAmount > 0 ? 1.25 : 0.8,
+                    logicalMouseX(mouseX) - leftPos, logicalMouseY(mouseY) - topPos);
+            return true;
+        }
         boolean overActivity = tab == TAB_ACTIVITY
                 && logicalMouseX >= leftPos + 10
                 && logicalMouseX < leftPos + 308
@@ -990,6 +1550,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         + BankerScreenLayout.TAB_INDICATOR_HEIGHT,
                 GOLD);
 
+        if (briefingMode != 0 || (tab == BankerMenu.TAB_MARKET && marketBrowser)) return;
         if (tab == BankerMenu.TAB_OVERVIEW) {
             drawChart(graphics, menu.netWorthHistoryPointsCenti(),
                     menu.netWorthHistorySpanDays(),
@@ -999,8 +1560,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     BankerScreenLayout.OVERVIEW_CHART_HEIGHT,
                     logicalMouseX, logicalMouseY);
         } else if (tab == BankerMenu.TAB_MARKET) {
-            drawChart(graphics, menu.historyPointsCenti(),
-                    menu.historySpanDays(),
+            drawInvestmentChart(graphics,
                     x + BankerScreenLayout.MARKET_CHART_X,
                     y + BankerScreenLayout.MARKET_CHART_Y,
                     BankerScreenLayout.MARKET_CHART_WIDTH,
@@ -1050,18 +1610,25 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     logicalMouseX,
                     logicalMouseY);
         } else if (tab == BankerMenu.TAB_VILLAGE) {
-            graphics.outline(
-                    x + BankerScreenLayout.VILLAGE_LEFT_PANEL_X,
-                    y + BankerScreenLayout.VILLAGE_PANEL_Y,
-                    BankerScreenLayout.VILLAGE_LEFT_PANEL_WIDTH,
-                    BankerScreenLayout.VILLAGE_PANEL_HEIGHT,
-                    0xFF456B5A);
-            graphics.outline(
-                    x + BankerScreenLayout.VILLAGE_RIGHT_PANEL_X,
-                    y + BankerScreenLayout.VILLAGE_PANEL_Y,
-                    BankerScreenLayout.VILLAGE_RIGHT_PANEL_WIDTH,
-                    BankerScreenLayout.VILLAGE_PANEL_HEIGHT,
-                    0xFF456B5A);
+            if (districtMap) {
+                drawDistrictMap(graphics, logicalMouseX - x, logicalMouseY - y);
+            } else if (expansionDetails && menu.hasVillage()) {
+                graphics.outline(x + 10, y + 54, 298,
+                        BankerScreenLayout.EXPANSION_PANEL_HEIGHT, 0xFF456B5A);
+            } else {
+                graphics.outline(
+                        x + BankerScreenLayout.VILLAGE_LEFT_PANEL_X,
+                        y + BankerScreenLayout.VILLAGE_PANEL_Y,
+                        BankerScreenLayout.VILLAGE_LEFT_PANEL_WIDTH,
+                        BankerScreenLayout.VILLAGE_PANEL_HEIGHT,
+                        0xFF456B5A);
+                graphics.outline(
+                        x + BankerScreenLayout.VILLAGE_RIGHT_PANEL_X,
+                        y + BankerScreenLayout.VILLAGE_PANEL_Y,
+                        BankerScreenLayout.VILLAGE_RIGHT_PANEL_WIDTH,
+                        BankerScreenLayout.VILLAGE_PANEL_HEIGHT,
+                        0xFF456B5A);
+            }
         } else if (tab == BankerMenu.TAB_FUND) {
             graphics.outline(x + 10, y + 54, 298, 97, 0xFF456B5A);
         } else if (tab == TAB_ACTIVITY) {
@@ -1152,6 +1719,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 EMERALD,
                 false);
 
+        if (briefingMode != 0) { drawBriefing(graphics); return; }
+        if (tab == BankerMenu.TAB_MARKET && marketBrowser) { drawBrowser(graphics); return; }
         switch (tab) {
             case BankerMenu.TAB_OVERVIEW -> drawOverviewLabels(graphics);
             case BankerMenu.TAB_MARKET -> drawMarketLabels(graphics);
@@ -1197,9 +1766,13 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         } else if (tab == BankerMenu.TAB_EXCHANGE) {
             footer = exchangeSummary();
             footerColor = EMERALD;
+        } else if (tab == BankerMenu.TAB_VILLAGE && expansionDetails && menu.hasVillage()) {
+            footer = tr(menu.mayManageExpansion() ? "expansion.funding" : "expansion.permissions");
         }
-        if (footer != null) {
-            drawTextWithin(graphics, footer, 12, BankerScreenLayout.FOOTER_Y,
+        if (footer != null && !districtMap) {
+            int footerY = tab == BankerMenu.TAB_VILLAGE && expansionDetails && menu.hasVillage()
+                    ? BankerScreenLayout.EXPANSION_FOOTER_Y : BankerScreenLayout.FOOTER_Y;
+            drawTextWithin(graphics, footer, 12, footerY,
                     296, footerColor, false);
         }
         } finally {
@@ -1238,9 +1811,18 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 false);
     }
 
+    private static Component assetTypeLabel(EconomyEngine.Asset asset) {
+        return tr("market.type." + asset.type().name().toLowerCase(Locale.ROOT));
+    }
+
+    static String marketBehaviorKey(EconomyEngine.Asset asset) {
+        String ticker = asset.ticker().toLowerCase(Locale.ROOT);
+        return (ticker.equals("vilx") || ticker.equals("vcix") ? "market.brief." : "market.behavior.") + ticker;
+    }
+
     private void drawMarketLabels(GuiGraphicsExtractor graphics) {
         EconomyEngine.Asset selected = menu.selectedAsset();
-        drawTextWithin(graphics, tr("market.choose"),
+        drawTextWithin(graphics, assetTypeLabel(selected),
                 BankerScreenLayout.MARKET_SELECTOR_LABEL_X,
                 BankerScreenLayout.MARKET_SELECTOR_LABEL_Y,
                 BankerScreenLayout.MARKET_META_WIDTH, TEXT, false);
@@ -1252,23 +1834,27 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 BankerScreenLayout.MARKET_SELECTOR_LABEL_X,
                 BankerScreenLayout.MARKET_RISK_Y,
                 BankerScreenLayout.MARKET_META_WIDTH, MUTED, false);
+        drawWrappedText(graphics, tr(marketBehaviorKey(selected)),
+                BankerScreenLayout.MARKET_SELECTOR_LABEL_X, BankerScreenLayout.MARKET_BEHAVIOR_Y,
+                BankerScreenLayout.MARKET_META_WIDTH, BankerScreenLayout.MARKET_BEHAVIOR_LINE_STEP,
+                BankerScreenLayout.MARKET_BEHAVIOR_LINES, MUTED);
 
-        drawTextWithin(graphics, Component.literal(selected.name()),
+        drawTextWithin(graphics, Component.literal(dailyLabel(menu.selectedAssetIndex())+(menu.historyRangeIndex()==0?" today":" today | "+selected.name())),
                 BankerScreenLayout.MARKET_TITLE_X,
                 BankerScreenLayout.MARKET_TITLE_Y,
-                BankerScreenLayout.MARKET_TITLE_WIDTH,
-                TEXT,
+                menu.historyRangeIndex()==0?82:BankerScreenLayout.MARKET_TITLE_WIDTH,
+                dailyColor(menu.selectedAssetIndex()),
                 false);
         drawTextWithin(graphics,
-                tr("market.price_change", money(menu.selectedAssetPrice()),
-                        signed(menu.selectedChangePercent())),
+                showingYesterday()?Component.literal("Now: "+money(menu.selectedAssetPrice())+" | "+dailyLabel(menu.selectedAssetIndex()))
+                        :tr("market.price_change", money(menu.selectedAssetPrice()), signed(menu.selectedChangePercent())),
                 BankerScreenLayout.MARKET_DETAIL_X,
                 BankerScreenLayout.MARKET_PRICE_Y,
                 BankerScreenLayout.MARKET_DETAIL_WIDTH,
-                menu.selectedChangePercent() >= 0.0 ? POSITIVE : NEGATIVE,
+                showingYesterday()?dailyColor(menu.selectedAssetIndex()):menu.selectedChangePercent() >= 0.0 ? POSITIVE : NEGATIVE,
                 false);
         drawTextWithin(graphics,
-                tr("market.holding", compactShares(menu.selectedShares()),
+                tr(selected.isCommodity() ? "market.holding_units" : "market.holding", selectedQuantity(false),
                         money(menu.selectedHoldingValue()),
                         String.format(Locale.ROOT, "%.1f", menu.selectedAllocationPercent())),
                 BankerScreenLayout.MARKET_DETAIL_X,
@@ -1313,37 +1899,37 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void drawCdLabels(GuiGraphicsExtractor graphics) {
-        drawBankBalanceColumn(graphics, tr("label.bank_cash"), money(menu.cash()), 16, 88);
+        drawBankBalanceColumn(graphics, tr("label.available_funds"), money(menu.spendingPower()), 16, 88);
         drawBankBalanceColumn(graphics, tr("banking.total_cds"), money(menu.cdValue()), 113, 88);
         drawBankBalanceColumn(graphics, tr("banking.positions_short"),
                 menu.cdCount() + "/" + EconomyState.MAX_TERM_POSITIONS, 210, 92);
         drawNativeText(graphics, tr("banking.cd_term"), 14,
                 BankerScreenLayout.BANKING_PRODUCT_CONTROL_Y + 5, MUTED, false);
-        int amount = selectedWholeAmount(menu.cash());
+        int amount = selectedWholeAmount(menu.spendingPower());
         drawTextWithin(graphics,
                 tr("banking.new_cd_flow", money(amount)),
                 14, BankerScreenLayout.BANKING_PRODUCT_DETAIL_Y, 292, MUTED, false);
         drawTextWithin(graphics,
-                tr("banking.new_cd_after", money(Math.max(0.0, menu.cash() - amount)),
+                tr("banking.new_cd_after", money(menu.bankCashAfterSpending(amount)),
                         money(menu.cdValue() + amount)),
                 14, BankerScreenLayout.BANKING_PRODUCT_PREVIEW_Y, 292,
                 amount > 0 ? POSITIVE : MUTED, false);
     }
 
     private void drawLoanLabels(GuiGraphicsExtractor graphics) {
-        drawBankBalanceColumn(graphics, tr("label.bank_cash"), money(menu.cash()), 16, 88);
+        drawBankBalanceColumn(graphics, tr("label.available_funds"), money(menu.spendingPower()), 16, 88);
         drawBankBalanceColumn(graphics, tr("banking.total_loans"),
                 money(menu.lendingValue()), 113, 88);
         drawBankBalanceColumn(graphics, tr("banking.positions_short"),
                 menu.lendingCount() + "/" + EconomyState.MAX_TERM_POSITIONS, 210, 92);
         drawNativeText(graphics, tr("banking.loan_term"), 14,
                 BankerScreenLayout.BANKING_PRODUCT_CONTROL_Y + 5, MUTED, false);
-        int amount = selectedWholeAmount(menu.cash());
+        int amount = selectedWholeAmount(menu.spendingPower());
         drawTextWithin(graphics,
                 tr("banking.new_loan_flow", money(amount)),
                 14, BankerScreenLayout.BANKING_PRODUCT_DETAIL_Y, 292, MUTED, false);
         drawTextWithin(graphics,
-                tr("banking.new_loan_after", money(Math.max(0.0, menu.cash() - amount)),
+                tr("banking.new_loan_after", money(menu.bankCashAfterSpending(amount)),
                         money(menu.lendingValue() + amount)),
                 14, BankerScreenLayout.BANKING_PRODUCT_PREVIEW_Y, 292,
                 amount > 0 ? POSITIVE : MUTED, false);
@@ -1384,6 +1970,30 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private void drawVillageLabels(GuiGraphicsExtractor graphics) {
+        if (districtMap) return;
+        if (expansionDetails && menu.hasVillage()) {
+            drawTextWithin(graphics, tr("expansion.city", menu.cityDistricts()),
+                    18, BankerScreenLayout.EXPANSION_TITLE_Y, 284, GOLD, false);
+            drawWrappedText(graphics, tr("expansion.reason." + menu.expansionReason().name().toLowerCase(Locale.ROOT)),
+                    18, BankerScreenLayout.EXPANSION_REASON_Y, 284,
+                    BankerScreenLayout.EXPANSION_LINE_STEP, 2, TEXT);
+            drawTextWithin(graphics, tr("expansion.upkeep", String.format(Locale.ROOT, "%.2f", menu.cityDailyUpkeep())),
+                    18, BankerScreenLayout.EXPANSION_UPKEEP_Y, 284, TEXT, false);
+            drawTextWithin(graphics, tr("expansion.lighting", menu.villageLightingCoverage()),
+                    18, BankerScreenLayout.EXPANSION_LIGHTING_Y, 284, TEXT, false);
+            drawTextWithin(graphics, tr("expansion.food_sources",
+                    String.format(Locale.ROOT, "%.1f", menu.villageFoodSourceBonusPercent()),
+                    String.format(Locale.ROOT, "%.1f", menu.villageCropUnits()),
+                    String.format(Locale.ROOT, "%.1f", menu.villageLivestockUnits())),
+                    18, BankerScreenLayout.EXPANSION_FOOD_Y, 284, TEXT, false);
+            String advice = com.chedidandrew.emeraldstandard.core.VillageUpkeepAdvice.choose(
+                    menu.expansionReason(), menu.villagePopulation(), menu.villageHousing(), menu.villageFood(),
+                    menu.villageSafety(), menu.villageLightingCoverage()).name().toLowerCase(Locale.ROOT);
+            drawWrappedText(graphics, tr("expansion.advice." + advice),
+                    18, BankerScreenLayout.EXPANSION_ADVICE_Y, 284,
+                    BankerScreenLayout.EXPANSION_LINE_STEP, 2, GOLD);
+            return;
+        }
         if (!menu.hasVillage()) {
             drawNativeCenteredText(graphics, tr("village.none"), 160, 92, MUTED);
             drawNativeCenteredText(graphics, tr("village.find_bank"), 160, 110, MUTED);
@@ -1454,12 +2064,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 TEXT,
                 false);
         int projectOrdinal = menu.villageProjectTypeOrdinal();
-        Component project = projectOrdinal < 0
-                || projectOrdinal >= VillageProsperityEngine.ProjectType.values().length
-                ? tr("village.project.none")
-                : tr("village.project."
-                        + VillageProsperityEngine.ProjectType.values()[projectOrdinal]
-                                .name().toLowerCase(Locale.ROOT));
+        Component project = activeProjectLabel();
         drawTextWithin(graphics,
                 tr("village.project", project),
                 BankerScreenLayout.VILLAGE_RIGHT_TEXT_X,
@@ -1624,6 +2229,11 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 menu.fundProjectSponsorshipEnabled());
     }
 
+    private String restorationState(VillageDashboardPolicy.Snapshot snapshot) {
+        return VillageRecoveryGuidance.key(VillageRecoveryGuidance.state(snapshot.lifecycle(),
+                snapshot.restorationFund(), menu.villageRecoveryEnabled(), snapshot.fundAvailable()));
+    }
+
     private Component newsHeadline(
             VillageDashboardPolicy.Snapshot snapshot,
             VillageDashboardPolicy.BulletinKind kind) {
@@ -1641,7 +2251,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case HOUSING -> tr("news.local.housing.headline");
             case PROJECT -> tr(
                     "news.local.project.headline",
-                    projectLabel(snapshot.projectType()));
+                    activeProjectLabel());
             case DEVELOPMENT_PAUSED -> tr("news.local.development_paused.headline");
             case PROSPERITY -> tr("news.local.prosperity.headline");
             case STEADY -> tr("news.local.steady.headline");
@@ -1654,13 +2264,12 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return switch (kind) {
             case NO_VILLAGE -> tr("news.local.no_village.article");
             case SIMULATION_PAUSED -> tr("news.local.simulation_paused.article");
-            case RESTORATION -> tr(
-                    "news.local.restoration.article",
-                    lifecycleLabel(snapshot.lifecycle()),
+            case RESTORATION -> tr("news.local.restoration." + restorationState(snapshot) + ".article",
                     decimal(snapshot.restorationFund()),
-                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
+                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET),
+                    decimal(VillageRecoveryGuidance.remaining(snapshot.restorationFund())));
             case RECOVERY -> tr(
-                    "news.local.recovery.article",
+                    snapshot.population() == 0 ? "news.local.recovery.arrivals" : "news.local.recovery.article",
                     snapshot.population(),
                     snapshot.housing(),
                     decimal(snapshot.prosperity()),
@@ -1693,14 +2302,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     snapshot.projectPlanning()
                             ? "news.local.project.article_planning"
                             : "news.local.project.article_building",
-                    projectLabel(snapshot.projectType()),
+                    activeProjectLabel(),
                     decimal(snapshot.projectProgressPercent()),
                     snapshot.projectBacklog());
             case DEVELOPMENT_PAUSED -> tr(
                     snapshot.projectPlanning()
                             ? "news.local.development_paused.article_planning"
                             : "news.local.development_paused.article_building",
-                    projectLabel(snapshot.projectType()),
+                    activeProjectLabel(),
                     decimal(snapshot.projectProgressPercent()));
             case PROSPERITY -> tr(
                     "news.local.prosperity.article",
@@ -1725,10 +2334,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case FIND_VILLAGE -> tr("news.tip.prosperity.find_village");
             case SIMULATION_DISABLED -> tr("news.tip.prosperity.simulation_disabled");
             case RESTORE_WITH_FUND -> tr(
-                    "news.tip.prosperity.restore",
+                    "news.tip.prosperity.restore." + restorationState(snapshot),
                     decimal(snapshot.restorationFund()),
                     decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
-            case RESTORE_UNAVAILABLE -> tr("news.tip.prosperity.restore_unavailable");
+            case RESTORE_UNAVAILABLE -> tr(restorationState(snapshot).equals("required")
+                    ? "news.tip.prosperity.restore_unavailable"
+                    : "news.tip.prosperity.restore." + restorationState(snapshot),
+                    decimal(snapshot.restorationFund()),
+                    decimal(VillageProsperityEngine.RESTORATION_EMERALD_TARGET));
             case TARGET_FOOD -> tr("news.tip.prosperity.food_targeted");
             case FOOD_UNTARGETED -> tr("news.tip.prosperity.food_untargeted");
             case TARGET_HOUSING -> tr("news.tip.prosperity.housing_targeted");
@@ -1738,7 +2351,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     decimal(VillageDashboardPolicy.GROWTH_SAFETY_THRESHOLD));
             case SPONSOR_PROJECT -> tr(
                     "news.tip.prosperity.sponsor",
-                    projectLabel(snapshot.projectType()));
+                    activeProjectLabel());
             case SUPPORT_FOUNDATIONS -> tr("news.tip.prosperity.foundations");
             case SUPPORT_FOUNDATIONS_UNTARGETED ->
                     tr("news.tip.prosperity.foundations_untargeted");
@@ -1754,7 +2367,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return switch (guidance) {
             case FIND_VILLAGE -> tr("news.tip.safety.find_village");
             case SIMULATION_DISABLED -> tr("news.tip.safety.simulation_disabled");
-            case PROTECT_RECOVERY -> tr("news.tip.safety.recovery");
+            case PROTECT_RECOVERY -> tr(snapshot.population() == 0 ? "news.tip.safety.empty" : "news.tip.safety.recovery");
             case RECENT_INCIDENT -> tr(
                     "news.tip.safety.incident",
                     incidentAgeLabel(snapshot.incidentAgeDays()));
@@ -1768,18 +2381,18 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             VillageDashboardPolicy.Snapshot snapshot,
             VillageDashboardPolicy.BulletinKind kind) {
         return switch (kind) {
-            case NO_VILLAGE -> new ItemStack(Items.MAP);
-            case SIMULATION_PAUSED -> new ItemStack(Items.CLOCK);
-            case RESTORATION -> new ItemStack(Items.GOLDEN_APPLE);
-            case RECOVERY, STEADY -> new ItemStack(Items.BELL);
-            case INCIDENT -> new ItemStack(Items.IRON_SWORD);
-            case HARDSHIP -> new ItemStack(Items.CRACKED_STONE_BRICKS);
-            case SECURITY -> new ItemStack(Items.SHIELD);
-            case FOOD -> new ItemStack(Items.BREAD);
-            case HOUSING -> new ItemStack(Items.BED.red());
+            case NO_VILLAGE -> HandbookRecipes.previewStack(Items.MAP, 1);
+            case SIMULATION_PAUSED -> HandbookRecipes.previewStack(Items.CLOCK, 1);
+            case RESTORATION -> HandbookRecipes.previewStack(Items.GOLDEN_APPLE, 1);
+            case RECOVERY, STEADY -> HandbookRecipes.previewStack(Items.BELL, 1);
+            case INCIDENT -> HandbookRecipes.previewStack(Items.IRON_SWORD, 1);
+            case HARDSHIP -> HandbookRecipes.previewStack(Items.CRACKED_STONE_BRICKS, 1);
+            case SECURITY -> HandbookRecipes.previewStack(Items.SHIELD, 1);
+            case FOOD -> HandbookRecipes.previewStack(Items.BREAD, 1);
+            case HOUSING -> HandbookRecipes.previewStack(Items.BED.red(), 1);
             case PROJECT -> projectIcon(snapshot.projectType());
-            case DEVELOPMENT_PAUSED -> new ItemStack(Items.BARRIER);
-            case PROSPERITY -> new ItemStack(Items.EMERALD);
+            case DEVELOPMENT_PAUSED -> HandbookRecipes.previewStack(Items.BARRIER, 1);
+            case PROSPERITY -> HandbookRecipes.previewStack(Items.EMERALD, 1);
         };
     }
 
@@ -1811,6 +2424,12 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     private static VillageProsperityEngine.ProjectType villageProjectType(int ordinal) {
         return ordinal < 0 || ordinal >= VillageProsperityEngine.ProjectType.values().length
                 ? null : VillageProsperityEngine.ProjectType.values()[ordinal];
+    }
+
+    private Component activeProjectLabel() {
+        var imported = com.chedidandrew.emeraldstandard.core.VanillaConstructionPlan.labelKind(menu.villageProjectLabelCode());
+        return imported == null ? projectLabel(menu.villageProjectTypeOrdinal())
+                : tr("village.vanilla." + imported.name().toLowerCase(Locale.ROOT));
     }
 
     private static Component projectLabel(VillageProsperityEngine.ProjectType type) {
@@ -1957,9 +2576,11 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     tr("fund.project_target", projectLabel(menu.fundableProjectTypeOrdinal())),
                     16, BankerScreenLayout.FUND_PROJECT_Y, 286, MUTED, false);
         }
+        drawTextWithin(graphics, tr("payment.available", money(menu.spendingPower())),
+                16, BankerScreenLayout.FUND_NOTICE_Y + 13, 286, TEXT, false);
         drawTextWithin(graphics,
                 tr("fund.cash_flow", money(menu.donationDraft()),
-                        money(Math.max(0.0, menu.cash() - menu.donationDraft()))),
+                        money(menu.bankCashAfterSpending(menu.donationDraft()))),
                 16, BankerScreenLayout.FUND_NOTICE_Y, 286,
                 menu.donationDraft() > 0 ? POSITIVE : MUTED, false);
     }
@@ -2126,13 +2747,52 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 + menu.donorTitle().name().toLowerCase(Locale.ROOT));
     }
 
+    private boolean showingYesterday() { return menu.historyRangeIndex()==0&&menu.historyYesterday(); }
+
     private String historyRangeLabel() {
-        return switch (menu.historyRangeIndex()) {
-            case 0 -> "30d";
-            case 1 -> "90d";
-            case 2 -> "1y";
-            default -> tr("chart.all").getString();
-        };
+        return new String[]{"1d","30d","90d","1y","3y","5y","10y","All"}[menu.historyRangeIndex()];
+    }
+
+    private void drawInvestmentChart(GuiGraphicsExtractor g,int x,int y,int width,int height,int mouseX,int mouseY) {
+        g.fill(x,y,x+width,y+height,PANEL_DARK);g.outline(x,y,width,height,0xFF456B5A);
+        var snapshot=menu.marketDisplay();
+        if(snapshot==null||!snapshot.selected().equals(menu.selectedAsset().ticker())){
+            drawTextWithin(g,Component.literal("Loading server quotes..."),x+4,y+20,width-8,MUTED,false);return;
+        }
+        var series=snapshot.series().get(menu.historyRangeIndex());var values=series.values();
+        boolean intraday=menu.historyRangeIndex()==0;
+        String available="History available since Day "+series.availableDay()+(series.availableSlot()>0?" (partial day)":"");
+        if(values.isEmpty()){
+            drawTextWithin(g,Component.literal("No recorded session yet"),x+4,y+15,width-8,MUTED,false);
+            return;
+        }
+        double min=values.stream().mapToDouble(Double::doubleValue).min().orElse(0),max=values.stream().mapToDouble(Double::doubleValue).max().orElse(1);
+        double pad=Math.max(max*0.00005,(max-min)*0.08);min-=pad;max+=pad;
+        int bottom=y+height-14,top=y+13,plotHeight=Math.max(1,bottom-top);
+        int baseline=bottom-(int)(plotHeight*(series.reference()-min)/(max-min));
+        g.fill(x+2,baseline,x+width-2,baseline+1,0xFF456B5A);
+        double change=values.getLast()/series.reference()-1;int color=change>0?POSITIVE:change<0?NEGATIVE:MUTED;
+        for(int i=0;i<values.size();i++){
+            int px=x+3+(int)Math.round(series.positions().get(i)*(width-7));
+            int py=bottom-(int)Math.round(plotHeight*(values.get(i)-min)/(max-min));
+            if(i==0)g.fill(px,py,px+2,py+2,color);
+            else {
+                int oldX=x+3+(int)Math.round(series.positions().get(i-1)*(width-7));
+                int oldY=bottom-(int)Math.round(plotHeight*(values.get(i-1)-min)/(max-min));
+                drawLine(g,oldX,oldY,px,py,color);
+            }
+        }
+        String title=intraday?(snapshot.yesterday()?"Yesterday "+signed(change*100):"Today - Live"):historyRangeLabel();
+        drawTextWithin(g,Component.literal(title+" | Day "+series.firstDay()),x+4,y+3,width-8,MUTED,false);
+        drawTextWithin(g,Component.literal(intraday?(series.availableSlot()==0?"Previous close: ":"First observed: ")+money(series.reference()):available),x+4,y+height-10,width-8,MUTED,false);
+        if(mouseX>=x&&mouseX<x+width&&mouseY>=y&&mouseY<y+height){
+            double mouse=(mouseX-x-3.0)/Math.max(1,width-7);int nearest=0;
+            for(int i=1;i<values.size();i++)if(Math.abs(series.positions().get(i)-mouse)<Math.abs(series.positions().get(nearest)-mouse))nearest=i;
+            double offset=series.positions().get(nearest)*Math.max(1,series.lastDay()-series.firstDay());
+            long pointDay=series.firstDay()+(long)Math.floor(offset);int minutes=(360+(int)Math.round((offset-Math.floor(offset))*1440))%1440;
+            String stamp="Day "+pointDay+(intraday?String.format(Locale.ROOT," %02d:%02d",minutes/60,minutes%60):"");
+            GuiTooltips.show(g,font,Component.literal(stamp+"\n"+money(values.get(nearest))),tooltipMouseX,tooltipMouseY);
+        }
     }
 
     private void drawChart(
@@ -2149,10 +2809,11 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         graphics.outline(x, y, width, height, 0xFF456B5A);
         if (points.length < 2) {
             drawNativeCenteredText(graphics, tr("chart.history_building"), x + width / 2,
-                    y + height / 2 - 4, MUTED);
+                    y + height / 2 - 12, MUTED);
+            drawNativeCenteredText(graphics, tr("chart.history_next_day"), x + width / 2,
+                    y + height / 2 + 2, MUTED);
             if (mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height) {
-                graphics.setTooltipForNextFrame(
-                        font, tr("tooltip.history_empty"), tooltipMouseX, tooltipMouseY);
+                GuiTooltips.show(graphics, font, tr("tooltip.history_empty"), tooltipMouseX, tooltipMouseY);
             }
             return;
         }
@@ -2185,7 +2846,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         for (int index = 1; index < points.length; index++) {
             int currentX = x + 3 + (int) Math.round(index * (width - 7.0) / (points.length - 1.0));
             int currentY = chartY(points[index], min, max, y, height);
-            drawLine(graphics, previousX, previousY, currentX, currentY, EMERALD);
+            drawLine(graphics, previousX, previousY, currentX, currentY,
+                    points[points.length-1]>points[0]?POSITIVE:points[points.length-1]<points[0]?NEGATIVE:MUTED);
             previousX = currentX;
             previousY = currentY;
         }
@@ -2201,7 +2863,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                             (points.length - 1 - index)
                                     * Math.max(0, spanDays)
                                     / (double) (points.length - 1));
-            graphics.setTooltipForNextFrame(
+            GuiTooltips.show(graphics,
                     font,
                     daysAgo == 0
                             ? tr("chart.tooltip_today", money(points[index] / 100.0))
@@ -2251,6 +2913,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             int mouseY,
             int screenX,
             int screenY) {
+        if (districtMap || briefingMode != 0 || (tab == BankerMenu.TAB_MARKET && marketBrowser)) return;
         switch (tab) {
             case BankerMenu.TAB_OVERVIEW -> {
                 overviewValueTooltip(graphics, mouseX, mouseY, screenX, screenY,
@@ -2312,7 +2975,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 String.format(Locale.ROOT, "%.1f",
                                         menu.villageProsperity()),
                                 String.format(Locale.ROOT, "%.1f",
-                                        menu.villageSafety())));
+                                        menu.villageSafety())).copy().append("\n").append(tr("village.guard_bonus",
+                                                menu.observedGuards(), String.format(Locale.ROOT, "%.1f", menu.guardSafetyBonus()))));
                 tooltipWhenHovered(
                         graphics, mouseX, mouseY,
                         screenX + BankerScreenLayout.VILLAGE_RIGHT_PANEL_X,
@@ -2324,7 +2988,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                                 String.format(Locale.ROOT, "%.1f",
                                         menu.villageMaterials()),
                                 money(menu.villageTreasury()),
-                                projectLabel(menu.villageProjectTypeOrdinal()),
+                                activeProjectLabel(),
                                 villageProjectStageLabel(),
                                 menu.villageProjectBacklog(),
                                 villageProjectStageDetail()));
@@ -2483,49 +3147,28 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         EconomyEngine.Asset selected = menu.selectedAsset();
         tooltipWhenHovered(
                 graphics, mouseX, mouseY,
-                screenX + BankerScreenLayout.MARKET_SELECTOR_LABEL_X,
-                screenY + BankerScreenLayout.MARKET_SELECTOR_LABEL_Y,
-                BankerScreenLayout.MARKET_META_WIDTH,
-                BankerScreenLayout.TEXT_HEIGHT,
-                tr("tooltip.market_selector"));
-        tooltipWhenHovered(
-                graphics, mouseX, mouseY,
                 screenX + BankerScreenLayout.MARKET_TITLE_X,
                 screenY + BankerScreenLayout.MARKET_TITLE_Y,
                 BankerScreenLayout.MARKET_TITLE_WIDTH,
                 BankerScreenLayout.TEXT_HEIGHT,
                 tr("tooltip.market_name", selected.ticker(), selected.name()));
-        tooltipWhenHovered(
-                graphics, mouseX, mouseY,
-                screenX + BankerScreenLayout.MARKET_SELECTOR_LABEL_X,
-                screenY + BankerScreenLayout.MARKET_SECTOR_Y,
-                BankerScreenLayout.MARKET_META_WIDTH,
-                BankerScreenLayout.TEXT_HEIGHT,
-                tr("tooltip.market_sector", selected.sector()));
-        tooltipWhenHovered(
-                graphics, mouseX, mouseY,
-                screenX + BankerScreenLayout.MARKET_SELECTOR_LABEL_X,
-                screenY + BankerScreenLayout.MARKET_RISK_Y,
-                BankerScreenLayout.MARKET_META_WIDTH,
-                BankerScreenLayout.TEXT_HEIGHT,
-                tr("tooltip.market_risk", riskLabel(selected)));
+
         tooltipWhenHovered(
                 graphics, mouseX, mouseY,
                 screenX + BankerScreenLayout.MARKET_DETAIL_X,
                 screenY + BankerScreenLayout.MARKET_PRICE_Y,
                 BankerScreenLayout.MARKET_DETAIL_WIDTH,
                 BankerScreenLayout.TEXT_HEIGHT,
-                tr("tooltip.market_price_change",
-                        exactMoney(menu.selectedAssetPrice()),
-                        signed(menu.selectedChangePercent())));
+                showingYesterday()?Component.literal("Current executable quote: "+exactMoney(menu.selectedAssetPrice())+" | "+dailyLabel(menu.selectedAssetIndex())+" today\nThe graph above shows yesterday, not today\'s trading price.")
+                        :tr("tooltip.market_price_change", exactMoney(menu.selectedAssetPrice()), signed(menu.selectedChangePercent())));
         tooltipWhenHovered(
                 graphics, mouseX, mouseY,
                 screenX + BankerScreenLayout.MARKET_DETAIL_X,
                 screenY + BankerScreenLayout.MARKET_HOLDING_Y,
                 BankerScreenLayout.MARKET_DETAIL_WIDTH,
                 BankerScreenLayout.TEXT_HEIGHT,
-                tr("tooltip.market_holding_exact",
-                        exactShares(menu.selectedShares()),
+                tr(selected.isCommodity() ? "tooltip.market_units_exact" : "tooltip.market_holding_exact",
+                        selectedQuantity(true),
                         exactMoney(menu.selectedHoldingValue()),
                         exactPercent(menu.selectedAllocationPercent())));
         tooltipWhenHovered(
@@ -2572,10 +3215,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 : height;
         if (mouseX >= x && mouseX < x + width
                 && mouseY >= y && mouseY < y + logicalHeight) {
-            graphics.setTooltipForNextFrame(
-                    font.split(tooltip, BankerScreenLayout.TOOLTIP_WRAP_WIDTH),
-                    tooltipMouseX,
-                    tooltipMouseY);
+            GuiTooltips.show(graphics, font, tooltip, tooltipMouseX, tooltipMouseY);
         }
     }
 
@@ -2627,15 +3267,26 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private int selectedWholeAmount(double available) {
+        if (menu.selectedCustomAmount() > available) return 0;
         return (int) Math.min(
                 EconomyService.MAX_WHOLE_EMERALD_TRANSACTION,
                 BankerScreenLayout.resolvedWholeAmount(selectedAmountPreset(), available));
     }
 
     private int selectedInventoryAmount(double available) {
+        if (menu.selectedCustomAmount() > available
+                || menu.selectedCustomAmount() > EconomyService.MAX_INVENTORY_ITEM_TRANSACTION) return 0;
         return Math.min(
                 EconomyService.MAX_INVENTORY_ITEM_TRANSACTION,
                 BankerScreenLayout.resolvedWholeAmount(selectedAmountPreset(), available));
+    }
+
+    private Component paymentSources(int amount) {
+        var plan = menu.paymentPlan(amount);
+        if (plan == null) return tr("payment.rules");
+        return tr("payment.sources", exactMoney(menu.spendingPower()), plan.inventoryEmeralds(),
+                menu.physicalEmeralds() - plan.inventoryEmeralds(), exactMoney(menu.bankCashAfterSpending(amount)))
+                .copy().append(Component.literal("\n")).append(tr("payment.rules"));
     }
 
     private Component depositPreview() {
@@ -2652,10 +3303,10 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private Component cashToSavingsPreview() {
-        int amount = selectedWholeAmount(menu.cash());
+        int amount = selectedWholeAmount(menu.spendingPower());
         return tr("tooltip.flow.cash_to_savings", exactMoney(amount),
-                exactMoney(Math.max(0.0, menu.cash() - amount)),
-                exactMoney(menu.savings() + amount));
+                exactMoney(menu.bankCashAfterSpending(amount)),
+                exactMoney(menu.savings() + amount)).copy().append(Component.literal("\n")).append(paymentSources(amount));
     }
 
     private Component savingsToCashPreview() {
@@ -2666,20 +3317,21 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private Component marketBuySummary() {
-        int amount = selectedWholeAmount(menu.cash());
+        if (menu.spendingPower() < 1.0) return tr("market.deposit_first");
+        int amount = selectedWholeAmount(menu.spendingPower());
         return tr("market.buy_summary", money(amount),
-                money(Math.max(0.0, menu.cash() - amount)));
+                money(menu.bankCashAfterSpending(amount)));
     }
 
     private Component marketBuyPreview() {
-        int amount = selectedWholeAmount(menu.cash());
+        int amount = selectedWholeAmount(menu.spendingPower());
         double executionPrice = menu.selectedAssetPrice()
                 * (1.0 + EconomyEngine.TRADE_SPREAD);
         double estimatedShares = executionPrice <= 0.0
                 ? 0.0 : amount / executionPrice;
-        return tr("tooltip.flow.buy", exactMoney(amount), menu.selectedAsset().ticker(),
+        return tr(menu.selectedAsset().isCommodity() ? "tooltip.flow.buy_units" : "tooltip.flow.buy", exactMoney(amount), menu.selectedAsset().ticker(),
                 exactShares(estimatedShares),
-                exactMoney(Math.max(0.0, menu.cash() - amount)));
+                exactMoney(menu.bankCashAfterSpending(amount))).copy().append(Component.literal("\n")).append(paymentSources(amount));
     }
 
     private Component marketSalePreview(double fraction) {
@@ -2688,15 +3340,16 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         double proceeds = menu.selectedHoldingValue()
                 * clampedFraction
                 * (1.0 - EconomyEngine.TRADE_SPREAD);
-        return tr("tooltip.flow.sell", exactShares(shares), menu.selectedAsset().ticker(),
+        return tr(menu.selectedAsset().isCommodity() ? "tooltip.flow.sell_units" : "tooltip.flow.sell",
+                shares == 0 && menu.ownsAsset(menu.selectedAssetIndex()) ? "<0.000001" : exactShares(shares), menu.selectedAsset().ticker(),
                 exactMoney(proceeds), exactMoney(menu.cash() + proceeds));
     }
 
     private Component openCdPreview() {
-        int amount = selectedWholeAmount(menu.cash());
+        int amount = selectedWholeAmount(menu.spendingPower());
         return tr("tooltip.flow.open_cd", exactMoney(amount), menu.selectedCdTerm(),
-                exactMoney(Math.max(0.0, menu.cash() - amount)),
-                exactMoney(menu.cdValue() + amount));
+                exactMoney(menu.bankCashAfterSpending(amount)),
+                exactMoney(menu.cdValue() + amount)).copy().append(Component.literal("\n")).append(paymentSources(amount));
     }
 
     private Component closeCdFlowPreview() {
@@ -2711,10 +3364,10 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private Component fundLoanPreview() {
-        int amount = selectedWholeAmount(menu.cash());
+        int amount = selectedWholeAmount(menu.spendingPower());
         return tr("tooltip.flow.fund_loan", exactMoney(amount), menu.selectedLendingTerm(),
-                exactMoney(Math.max(0.0, menu.cash() - amount)),
-                exactMoney(menu.lendingValue() + amount));
+                exactMoney(menu.bankCashAfterSpending(amount)),
+                exactMoney(menu.lendingValue() + amount)).copy().append(Component.literal("\n")).append(paymentSources(amount));
     }
 
     private Component collectLoanPreview() {
@@ -2745,7 +3398,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
 
     private Component fundContributionPreview() {
         return tr("tooltip.flow.fund_gift", exactMoney(menu.donationDraft()),
-                exactMoney(Math.max(0.0, menu.cash() - menu.donationDraft())));
+                exactMoney(menu.bankCashAfterSpending(menu.donationDraft()))).copy().append(Component.literal("\n")).append(paymentSources(menu.donationDraft()));
     }
 
     private void labelValue(
@@ -2905,7 +3558,15 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return holdings + menu.cdValue() + menu.lendingValue();
     }
 
+    private String selectedQuantity(boolean exact) {
+        double shares = menu.selectedShares();
+        if (menu.ownsAsset(menu.selectedAssetIndex()) && shares < (exact ? 0.0000005 : 0.00005))
+            return exact ? "<0.000001" : "<0.0001";
+        return exact ? exactShares(shares) : compactShares(shares);
+    }
+
     private static String money(double value) {
+        if (value > 0 && value < 0.01) return exactMoney(value);
         return compactNumber(value, false, 1_000.0) + " E";
     }
 
@@ -2918,7 +3579,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private static String exactMoney(double value) {
-        return String.format(Locale.ROOT, "%,.2f E", Double.isFinite(value) ? value : 0.0);
+        return String.format(Locale.ROOT, value > 0 && value < 0.01 ? "%.6f E" : "%,.2f E",
+                Double.isFinite(value) ? value : 0.0);
     }
 
     private static String exactSignedMoney(double value) {
@@ -3032,12 +3694,13 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return Component.literal("[").append(label.copy()).append("]");
     }
 
+    private static String companyProfileText(EconomyEngine.Asset asset) {
+        var p=com.chedidandrew.emeraldstandard.core.CompanyProfiles.get(asset.ticker());
+        return p==null?"":"\nOperating size: "+friendly(p.size().name())+" | "+p.business()+"\n"+p.outlook();
+    }
+
     private static Component riskLabel(EconomyEngine.Asset asset) {
-        double risk = asset.beta() + asset.annualIdiosyncraticVolatility() * 2.0;
-        if (risk < 1.0) return tr("risk.lower");
-        if (risk < 1.45) return tr("risk.moderate");
-        if (risk < 1.75) return tr("risk.high");
-        return tr("risk.very_high");
+        return tr("risk." + EconomyEngine.riskBand(asset));
     }
 
     private static int termIndex(int term) {
@@ -3102,6 +3765,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
             case -7 -> tr("status.unsupported");
             case -8 -> tr("status.no_village");
             case -9 -> tr("status.position_limit");
+            case -10 -> tr("status.numeric_limit");
             default -> null;
         };
     }

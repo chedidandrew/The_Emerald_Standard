@@ -15,9 +15,15 @@ mkdir -p "$LOG_DIR"
 RUN_DIR="$(mktemp -d "$LOG_DIR/$LOADER-run.XXXXXX")"
 SMOKE_ID="$LOADER-$(date +%s)-$$-$RANDOM"
 printf 'eula=true\n' > "$RUN_DIR/eula.txt"
-# Exhaustive opt-in catalog checks run synchronously during startup. Allow a bounded three minutes
-# in this fresh smoke world under constrained CI/parallel review; ordinary server settings are untouched.
-printf 'online-mode=false\nserver-port=0\nmax-tick-time=180000\n' > "$RUN_DIR/server.properties"
+# Exhaustive opt-in checks yield between fixtures. Keep a bounded watchdog, and keep this
+# playerless disposable test world ticking; ordinary server settings are untouched.
+printf 'online-mode=false\nserver-port=0\nmax-tick-time=180000\npause-when-empty-seconds=0\n' > "$RUN_DIR/server.properties"
+if [[ -n "${TES_GUARD_COMPAT_JAR:-}" ]]; then
+    [[ -f "$TES_GUARD_COMPAT_JAR" ]] || { echo "Missing Guard Villagers test JAR" >&2; exit 1; }
+    mkdir -p "$RUN_DIR/mods"
+    cp -- "$TES_GUARD_COMPAT_JAR" "$RUN_DIR/mods/"
+    export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dthe_emerald_standard.expectGuards=true"
+fi
 
 command=(
     bash "$ROOT/$LOADER/gradlew"
@@ -66,12 +72,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 360); do
+# Full compile/startup plus all yielding catalog fixtures; each tick still has its own watchdog.
+for _ in $(seq 1 600); do
     unexpected_errors="$(
         grep -E '\[[^]]+/(ERROR|FATAL)\]' "$LOG_FILE" \
             | grep -Ev 'HkeyPerformanceDataUtil[^:]*:?[[:space:]]*Unable to locate English counter names' \
             || true
     )"
+    # Opt-in exception for the verified upstream NeoForge 4.0.3 recruitment advancement bug.
+    # Keep the original error in the log and report it below. No other external errors are ignored.
+    if [[ "$LOADER" == "neoforge" && -n "${TES_GUARD_COMPAT_JAR:-}" && "${TES_ALLOW_GUARD_ADVANCEMENT_ERROR:-0}" == "1" ]]; then
+        unexpected_errors="$(printf '%s\n' "$unexpected_errors" | grep -Fv "[minecraft/SimpleJsonResourceReloadListener]: Couldn't parse data file 'guardvillagers:adventure/recruit_guard' from 'guardvillagers:advancement/adventure/recruit_guard.json': DataResult.Error['Unknown registry key in ResourceKey[minecraft:root / minecraft:entity_sub_predicate_type]: minecraft:type;" || true)"
+    fi
     if [[ -n "$unexpected_errors" ]] \
             || grep -Eq 'Exception in thread|A fatal error has been detected|Failed to start the minecraft server' "$LOG_FILE"; then
         echo "$LOADER server logged a fatal startup error" >&2
@@ -85,6 +97,9 @@ for _ in $(seq 1 360); do
             && grep -Fq "The Emerald Standard Banker integration self-test passed" "$LOG_FILE" \
             && grep -Eq 'Done \([^)]*s\)!' "$LOG_FILE"; then
         echo "PASS $LOADER dedicated-server smoke test"
+        if grep -Fq "Couldn't parse data file 'guardvillagers:adventure/recruit_guard'" "$LOG_FILE"; then
+            echo "KNOWN UPSTREAM ERROR retained: Guard Villagers recruitment advancement; guard integration checks still required."
+        fi
         tail -n 100 "$LOG_FILE"
         exit 0
     fi
@@ -96,6 +111,6 @@ for _ in $(seq 1 360); do
     sleep 1
 done
 
-echo "$LOADER server did not finish startup within 360 seconds" >&2
+echo "$LOADER server did not finish startup within 600 seconds" >&2
 cat "$LOG_FILE" >&2
 exit 1

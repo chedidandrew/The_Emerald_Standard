@@ -58,6 +58,9 @@ public final class BankerScreenLayout {
     public static final int MARKET_SECTOR_Y = 92;
     public static final int MARKET_RISK_Y = 104;
     public static final int MARKET_META_WIDTH = 93;
+    public static final int MARKET_BEHAVIOR_Y = 119;
+    public static final int MARKET_BEHAVIOR_LINES = 4;
+    public static final int MARKET_BEHAVIOR_LINE_STEP = 12;
     public static final int MARKET_DETAIL_X = 118;
     public static final int MARKET_DETAIL_WIDTH = 189;
     public static final int MARKET_PRICE_Y = 123;
@@ -144,6 +147,19 @@ public final class BankerScreenLayout {
     public static final int VILLAGE_RIGHT_TEXT_WIDTH = 131;
     public static final int VILLAGE_PRIMARY_DETAIL_Y = 148;
     public static final int VILLAGE_SECONDARY_DETAIL_Y = 162;
+
+    // Expansion uses the whole page, including the otherwise-unused amount-control area.
+    public static final int EXPANSION_PANEL_HEIGHT = 118;
+    public static final int EXPANSION_TITLE_Y = 59;
+    public static final int EXPANSION_REASON_Y = 75;
+    public static final int EXPANSION_UPKEEP_Y = 104;
+    public static final int EXPANSION_LIGHTING_Y = 117;
+    public static final int EXPANSION_FOOD_Y = 130;
+    public static final int EXPANSION_ADVICE_Y = 143;
+    public static final int EXPANSION_LINE_STEP = 12;
+    public static final int EXPANSION_MODE_Y = 177;
+    public static final int EXPANSION_FOOTER_Y = 198;
+    public static final int EXPANSION_ACTION_Y = 213;
 
     public static final int NEWS_PANEL_X = 10;
     public static final int NEWS_PANEL_Y = 54;

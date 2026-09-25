@@ -105,10 +105,10 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
     }
 
     private static void verifyAllActiveMastersUseRoleDoodads(String source) {
-        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*9\\s*;")
+        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*10\\s*;")
                         .matcher(source)
                         .find(),
-                "The active authored gold masters are not revision 7");
+                "The active authored gold masters are not revision 10");
 
         String plan = methodBody(source, "static Blueprint plan(");
         for (MasterExpectation master : expectedMasters()) {
@@ -329,7 +329,8 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
 
     private static void verifyCatalogAndGalleryUseProduction(
             String authored, String prosperity, String gallery) {
-        String catalog = methodBody(authored, "static void validateCatalog()");
+        String catalog = methodBody(authored, "private static void validateCatalogResults(")
+                + methodBody(authored, "private static List<VillageArchitecture.BlueprintDescriptor> activeCatalogDescriptors()");
         String descriptorValidation = methodBody(
                 authored,
                 "private static CatalogValidationResult validateCatalogDescriptor(");

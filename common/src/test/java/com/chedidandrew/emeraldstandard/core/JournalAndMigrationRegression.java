@@ -553,6 +553,7 @@ final class JournalAndMigrationRegression {
         Path save = directory.resolve("the_emerald_standard.properties");
         EconomyState state = EconomyState.fresh(90L, 0L, 0L);
         state.economicDay = 8L;
+        state.liveMarket=LiveMarket.adopt(state);
         UUID villageId = UUID.fromString("58be3daf-6180-4e2b-bcca-f5dd03ef252c");
         EconomyState.VillageRecord village = state.village(villageId);
         EconomyState.VillageProject project = new EconomyState.VillageProject();
@@ -656,6 +657,7 @@ final class JournalAndMigrationRegression {
         Path save = directory.resolve("the_emerald_standard.properties");
         EconomyState state = EconomyState.fresh(910L, 0L, 0L);
         state.economicDay = 9L;
+        state.liveMarket=LiveMarket.adopt(state); // Synthetic migration fixture.
         UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000009910");
         EconomyState.VillageRecord village = state.village(villageId);
         village.architectureCharacter = VillageArchitecture.Character.FORMAL.id();
@@ -856,6 +858,7 @@ final class JournalAndMigrationRegression {
         Path save = directory.resolve("the_emerald_standard.properties");
         EconomyState state = EconomyState.fresh(91L, 0L, 0L);
         state.economicDay = 42L;
+        state.liveMarket=LiveMarket.adopt(state); // Synthetic migration fixture.
         state.lastMarketEvent = EconomyEngine.MarketEvent.NETHER_SUPPLY_CRISIS;
         state.lastMarketEventDay = 40L;
         state.save(save);
@@ -1420,6 +1423,7 @@ final class JournalAndMigrationRegression {
         Path save = directory.resolve("the_emerald_standard.properties");
         EconomyState state = EconomyState.fresh(1_626L, 0L, 0L);
         state.economicDay = 2L;
+        state.liveMarket=LiveMarket.adopt(state); // Synthetic migration fixture.
         UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000001626");
         EconomyState.VillageRecord village = state.village(villageId);
         village.architectureCharacter = VillageArchitecture.Character.RUSTIC.id();
@@ -1537,6 +1541,7 @@ final class JournalAndMigrationRegression {
         Path save = directory.resolve("the_emerald_standard.properties");
         EconomyState state = EconomyState.fresh(1_627L, 0L, 0L);
         state.economicDay = 2L;
+        state.liveMarket=LiveMarket.adopt(state); // Synthetic migration fixture.
         UUID villageId = UUID.fromString("00000000-0000-0000-0000-000000001627");
         EconomyState.VillageRecord village = state.village(villageId);
         village.architectureCharacter = VillageArchitecture.Character.RUSTIC.id();

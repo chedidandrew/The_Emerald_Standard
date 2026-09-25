@@ -36,6 +36,7 @@ public final class EmeraldCommands {
                         || VillageComparisonGallery.hasCommandAccess(source))
                 .then(Commands.literal("help")
                         .executes(EmeraldCommandHandlers::help))
+                .then(NewsPropertyCommands.command())
                 .then(Commands.literal("open")
                         .executes(context -> EmeraldCommandHandlers.open(context, economy)))
                 .then(Commands.literal("market")
@@ -52,6 +53,8 @@ public final class EmeraldCommands {
                         .then(Commands.literal("mark")
                                 .executes(context -> EmeraldCommandHandlers.debugMark(
                                         context, economy)))
+                        .then(Commands.literal("profile")
+                                .executes(context -> EmeraldCommandHandlers.debugProfile(context, economy)))
                         .then(Commands.literal("stop")
                                 .executes(context -> EmeraldCommandHandlers.debugStop(
                                         context, economy)))
@@ -166,6 +169,9 @@ public final class EmeraldCommands {
         if (VillageComparisonGallery.enabled()) {
             root.then(VillageComparisonGallery.command());
         }
+        root.then(NoBuildCommands.command());
         dispatcher.register(root);
+        // The standalone command is available to survival players without opening admin commands.
+        dispatcher.register(NoBuildCommands.command());
     }
 }

@@ -5,21 +5,23 @@ public final class EconomySelfTest {
     private EconomySelfTest() {
     }
 
-    public static void main(String[] args) {
-        long seed = 42L;
-        EconomyEngine.Regime regime = EconomyEngine.initialRegime(seed);
-        double price = 100.0;
+    public static void main(String[] args) throws Exception {
+        var state = EconomyState.fresh(42L, 0, 0);
+        double startingPrice = state.prices.get("VILX");
         for (long day = 1L; day <= 100L * EconomyEngine.DAYS_PER_YEAR; day++) {
-            regime = EconomyEngine.nextRegime(regime, seed, day);
-            price *= 1.0 + EconomyEngine.marketReturn(regime, seed, day);
+            state.advanceOneDay();
+            double price = state.prices.get("VILX");
             if (!Double.isFinite(price) || price <= 0.0) {
                 throw new AssertionError("Invalid VILX price");
             }
+            double before = price;
+            StockIndex.reprice(state);
+            if (Math.abs(state.prices.get("VILX") - before) > 1e-8 * before)
+                throw new AssertionError("VILX diverged from the actual company basket");
         }
-        double cagr = Math.pow(price / 100.0, 1.0 / 100.0) - 1.0;
-        if (cagr < 0.02 || cagr > 0.22) {
-            throw new AssertionError("Implausible VILX CAGR: " + cagr);
-        }
-        System.out.printf("PASS 100-year VILX smoke test, CAGR %.2f%%%n", cagr * 100.0);
+        state.validate();
+        // Price-only summary, not a promised return or an independent broad-market multiplier.
+        double cagr = Math.pow(state.prices.get("VILX") / startingPrice, 1.0 / 100.0) - 1.0;
+        System.out.printf("PASS 100-year actual VILX basket smoke test, price CAGR %.2f%%%n", cagr * 100.0);
     }
 }

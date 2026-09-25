@@ -2,6 +2,9 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.SpendingFunds;
+import java.util.function.IntSupplier;
+import net.minecraft.network.chat.Component;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -40,6 +43,7 @@ public final class BankingOperations {
     static final int UNSUPPORTED = -7;
     static final int NO_VILLAGE = -8;
     static final int POSITION_LIMIT = -9;
+    static final int NUMERIC_LIMIT = -10;
 
     private BankingOperations() {
     }
@@ -69,36 +73,9 @@ public final class BankingOperations {
             return INSUFFICIENT;
         }
 
-        EconomyState.PendingInventoryTransaction transaction =
-                economy.prepareInventoryCredit(
-                        player.getUUID(),
-                        EconomyState.InventoryTransactionKind.DEPOSIT,
-                        "emerald",
-                        amount,
-                        inventoryBefore,
-                        amount * EconomyState.MICRO);
-        if (transaction == null) {
-            return PERSISTENCE_FAILED;
-        }
-        if (!BankInventory.removeItems(player, Items.EMERALD, amount)) {
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
-            return INSUFFICIENT;
-        }
-        if (!economy.commitPreparedInventoryCredit(
-                player.getUUID(), transaction.transactionId)) {
-            int remainder = BankInventory.restoreItems(player, Items.EMERALD, amount);
-            if (remainder == 0) {
-                economy.cancelPreparedInventoryTransaction(
-                        player.getUUID(), transaction.transactionId);
-                return PERSISTENCE_FAILED;
-            }
-            return RECOVERY_PENDING;
-        }
-        return BankTransactionCoordinator.savePlayerAndComplete(
-                        player, economy, transaction.transactionId)
-                ? DEPOSITED
-                : RECOVERY_PENDING;
+        return BankTransactionCoordinator.creditInventory(player, economy,
+                EconomyState.InventoryTransactionKind.DEPOSIT, "emerald", amount,
+                amount * EconomyState.MICRO) ? DEPOSITED : PERSISTENCE_FAILED;
     }
 
     static int withdraw(ServerPlayer player, EconomyService economy, int requested) {
@@ -112,31 +89,8 @@ public final class BankingOperations {
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        int inventoryBefore = BankInventory.countItems(player, Items.EMERALD);
-        EconomyState.PendingInventoryTransaction transaction =
-                economy.beginInventoryWithdrawal(player.getUUID(), amount, inventoryBefore);
-        if (transaction == null) {
-            return INSUFFICIENT;
-        }
-
-        int remainder = BankInventory.insertItems(player, Items.EMERALD, amount);
-        int delivered = amount - remainder;
-        if (remainder > 0
-                && !economy.reducePendingWithdrawal(
-                        player.getUUID(), transaction.transactionId, remainder)) {
-            return RECOVERY_PENDING;
-        }
-
-        EconomyState.PendingInventoryTransaction adjusted =
-                economy.pendingInventoryTransaction(player.getUUID());
-        if (adjusted == null) {
-            return delivered > 0 ? WITHDREW : INVENTORY_FULL;
-        }
-        if (!BankTransactionCoordinator.savePlayerAndComplete(
-                player, economy, adjusted.transactionId)) {
-            return RECOVERY_PENDING;
-        }
-        return delivered > 0 ? WITHDREW : INVENTORY_FULL;
+        int delivered = BankTransactionCoordinator.withdrawInventory(player, economy, amount);
+        return delivered < 0 ? PERSISTENCE_FAILED : delivered == 0 ? INVENTORY_FULL : WITHDREW;
     }
 
     static int moveSavings(
@@ -149,15 +103,14 @@ public final class BankingOperations {
             return readiness;
         }
         EconomyState.Account account = economy.portfolioSnapshot(player.getUUID()).account();
-        long availableMicro = intoSavings ? account.cashMicro : account.savingsMicro;
+        long availableMicro = intoSavings ? spendingMicro(player, account.cashMicro) : account.savingsMicro;
         int amount = cappedFinancialAmount(requested, availableMicro / EconomyState.MICRO);
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        if (!economy.moveSavings(player.getUUID(), amount, intoSavings)) {
-            return PERSISTENCE_FAILED;
-        }
-        return intoSavings ? SAVED : UNSAVED;
+        if (intoSavings) return spend(player, economy, amount,
+                () -> economy.moveSavings(player.getUUID(), amount, true) ? SAVED : PERSISTENCE_FAILED);
+        return economy.moveSavings(player.getUUID(), amount, false) ? UNSAVED : PERSISTENCE_FAILED;
     }
 
     static int buy(
@@ -169,13 +122,22 @@ public final class BankingOperations {
         if (readiness != READY) {
             return readiness;
         }
-        long cash = economy.portfolioSnapshot(player.getUUID()).account().cashMicro
+        long cash = spendingMicro(player, economy.portfolioSnapshot(player.getUUID()).account().cashMicro)
                 / EconomyState.MICRO;
         int amount = cappedFinancialAmount(requested, cash);
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        return economy.buy(player.getUUID(), ticker, amount) ? BOUGHT : PERSISTENCE_FAILED;
+        if (ticker == null || com.chedidandrew.emeraldstandard.core.EconomyEngine.ASSETS.stream()
+                .noneMatch(asset -> asset.ticker().equalsIgnoreCase(ticker))) return UNSUPPORTED;
+        String symbol = ticker.toUpperCase(java.util.Locale.ROOT);
+        double price = economy.marketSnapshot().prices().getOrDefault(symbol, 0.0)
+                * (1.0 + com.chedidandrew.emeraldstandard.core.EconomyEngine.TRADE_SPREAD);
+        double held = economy.portfolioSnapshot(player.getUUID()).account().shares.getOrDefault(symbol, 0.0);
+        if (!Double.isFinite(com.chedidandrew.emeraldstandard.core.InvestmentTradeMath.holdingAfter(
+                held, amount / price, price, true))) return NUMERIC_LIMIT;
+        return spend(player, economy, amount,
+                () -> economy.buy(player.getUUID(), ticker, amount) ? BOUGHT : PERSISTENCE_FAILED);
     }
 
     static int sellFraction(
@@ -193,6 +155,12 @@ public final class BankingOperations {
             return INSUFFICIENT;
         }
         double shares = fraction >= 0.999999 ? held : held * fraction;
+        double price = economy.marketSnapshot().prices().getOrDefault(ticker, 0.0)
+                * (1.0 - com.chedidandrew.emeraldstandard.core.EconomyEngine.TRADE_SPREAD);
+        double next = com.chedidandrew.emeraldstandard.core.InvestmentTradeMath.holdingAfter(held, shares, price, false);
+        double micro = (held - next) * price * EconomyState.MICRO;
+        if (!Double.isFinite(next) || !Double.isFinite(micro) || micro >= Long.MAX_VALUE || Math.round(micro) <= 0)
+            return NUMERIC_LIMIT;
         return economy.sell(player.getUUID(), ticker, shares) ? SOLD : PERSISTENCE_FAILED;
     }
 
@@ -209,12 +177,14 @@ public final class BankingOperations {
         if (account.cdPositions.size() >= EconomyState.MAX_TERM_POSITIONS) {
             return POSITION_LIMIT;
         }
-        int amount = cappedFinancialAmount(requested, account.cashMicro / EconomyState.MICRO);
+        if (termDays != 30 && termDays != 90 && termDays != 180 && termDays != 365) return UNSUPPORTED;
+        int amount = cappedFinancialAmount(requested, spendingMicro(player, account.cashMicro) / EconomyState.MICRO);
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        return economy.openCdPosition(player.getUUID(), amount, termDays) > 0L
-                ? CD_OPENED : PERSISTENCE_FAILED;
+        return spend(player, economy, amount,
+                () -> economy.openCdPosition(player.getUUID(), amount, termDays) > 0L
+                        ? CD_OPENED : PERSISTENCE_FAILED);
     }
 
     static int closeCd(ServerPlayer player, EconomyService economy) {
@@ -245,12 +215,14 @@ public final class BankingOperations {
         if (account.loanPositions.size() >= EconomyState.MAX_TERM_POSITIONS) {
             return POSITION_LIMIT;
         }
-        int amount = cappedFinancialAmount(requested, account.cashMicro / EconomyState.MICRO);
+        if (termDays != 30 && termDays != 90 && termDays != 180 && termDays != 365) return UNSUPPORTED;
+        int amount = cappedFinancialAmount(requested, spendingMicro(player, account.cashMicro) / EconomyState.MICRO);
         if (amount <= 0) {
             return INSUFFICIENT;
         }
-        return economy.openLoanPosition(player.getUUID(), amount, termDays) > 0L
-                ? LENDING_FUNDED : PERSISTENCE_FAILED;
+        return spend(player, economy, amount,
+                () -> economy.openLoanPosition(player.getUUID(), amount, termDays) > 0L
+                        ? LENDING_FUNDED : PERSISTENCE_FAILED);
     }
 
     static int collectLending(ServerPlayer player, EconomyService economy) {
@@ -291,36 +263,9 @@ public final class BankingOperations {
             return UNSUPPORTED;
         }
 
-        EconomyState.PendingInventoryTransaction transaction =
-                economy.prepareInventoryCredit(
-                        player.getUUID(),
-                        EconomyState.InventoryTransactionKind.EXCHANGE,
-                        resource.journalKey(),
-                        amount,
-                        inventoryBefore,
-                        proceeds);
-        if (transaction == null) {
-            return PERSISTENCE_FAILED;
-        }
-        if (!BankInventory.removeItems(player, resource.item(), amount)) {
-            economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId);
-            return INSUFFICIENT;
-        }
-        if (!economy.commitPreparedInventoryCredit(
-                player.getUUID(), transaction.transactionId)) {
-            int remainder = BankInventory.restoreItems(player, resource.item(), amount);
-            if (remainder == 0) {
-                economy.cancelPreparedInventoryTransaction(
-                        player.getUUID(), transaction.transactionId);
-                return PERSISTENCE_FAILED;
-            }
-            return RECOVERY_PENDING;
-        }
-        return BankTransactionCoordinator.savePlayerAndComplete(
-                        player, economy, transaction.transactionId)
-                ? EXCHANGED
-                : RECOVERY_PENDING;
+        return BankTransactionCoordinator.creditInventory(player, economy,
+                EconomyState.InventoryTransactionKind.EXCHANGE, resource.journalKey(), amount, proceeds)
+                ? EXCHANGED : PERSISTENCE_FAILED;
     }
 
     static int supportVillage(
@@ -338,39 +283,57 @@ public final class BankingOperations {
             return NO_VILLAGE;
         }
         EmeraldConfig config = EmeraldConfig.current();
-        if (!config.prosperityFundEnabled()
-                || !economy.villageProsperitySimulationEnabled()
-                || type == null
-                || purpose == null) {
-            return UNSUPPORTED;
-        }
-        if ((type == EconomyState.ProsperityFundType.ENDOWMENT
-                        && !config.prosperityFundEndowmentsEnabled())
-                || (type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
-                        && !config.prosperityFundProjectSponsorshipEnabled())
-                || (type != EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
-                        && purpose != EconomyState.DonationPurpose.GENERAL
-                        && !config.prosperityFundTargetedDonationsEnabled())) {
-            return UNSUPPORTED;
-        }
-        long cash = economy.portfolioSnapshot(player.getUUID()).account().cashMicro
+        var eligibility = FundContributionChecks.assess(config, economy.villageSnapshot(villageId), type, purpose);
+        if (!eligibility.allowed()) return eligibility.status();
+        long cash = spendingMicro(player, economy.portfolioSnapshot(player.getUUID()).account().cashMicro)
                 / EconomyState.MICRO;
-        int amount = cappedFinancialAmount(requested, cash);
-        if (amount <= 0) {
-            return INSUFFICIENT;
+        if (requested <= 0 || requested > cash
+                || requested > EconomyService.MAX_WHOLE_EMERALD_TRANSACTION) return INSUFFICIENT;
+        SpendingFunds.Payment payment = SpendingFunds.plan(
+                economy.portfolioSnapshot(player.getUUID()).account().cashMicro,
+                BankInventory.countItems(player, Items.EMERALD), requested);
+        return spend(player, economy, requested, () -> {
+            long oldReserve = economy.villageFundSnapshot(villageId).emergencyReserveMicro();
+            EconomyService.VillageFundContributionResult result =
+                    economy.contributeToVillageFund(player.getUUID(), villageId, requested, type, purpose);
+            if (!result.contributed()) {
+                return type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
+                        ? NOT_READY : PERSISTENCE_FAILED;
+            }
+            if (payment != null && player.containerMenu instanceof BankerMenu menu) {
+                long addedReserve = economy.villageFundSnapshot(villageId).emergencyReserveMicro() - oldReserve;
+                menu.acceptFundReceipt(result, addedReserve, payment);
+            }
+            return switch (type) {
+                case ENDOWMENT -> VILLAGE_ENDOWED;
+                case PROJECT_SPONSORSHIP -> VILLAGE_PROJECT_SPONSORED;
+                case DIRECT_GRANT -> VILLAGE_FUNDED;
+            };
+        });
+    }
+
+    static long spendingMicro(ServerPlayer player, long cashMicro) {
+        return SpendingFunds.availableMicro(cashMicro, BankInventory.countItems(player, Items.EMERALD));
+    }
+
+    /** The small inventory top-up settles durably before the normal, atomic bank mutation. */
+    private static int spend(ServerPlayer player, EconomyService economy, int amount, IntSupplier action) {
+        SpendingFunds.Payment payment = SpendingFunds.plan(
+                economy.portfolioSnapshot(player.getUUID()).account().cashMicro,
+                BankInventory.countItems(player, Items.EMERALD), amount);
+        if (payment == null) return INSUFFICIENT;
+        if (payment.inventoryEmeralds() > 0 && !BankTransactionCoordinator.creditInventory(
+                player, economy, EconomyState.InventoryTransactionKind.DEPOSIT, "emerald",
+                payment.inventoryEmeralds(), payment.inventoryEmeralds() * EconomyState.MICRO)) {
+            return PERSISTENCE_FAILED; // Never perform a purchase while inventory recovery is pending.
         }
-        EconomyService.VillageFundContributionResult result =
-                economy.contributeToVillageFund(
-                        player.getUUID(), villageId, amount, type, purpose);
-        if (!result.contributed()) {
-            return type == EconomyState.ProsperityFundType.PROJECT_SPONSORSHIP
-                    ? NOT_READY : PERSISTENCE_FAILED;
+        int result = action.getAsInt();
+        if (result < 0 && payment.inventoryEmeralds() > 0) {
+            player.sendSystemMessage(Component.literal("[Emerald Standard] The payment did not complete. "
+                    + payment.inventoryEmeralds() + " inventory emerald(s) were safely deposited into Bank Cash; "
+                    + "they remain available to spend or withdraw."));
         }
-        return switch (type) {
-            case ENDOWMENT -> VILLAGE_ENDOWED;
-            case PROJECT_SPONSORSHIP -> VILLAGE_PROJECT_SPONSORED;
-            case DIRECT_GRANT -> VILLAGE_FUNDED;
-        };
+        return result;
     }
 
     private static int prepare(ServerPlayer player, EconomyService economy) {

@@ -42,16 +42,16 @@ public final class VillageDashboardPolicyRegressionTest {
                 true, VillageProsperityEngine.Lifecycle.ACTIVE,
                 8, 12, 55.0, 70.0, 500.0, null, false,
                 VillageProsperityEngine.IncidentCause.RAID,
-                VillageDashboardPolicy.RECENT_INCIDENT_DAYS,
+                VillageDashboardPolicy.RECENT_INCIDENT_DAYS - 1,
                 true, true, true, true));
         require(incident.bulletin() == VillageDashboardPolicy.BulletinKind.INCIDENT,
-                "A day-seven incident was not treated as recent");
+                "An incident before the first quiet day was not treated as recent");
 
         var oldIncident = VillageDashboardPolicy.assess(snapshot(
                 true, VillageProsperityEngine.Lifecycle.ACTIVE,
                 8, 12, 55.0, 70.0, 500.0, null, false,
                 VillageProsperityEngine.IncidentCause.RAID,
-                VillageDashboardPolicy.RECENT_INCIDENT_DAYS + 1,
+                VillageDashboardPolicy.RECENT_INCIDENT_DAYS,
                 true, true, true, true));
         require(oldIncident.bulletin() == VillageDashboardPolicy.BulletinKind.STEADY
                         && oldIncident.safetyGuidance()

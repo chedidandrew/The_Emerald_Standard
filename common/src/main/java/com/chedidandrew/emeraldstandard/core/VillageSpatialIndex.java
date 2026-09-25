@@ -147,6 +147,17 @@ final class VillageSpatialIndex {
                 }
             }
         }
+        // A single growing territory can extend far beyond its original village center.
+        // Check only rectangle intersection here; physical work still requires loaded exact cells.
+        for(var v:villages.values()) if(v.organicTerritory && Objects.equals(v.dimensionKey,dimensionKey)) {
+            var b=VillageDistrictCoverage.of(v);
+            for(long pos:packedPositions) {
+                double x=VillageTerritory.x(pos),z=VillageTerritory.z(pos);
+                double dx=x-Math.max(b.minX(),Math.min(b.maxX(),x));
+                double dz=z-Math.max(b.minZ(),Math.min(b.maxZ(),z));
+                if(dx*dx+dz*dz<=maximumDistanceSquared) { matches.add(v.villageId);break; }
+            }
+        }
         if (matches.isEmpty()) {
             return List.of();
         }

@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
+import com.chedidandrew.emeraldstandard.core.InventoryReceipt;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,109 +38,143 @@ public final class BankTransactionCoordinator {
     private BankTransactionCoordinator() {
     }
 
-    /** Durably saves this player's inventory and then clears a BANK_COMMITTED journal record. */
-    public static boolean savePlayerAndComplete(
-            ServerPlayer player,
-            EconomyService economy,
-            UUID transactionId) {
-        if (!savePlayer(player)) {
+    /** Transfer ordinary inventory items to cash using a removal checkpoint BEFORE bank credit. */
+    static boolean creditInventory(ServerPlayer player, EconomyService economy,
+            EconomyState.InventoryTransactionKind kind, String key, int amount, long proceeds) {
+        if (!hasReceiptSpace(player)) return false;
+        Item item = BankInventory.itemForJournalKey(key);
+        if (item == null) return false;
+        EconomyState.PendingInventoryTransaction transaction = economy.prepareInventoryCredit(
+                player.getUUID(), kind, key, amount, BankInventory.countItems(player, item), proceeds, true);
+        if (transaction == null) return false;
+        try {
+            setReceipt(player, transaction.transactionId, 0);
+            if (!BankInventory.removeItems(player, item, amount)) {
+                reconcile(player, economy);
+                return false;
+            }
+            setReceipt(player, transaction.transactionId, -amount);
+            if (!savePlayer(player)) {
+                suspend(player, "Could not save the inventory removal; your transaction is protected by recovery.");
+                return false;
+            }
+            if (!economy.commitPreparedInventoryCredit(player.getUUID(), transaction.transactionId)) {
+                reconcile(player, economy);
+                return false;
+            }
+            if (!economy.completeInventoryTransactionAfterVerifiedPlayerSave(
+                    player.getUUID(), transaction.transactionId)) {
+                suspend(player, "Could not finalize the deposit; your bank credit is protected by recovery.");
+                return false;
+            }
+            return true;
+        } catch (RuntimeException exception) {
+            LOGGER.error("Inventory credit interrupted for {}; journal retained", player.getUUID(), exception);
+            suspend(player, "Inventory transfer interrupted; reconnect to recover it.");
             return false;
         }
-        return economy.completeInventoryTransactionAfterVerifiedPlayerSave(
-                player.getUUID(), transactionId);
     }
 
-    /**
-     * Reconciles an interrupted inventory transaction. Safe to call on login, logout, or before a
-     * bank command. The operation is idempotent while the journal record remains present.
-     */
+    /** Returns delivered count, or -1 if a durable recovery is still required. */
+    static int withdrawInventory(ServerPlayer player, EconomyService economy, int amount) {
+        if (!hasReceiptSpace(player)) return -1;
+        EconomyState.PendingInventoryTransaction transaction = economy.beginInventoryWithdrawal(
+                player.getUUID(), amount, BankInventory.countItems(player,
+                        net.minecraft.world.item.Items.EMERALD), true);
+        if (transaction == null) return -1;
+        try {
+            setReceipt(player, transaction.transactionId, 0);
+            int remaining = BankInventory.insertItems(player, net.minecraft.world.item.Items.EMERALD, amount);
+            int delivered = amount - remaining;
+            setReceipt(player, transaction.transactionId, delivered);
+            // Recovery checkpoints delivered items first, refunds only the undelivered remainder,
+            // then clears the journal. It never guesses from the player's current item count.
+            return reconcile(player, economy).recovered() ? delivered : -1;
+        } catch (RuntimeException exception) {
+            LOGGER.error("Withdrawal interrupted for {}; journal retained", player.getUUID(), exception);
+            suspend(player, "Withdrawal interrupted; reconnect to recover it.");
+            return -1;
+        }
+    }
+
+    private static boolean hasReceiptSpace(ServerPlayer player) {
+        return player.entityTags().stream().filter(tag -> !tag.startsWith(InventoryReceipt.PREFIX)).count() < 1024;
+    }
+
+    private static void setReceipt(ServerPlayer player, UUID transactionId, int applied) {
+        for (String tag : java.util.Set.copyOf(player.entityTags())) {
+            if (tag.startsWith(InventoryReceipt.PREFIX)) player.removeTag(tag);
+        }
+        if (!player.addTag(InventoryReceipt.encode(transactionId, applied))) {
+            throw new IllegalStateException("No space for inventory transaction receipt");
+        }
+    }
+
+    /** Saves inventory + receipt together before clearing the bank journal. */
+    public static boolean savePlayerAndComplete(ServerPlayer player, EconomyService economy, UUID transactionId) {
+        if (!savePlayer(player)) return false;
+        return economy.completeInventoryTransactionAfterVerifiedPlayerSave(player.getUUID(), transactionId);
+    }
+
     public static RecoveryResult reconcile(ServerPlayer player, EconomyService economy) {
-        EconomyState.PendingInventoryTransaction transaction =
-                economy.pendingInventoryTransaction(player.getUUID());
-        if (transaction == null) {
-            return RecoveryResult.none();
+        RecoveryResult result;
+        try {
+            result = reconcileChecked(player, economy);
+        } catch (RuntimeException exception) {
+            LOGGER.error("Could not reconcile inventory transaction for {}", player.getUUID(), exception);
+            result = RecoveryResult.failed(exception.getMessage());
         }
-
-        Item item = BankInventory.itemForJournalKey(transaction.itemKey);
-        if (item == null) {
-            return RecoveryResult.failed(
-                    "Unknown journal item " + transaction.itemKey + "; transaction retained");
-        }
-
-        int current = BankInventory.countItems(player, item);
-        int corrected = 0;
-        if (transaction.stage == EconomyState.InventoryTransactionStage.PREPARED) {
-            int missing = Math.min(
-                    transaction.itemCount,
-                    Math.max(0, transaction.inventoryCountBefore - current));
-            if (missing > 0) {
-                int remainder = BankInventory.restoreItems(player, item, missing);
-                corrected = missing - remainder;
-                if (remainder > 0) {
-                    if (!savePlayer(player)) {
-                        return RecoveryResult.failed(
-                                "Could not save player data after a partial inventory restoration");
-                    }
-                    return RecoveryResult.failed(
-                            remainder + " item(s) remain protected by the journal; free inventory space and recover again");
-                }
-            }
-            if (!savePlayer(player)) {
-                return RecoveryResult.failed(
-                        "Could not save player data while rolling back a prepared transaction");
-            }
-            if (!economy.cancelPreparedInventoryTransaction(
-                    player.getUUID(), transaction.transactionId)) {
-                return RecoveryResult.failed(
-                        "Inventory was restored, but the prepared journal could not be cleared");
-            }
-            notifyPlayer(player,
-                    "Recovered an interrupted bank transaction. "
-                            + corrected + " item(s) were restored and no bank credit was applied.");
-            return RecoveryResult.recovered(transaction.transactionId, corrected, true);
-        }
-
-        int expected = transaction.expectedInventoryCount();
-        if (transaction.inventoryDelta() < 0) {
-            int excess = Math.min(transaction.itemCount, Math.max(0, current - expected));
-            if (excess > 0) {
-                if (!BankInventory.removeItems(player, item, excess)) {
-                    return RecoveryResult.failed(
-                            "Could not remove rolled-back deposit items during recovery");
-                }
-                corrected = excess;
-            }
-        } else {
-            int missing = Math.min(transaction.itemCount, Math.max(0, expected - current));
-            if (missing > 0) {
-                int remainder = BankInventory.restoreItems(player, item, missing);
-                corrected = missing - remainder;
-                if (remainder > 0) {
-                    if (!savePlayer(player)) {
-                        return RecoveryResult.failed(
-                                "Could not save player data after a partial inventory restoration");
-                    }
-                    return RecoveryResult.failed(
-                            remainder + " item(s) remain protected by the journal; free inventory space and recover again");
-                }
-            }
-        }
-
-        if (!savePlayer(player)) {
-            return RecoveryResult.failed(
-                    "Could not save player data while completing a committed transaction");
-        }
-        if (!economy.completeInventoryTransactionAfterVerifiedPlayerSave(
-                player.getUUID(), transaction.transactionId)) {
-            return RecoveryResult.failed(
-                    "Inventory was reconciled, but the committed journal could not be cleared");
-        }
-
-        notifyPlayer(player,
-                "Recovered an interrupted bank transaction. "
-                        + corrected + " item(s) required reconciliation.");
-        return RecoveryResult.recovered(transaction.transactionId, corrected, false);
+        // No gameplay (death, inventory moves, dimension respawn) with an unresolved receipt.
+        if (result.found() && !result.recovered()) suspend(player, result.error());
+        return result;
     }
+
+    private static RecoveryResult reconcileChecked(ServerPlayer player, EconomyService economy) {
+        EconomyState.PendingInventoryTransaction transaction = economy.pendingInventoryTransaction(player.getUUID());
+        if (transaction == null) return RecoveryResult.none();
+        Item item = BankInventory.itemForJournalKey(transaction.itemKey);
+        if (item == null) return RecoveryResult.failed("Unknown journal item; transaction retained");
+        int applied = InventoryReceipt.applied(player.entityTags(), transaction.transactionId);
+        int correction = InventoryReceipt.correction(transaction, applied);
+        if (transaction.stage == EconomyState.InventoryTransactionStage.PREPARED) {
+            int remainder = correction == 0 ? 0 : BankInventory.restoreItems(player, item, correction);
+            int restored = correction - remainder;
+            setReceipt(player, transaction.transactionId, applied + restored);
+            if (!savePlayer(player)) return RecoveryResult.failed("Could not checkpoint the restored inventory");
+            if (remainder > 0) {
+                // The receipt still records the removed remainder; never clear it or drop items.
+                return RecoveryResult.failed("Inventory restoration has no room; transaction retained for recovery");
+            }
+            if (!economy.cancelPreparedInventoryTransaction(player.getUUID(), transaction.transactionId)) {
+                return RecoveryResult.failed("Inventory restored; journal cleanup still pending");
+            }
+            return RecoveryResult.recovered(transaction.transactionId, restored, true);
+        }
+        if (!savePlayer(player)) return RecoveryResult.failed("Could not checkpoint inventory delivery");
+        if (transaction.kind == EconomyState.InventoryTransactionKind.WITHDRAWAL && correction > 0) {
+            if (!economy.reducePendingWithdrawal(player.getUUID(), transaction.transactionId, correction)) {
+                return RecoveryResult.failed("Undelivered withdrawal refund still pending");
+            }
+            if (economy.pendingInventoryTransaction(player.getUUID()) == null) {
+                return RecoveryResult.recovered(transaction.transactionId, 0, false);
+            }
+        }
+        if (!economy.completeInventoryTransactionAfterVerifiedPlayerSave(player.getUUID(), transaction.transactionId)) {
+            return RecoveryResult.failed("Inventory checkpoint saved; journal cleanup still pending");
+        }
+        return RecoveryResult.recovered(transaction.transactionId, 0, false);
+    }
+
+    private static void suspend(ServerPlayer player, String reason) {
+        LOGGER.error("Banking paused for {}: {}", player.getUUID(), reason);
+        if (player.connection != null && player.connection.isAcceptingMessages()) {
+            player.connection.disconnect(Component.literal(PREFIX + reason
+                    + "\nNo further spending was performed. Reconnect to recover; contact the server owner if it persists."));
+        }
+    }
+
+
+    static boolean checkpointPlayer(ServerPlayer player) { return savePlayer(player); }
 
     private static boolean savePlayer(ServerPlayer player) {
         MinecraftServer server = player.level().getServer();
@@ -238,7 +273,8 @@ public final class BankTransactionCoordinator {
     static boolean inventoryMatches(CompoundTag expected, CompoundTag persisted) {
         return expected != null
                 && persisted != null
-                && Objects.equals(expected.get("Inventory"), persisted.get("Inventory"));
+                && Objects.equals(expected.get("Inventory"), persisted.get("Inventory"))
+                && Objects.equals(expected.get("Tags"), persisted.get("Tags"));
     }
 
     private static void notifyPlayer(ServerPlayer player, String message) {

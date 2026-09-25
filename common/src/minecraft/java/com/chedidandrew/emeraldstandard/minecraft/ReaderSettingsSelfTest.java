@@ -37,7 +37,35 @@ public final class ReaderSettingsSelfTest {
             Path world = dir.resolve("world/data");
             EmeraldConfig original = EmeraldConfig.load(world);
             original.applyTo(new EconomyService());
-            check(original.values().size() == 27, "incomplete settings snapshot");
+            check(original.values().size() == 38, "incomplete settings snapshot");
+            check(original.bridgeSettings().equals(new EmeraldConfig.BridgeSettings(true,48,12,2)),
+                    "bridge defaults or settings snapshot drift");
+            check(original.newsPolicy().approximate()&&!original.newsPolicy().anonymous()
+                    &&original.newsPolicy().publicPlayers()&&!original.newsExplicitPropertyOnly(),"news privacy defaults");
+            check(!original.forcedVillageDevelopment(), "debug development must be opt-in");
+            Properties debug = new Properties(); debug.setProperty(EmeraldConfig.FORCED_DEVELOPMENT_KEY,"true");
+            var debugService = new EconomyService();
+            EmeraldConfig.parse(debug).applyTo(debugService);
+            check(debugService.forcedVillageDevelopment(),"debug setting not applied");
+            original.applyTo(debugService);
+            check(!debugService.forcedVillageDevelopment(),"debug setting not disabled");
+            check(original.villageConstructionBlocksPerSecond() == 2, "default construction rate");
+            for (String key : original.values().keySet()) {
+                check(com.chedidandrew.emeraldstandard.client.SettingsHelp.description(key).contains("Default:"),
+                        "missing explanatory help: " + key);
+            }
+            for (int rate : new int[] {1, 2, 3, 7, 20, 37, 100}) {
+                Properties speed = new Properties();
+                speed.setProperty("village_prosperity.construction_blocks_per_second", Integer.toString(rate));
+                var configured = EmeraldConfig.parse(speed);
+                for (int start : new int[] {0, 1, 9, 17, 20000}) {
+                    int[] sites = new int[5]; // Banks and ordinary sites use the same independent allowance.
+                    for (long tick = start; tick < start + 20L; tick++)
+                        for (int site = 0; site < sites.length; site++)
+                            sites[site] += configured.constructionAllowance(tick);
+                    for (int total : sites) check(total == rate, "incorrect independent rate " + rate);
+                }
+            }
             // Exercise each editor key, not just representative settings. Invalid mixed drafts
             // must leave the complete active snapshot and exact original file bytes unchanged.
             for (var entry : original.values().entrySet()) {
@@ -61,6 +89,12 @@ public final class ReaderSettingsSelfTest {
             }
             Properties props = new Properties(); props.putAll(original.values());
             check(EmeraldConfig.parse(props).values().equals(original.values()), "snapshot drift");
+            props.setProperty("village_prosperity.construction_blocks_per_tick", "8");
+            props.setProperty("village_prosperity.construction_interval_ticks", "40");
+            var migrated = EmeraldConfig.parse(props);
+            check(migrated.villageConstructionBlocksPerSecond() == 2, "legacy speed must normalize without load failure");
+            props.setProperty("village_prosperity.construction_blocks_per_second", "7");
+            check(EmeraldConfig.parse(props).villageConstructionBlocksPerSecond() == 7, "explicit rate lost to legacy keys");
             Path file = world.resolve("the_emerald_standard-config.properties");
             byte[] before = Files.readAllBytes(file);
             expectFailure(() -> EmeraldConfig.update(world, original,
@@ -94,7 +128,10 @@ public final class ReaderSettingsSelfTest {
                 active = EmeraldConfig.load(allKeysWorld);
                 check(active.values().equals(updated.values()), "reload lost setting: " + key);
             }
-            System.out.println("PASS reader geometry, client preferences, atomic world edits and stale-world rejection");
+            EmeraldConfig reset = EmeraldConfig.update(allKeysWorld, active, EmeraldConfig.defaults().values());
+            check(reset.values().equals(EmeraldConfig.defaults().values()), "reset missed off-page settings");
+            check(EmeraldConfig.load(allKeysWorld).values().equals(reset.values()), "reset did not persist");
+            System.out.println("PASS reader geometry, all-setting help/reset, per-site speed, atomic world edits and stale-world rejection");
         } finally {
             try (var paths = Files.walk(dir)) {
                 for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);

@@ -54,6 +54,7 @@ final class VillageBankVersionSevenSelfTest {
                     "926c1e20023ca0b836ea8ac9b497458ff6f82e176ab2a5cfc305e748ed8dc437"));
 
     static void run() throws Exception {
+        VillageBankBenchSelfTest.run();
         Method paletteFor = method("paletteFor", BiomeDialect.class);
         for (BiomeDialect dialect : BiomeDialect.values()) {
             Object oldPalette = paletteFor.invoke(null, dialect);
@@ -67,7 +68,7 @@ final class VillageBankVersionSevenSelfTest {
                     "V7 palette projection is not idempotent: " + dialect);
             Map<BlockPos, BlockState> before = cells(plan("legacyBankPlanV6", oldPalette));
             Map<BlockPos, BlockState> after = cells(plan("legacyBankPlanV7", oldPalette));
-            Map<BlockPos, BlockState> latest = cells(plan("bankPlan", oldPalette));
+            Map<BlockPos, BlockState> latest = cells(plan("legacyBankPlanV8", oldPalette));
             require(after.keySet().equals(latest.keySet()), "Bank v8 changed its footprint");
             int slimCourses = 0;
             for (var entry : after.entrySet()) {
@@ -82,6 +83,31 @@ final class VillageBankVersionSevenSelfTest {
             require(slimCourses == (dialect == BiomeDialect.DESERT || dialect == BiomeDialect.SNOWY ? 0 : 2),
                     "Bank brick chimney upper-half coverage changed: " + dialect);
             System.out.println("PASS Bank v8 " + dialect + ": " + slimCourses + " slim chimney courses; all other cells unchanged");
+            Map<BlockPos, BlockState> versionNine = cells(plan("legacyBankPlanV9", oldPalette));
+            Map<BlockPos, BlockState> versionTen = cells(plan("legacyBankPlanV10", oldPalette));
+            require(versionNine.keySet().equals(versionTen.keySet()), "Bank roof fix changed the footprint");
+            int roofChanges = 0;
+            for (var entry : versionNine.entrySet()) {
+                BlockState next = versionTen.get(entry.getKey()), previous = entry.getValue();
+                if (previous.equals(next)) continue;
+                roofChanges++;
+                require(entry.getKey().getY() >= 5 && previous.getBlock() instanceof net.minecraft.world.level.block.StairBlock
+                        && previous.getValue(net.minecraft.world.level.block.StairBlock.HALF) == net.minecraft.world.level.block.state.properties.Half.BOTTOM
+                        && next.equals(previous.setValue(net.minecraft.world.level.block.StairBlock.FACING,
+                                previous.getValue(net.minecraft.world.level.block.StairBlock.FACING).getOpposite())),
+                        "Bank v10 altered a non-roof cell: " + entry.getKey());
+            }
+            require(roofChanges > 100, "Bank slope coverage missing");
+            System.out.println("PASS Bank v10 " + dialect + ": " + roofChanges + " roof stairs corrected; all other cells unchanged");
+            Map<BlockPos, BlockState> expectedNine = new LinkedHashMap<>(latest);
+            for (int x = 5; x <= 7; x++) {
+                BlockState removed = expectedNine.remove(new BlockPos(x, 1, 1));
+                require(removed != null && removed.is(Blocks.CARPET.green()),
+                        "Bank v8 original doorway carpet missing: " + dialect);
+            }
+            require(versionNine.equals(expectedNine),
+                    "Bank v9 must change only the three doorway carpet cells: " + dialect);
+            System.out.println("PASS Bank v9 " + dialect + ": three doorway carpets set back; every other cell unchanged");
             require(after.size() == before.size() + 16, "Four small planters did not fit: " + dialect);
             require(after.get(new BlockPos(-1, 5, -1)).is(switch (dialect) {
                 case DESERT -> Blocks.ACACIA_STAIRS;
