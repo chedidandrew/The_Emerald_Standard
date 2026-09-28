@@ -47,6 +47,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageProsperityRegress
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageGrowthPacingRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.BankVillageIdentityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageDistrictMapRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.DistrictNamesRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageGuardSecurityRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageExpansionRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.ForcedDevelopmentRegressionTest "$ROOT"

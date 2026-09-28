@@ -30,6 +30,12 @@ final class VanillaConstructionSelfTest {
             }
         }
         if (!failures.isEmpty()) throw new IllegalStateException("Vanilla construction failures: " + failures);
+        if(System.getProperty("the_emerald_standard.vanillaFixtureFilter")==null) {
+            for(String style:List.of("plains","desert","savanna","taiga","snowy"))for(int turn=0;turn<4;turn++) {
+                try { verifyOne(level,style+"_small_house_1",turn,false,false,2); }
+                catch(Exception e) { throw new IllegalStateException("Raised imported construction "+style+" rotation "+turn,e); }
+            }
+        }
         System.out.println("PASS vanilla construction: selected catalog fixtures, native survival, bed access, empty containers and saved progress");
     }
 
@@ -38,6 +44,10 @@ final class VanillaConstructionSelfTest {
     }
 
     static void verifyOne(ServerLevel level,String name,int rotation,boolean thinGround,boolean soilChanges) throws Exception {
+        verifyOne(level,name,rotation,thinGround,soilChanges,0);
+    }
+
+    private static void verifyOne(ServerLevel level,String name,int rotation,boolean thinGround,boolean soilChanges,int terrainDrop) throws Exception {
         var entry = VanillaVillageBuildings.manifest().stream().filter(e -> e.id().endsWith("/"+name)).findFirst().orElseThrow();
         VanillaConstructionPlan plan;
         try (var stream = level.getServer().getResourceManager().getResourceOrThrow(
@@ -49,7 +59,7 @@ final class VanillaConstructionSelfTest {
         ServerPlayer observer = null;
         try {
             var state = EconomyState.fresh(7788,0,0);
-            var village = state.village(UUID.nameUUIDFromBytes((name+"-"+rotation).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            var village = state.village(UUID.nameUUIDFromBytes((name+"-"+rotation+"-drop-"+terrainDrop).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             village.architectureCharacter = "agrarian"; village.architectureDialect = village.naturalVillageStyle = plan.style();
             village.dimensionKey = "minecraft:overworld"; village.centerPos = origin.asLong();
             village.population = village.observedPopulation = 20; village.housingCapacity = 30;
@@ -78,10 +88,10 @@ final class VanillaConstructionSelfTest {
             project.boundsMaxPos = ((BlockPos)access(bounds,"maximum")).asLong();
             village.projects.add(project);
             int side = Math.max(plan.width(),plan.depth())+4;
-            for(int x=-2;x<side;x++) for(int z=-3;z<side;z++) {
+            for(int x=-8;x<side+5;x++) for(int z=-8;z<side+5;z++) {
                 for(int y=-9;y<plan.height()+2;y++)
                     set(level,before,origin.offset(x,y,z),y < -3 && thinGround
-                            ? Blocks.BEDROCK.defaultBlockState() : y<0 ? Blocks.DIRT.defaultBlockState() : Blocks.AIR.defaultBlockState());
+                            ? Blocks.BEDROCK.defaultBlockState() : y < -terrainDrop ? Blocks.DIRT.defaultBlockState() : Blocks.AIR.defaultBlockState());
             }
             require(invoke("mayUseProjectSite",level,village.villageId,project.projectId,origin,canonical,
                     invoke("excavationFloor",origin,project)) == VillageMaterializationPolicy.SiteAvailability.AVAILABLE,
@@ -89,7 +99,8 @@ final class VanillaConstructionSelfTest {
                             +plan.cells().stream().mapToInt(VanillaConstructionPlan.Cell::y).min().orElse(0)
                             +" "+ConstructionDiagnostics.recent(village.villageId+"/1",level.getGameTime()));
             project.sitePreparationPlan = (SitePreparationPlan)invoke("prepareProjectSitePlan",level,origin,village,project,canonical);
-            require(project.sitePreparationPlan != null,name+" could not survey shallow foundation");
+            require(project.sitePreparationPlan != null,name+" could not survey shallow foundation: "
+                    +ConstructionDiagnostics.recent(village.villageId+"/1",level.getGameTime()));
             project.sitePreparationComplete = project.sitePreparationPlan.cells().isEmpty();
             var directory = Files.createTempDirectory("tes-vanilla-native-");
             state.save(directory.resolve("the_emerald_standard.properties"));
@@ -102,6 +113,10 @@ final class VanillaConstructionSelfTest {
             var props = new Properties(); props.setProperty(EmeraldConfig.FORCED_DEVELOPMENT_KEY,"true");
             var config = EmeraldConfig.parse(props);
             for(int pulse=1;pulse<=250;pulse++) {
+                // This exhaustive fixture reuses chunks inside one server tick. Let the
+                // light executor finish the previous structure's removal/this pulse's
+                // writes before applying real crop survival checks (especially NeoForge).
+                settleLight(level,origin,side);
                 if (soilChanges) for (Object cell : canonical) {
                     BlockPos pos=origin.offset((int)field(cell,"dx"),(int)field(cell,"dy"),(int)field(cell,"dz"));
                     var expected=(BlockState)field(cell,"state");
@@ -122,6 +137,12 @@ final class VanillaConstructionSelfTest {
                 var current = economy.developmentVillageSnapshot(village.villageId).village().projects.getFirst();
                 if(current.materializedComplete) break;
                 if(pulse==250) {
+                    for(var c:canonical) {
+                        var s=(BlockState)field(c,"state");
+                        if(!(s.getBlock() instanceof CropBlock))continue;
+                        var p=origin.offset((int)field(c,"dx"),(int)field(c,"dy"),(int)field(c,"dz"));
+                        if(!level.getBlockState(p).is(s.getBlock()))System.out.println("CROP survival "+p+" below="+level.getBlockState(p.below())+" light="+level.getRawBrightness(p,0)+" sky="+level.canSeeSky(p)+" canSurvive="+s.canSurvive(level,p));
+                    }
                     var ordered = (List<?>)invoke("constructionTemplate",canonical,current);
                     var cell = ordered.get(Math.min(current.materializedBlocks, ordered.size()-1));
                     BlockPos at = origin.offset((int)field(cell,"dx"),(int)field(cell,"dy"),(int)field(cell,"dz"));
@@ -134,6 +155,7 @@ final class VanillaConstructionSelfTest {
             restart.configureVillageProsperity(true,true); restart.start(directory,7788,0);
             var restored = restart.developmentVillageSnapshot(village.villageId).village().projects.getFirst();
             require(restored.materializedComplete && restored.vanillaPlan.hash().equals(plan.hash()),name+" lost completion or frozen cells");
+            require(restored.vanillaTerrainComplete,name+" completed without essential foundations/access");
             if (thinGround) for(int x=-2;x<side;x++) for(int z=-3;z<side;z++)
                 require(level.getBlockState(origin.offset(x,-4,z)).is(Blocks.BEDROCK),"construction removed bedrock");
             for(var cell:canonical) {
@@ -146,14 +168,11 @@ final class VanillaConstructionSelfTest {
             // cache entries left by the previous fixture before testing the new building.
             before.keySet().forEach(level.getPathTypeCache()::invalidate);
             if (plan.beds()>0) {
-                BlockPos entryPos = (BlockPos)invoke("projectEntrance",origin,project);
-                // The real external path starts here; provide its two landing cells in this fixture.
-                set(level,before,entryPos,Blocks.DIRT_PATH.defaultBlockState());
-                var inward = switch(rotation) {
-                    case 1 -> net.minecraft.core.Direction.WEST; case 2 -> net.minecraft.core.Direction.NORTH;
-                    case 3 -> net.minecraft.core.Direction.EAST; default -> net.minecraft.core.Direction.SOUTH;
-                };
-                set(level,before,entryPos.relative(inward),Blocks.DIRT_PATH.defaultBlockState());
+                var trail=(List<?>)invoke("modularPrimaryTrailPrefix",origin,village,project,6);
+                var approach=trail.getLast();
+                BlockPos entryPos=origin.offset((int)field(approach,"dx"),0,(int)field(approach,"dz"));
+                // Test the actual supplied approach; never insert a test-only bridge/landing.
+                while(level.getBlockState(entryPos).isAir() && entryPos.getY()>origin.getY()-8) entryPos=entryPos.below();
                 var visitor = VillageWalkingSelfTest.walker(level,entryPos.above());
                 visitor.setPos(entryPos.getX()+0.5,entryPos.getY()+1,entryPos.getZ()+0.5);
                 visitor.setOnGround(true);
@@ -171,6 +190,7 @@ final class VanillaConstructionSelfTest {
                     // Cramped vanilla bedrooms often approach diagonally beside the foot.
                     for (BlockPos candidate : BlockPos.betweenClosed(bed.offset(-1,-1,-1),bed.offset(1,1,1))) {
                         BlockPos beside = candidate.immutable();
+                        if(name.endsWith("_small_house_1")&&level.getBlockState(beside.below()).getBlock() instanceof BedBlock)continue;
                         if (!bed.closerToCenterThan(new net.minecraft.world.phys.Vec3(
                                 beside.getX()+.5,beside.getY(),beside.getZ()+.5),2)
                                 || !(level.getBlockState(beside).isAir() || level.getBlockState(beside).getBlock() instanceof CarpetBlock)
@@ -184,7 +204,30 @@ final class VanillaConstructionSelfTest {
                 }
                 visitor.discard();
             }
-            System.out.println("PASS vanilla native "+name+" rotation "+rotation+" operations "+project.totalBlocks);
+            if(terrainDrop>0) {
+                // Simulate an older completed house: remove only the new supplied cells,
+                // keep its immutable template and original completion/cursor untouched.
+                Map<BlockPos,BlockState> original=new HashMap<>();
+                for(var c:canonical)original.put(origin.offset((int)field(c,"dx"),(int)field(c,"dy"),(int)field(c,"dz")),(BlockState)field(c,"state"));
+                for(var c:restored.vanillaTerrainPlan.cells()) {
+                    if(c.before().equals(c.after()))continue;
+                    var p=BlockPos.of(c.position());
+                    set(level,before,p,original.getOrDefault(p,VillageTerrainFinishing.state(level,c.before())));
+                }
+                var old=restored.copy();old.vanillaTerrainPlan=null;old.vanillaTerrainCursor=0;old.vanillaTerrainComplete=false;old.vanillaTerrainFailure="";
+                village.projects.set(0,old);state.save(directory.resolve("the_emerald_standard.properties"));
+                var repair=new EconomyService();repair.configureEconomicClock(false,30);repair.configureVillageProsperity(true,true);repair.start(directory,7788,0);
+                for(int pulse=0;pulse<100;pulse++) {
+                    var v=repair.developmentVillageSnapshot(village.villageId).village();var p=v.projects.getFirst();
+                    if(p.vanillaTerrainComplete)break;
+                    invoke("materializeVanillaTerrain",level,repair,v,p,32);
+                }
+                var fixed=repair.developmentVillageSnapshot(village.villageId).village().projects.getFirst();
+                require(fixed.vanillaTerrainComplete,name+" legacy repair failed: "+fixed.vanillaTerrainFailure);
+                require(fixed.materializedBlocks==restored.materializedBlocks&&fixed.totalBlocks==restored.totalBlocks
+                        &&fixed.vanillaPlan.hash().equals(plan.hash()),"legacy repair changed frozen construction");
+            }
+            System.out.println("PASS vanilla native "+name+" rotation "+rotation+" drop "+terrainDrop+" operations "+project.totalBlocks);
         } finally {
             if(observer!=null) { level.players().remove(observer); observer.discard(); }
             VillageConstructionActivitySelfTest.cleanupCrews(level);
@@ -194,6 +237,17 @@ final class VanillaConstructionSelfTest {
     }
     private static void set(ServerLevel level,Map<BlockPos,BlockState> before,BlockPos p,BlockState s) {
         level.getChunk(p); before.putIfAbsent(p,level.getBlockState(p)); level.setBlock(p,s,18);
+    }
+    private static void settleLight(ServerLevel level,BlockPos origin,int side) {
+        var engine=level.getChunkSource().getLightEngine();
+        List<java.util.concurrent.CompletableFuture<?>> pending=new ArrayList<>();
+        for(int x=(origin.getX()-8)>>4;x<=(origin.getX()+side+4)>>4;x++)
+            for(int z=(origin.getZ()-8)>>4;z<=(origin.getZ()+side+4)>>4;z++)pending.add(engine.waitForPendingTasks(x,z));
+        engine.tryScheduleUpdate();
+        var done=java.util.concurrent.CompletableFuture.allOf(pending.toArray(java.util.concurrent.CompletableFuture[]::new));
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        level.getServer().managedBlock(()->done.isDone()||System.nanoTime()>=deadline);
+        require(done.isDone(),"fixture light executor did not settle");done.join();
     }
     private static Object invoke(String name,Object...args) throws Exception {
         return ConstructionSupportRecoverySelfTest.invoke(name,args);

@@ -45,10 +45,19 @@ public final class VanillaConstructionRegressionTest {
         check(v.housingCapacity == before + 1, "used TES housing capacity instead of actual vanilla beds");
         check(!VillageProsperityEngine.isProjectOperational(p), "unbuilt imported housing became usable");
         var file = Files.createTempDirectory("tes-vanilla-persistence-").resolve("state.properties");
+        p.vanillaTerrainPlan = new SitePreparationPlan(List.of(
+                new SitePreparationPlan.Cell(1234,"minecraft:air","minecraft:cobblestone"),
+                new SitePreparationPlan.Cell(1235,"minecraft:air","minecraft:stone_brick_stairs[facing=north]")));
+        p.vanillaTerrainCursor=1;
+        check(p.copy().vanillaTerrainPlan==p.vanillaTerrainPlan && p.copy().vanillaTerrainCursor==1,"additive copy cursor");
         state.save(file);
         VanillaBuildingCatalog.clear();
         var restarted = EconomyState.load(file,77,0,0);
         var restored = restarted.villages.get(v.villageId).projects.getFirst();
+        check(restored.vanillaTerrainPlan.equals(p.vanillaTerrainPlan)&&restored.vanillaTerrainCursor==1
+                &&!restored.vanillaTerrainComplete,"saved additive work must survive restart without changing the template");
+        check(ConstructionGuidance.project(restored,"").contains("Searching")
+                || ConstructionGuidance.project(restored,"").contains("foundations"),"foundation guidance");
         check(restored.vanillaPlan.hash().equals(plains.hash()), "resource removal changed saved building");
         check(restarted.villages.get(v.villageId).naturalVillageStyle.equals("plains"), "lost village family");
         check(restored.housingGain()==1 && restored.totalBlocks==p.totalBlocks,"lost saved role/operations");

@@ -21,6 +21,10 @@ public final class ConstructionGuidance {
         if (p.relocationPending) return "Surveyors are finding a replacement site. The previous building remains.";
         if (p.abstractOnly) return "Included in the village accounts; no building is planned here.";
         if (p.originPos == 0) return "Searching for a safe building site. Surveyors continue checking nearby plots; no action is needed.";
+        if (p.vanillaPlan != null && !p.vanillaTerrainFailure.isEmpty())
+            return "Foundation or entrance work needs attention. The crew has left the obstruction untouched; inspect the site. Your belongings will not be moved.";
+        if (p.vanillaPlan != null && !p.vanillaTerrainComplete && p.sitePreparationComplete)
+            return "Crews are securing the foundations and connecting the entrance to the path.";
         boolean inspection = !p.materializedComplete && p.sitePreparationComplete
                 && p.totalBlocks > 0 && p.materializedBlocks >= p.totalBlocks;
         String observed = advice(phase);

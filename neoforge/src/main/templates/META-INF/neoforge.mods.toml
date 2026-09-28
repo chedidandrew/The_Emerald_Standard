@@ -8,6 +8,7 @@ config="emerald-standard.mixins.json"
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
+logoFile="assets/the_emerald_standard/icon.png"
 displayURL="https://github.com/chedidandrew/The_Emerald_Standard"
 authors="Andrew Chedid"
 description='''

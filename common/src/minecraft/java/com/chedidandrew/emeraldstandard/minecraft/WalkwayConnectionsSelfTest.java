@@ -14,8 +14,10 @@ import net.minecraft.world.level.block.state.BlockState;
 /** Real loaded-block routing/persistence tests, invoked only in a disposable server smoke world. */
 final class WalkwayConnectionsSelfTest {
     static void verify(ServerLevel level) {
+        verifyInitialDesertPaving();
         ConstructionEntityClearanceSelfTest.verify(level);
         VegetationCompatibilitySelfTest.verify(level);
+        VanillaTerrainWorkSelfTest.verify(level);
         Map<BlockPos,BlockState> before=new LinkedHashMap<>();
         var old=WalkwayConnectionLedger.CODEC.encodeStart(NbtOps.INSTANCE,WalkwayConnectionLedger.get(level)).getOrThrow();
         BlockPos origin=new BlockPos(1760,level.getMaxY()-24,1760);
@@ -183,6 +185,29 @@ final class WalkwayConnectionsSelfTest {
             before.forEach((p,s)->level.setBlock(p,s,18));
         }
     }
+    private static void verifyInitialDesertPaving() {
+        var village = new EconomyState.VillageRecord();
+        village.villageId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        village.architectureDialect = "desert";
+        Set<Block> centers = new HashSet<>();
+        for (int x = -100; x <= 100; x++) {
+            BlockPos pos = new BlockPos(x, 70, -x);
+            for (Block frozen : List.of(Blocks.COARSE_DIRT, Blocks.GRAVEL, Blocks.DIRT_PATH)) {
+                BlockState center = VillageProsperityManager.pendingTrailSurface(
+                        frozen.defaultBlockState(), false, village, pos);
+                centers.add(center.getBlock());
+                require(center.equals(WalkwayStyle.surface("desert_v1", village.villageId, pos, false)),
+                        "initial desert lane disagrees with connection palette");
+                require(VillageProsperityManager.pendingTrailSurface(frozen.defaultBlockState(), true,
+                        village, pos).is(Blocks.CUT_SANDSTONE), "desert shoulder is not cut sandstone");
+            }
+        }
+        require(centers.equals(Set.of(Blocks.SANDSTONE, Blocks.SMOOTH_SANDSTONE)), "desert paving variety");
+        village.architectureDialect = "plains";
+        require(VillageProsperityManager.pendingTrailSurface(Blocks.GRAVEL.defaultBlockState(), false,
+                village, BlockPos.ZERO).is(Blocks.GRAVEL), "non-desert treatment changed");
+    }
+
     private static void styleConnections(ServerLevel level,BlockPos origin) {
         Set<Set<BlockState>> signatures=new HashSet<>();
         UUID village=UUID.fromString("11111111-2222-3333-4444-555555555555");

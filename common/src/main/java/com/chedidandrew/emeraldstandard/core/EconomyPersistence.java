@@ -486,6 +486,11 @@ final class EconomyPersistence {
             properties.setProperty(projectPrefix + "founding_recovery_used", Boolean.toString(project.foundingRecoveryUsed));
             if (project.sitePreparationPlan != null)
                 properties.setProperty(projectPrefix + "site_preparation_plan", project.sitePreparationPlan.encode());
+            if (project.vanillaTerrainPlan != null)
+                properties.setProperty(projectPrefix + "vanilla_terrain_plan", project.vanillaTerrainPlan.encode());
+            properties.setProperty(projectPrefix + "vanilla_terrain_cursor", Integer.toString(project.vanillaTerrainCursor));
+            properties.setProperty(projectPrefix + "vanilla_terrain_complete", Boolean.toString(project.vanillaTerrainComplete));
+            properties.setProperty(projectPrefix + "vanilla_terrain_failure", project.vanillaTerrainFailure);
             properties.setProperty(projectPrefix + "trail.anchor_set", Boolean.toString(project.trailAnchorSet));
             properties.setProperty(projectPrefix + "trail.anchor", Long.toString(project.trailAnchorPos));
             properties.setProperty(projectPrefix + "trail.blocks", Integer.toString(project.trailMaterializedBlocks));
@@ -1426,6 +1431,10 @@ final class EconomyPersistence {
             case "obstruction_loaded_ticks" -> project.obstructionLoadedTicks = Math.max(0,Long.parseLong(value));
             case "founding_recovery_used" -> project.foundingRecoveryUsed = Boolean.parseBoolean(value);
             case "site_preparation_plan" -> project.sitePreparationPlan = SitePreparationPlan.decode(value);
+            case "vanilla_terrain_plan" -> project.vanillaTerrainPlan = SitePreparationPlan.decode(value);
+            case "vanilla_terrain_cursor" -> project.vanillaTerrainCursor = Integer.parseInt(value);
+            case "vanilla_terrain_complete" -> project.vanillaTerrainComplete = Boolean.parseBoolean(value);
+            case "vanilla_terrain_failure" -> project.vanillaTerrainFailure = value;
             case "site_search_saw_unloaded" ->
                     project.siteSearchSawUnloadedCandidate = Boolean.parseBoolean(value);
             case "blocks" -> project.materializedBlocks = Integer.parseInt(value);

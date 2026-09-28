@@ -3741,6 +3741,23 @@ public final class EconomyService {
         });
     }
 
+    /** Saved additive work never changes the imported template or its construction cursor. */
+    public synchronized boolean recordVanillaTerrain(UUID villageId, long projectId,
+            SitePreparationPlan plan, int cursor, boolean complete, String failure) {
+        if (cursor < 0 || failure == null || failure.length() > 2048
+                || (plan == null && (cursor != 0 || complete))
+                || (plan != null && (cursor > plan.cells().size() || complete && cursor != plan.cells().size()))) return false;
+        return mutateVillage(villageId, true, village -> {
+            var p = findProject(village, projectId);
+            if (p == null || p.vanillaPlan == null || p.originPos == 0 || p.vanillaTerrainComplete && failure.isEmpty()
+                    || p.vanillaTerrainPlan != null && !p.vanillaTerrainPlan.equals(plan)
+                    || cursor < p.vanillaTerrainCursor && p.materializedComplete) return false;
+            p.vanillaTerrainPlan = plan; p.vanillaTerrainCursor = cursor;
+            p.vanillaTerrainComplete = complete; p.vanillaTerrainFailure = failure;
+            return true;
+        });
+    }
+
     /** Freezes a bounded approach plan for a completed modular project from an older save. */
     public synchronized boolean initializeVillageProjectEntranceApproach(
             UUID villageId,
@@ -4210,6 +4227,10 @@ public final class EconomyService {
 
     private static void resetVillageProjectEntranceApproach(
             EconomyState.VillageProject project) {
+        project.vanillaTerrainPlan = null;
+        project.vanillaTerrainCursor = 0;
+        project.vanillaTerrainComplete = false;
+        project.vanillaTerrainFailure = "";
         project.entranceApproachVersion = 0;
         project.entranceApproachStepCount = 0;
         project.entranceApproachCursor = 0;

@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.54
+## Unreleased: 0.4.0-beta.56
+
+- Replace numbered district map labels with stable generated names from over half a million combinations, including existing saves. Names follow the saved village identity, not discovery order.
+- Use the desert village sandstone palette for newly paved building approach trails as well as network connections; preserve completed paths, frozen geometry and safety checks.
+- Add the emerald and celebrating sunglasses-villager mod icon to both loader manifests.
+
+## Previous unreleased candidate: 0.4.0-beta.55
+
+- Survey imported vanilla buildings' actual ground-contact surfaces and add bounded foundations without filling authored cellars or supporting roof overhangs.
+- Connect recessed entrances with a supported landing and correctly elevated, oriented stairs. Unsafe new sites are rejected; existing buildings receive separate saved, protection-checked additive work.
+- Keep required foundations/access outside optional-decoration timeout fallbacks. Preserve original imported plans/cursors and report deferred repairs rather than overwriting later edits.
+
+## Previous unreleased candidate: 0.4.0-beta.54
 
 - Rebalance established company prospects and event recovery opportunities while retaining speculative losses and AURM's defensive exposure. Savings, CDs, Treasury Fund and commodity formulas are unchanged.
 - Add stable company operating profiles and Large/Medium/Small browser filters. Separate company float from VILX basket quantities; annually cap each constituent at 20% with value-neutral rebalancing.

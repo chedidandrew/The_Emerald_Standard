@@ -214,6 +214,10 @@ public final class HandbookResourceRegressionTest {
                 "VILX basket, migration and non-guaranteed targets must be explained in both handbooks");
         requireCreativeCatalog(root,language);
         requireNewspaperAppearance(root,language);
+        check(language.contains("Fitted foundations.") && language.contains("Joined entrances.")
+                && language.contains("never skipped merely because work takes time")
+                && language.contains("Completed repairs do not regenerate player alterations"),
+                "Both handbook forms explain imported foundations, access and protected one-time repairs");
         check(language.contains("guide.the_emerald_standard.handbook.district_map.body")
                 && language.contains("Checkered cells mean unknown or still-loading map data")
                 && language.contains("There are no marker pages") && language.contains("Wide view: groups.")
@@ -341,6 +345,9 @@ public final class HandbookResourceRegressionTest {
                 && language.contains("arbitrary patch near the center") && language.contains("Connection receipts survive reloads")
                 && language.contains("narrow passage is better than a wide dead end"),
                 "Both handbook forms must explain loaded-only walkway connections, bounds and editing");
+        check(language.contains("Names stay on reload.") && language.contains("saved village identity")
+                && language.contains("newly paved building approach trails"),
+                "Generated names and initial desert paving are explained in the handbook");
         check(language.contains("Roads keep local style.") && language.contains("walkway_styles.body")
                 && language.contains("New walkway connections keep the village's established architectural style")
                 && language.contains("Old paths and already-started connection surveys keep their earlier paving")

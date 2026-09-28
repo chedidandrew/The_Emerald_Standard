@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-public static final int FORMAT_VERSION = 42;
+public static final int FORMAT_VERSION = 43;
     /** Ten complete years of daily intervals, plus the opening endpoint. */
     public static final int HISTORY_DAYS = 3_651;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -681,6 +681,11 @@ public String designPlanHash = "";
         public boolean sitePreparationComplete = true;
         public int sitePreparationCursor;
         public SitePreparationPlan sitePreparationPlan;
+        /** Additive foundations/access, separate from the immutable imported template cursor. */
+        public SitePreparationPlan vanillaTerrainPlan;
+        public int vanillaTerrainCursor;
+        public boolean vanillaTerrainComplete;
+        public String vanillaTerrainFailure = "";
         /** Write-ahead evidence: old saves conservatively count as already started. */
         public boolean constructionStarted = true;
         /** Counts only observed, loaded physical obstruction; not economic or offline waiting. */
@@ -756,6 +761,10 @@ copy.designPlanHash = designPlanHash;
             copy.sitePreparationComplete = sitePreparationComplete;
             copy.sitePreparationCursor = sitePreparationCursor;
             copy.sitePreparationPlan = sitePreparationPlan;
+            copy.vanillaTerrainPlan = vanillaTerrainPlan;
+            copy.vanillaTerrainCursor = vanillaTerrainCursor;
+            copy.vanillaTerrainComplete = vanillaTerrainComplete;
+            copy.vanillaTerrainFailure = vanillaTerrainFailure;
             copy.constructionStarted = constructionStarted;
             copy.obstructionLoadedTicks = obstructionLoadedTicks;
             copy.foundingRecoveryUsed = foundingRecoveryUsed;
@@ -2564,6 +2573,11 @@ copy.architectureDialect = architectureDialect;
                     || project.designDressingId == null
                     || project.designPlanHash == null
                     || project.sitePreparationCursor < 0 || project.sitePreparationCursor > 1_000_000
+                    || project.vanillaTerrainCursor < 0 || project.vanillaTerrainFailure == null
+                    || project.vanillaTerrainFailure.length() > 2048
+                    || (project.vanillaTerrainPlan == null && (project.vanillaTerrainCursor != 0 || project.vanillaTerrainComplete))
+                    || (project.vanillaTerrainPlan != null && (project.vanillaTerrainCursor > project.vanillaTerrainPlan.cells().size()
+                        || project.vanillaTerrainComplete && project.vanillaTerrainCursor != project.vanillaTerrainPlan.cells().size()))
                     || project.obstructionLoadedTicks < 0 || project.obstructionLoadedTicks > 24_000
                     || project.projectId <= previousProject
                     || project.approvedDay < 0L

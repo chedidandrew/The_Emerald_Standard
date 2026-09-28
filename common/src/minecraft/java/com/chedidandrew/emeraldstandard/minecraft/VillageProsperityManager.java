@@ -582,7 +582,7 @@ public final class VillageProsperityManager {
             project.entranceApproachTotalCells = site.entranceApproachTotalCells;
             project.entranceApproachComplete = site.entranceApproachTotalCells == 0;
             List<Placement> template = projectTemplate(level, origin, draft, project);
-            ProjectBounds bounds = bounds(origin, template);
+            ProjectBounds bounds = importedSiteBounds(origin, template, draft, project);
             project.designPlanHash = blueprintPlanHash(draft, project, blueprintPlacementPlan(level, origin, draft, project));
             project.originPos = origin.asLong();
             project.boundsMinPos = bounds.minimum.asLong();
@@ -756,11 +756,15 @@ public final class VillageProsperityManager {
                 var siteVillage = VillageFinishingQueue.view(village, finished);
                 int pathBudget = finishingBudget;
                 int initialPathBudget = pathBudget;
+                if (finished.vanillaPlan != null && !finished.vanillaTerrainComplete)
+                    pathBudget -= materializeVanillaTerrain(level, economy, siteVillage, finished, pathBudget);
+                int unusedTerrainBudget = finished.vanillaPlan != null && !finished.vanillaTerrainComplete ? pathBudget : 0;
+                pathBudget -= unusedTerrainBudget;
                 pathBudget -= materializeOneModularEntranceApproach(level, economy, siteVillage, 0L, pathBudget);
                 if (pathBudget > 0) pathBudget -= materializeOneModularTrailCenterSurfaceMigration(
                         level, economy, siteVillage, 0L, pathBudget);
                 if (pathBudget > 0) pathBudget -= materializeOneModularTrail(level, economy, siteVillage, 0L, pathBudget);
-                if (forced) remainingBlockBudget -= initialPathBudget - pathBudget;
+                if (forced) remainingBlockBudget -= initialPathBudget - pathBudget - unusedTerrainBudget;
             }
             int roadBudget = forced ? remainingBlockBudget : task.equals("roads")
                     ? ConstructionTimeRuntime.roadAllowance(gameTime, config) : 0;
@@ -892,7 +896,7 @@ public final class VillageProsperityManager {
                 List<Placement> modularTrail = isManagedProject(project)
                         ? managedProjectTrail(origin, village, project)
                         : List.of();
-                ProjectBounds bounds = bounds(origin, template);
+                ProjectBounds bounds = importedSiteBounds(origin, template, village, project);
                 boolean reserved = isManagedProject(project)
                         ? economy.reserveVillageProjectSite(
                                 village.villageId,
@@ -978,6 +982,10 @@ public final class VillageProsperityManager {
                 } else ConstructionDiagnostics.record(village.villageId + "/" + project.projectId,
                         "terrain", actual.sitePreparationCursor, project.sitePreparationPlan == null ? 0
                                 : project.sitePreparationPlan.cells().size(), gameTime, "");
+                continue;
+            }
+            if (project.vanillaPlan != null && !project.vanillaTerrainComplete) {
+                remainingBlockBudget -= materializeVanillaTerrain(level, economy, village, project, remainingBlockBudget);
                 continue;
             }
             if (!forced && config.villageVisualProgressionEnabled() && !ConstructionSitePresentation.fenceReady(level,
@@ -1075,6 +1083,9 @@ public final class VillageProsperityManager {
                 BlockPos target = placementTarget(level, origin, placement);
                 obstruction = target;
                 BlockState current = level.getBlockState(target);
+                if (VanillaTerrainWork.suppliedOverlay(level,project,target,current,placement.state)) {
+                    index++; continue; // Keep the original template order; the saved landing supersedes exterior air.
+                }
                 if (placementSatisfied(level, origin, target, current, placement)) {
                     if (placement.isStructuralAuthority()
                             && !VillageDevelopmentProtection.mayPlace(
@@ -1189,6 +1200,14 @@ public final class VillageProsperityManager {
             if(firstPending>=0) index=firstPending;
             recovery.observe(gameTime,index,!blocked&&!entityWait&&index<constructionTarget,false);
             boolean complete = index >= placements.size();
+            if (complete && project.vanillaPlan != null && !vanillaTerrainIntact(level,project)) {
+                complete=false; blocked=true;
+                unloaded=project.vanillaTerrainPlan!=null && project.vanillaTerrainPlan.cells().stream()
+                        .anyMatch(c->!positionColumnLoaded(level,BlockPos.of(c.position())));
+                physicalObstruction=!unloaded;
+                if(!unloaded) economy.recordVanillaTerrain(village.villageId,project.projectId,project.vanillaTerrainPlan,
+                        project.vanillaTerrainCursor,false,"Foundation/access changed during construction; repair deferred");
+            }
             if (isManagedProject(project) && (placedThisTick > 0 || complete)) {
                 normalizeAuthoredModularConnections(
                         level,
@@ -1221,7 +1240,7 @@ public final class VillageProsperityManager {
                             origin,
                             target,
                             level.getBlockState(target),
-                            placement)) {
+                            placement) && !VanillaTerrainWork.suppliedOverlay(level,project,target,level.getBlockState(target),placement.state)) {
                         verifiedPrefix = verifyIndex;
                         complete = false;
                         completionDamaged = true;
@@ -1229,7 +1248,7 @@ public final class VillageProsperityManager {
                     }
                 }
                 if (completionDamaged) {
-                    ProjectBounds currentBounds = bounds(origin, placements);
+                    ProjectBounds currentBounds = importedSiteBounds(origin, placements, village, project);
                     if(verifiedPrefix<handoverFloor) {
                         economy.requireManualVillageProjectRepair(village.villageId,project.projectId,verifiedPrefix,
                                 placements.size(),currentBounds.minimum.asLong(),currentBounds.maximum.asLong());
@@ -1556,7 +1575,7 @@ public final class VillageProsperityManager {
                 index++;
                 continue;
             }
-            BlockState proposed = modularTrailPlacementState(placement);
+            BlockState proposed = modularTrailPlacementState(placement, village, target);
             boolean protectionAllowed = VillageDevelopmentProtection.mayPlace(
                     level,
                     village.villageId,
@@ -1644,7 +1663,7 @@ public final class VillageProsperityManager {
     }
 
     static boolean walkwayReady(EconomyState.VillageRecord village,EconomyState.VillageProject p) {
-        return walkwayEligible(p) && (p.trailMaterializedComplete
+        return walkwayEligible(p) && (p.vanillaPlan == null || p.vanillaTerrainComplete) && (p.trailMaterializedComplete
                 || managedProjectTrail(BlockPos.of(p.originPos),village,p).isEmpty());
     }
 
@@ -1727,11 +1746,23 @@ public final class VillageProsperityManager {
     }
 
     /** Keeps the persisted historical plan order while ensuring no new center cell emits coarse dirt. */
-    private static BlockState modularTrailPlacementState(Placement placement) {
-        return placement.role == PlacementRole.TRAIL_PRIMARY
-                        && placement.state.is(Blocks.COARSE_DIRT)
+    private static BlockState modularTrailPlacementState(Placement placement,
+            EconomyState.VillageRecord village, BlockPos target) {
+        return pendingTrailSurface(placement.state, placement.role == PlacementRole.TRAIL_SHOULDER,
+                village, target);
+    }
+
+    static BlockState pendingTrailSurface(BlockState frozen, boolean shoulder,
+            EconomyState.VillageRecord village, BlockPos target) {
+        // Change only newly written optional paving, never the frozen plan/cursor or completed
+        // roads. Use the established village dialect even when this plot crosses a biome border.
+        if ("desert".equals(village.architectureDialect)) {
+            return WalkwayStyle.surface("desert_v1", village.villageId, target,
+                    shoulder);
+        }
+        return !shoulder && frozen.is(Blocks.COARSE_DIRT)
                 ? Blocks.DIRT_PATH.defaultBlockState()
-                : placement.state;
+                : frozen;
     }
 
     /** Includes completed narrow legacy roads when their deterministic plan has a wider suffix. */
@@ -1978,6 +2009,7 @@ public final class VillageProsperityManager {
             EconomyState.VillageRecord village, long selectionOrdinal) {
         List<EconomyState.VillageProject> candidates = village.projects.stream()
                 .filter(project -> VillageArchitecture.isManagedStructureSchema(project.designSchema)
+                        && project.vanillaPlan == null
                         && project.economicComplete
                         && project.materializedComplete
                         && !project.manualRepairRequired
@@ -1999,6 +2031,8 @@ public final class VillageProsperityManager {
             BlockPos origin,
             EconomyState.VillageRecord village,
             EconomyState.VillageProject project) {
+        // Imported floors use their own saved floor-height/landing-aware approach.
+        if (project.vanillaPlan != null) return EntranceApproachSearch.flat();
         List<Placement> primary = modularPrimaryTrailPrefix(
                 origin,
                 village,
@@ -2306,7 +2340,7 @@ public final class VillageProsperityManager {
                                 pendingQualityMigration)
                         : projectTemplate(level, origin, village, project);
         expected = constructionTemplate(expected, project);
-        ProjectBounds expectedBounds = bounds(origin, expected);
+        ProjectBounds expectedBounds = importedSiteBounds(origin, expected, village, project);
         boolean templateExpanded = project.totalBlocks > 0
                 && project.totalBlocks < expected.size();
         int priorTemplateSize = templateExpanded ? project.totalBlocks : expected.size();
@@ -2346,7 +2380,8 @@ public final class VillageProsperityManager {
             if (placement.isStructuralAuthority()) {
                 expectedStructureCells++;
             }
-            if (!placementSatisfied(level, origin, target, current, placement)) {
+            if (!placementSatisfied(level, origin, target, current, placement)
+                    && !VanillaTerrainWork.suppliedOverlay(level,project,target,current,placement.state)) {
                 if (mismatch == null) {
                     verifiedPrefix = index;
                     mismatch = target;
@@ -3183,7 +3218,7 @@ public final class VillageProsperityManager {
                         economy, village, project, testedCandidates, sawUnloadedCandidate);
                 continue;
             }
-            ProjectBounds candidateBounds = bounds(origin, planned);
+            ProjectBounds candidateBounds = importedSiteBounds(origin, planned, village, planningProject);
             if(village.organicTerritory && !economy.mayReserveTerritory(village.villageId,
                     candidateBounds.minimum.asLong(),candidateBounds.maximum.asLong())) {
                 observeSiteCandidate(level,village,project,testedCandidates,offsets.size(),origin,
@@ -3517,10 +3552,115 @@ public final class VillageProsperityManager {
         Palette palette = isManagedProject(project) ? managedProjectPalette(village, project)
                 : null;
         if (palette == null) return preparation;
-        return VillageTerrainFinishing.finish(level, preparation, origin,
+        if (project.vanillaPlan != null) {
+            var terrain=vanillaTerrainSurvey(level,origin,village,project,preparation,false);
+            if(terrain.plan()==null) ConstructionDiagnostics.record(village.villageId+"/"+project.projectId,
+                    "foundation_access_rejected",0,0,level.getGameTime(),terrain.failure());
+            return terrain.plan()==null ? null : preparation;
+        }
+        var finishedPreparation = VillageTerrainFinishing.finish(level, preparation, origin,
                 -1, 2 * (size.width / 2) + 1, -2, 2 * (size.depth / 2) + 1,
                 occupied, route, origin.getY() - project.entranceApproachStepCount,
                 palette.floor.defaultBlockState(), palette.stairs.defaultBlockState(), village.villageId, project.projectId);
+        return finishedPreparation;
+    }
+
+    private static boolean vanillaTerrainIntact(ServerLevel level, EconomyState.VillageProject project) {
+        if (project.vanillaTerrainPlan==null || !project.vanillaTerrainComplete) return false;
+        for (var cell:project.vanillaTerrainPlan.cells()) {
+            var pos=BlockPos.of(cell.position());
+            if (!positionColumnLoaded(level,pos)
+                    || !VanillaTerrainWork.same(level.getBlockState(pos),VillageTerrainFinishing.state(level,cell.after()))) return false;
+        }
+        return true;
+    }
+
+    private static VanillaTerrainWork.Survey vanillaTerrainSurvey(ServerLevel level, BlockPos origin,
+            EconomyState.VillageRecord village, EconomyState.VillageProject project,
+            com.chedidandrew.emeraldstandard.core.SitePreparationPlan preparation, boolean retrofit) {
+        var authored = new java.util.LinkedHashMap<BlockPos, BlockState>();
+        for (var p : projectTemplate(level, origin, village, project))
+            authored.put(origin.offset(p.dx,p.dy,p.dz),p.state);
+        var route = modularPrimaryTrailPrefix(origin,village,project,TerrainFoundationPlan.MAX_TERRAIN_DROP+2)
+                .stream().map(p->origin.offset(p.dx,0,p.dz)).toList();
+        var legacy = new java.util.HashMap<BlockPos,BlockState>();
+        for (var p : modularEntranceApproachPlacements(origin,village,project,project.entranceApproachStepCount))
+            if (!p.state.isAir()) legacy.put(origin.offset(p.dx,p.dy,p.dz),p.state);
+        var size = projectSize(project);
+        var a = rotateRelative(size.width/2,0,0,size,project.designRotation);
+        var b = rotateRelative(size.width/2,0,1,size,project.designRotation);
+        var palette = managedProjectPalette(village,project);
+        return VanillaTerrainWork.survey(level,village.villageId,project.projectId,origin,authored,route,
+                palette.floor.defaultBlockState(),palette.stairs.defaultBlockState(),
+                horizontalDirection(b.getX()-a.getX(),b.getZ()-a.getZ()),legacy,preparation,retrofit);
+    }
+
+    /** Essential work has no timeout waiver. Old structures only receive additive, snapshot-safe repairs. */
+    private static int materializeVanillaTerrain(ServerLevel level, EconomyService economy,
+            EconomyState.VillageRecord village, EconomyState.VillageProject project, int budget) {
+        if (budget<=0 || project.vanillaTerrainComplete || !project.vanillaTerrainFailure.isEmpty()) return 0;
+        BlockPos origin=BlockPos.of(project.originPos);
+        if (project.vanillaTerrainPlan==null) {
+            var survey=vanillaTerrainSurvey(level,origin,village,project,null,project.materializedComplete);
+            if (survey.unloaded()) return 0;
+            if (economy.recordVanillaTerrain(village.villageId,project.projectId,survey.plan(),0,false,survey.failure())) {
+                project.vanillaTerrainPlan=survey.plan(); project.vanillaTerrainFailure=survey.failure();
+            }
+            ConstructionDiagnostics.record(village.villageId+"/"+project.projectId,"foundation_access",
+                    0,survey.plan()==null?0:survey.plan().cells().size(),level.getGameTime(),survey.failure());
+            return 0; // Save the approved cells before any world write.
+        }
+        var plan=project.vanillaTerrainPlan;
+        int cursor=project.vanillaTerrainCursor, writes=0, inspected=0;
+        String failure="";
+        while(cursor<plan.cells().size() && inspected++<128 && writes<budget) {
+            var cell=plan.cells().get(cursor); BlockPos pos=BlockPos.of(cell.position());
+            if(!positionColumnLoaded(level,pos)) break;
+            var before=VillageTerrainFinishing.state(level,cell.before());
+            var after=VillageTerrainFinishing.state(level,cell.after());
+            var current=level.getBlockState(pos);
+            if(VanillaTerrainWork.same(current,after)) { cursor++;continue; }
+            if(!VanillaTerrainWork.same(current,before) || current.hasBlockEntity() || !current.getFluidState().isEmpty()
+                    || !VillageDevelopmentProtection.mayPlace(level,village.villageId,project.projectId,pos,current,after)) {
+                failure="Foundation/access changed or protected at "+pos.toShortString()+"; repair deferred";break;
+            }
+            if(!VillageConstructionOccupancy.mayBuild(level,pos,current,after)) break;
+            if(!project.materializedComplete && !ensureConstructionStarted(economy,village,project)) break;
+            if(!level.setBlock(pos,after,3)) break;
+            cursor++;writes++;
+        }
+        boolean complete=cursor==plan.cells().size();
+        if(complete) {
+            for(int check=0;check<plan.cells().size();check++) {
+                var cell=plan.cells().get(check);
+                var pos=BlockPos.of(cell.position());
+                if(!positionColumnLoaded(level,pos)) {complete=false;break;}
+                if(!VanillaTerrainWork.same(level.getBlockState(pos),VillageTerrainFinishing.state(level,cell.after()))) {
+                    // The economy cursor can reach disk before a crash saves chunk writes.
+                    // Replay only unchanged approved before-states on a still-unfinished build.
+                    var current=level.getBlockState(pos);
+                    if(!project.materializedComplete
+                            &&VanillaTerrainWork.same(current,VillageTerrainFinishing.state(level,cell.before()))
+                            &&VillageDevelopmentProtection.mayPlace(level,village.villageId,project.projectId,pos,current,
+                                    VillageTerrainFinishing.state(level,cell.after()))) {
+                        complete=false;cursor=check;break;
+                    }
+                    complete=false;failure="Foundation/access changed before handover at "+pos.toShortString()+"; repair deferred";break;
+                }
+            }
+        }
+        // Same handover barrier as site preparation: world blocks precede a saved completion flag.
+        if (complete) {
+            if (level.noSave()) complete=false;
+            else try { level.getChunkSource().save(true); }
+            catch (RuntimeException unavailable) { complete=false; }
+        }
+        if(economy.recordVanillaTerrain(village.villageId,project.projectId,plan,cursor,complete,failure)) {
+            project.vanillaTerrainCursor=cursor;project.vanillaTerrainComplete=complete;project.vanillaTerrainFailure=failure;
+        }
+        ConstructionDiagnostics.record(village.villageId+"/"+project.projectId,complete?"foundation_access_complete":"foundation_access",
+                cursor,plan.cells().size(),level.getGameTime(),failure);
+        return writes;
     }
 
     private static BlockPos surfaceVillageProbe(ServerLevel level, BlockPos playerPosition) {
@@ -3545,6 +3685,19 @@ public final class VillageProsperityManager {
             }
         }
         return true;
+    }
+
+    private static ProjectBounds importedSiteBounds(BlockPos origin,List<Placement> placements,
+            EconomyState.VillageRecord village,EconomyState.VillageProject project) {
+        var base=bounds(origin,placements);
+        if(project.vanillaPlan==null)return base;
+        int minX=base.minimum.getX()-1,minZ=base.minimum.getZ()-1,maxX=base.maximum.getX()+1,maxZ=base.maximum.getZ()+1;
+        for(var p:modularPrimaryTrailPrefix(origin,village,project,TerrainFoundationPlan.MAX_TERRAIN_DROP+2)) {
+            minX=Math.min(minX,origin.getX()+p.dx);maxX=Math.max(maxX,origin.getX()+p.dx);
+            minZ=Math.min(minZ,origin.getZ()+p.dz);maxZ=Math.max(maxZ,origin.getZ()+p.dz);
+        }
+        return new ProjectBounds(new BlockPos(minX,base.minimum.getY()-TerrainFoundationPlan.MAX_TERRAIN_DROP,minZ),
+                new BlockPos(maxX,base.maximum.getY(),maxZ));
     }
 
     private static ProjectBounds bounds(BlockPos origin, List<Placement> placements) {

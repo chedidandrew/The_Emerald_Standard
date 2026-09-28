@@ -71,9 +71,8 @@ public final class VillageDistrictMap {
                     banks.computeIfAbsent(state.bankRegionVillageIds.get(region),k->new ArrayList<>()).add(region);
             });
             state.pendingBankConstructions.forEach((region,p)->banks.computeIfAbsent(p.villageId(),k->new ArrayList<>()).add(region));
-            int number=0;
             for (var v:state.villages.values()) {
-                int district=++number;
+                int district=DistrictNames.code(v.villageId);
                 var copy=new EconomyState.VillageRecord();
                 copy.villageId=v.villageId;copy.dimensionKey=v.dimensionKey;copy.centerPos=v.centerPos;
                 copy.organicTerritory=v.organicTerritory;copy.territoryCells.addAll(v.territoryCells);

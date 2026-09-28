@@ -49,6 +49,8 @@ public final class VillageFinishingQueue {
                 && p.originPos != 0 && p.trailAnchorSet;
     }
     private static boolean unfinished(EconomyState.VillageProject p) {
+        if (p.vanillaPlan != null) return p.vanillaTerrainFailure.isEmpty()
+                && (!p.vanillaTerrainComplete || !p.trailMaterializedComplete);
         return !p.trailMaterializedComplete || !p.entranceApproachComplete
                 || p.entranceApproachVersion < EconomyState.ENTRANCE_APPROACH_VERSION
                 || (VillageArchitecture.MODULAR_SCHEMA.equals(p.designSchema)

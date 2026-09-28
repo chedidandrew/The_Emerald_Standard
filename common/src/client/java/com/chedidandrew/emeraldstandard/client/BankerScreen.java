@@ -2,6 +2,7 @@ package com.chedidandrew.emeraldstandard.client;
 
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
 import com.chedidandrew.emeraldstandard.core.VillageDistrictMap;
+import com.chedidandrew.emeraldstandard.core.DistrictNames;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageDashboardPolicy;
@@ -818,9 +819,9 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
     }
 
     private Component mapMarkerTitle(VillageDistrictMap.Marker m) {
-        if (m.kind() == VillageDistrictMap.DISTRICT) return tr("map.district", m.district());
+        if (m.kind() == VillageDistrictMap.DISTRICT) return tr("map.district", DistrictNames.name(m.district()));
         if (m.kind() == VillageDistrictMap.BANK) return tr("map.bank");
-        if (m.kind() == VillageDistrictMap.SUMMARY) return m.extra() == 1 ? tr("map.district", m.district()) : tr("map.count", m.extra());
+        if (m.kind() == VillageDistrictMap.SUMMARY) return m.extra() == 1 ? tr("map.district", DistrictNames.name(m.district())) : tr("map.count", m.extra());
         var imported = com.chedidandrew.emeraldstandard.core.VanillaConstructionPlan.labelKind(m.extra());
         if (imported != null) return tr("village.vanilla." + imported.name().toLowerCase(Locale.ROOT));
         var types = VillageProsperityEngine.ProjectType.values();
@@ -900,12 +901,13 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                     graphics.outline(left, top, width, height, color);
                     if (m.kind() == VillageDistrictMap.SUMMARY && cx >= x + 3 && cx < right - 40
                             && cy >= y + 12 && cy < bottom - 12)
-                        drawTextWithin(graphics, Component.literal((m.extra() == 1 ? "D" + m.district() : m.extra() + "D")
-                                + ": " + m.value()), (int) cx + 6, (int) cy - 10, 40, color, true);
+                        drawTextWithin(graphics, Component.literal((m.extra() == 1 ? DistrictNames.name(m.district()) : m.extra() + "D")
+                                + ": " + m.value()), (int) cx + 6, (int) cy - 10,
+                                Math.min(100, right - (int) cx - 8), color, true);
                     if (m.kind() == VillageDistrictMap.DISTRICT
                             && cx >= x + 3 && cx < right - 28 && cy >= y + 12 && cy < bottom - 12)
-                        drawTextWithin(graphics, Component.literal("D" + m.district()),
-                                (int) cx + 4, (int) cy - 10, 24, color, true);
+                        drawTextWithin(graphics, Component.literal(DistrictNames.name(m.district())),
+                                (int) cx + 4, (int) cy - 10, Math.min(100, right - (int) cx - 6), color, true);
                     if (DistrictMapViewport.contains(mouseX, mouseY) && mouseX >= left - 2
                             && mouseX <= left + width + 2 && mouseY >= top - 2 && mouseY <= top + height + 2) {
                         double distance = Math.hypot(mouseX - cx, mouseY - cy);
@@ -952,7 +954,7 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                         ? m.extra() < 0 ? tr("map.residents_count", m.value()) : tr("map.residents", m.value(), m.extra())
                         : tr("map.status." + m.status());
                 Component text = mapMarkerTitle(m).copy().append("\n")
-                        .append(tr("map.district", m.district())).append(" | ").append(detail)
+                        .append(tr("map.district", DistrictNames.name(m.district()))).append(" | ").append(detail)
                         .append("\nX: " + (int) m.x() + "  Z: " + (int) m.z());
                 if (m.kind() == VillageDistrictMap.PROJECT) text = text.copy().append("\n")
                         .append(tr("map.progress", m.value()));

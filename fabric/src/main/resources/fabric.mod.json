@@ -3,6 +3,7 @@
   "id": "the_emerald_standard",
   "version": "${version}",
   "name": "The Emerald Standard",
+  "icon": "assets/the_emerald_standard/icon.png",
   "description": "A persistent villager banking and investment economy with natural village banks, Banker villagers, charts, and a casual-friendly graphical interface.",
   "authors": ["Andrew Chedid"],
   "contact": {

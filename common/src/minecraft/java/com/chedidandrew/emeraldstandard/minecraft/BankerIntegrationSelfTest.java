@@ -147,6 +147,7 @@ public final class BankerIntegrationSelfTest {
             return;
         }
         if (Boolean.getBoolean("the_emerald_standard.vanillaConstructionSmokeOnly")) {
+            VanillaTerrainWorkSelfTest.verify(level);
             VanillaConstructionSelfTest.verify(level);
             return;
         }

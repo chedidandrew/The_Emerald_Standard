@@ -896,6 +896,10 @@ public final class DebugFlightRecorder {
                         "entranceApproachCursor", active.entranceApproachCursor,
                         "entranceApproachTotalCells", active.entranceApproachTotalCells,
                         "entranceApproachComplete", active.entranceApproachComplete,
+                        "vanillaTerrainCursor", active.vanillaTerrainCursor,
+                        "vanillaTerrainTotal", active.vanillaTerrainPlan == null ? 0 : active.vanillaTerrainPlan.cells().size(),
+                        "vanillaTerrainComplete", active.vanillaTerrainComplete,
+                        "vanillaTerrainFailure", active.vanillaTerrainFailure,
                         "retryAfterGameTick", active.retryAfterGameTick,
                         "origin", active.originPos == 0L
                                 ? Map.of()
@@ -919,6 +923,8 @@ public final class DebugFlightRecorder {
                                 "character",village.architectureCharacter,"dialect",village.architectureDialect,
                                 "orderCuts",List.copyOf(p.constructionOrderCuts)),
                         "originPacked", p.originPos, "complete", p.materializedComplete,
+                        "vanillaTerrain", fields("cursor",p.vanillaTerrainCursor,"complete",p.vanillaTerrainComplete,
+                                "cells",p.vanillaTerrainPlan==null?0:p.vanillaTerrainPlan.cells().size(),"failure",p.vanillaTerrainFailure),
                         "manualRepairRequired", p.manualRepairRequired, "abstractOnly", p.abstractOnly,
                         "eligible", com.chedidandrew.emeraldstandard.core.VillageConstructionPolicy.eligible(village,p),
                         "economicProgress", p.economicProgress, "constructionStarted", p.constructionStarted,
