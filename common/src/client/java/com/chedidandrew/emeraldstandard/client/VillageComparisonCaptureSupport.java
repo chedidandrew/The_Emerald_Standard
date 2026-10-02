@@ -1,6 +1,7 @@
 package com.chedidandrew.emeraldstandard.client;
 
 import com.chedidandrew.emeraldstandard.minecraft.VillageComparisonGallery;
+import com.chedidandrew.emeraldstandard.minecraft.BiomeArchitecturePreview;
 import com.chedidandrew.emeraldstandard.minecraft.VillageComparisonGallery.ViewPose;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -77,7 +78,8 @@ public final class VillageComparisonCaptureSupport {
                     .map(String::trim).map(Integer::parseInt).collect(Collectors.toSet());
             var allViews = onServer(context.server(), () -> VillageComparisonGallery.captureViews(context.server()));
             var shots = allViews.stream().filter(p -> selected.contains(p.pairIndex())).toList();
-            if (shots.isEmpty() || shots.size() != selected.size() * 3) {
+            int viewsPerPair = Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY) ? 5 : 3;
+            if (shots.isEmpty() || shots.size() != selected.size() * viewsPerPair) {
                 throw new IllegalArgumentException("Comparison capture pair selection is invalid");
             }
             String batch = "tes-village-comparison-" + Instant.now().toString().replace(':', '-') + "-" + UUID.randomUUID();
@@ -92,6 +94,7 @@ public final class VillageComparisonCaptureSupport {
             restore = true;
             onClient(client, () -> {
                 client.getWindow().setWindowed(1920, 1080);
+                client.gui.setScreen(null);
                 client.options.setCameraType(CameraType.FIRST_PERSON);
                 if (!client.gui.hud.isHidden()) client.gui.hud.toggle();
                 return null;

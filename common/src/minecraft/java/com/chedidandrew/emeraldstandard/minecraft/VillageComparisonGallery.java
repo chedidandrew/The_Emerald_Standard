@@ -161,7 +161,7 @@ public final class VillageComparisonGallery {
         return STATES.get(server).courts.stream().map(VillageCourt::metadata).toList();
     }
 
-    /** Three reproducible exterior views per pair: shared A/B context, mod detail, vanilla detail. */
+    /** Three exterior views; isolated architectural prototypes also have two eye-level interiors. */
     public static List<ViewPose> captureViews(MinecraftServer server) {
         requireReady(server);
         List<ViewPose> views = new ArrayList<>();
@@ -181,6 +181,15 @@ public final class VillageComparisonGallery {
                     pose(e.index(), "vanilla", e.vanillaX() + e.vanillaWidth() / 2.0,
                             e.surfaceY(), e.vanillaZ() - 2, e.vanillaWidth() + 6, e.vanillaHeight()),
                     e.vanillaZ() - 2, e.vanillaHeight()));
+            if (pair.preview != null) {
+                BlockPos entry = pair.preview.entrance();
+                views.add(new ViewPose(e.index(), "interior-entry", e.modX()+entry.getX()+0.5,
+                        e.surfaceY()+1.0, e.modZ()+entry.getZ()+0.5, 0, 8, 70));
+                int z = e.role().equals("BANK") ? 9 : e.role().equals("INN") ? 8 : 7;
+                double x = e.role().equals("SMITHY") ? 4.5 : entry.getX()+0.5;
+                views.add(new ViewPose(e.index(), "interior-reverse", e.modX()+x,
+                        e.surfaceY()+1.0, e.modZ()+z+0.5, 180, 8, 70));
+            }
         }
         return List.copyOf(views);
     }
@@ -195,9 +204,16 @@ public final class VillageComparisonGallery {
         if (player == null) {
             throw new IllegalStateException("Comparison capture player is unavailable");
         }
+        if (pose.view().startsWith("interior") && !server.overworld().noCollision(player,
+                new net.minecraft.world.phys.AABB(pose.x()-0.3, pose.y(), pose.z()-0.3,
+                        pose.x()+0.3, pose.y()+1.8, pose.z()+0.3))) {
+            throw new IllegalStateException("Preview interior camera intersects a solid block: " + pose);
+        }
         player.setGameMode(GameType.SPECTATOR);
         player.getAbilities().flying = true;
         player.onUpdateAbilities();
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(),
+                pose.view().startsWith("interior") ? "time set midnight" : "time set noon");
         player.teleportTo(server.overworld(), pose.x(), pose.y(), pose.z(), Set.of(),
                 pose.yaw(), pose.pitch(), true);
     }
@@ -206,8 +222,9 @@ public final class VillageComparisonGallery {
     public static int verifyPlan(ServerLevel level) {
         List<ResolvedPair> pairs = resolvePairs(level, 0);
         List<VillageCourt> courts = resolveCourts(level, 0);
-        if (courts.size() != VillageArchitecture.BiomeDialect.values().length
-                || courts.stream().anyMatch(court -> court.buildings.size() != 4)) {
+        if (!Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)
+                && (courts.size() != VillageArchitecture.BiomeDialect.values().length
+                || courts.stream().anyMatch(court -> court.buildings.size() != 4))) {
             throw new IllegalStateException("Comparison village context coverage is incomplete");
         }
         return pairs.size();
@@ -231,6 +248,7 @@ public final class VillageComparisonGallery {
     }
 
     public static int expectedPairCount() {
+        if (Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)) return BiomeArchitecturePreview.samples().size();
         return (StructureGalleryPlan.goldMasters().size() + 1)
                 * VillageArchitecture.BiomeDialect.values().length;
     }
@@ -282,6 +300,7 @@ public final class VillageComparisonGallery {
     }
 
     private static List<ResolvedPair> resolvePairs(ServerLevel level, int surfaceY) {
+        if (Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)) return resolvePreviewPairs(level, surfaceY);
         List<Identifier> available = vanillaTemplates(level);
         List<ResolvedPair> result = new ArrayList<>();
         int district = 0;
@@ -330,7 +349,7 @@ public final class VillageComparisonGallery {
                         analogueDescription(role), surfaceY, plotX, plotZ,
                         modX, modZ, modWidth, modDepth, modHeight,
                         vanillaX, vanillaZ, size.getX(), size.getZ(), size.getY());
-                result.add(new ResolvedPair(entry, source, dialect, template, vanillaOrigin, rotation));
+                result.add(new ResolvedPair(entry, source, dialect, template, vanillaOrigin, rotation, null));
             }
             district++;
         }
@@ -347,7 +366,32 @@ public final class VillageComparisonGallery {
                 .sorted(Comparator.comparing(Identifier::toString)).toList();
     }
 
+    private static List<ResolvedPair> resolvePreviewPairs(ServerLevel level, int surfaceY) {
+        List<Identifier> available = vanillaTemplates(level);
+        List<ResolvedPair> result = new ArrayList<>();
+        for (var sample : BiomeArchitecturePreview.samples()) {
+            var plan = BiomeArchitecturePreview.plan(sample);
+            Identifier reference = vanillaCandidates(available, sample.style().id(), sample.role()).getFirst();
+            StructureTemplate template = level.getStructureManager().get(reference).orElseThrow();
+            Rotation rotation = entranceRotation(template);
+            Vec3i size = template.getSize(rotation);
+            int plotX = result.size() * PAIR_PITCH;
+            int modX = plotX + (HALF_PITCH - sample.width()) / 2;
+            int vanillaX = plotX + HALF_PITCH + (HALF_PITCH - size.getX()) / 2;
+            BlockPos vanillaOrigin = template.getZeroPositionWithTransform(
+                    new BlockPos(vanillaX, vanillaOriginY(surfaceY), 18), Mirror.NONE, rotation);
+            ComparisonEntry entry = new ComparisonEntry(result.size()+1, sample.style().id(), sample.role(),
+                    sample.id(), BiomeArchitecturePreview.REVISION, reference.toString(),
+                    "Art-direction prototype; " + analogueDescription(sample.role()), surfaceY, plotX, 0,
+                    modX, 18, sample.width(), sample.depth(), plan.height(),
+                    vanillaX, 18, size.getX(), size.getZ(), size.getY());
+            result.add(new ResolvedPair(entry, null, sample.style(), template, vanillaOrigin, rotation, plan));
+        }
+        return List.copyOf(result);
+    }
+
     private static List<VillageCourt> resolveCourts(ServerLevel level, int surfaceY) {
+        if (Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)) return List.of();
         List<VillageCourt> courts = new ArrayList<>();
         List<Identifier> available = vanillaTemplates(level);
         int district = 0;
@@ -451,7 +495,7 @@ public final class VillageComparisonGallery {
         ComparisonEntry e = pair.entry;
         requireEmptyPlot(level, e);
         BlockPos modOrigin = new BlockPos(e.modX(), e.surfaceY(), e.modZ());
-        List<StructureGalleryBlock> blocks = pair.source == null
+        List<StructureGalleryBlock> blocks = pair.preview != null ? pair.preview.blocks(modOrigin) : pair.source == null
                 ? VillageBankManager.galleryBankBlueprint(modOrigin, pair.dialect)
                 : VillageProsperityManager.galleryProjectBlueprint(level, modOrigin,
                         pair.source.type(), pair.source.dialect(), pair.source.character(),
@@ -620,7 +664,9 @@ public final class VillageComparisonGallery {
             return false;
         }
         Path name = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().getFileName();
-        return name != null && WORLD_DIRECTORY.equals(name.toString());
+        return name != null && (Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)
+                ? BiomeArchitecturePreview.WORLD.equals(name.toString())
+                : WORLD_DIRECTORY.equals(name.toString()));
     }
 
     private static void requireReady(MinecraftServer server) {
@@ -641,6 +687,11 @@ public final class VillageComparisonGallery {
         long value = StructureGalleryPlan.layoutSignature() ^ COMPARISON_SCHEMA;
         for (ResolvedPair pair : pairs) {
             String stable = pair.entry.toString() + "/" + pair.rotation + "/" + pair.vanillaOrigin;
+            if (pair.preview != null) {
+                stable += pair.preview.blocks(BlockPos.ZERO).stream()
+                        .map(block -> block.position().toString() + "=" + block.state().toString())
+                        .collect(java.util.stream.Collectors.joining(";"));
+            }
             for (int i = 0; i < stable.length(); i++) {
                 value = (value ^ stable.charAt(i)) * 0x100000001b3L;
             }
@@ -702,7 +753,9 @@ public final class VillageComparisonGallery {
 
     private static void writeIndex(MinecraftServer server, BuildState state) {
         Path index = server.getWorldPath(LevelResource.ROOT).resolve("comparison-index.md");
-        StringBuilder out = new StringBuilder("# Curated mod / vanilla village comparison\n\n");
+        StringBuilder out = new StringBuilder(Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)
+                ? "# Biome architecture prototypes — NOT production generation\n\n"
+                : "# Curated mod / vanilla village comparison\n\n");
         out.append("Not natural world generation. Vanilla references are unchanged bundled NBT templates.\n\n")
                 .append("Signature: ").append(Long.toUnsignedString(state.signature, 16))
                 .append("; content revision: ").append(StructureGalleryPlan.GALLERY_CONTENT_REVISION)
@@ -781,6 +834,10 @@ public final class VillageComparisonGallery {
             return 0;
         }
         int district = IntegerArgumentType.getInteger(context, "district");
+        if (district > contextCourts(server).size()) {
+            context.getSource().sendFailure(Component.literal("This small prototype gallery has no village-context courts; use /emerald comparison visit <index>."));
+            return 0;
+        }
         ContextCourt court = contextCourts(server).get(district - 1);
         ServerPlayer player = context.getSource().getPlayerOrException();
         player.setGameMode(GameType.CREATIVE);
@@ -864,7 +921,7 @@ public final class VillageComparisonGallery {
 
     private record ResolvedPair(ComparisonEntry entry, StructureGalleryPlan.Entry source,
             VillageArchitecture.BiomeDialect dialect, StructureTemplate template,
-            BlockPos vanillaOrigin, Rotation rotation) {
+            BlockPos vanillaOrigin, Rotation rotation, BiomeArchitecturePreview.Plan preview) {
     }
 
     private static final class BuildState {

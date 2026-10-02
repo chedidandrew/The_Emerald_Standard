@@ -1,10 +1,13 @@
 // Dedicated comparison profile. Never enables the old gallery's auto-build or capture paths.
 gradle.beforeProject { project ->
+    def preview = project.providers.gradleProperty('tesArchitecturePreview').orElse('false').get()
+    def world = preview == 'true' ? 'TES_Biome_Architecture_Preview' : 'TES_Village_Comparison'
     def targetPath = project.providers.gradleProperty('tesComparisonGameDir')
             .orElse('run/comparison-26.2').get()
     def capture = project.providers.gradleProperty('tesComparisonCapture').orElse('false').get()
     def capturePairs = project.providers.gradleProperty('tesComparisonCapturePairs')
-            .orElse('1,12,52,53,54,65,105,106,107,118,158,159,160,171,211,212,213,224,264,265').get()
+            .orElse(preview == 'true' ? '1,2,3,4,5,6,7,8,9,10,11,12,13'
+                    : '1,12,52,53,54,65,105,106,107,118,158,159,160,171,211,212,213,224,264,265').get()
     def captureStop = project.providers.gradleProperty('tesComparisonStopWhenComplete').orElse('false').get()
     project.pluginManager.withPlugin('fabric-loom') {
         project.extensions.getByName('loom').runs.named('client').configure {
@@ -14,10 +17,11 @@ gradle.beforeProject { project ->
             vmArg '-Dthe_emerald_standard.structureGallery.capture=false'
             vmArg '-Dthe_emerald_standard.villageComparison=true'
             vmArg '-Dthe_emerald_standard.villageComparison.autoBuild=true'
+            vmArg "-Dthe_emerald_standard.biomeArchitecturePreview=${preview}"
             vmArg "-Dthe_emerald_standard.villageComparison.capture=${capture}"
             vmArg "-Dthe_emerald_standard.villageComparison.capture.pairs=${capturePairs}"
             vmArg "-Dthe_emerald_standard.villageComparison.capture.stopWhenComplete=${captureStop}"
-            programArgs '--quickPlaySingleplayer', 'TES_Village_Comparison'
+            programArgs '--quickPlaySingleplayer', world
         }
     }
     project.pluginManager.withPlugin('net.neoforged.moddev') {
@@ -29,11 +33,12 @@ gradle.beforeProject { project ->
                 run.systemProperty('the_emerald_standard.structureGallery.capture', 'false')
                 run.systemProperty('the_emerald_standard.villageComparison', 'true')
                 run.systemProperty('the_emerald_standard.villageComparison.autoBuild', 'true')
+                run.systemProperty('the_emerald_standard.biomeArchitecturePreview', preview)
                 run.systemProperty('the_emerald_standard.villageComparison.capture', capture)
                 run.systemProperty('the_emerald_standard.villageComparison.capture.pairs', capturePairs)
                 run.systemProperty('the_emerald_standard.villageComparison.capture.stopWhenComplete', captureStop)
                 run.programArgument '--quickPlaySingleplayer'
-                run.programArgument 'TES_Village_Comparison'
+                run.programArgument world
             }
         }
     }

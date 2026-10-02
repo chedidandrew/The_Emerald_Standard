@@ -1,0 +1,39 @@
+package com.chedidandrew.emeraldstandard.minecraft;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+/** Preview opt-in and production-isolation boundaries; geometry has a separate native gate. */
+public final class BiomeArchitecturePreviewWiringRegressionTest {
+    public static void main(String[] args) throws Exception {
+        Path root = Path.of(args[0]);
+        String path = "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/";
+        String preview = Files.readString(root.resolve(path + "BiomeArchitecturePreview.java"));
+        String gallery = Files.readString(root.resolve(path + "VillageComparisonGallery.java"));
+        String init = Files.readString(root.resolve("scripts/village-comparison-client.init.gradle"));
+        String launcher = Files.readString(root.resolve("scripts/open-village-comparison.ps1"));
+        require(preview.contains("TES_Biome_Architecture_Preview")
+                && gallery.contains("BiomeArchitecturePreview.WORLD.equals(name.toString())")
+                && gallery.contains("WORLD_DIRECTORY.equals(name.toString())"), "Exact save isolation");
+        require(gallery.contains("if (Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY))")
+                && gallery.contains("resolvePreviewPairs(level, surfaceY)")
+                && gallery.contains("pair.preview.blocks(modOrigin)"), "Preview-only placement routing");
+        require(gallery.contains("pair.preview.blocks(BlockPos.ZERO)")
+                && gallery.contains("block.state().toString()"), "Save signature includes actual prototype blocks");
+        require(gallery.contains("Preview interior camera intersects a solid block")
+                && gallery.contains("noCollision(player,"), "Eye-level interior camera collision gate");
+        for (String name : new String[]{"AuthoredVillageStructures.java", "ConstructionBuilder.java",
+                "VillageBankManager.java", "VillageDevelopmentRuntime.java"}) {
+            require(!Files.readString(root.resolve(path + name)).contains("BiomeArchitecturePreview"),
+                    "Prototype leaked into production: " + name);
+        }
+        require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")
+                && init.contains("'1,2,3,4,5,6,7,8,9,10,11,12,13'"), "Preview launcher coverage");
+        require(launcher.contains("[switch]$ArchitecturePreview") && launcher.contains("level.dat")
+                && !launcher.contains("Remove-Item") && !launcher.contains("Copy-Item"), "No user-save replacement");
+        System.out.println("PASS biome architecture preview isolation and wiring regression");
+    }
+    private static void require(boolean passed, String message) {
+        if (!passed) throw new AssertionError(message);
+    }
+}

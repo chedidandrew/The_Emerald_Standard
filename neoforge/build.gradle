@@ -80,6 +80,12 @@ tasks.register('verifyReaderSettings', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ReaderSettingsSelfTest'
 }
+
+tasks.register('verifyBiomeArchitecturePreview') {
+    group = 'verification'
+    description = 'Admits isolated architecture prototypes through the real NeoForge test bootstrap.'
+    dependsOn tasks.named('test')
+}
 tasks.register('verifyConstructionFenceModels', JavaExec) {
     group = 'verification'
     dependsOn classes

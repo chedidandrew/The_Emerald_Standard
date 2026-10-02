@@ -73,6 +73,7 @@ java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.GalleryCaptureIsolationP
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.StructureGalleryPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.StructureGalleryReviewPlanRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.VillageComparisonBiomePlanRegressionTest
+java -cp "$BUILD" com.chedidandrew.emeraldstandard.minecraft.BiomeArchitecturePreviewWiringRegressionTest "$ROOT"
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.Milestone95RegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.LargeWorldStressRegressionTest
 java -cp "$BUILD" com.chedidandrew.emeraldstandard.core.FinanceRoadmapRegressionTest

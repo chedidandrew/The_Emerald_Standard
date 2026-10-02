@@ -55,6 +55,13 @@ tasks.register('verifyVillageBankStructure', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.VillageBankStructureSelfTest'
 }
+
+tasks.register('verifyBiomeArchitecturePreview', JavaExec) {
+    group = 'verification'
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BiomeArchitecturePreviewSelfTest'
+}
 tasks.register('verifyAuthoredVillageStructures', JavaExec) {
     group = 'verification'
     description = 'Runs the complete production authored-catalog geometry, access and lighting gate.'
@@ -83,6 +90,7 @@ tasks.register('verifyVanillaVillageBuildings', JavaExec) {
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.VanillaVillageBuildingsSelfTest'
 }
 tasks.named('check') {
+    dependsOn tasks.named('verifyBiomeArchitecturePreview')
     dependsOn tasks.named('verifyVanillaVillageBuildings')
     dependsOn tasks.named('verifyConstructionFenceModels')
     dependsOn tasks.named('verifyBankerMenuPacket')
