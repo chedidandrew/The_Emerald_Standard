@@ -15,10 +15,19 @@ import net.minecraft.world.level.block.state.properties.*;
 public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
-    public static final int REVISION = 1;
+    public static final int REVISION = 2;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
+        public BlockPos reverseView() {
+            int desiredZ = sample.role().equals("BANK") ? entrance.getZ()+6
+                    : sample.role().equals("INN") ? entrance.getZ()+7 : entrance.getZ()+5;
+            return reachable(this).stream().filter(p -> p.getY()==entrance.getY())
+                    .filter(p -> cells.get(p)==null || cells.get(p).isAir())
+                    .min(Comparator.comparingInt((BlockPos p) -> Math.abs(p.getX()-entrance.getX())*3
+                            + Math.abs(p.getZ()-desiredZ)).thenComparingInt(BlockPos::getZ)
+                            .thenComparingInt(BlockPos::getX)).orElseThrow();
+        }
         public List<StructureGalleryBlock> blocks(BlockPos origin) {
             return cells.entrySet().stream().sorted(Map.Entry.comparingByKey(
                     Comparator.comparingInt((BlockPos pos) -> pos.getY()).thenComparingInt(BlockPos::getZ)
@@ -29,6 +38,11 @@ public final class BiomeArchitecturePreview {
     public static List<Sample> samples() {
         List<Sample> samples = new ArrayList<>();
         for (BiomeDialect style : BiomeDialect.values()) {
+            if (style == BiomeDialect.PLAINS) {
+                for (String role : List.of("HOUSE", "BANK", "INN"))
+                    samples.add(PlainsLegacyArchitecturePreview.plan(role).sample());
+                continue;
+            }
             samples.add(new Sample(style, "HOUSE", style.id() + "_hearth_home", 13, 13));
             samples.add(new Sample(style, "BANK", style.id() + "_village_bank", 17, 17));
             if (style == BiomeDialect.PLAINS || style == BiomeDialect.DESERT)
@@ -39,6 +53,7 @@ public final class BiomeArchitecturePreview {
         return List.copyOf(samples);
     }
     public static Plan plan(Sample sample) {
+        if (sample.style()==BiomeDialect.PLAINS) return PlainsLegacyArchitecturePreview.plan(sample.role());
         Builder b = new Builder(sample);
         switch (sample.role()) {
             case "BANK" -> bank(b);
@@ -46,6 +61,7 @@ public final class BiomeArchitecturePreview {
             case "SMITHY" -> smithy(b);
             default -> home(b);
         }
+        b.details();
         Plan plan = b.finish();
         validate(plan);
         return plan;
@@ -208,8 +224,8 @@ public final class BiomeArchitecturePreview {
                     Blocks.SPRUCE_SLAB, Blocks.SPRUCE_DOOR);
             case PLAINS -> new Palette(Blocks.OAK_PLANKS, Blocks.OAK_LOG,
                     Blocks.OAK_PLANKS, Blocks.COBBLESTONE, Blocks.OAK_STAIRS,
-                    Blocks.OAK_SLAB, Blocks.DARK_OAK_PLANKS, Blocks.DARK_OAK_STAIRS,
-                    Blocks.DARK_OAK_SLAB, Blocks.OAK_DOOR);
+                    Blocks.OAK_SLAB, Blocks.OAK_PLANKS, Blocks.OAK_STAIRS,
+                    Blocks.OAK_SLAB, Blocks.OAK_DOOR);
         };
     }
     private static final class Builder {
@@ -344,6 +360,67 @@ public final class BiomeArchitecturePreview {
             for(int bx=0;bx<s.width();bx++) put(bx,y+1,z,beam);
             put(x,y,z,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true));
         }
+        void details() {
+            boolean desert=s.style()==BiomeDialect.DESERT;
+            Block fence=s.style()==BiomeDialect.SAVANNA ? Blocks.ACACIA_FENCE
+                    : s.style()==BiomeDialect.TAIGA||s.style()==BiomeDialect.SNOWY ? Blocks.SPRUCE_FENCE : Blocks.OAK_FENCE;
+            // Side rails frame existing verandas; the center arrival stays wide and open.
+            int[] edges=s.role().equals("HOUSE") ? (desert ? new int[]{10,12}
+                    : s.style()==BiomeDialect.SAVANNA ? new int[]{1,11}
+                    : s.style()==BiomeDialect.TAIGA ? new int[]{3,9} : new int[]{4,8})
+                    : s.role().equals("BANK") ? new int[]{4,12} : new int[0];
+            for(int x:edges) {
+                for(int z=0;z<=1;z++)
+                    if(!cells.containsKey(new BlockPos(x,1,z)) && cells.containsKey(new BlockPos(x,0,z)))
+                        put(x,1,z,desert ? Blocks.SANDSTONE_WALL : fence);
+            }
+            // Pendant porch lanterns genuinely hang from existing canopy/beam members.
+            for(int x:edges) {
+                int lampZ=desert && s.role().equals("HOUSE") ? 2 : 1;
+                for(int y=3;y<=4;y++) {
+                    BlockPos at=new BlockPos(x,y,lampZ);
+                    BlockState support=cells.get(at.above());
+                    if(!cells.containsKey(at)&&support!=null) {
+                        put(x,y,lampZ,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true));
+                        break;
+                    }
+                }
+            }
+            // Supported potted plants on actual cabinets, not random full cubes in the aisle.
+            Block plant=desert ? Blocks.POTTED_CACTUS : s.style()==BiomeDialect.SAVANNA ? Blocks.POTTED_ACACIA_SAPLING
+                    : s.style()==BiomeDialect.TAIGA ? Blocks.POTTED_SPRUCE_SAPLING
+                    : s.style()==BiomeDialect.SNOWY ? Blocks.POTTED_FERN : Blocks.POTTED_POPPY;
+            List<BlockPos> cabinets=cells.entrySet().stream().filter(e->e.getValue().is(Blocks.BARREL))
+                    .map(Map.Entry::getKey).sorted(Comparator.comparingInt((BlockPos pos)->pos.getZ())
+                            .thenComparingInt(BlockPos::getX)).toList();
+            for(int i=0;i<cabinets.size();i+=2) {
+                BlockPos at=cabinets.get(i).above();
+                if(cells.get(at)!=null && cells.get(at).getBlock() instanceof SlabBlock) {
+                    put(at.getX(),at.getY(),at.getZ(),p.slab.defaultBlockState().setValue(SlabBlock.TYPE,SlabType.TOP));
+                    if(!cells.containsKey(at.above())) put(at.getX(),at.getY()+1,at.getZ(),plant);
+                }
+            }
+            // Rugs follow the circulation spine; only empty supported floor cells are eligible.
+            int center=entrance.getX(), end=s.role().equals("BANK")?9:s.role().equals("INN")?8:7;
+            Block rug=desert ? Blocks.CARPET.brown() : s.style()==BiomeDialect.SAVANNA ? Blocks.CARPET.orange()
+                    : s.style()==BiomeDialect.TAIGA ? Blocks.CARPET.green() : Blocks.CARPET.red();
+            for(int x:new int[]{center-1,center+1}) for(int z=entrance.getZ()+1;z<end;z++) {
+                BlockPos at=new BlockPos(x,1,z);
+                if(!cells.containsKey(at)&&walkable(cells,at)) put(x,1,z,rug);
+            }
+            // Low planted porch boxes: two ends, never the doorway or a furniture approach.
+            if(s.role().equals("BANK")||(!desert&&s.role().equals("HOUSE"))) {
+                for(int x:new int[]{edges[0]+1,edges[1]-1}) {
+                    BlockPos at=new BlockPos(x,1,1);
+                    if(!cells.containsKey(at)&&cells.containsKey(at.below())&&!access.contains(at)) {
+                        put(x,1,1,desert?Blocks.CUT_SANDSTONE:p.log);
+                        put(x,2,1,desert?Blocks.POTTED_CACTUS
+                                : s.style()==BiomeDialect.TAIGA||s.style()==BiomeDialect.SNOWY ? Blocks.POTTED_FERN
+                                : Blocks.POTTED_POPPY);
+                    }
+                }
+            }
+        }
         Plan finish() {
             return new Plan(s,Map.copyOf(cells),Set.copyOf(access),entrance,
                     cells.keySet().stream().mapToInt(BlockPos::getY).max().orElse(0)+1);
@@ -351,13 +428,7 @@ public final class BiomeArchitecturePreview {
     }
 
     public static void validate(Plan p) {
-        Set<BlockPos> reach=new HashSet<>(); ArrayDeque<BlockPos> queue=new ArrayDeque<>();
-        queue.add(p.entrance());
-        while(!queue.isEmpty()) {
-            BlockPos pos=queue.removeFirst();
-            if(!walkable(p.cells(),pos)||!reach.add(pos)) continue;
-            for(Direction d:Direction.Plane.HORIZONTAL) queue.add(pos.relative(d));
-        }
+        Set<BlockPos> reach=reachable(p);
         if(!reach.containsAll(p.access())) {
             Set<BlockPos> missing=new HashSet<>(p.access()); missing.removeAll(reach);
             throw new IllegalStateException(p.sample().id()+" blocked furniture approaches: "+missing);
@@ -378,10 +449,22 @@ public final class BiomeArchitecturePreview {
                 reach.stream().map(pos->new Voxel(pos.getX(),pos.getY(),pos.getZ())).collect(java.util.stream.Collectors.toSet()),
                 dampening,lights)).requireSpawnSafe();
     }
+    private static Set<BlockPos> reachable(Plan p) {
+        Set<BlockPos> reach=new HashSet<>(); ArrayDeque<BlockPos> queue=new ArrayDeque<>();
+        queue.add(p.entrance());
+        while(!queue.isEmpty()) {
+            BlockPos pos=queue.removeFirst();
+            if(!walkable(p.cells(),pos)||!reach.add(pos)) continue;
+            for(Direction d:Direction.Plane.HORIZONTAL) queue.add(pos.relative(d));
+        }
+        return reach;
+    }
     private static boolean walkable(Map<BlockPos,BlockState> cells,BlockPos pos) {
         BlockState floor=cells.get(pos.below());
         return floor!=null && floor.isFaceSturdy(EmptyBlockGetter.INSTANCE,pos.below(),Direction.UP)
                 && clear(cells.get(pos)) && clear(cells.get(pos.above()));
     }
-    private static boolean clear(BlockState state) { return state==null||state.getBlock() instanceof DoorBlock; }
+    private static boolean clear(BlockState state) {
+        return state==null||state.isAir()||state.getBlock() instanceof DoorBlock||state.getBlock() instanceof CarpetBlock;
+    }
 }

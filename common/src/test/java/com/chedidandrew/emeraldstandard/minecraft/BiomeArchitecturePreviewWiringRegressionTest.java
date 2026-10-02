@@ -12,6 +12,13 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String gallery = Files.readString(root.resolve(path + "VillageComparisonGallery.java"));
         String init = Files.readString(root.resolve("scripts/village-comparison-client.init.gradle"));
         String launcher = Files.readString(root.resolve("scripts/open-village-comparison.ps1"));
+        String legacy=Files.readString(root.resolve(path+"PlainsLegacyArchitecturePreview.java"));
+        require(legacy.contains("AuthoredVillageStructures.plan")&&legacy.contains("galleryBankBlueprint")
+                &&legacy.contains("AuthoredVillageStructures.Phase.ROOF")&&legacy.contains("target.withPropertiesOf(state)"),
+                "Plains must copy current native designs with a shape-preserving roof-only palette override");
+        require(preview.contains("REVISION = 2")&&preview.contains("b.details()")
+                &&preview.contains("walkable(cells,at)")&&preview.contains("CarpetBlock"),
+                "Revision-two detail and rug admission");
         require(preview.contains("TES_Biome_Architecture_Preview")
                 && gallery.contains("BiomeArchitecturePreview.WORLD.equals(name.toString())")
                 && gallery.contains("WORLD_DIRECTORY.equals(name.toString())"), "Exact save isolation");

@@ -184,11 +184,10 @@ public final class VillageComparisonGallery {
             if (pair.preview != null) {
                 BlockPos entry = pair.preview.entrance();
                 views.add(new ViewPose(e.index(), "interior-entry", e.modX()+entry.getX()+0.5,
-                        e.surfaceY()+1.0, e.modZ()+entry.getZ()+0.5, 0, 8, 70));
-                int z = e.role().equals("BANK") ? 9 : e.role().equals("INN") ? 8 : 7;
-                double x = e.role().equals("SMITHY") ? 4.5 : entry.getX()+0.5;
-                views.add(new ViewPose(e.index(), "interior-reverse", e.modX()+x,
-                        e.surfaceY()+1.0, e.modZ()+z+0.5, 180, 8, 70));
+                        e.surfaceY()+entry.getY(), e.modZ()+entry.getZ()+0.5, 0, 8, 70));
+                BlockPos reverse=pair.preview.reverseView();
+                views.add(new ViewPose(e.index(), "interior-reverse", e.modX()+reverse.getX()+0.5,
+                        e.surfaceY()+reverse.getY(), e.modZ()+reverse.getZ()+0.5, 180, 8, 70));
             }
         }
         return List.copyOf(views);

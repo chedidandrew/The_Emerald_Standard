@@ -1,5 +1,8 @@
 # Biome architecture — first review preview
 
+Historical revision-one screenshots. The [current revision-two preview](BIOME_ARCHITECTURE_PREVIEW_REVISION_2.md)
+restores existing TES Plains architecture with oak roofs and adds details to the other families.
+
 Branch: `codex/biome-architecture-preview`. Based on beta.57, commit `26b049b`.
 **Not merged into main. Not enabled in normal village generation.**
 
@@ -97,6 +100,8 @@ must be covered before any approved family is rolled into gameplay.
 ## Open the local preview
 
 For this review, a separate disposable profile was prepared at `build/biome-preview-client-03`.
+That profile requires revision-one code (`9041f4f`). Current code intentionally refuses its stale
+layout signature; use the fresh profile described in the revision-two notes instead.
 It contains no copied player/chunk data. From the repository root:
 
 ```powershell
