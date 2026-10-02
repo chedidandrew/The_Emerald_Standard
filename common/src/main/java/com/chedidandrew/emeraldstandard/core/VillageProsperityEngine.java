@@ -473,14 +473,19 @@ public final class VillageProsperityEngine {
             return;
         }
         ProjectType desired = plan.type();
+        if (!createProject(village, desired, day, requirePhysicalWorld)) return;
         village.materialSupply -= desired.materialCost();
         village.treasury -= desired.treasuryCost();
         village.developmentPoints -= plan.requiredDevelopment();
-        createProject(village, desired, day, requirePhysicalWorld);
     }
 
-    private static void createProject(EconomyState.VillageRecord village, ProjectType desired,
+    private static boolean createProject(EconomyState.VillageRecord village, ProjectType desired,
             long day, boolean requirePhysicalWorld) {
+        // Resolve first: an unavailable/mismatched catalog never silently falls back to TES,
+        // consumes a project identity, or charges inputs in vanilla-only mode.
+        VanillaConstructionPlan imported = requirePhysicalWorld || village.vanillaOnlyBuildings
+                ? VanillaBuildingCatalog.choose(village, desired, village.projectSerial + 1) : null;
+        if (village.vanillaOnlyBuildings && imported == null) return false;
         EconomyState.VillageProject project = new EconomyState.VillageProject();
         project.projectId = ++village.projectSerial;
         project.type = desired;
@@ -494,14 +499,12 @@ public final class VillageProsperityEngine {
         } else {
             character = VillageArchitecture.Character.fromId(village.architectureCharacter);
         }
-        VanillaConstructionPlan imported = requirePhysicalWorld
-                ? VanillaBuildingCatalog.choose(village, desired, project.projectId) : null;
         if (imported != null) {
             project.designSchema = VanillaConstructionPlan.SCHEMA;
             project.vanillaPlan = imported;
             project.totalBlocks = imported.cells().size();
             village.projects.add(project);
-            return;
+            return true;
         }
         List<VillageArchitecture.ExistingBlueprint> existingBlueprints = village.projects.stream()
                 .filter(existing -> VillageArchitecture.BLUEPRINT_SCHEMA.equals(
@@ -533,6 +536,7 @@ public final class VillageProsperityEngine {
         project.designSignature = selection.signature();
         project.designPlanHashVersion = VillageArchitecture.BLUEPRINT_PLAN_HASH_VERSION;
         village.projects.add(project);
+        return true;
     }
 
     /** Debug-only: no economic debits or fake residents; each district stays bounded. */
@@ -550,9 +554,11 @@ public final class VillageProsperityEngine {
                 && !p.manualRepairRequired).count() >= (village.organicTerritory ? 2 : 1)) return false;
         if (village.projects.size() >= projectLimit(village) || village.projectSerial == Long.MAX_VALUE)
             return false;
-        ProjectType[] catalog = ProjectType.values();
+        ProjectType[] catalog = java.util.Arrays.stream(ProjectType.values())
+                .filter(type -> canSelect(village, type)).toArray(ProjectType[]::new);
+        if (catalog.length == 0) return false;
         ProjectType desired = catalog[village.projects.size() % catalog.length];
-        createProject(village, desired, day, true);
+        if (!createProject(village, desired, day, true)) return false;
         completeProject(village, village.projects.getLast(), day, true);
         return true;
     }
@@ -685,24 +691,24 @@ public final class VillageProsperityEngine {
             desired = ProjectType.COTTAGE;
         } else if ((village.lifecycle == Lifecycle.THREATENED
                         || VillageGuardSecurity.effectiveSafety(village) < SECURITY_PROJECT_THRESHOLD)
-                && !hasGuardPost && committedPopulation >= 4) {
+                && !hasGuardPost && committedPopulation >= 4 && canSelect(village, ProjectType.GUARD_POST)) {
             desired = ProjectType.GUARD_POST;
-        } else if (foodDays < 18.0 && !hasGranary && committedPopulation >= 5) {
+        } else if (foodDays < 18.0 && !hasGranary && committedPopulation >= 5 && canSelect(village, ProjectType.GRANARY)) {
             desired = ProjectType.GRANARY;
         } else if (committedPopulation >= effectiveHousing - 1 && (village.organicTerritory || housingProjects < 6)) {
             desired = residentialChoice(village, worldSeed);
-        } else if (!hasWarehouse && committedPopulation >= 6 && village.prosperity >= 42.0) {
+        } else if (!hasWarehouse && committedPopulation >= 6 && village.prosperity >= 42.0 && canSelect(village, ProjectType.WAREHOUSE)) {
             desired = ProjectType.WAREHOUSE;
-        } else if (!hasMine && committedPopulation >= 5 && village.developmentTier >= 1) {
+        } else if (!hasMine && committedPopulation >= 5 && village.developmentTier >= 1 && canSelect(village, ProjectType.MINE_ENTRANCE)) {
             desired = ProjectType.MINE_ENTRANCE;
-        } else if (!hasMarket && committedPopulation >= 9 && village.prosperity >= 50.0) {
+        } else if (!hasMarket && committedPopulation >= 9 && village.prosperity >= 50.0 && canSelect(village, ProjectType.MARKET_SQUARE)) {
             desired = ProjectType.MARKET_SQUARE;
-        } else if (!hasSmithy && committedPopulation >= 10 && village.developmentTier >= 2) {
+        } else if (!hasSmithy && committedPopulation >= 10 && village.developmentTier >= 2 && canSelect(village, ProjectType.SMITHY)) {
             desired = ProjectType.SMITHY;
         } else if (!hasExchange
                 && committedPopulation >= 18
                 && village.developmentTier >= 4
-                && village.prosperity >= 68.0) {
+                && village.prosperity >= 68.0 && canSelect(village, ProjectType.EXCHANGE_HALL)) {
             desired = ProjectType.EXCHANGE_HALL;
         } else if ((village.organicTerritory || housingProjects < 6)
                 && committedPopulation >= effectiveHousing - 2
@@ -713,10 +719,18 @@ public final class VillageProsperityEngine {
         // Young settlements prepare a modest food/safety/housing cushion instead of waiting
         // dozens of days for a shortage or a rare random housing roll. Needs above still win.
         if (desired == null && VillageStarterGrowth.momentum(village) > 0.0) {
-            if (!hasGranary) desired = ProjectType.GRANARY;
-            else if (!hasGuardPost) desired = ProjectType.GUARD_POST;
+            if (!hasGranary && canSelect(village, ProjectType.GRANARY)) desired = ProjectType.GRANARY;
+            else if (!hasGuardPost && canSelect(village, ProjectType.GUARD_POST)) desired = ProjectType.GUARD_POST;
             else if (housingProjects == 0 && effectiveHousing < committedPopulation + 4)
                 desired = village.developmentTier >= 2 ? ProjectType.HOUSE : ProjectType.COTTAGE;
+        }
+
+        // Some vanilla families have larger homes but no eligible small cottage. Preserve
+        // the housing need instead of waiting forever for an unavailable design.
+        if (village.vanillaOnlyBuildings && (desired == ProjectType.COTTAGE || desired == ProjectType.HOUSE
+                || desired == ProjectType.INN) && !canSelect(village, desired)) {
+            desired = canSelect(village, ProjectType.HOUSE) ? ProjectType.HOUSE
+                    : canSelect(village, ProjectType.COTTAGE) ? ProjectType.COTTAGE : null;
         }
 
         double requiredDevelopment = switch (desired == null ? ProjectType.COTTAGE : desired) {
@@ -732,6 +746,7 @@ public final class VillageProsperityEngine {
             case EXCHANGE_HALL -> 24.0;
         };
         if (desired == null
+                || !canSelect(village, desired)
                 || (isUniqueProject(desired) && !(village.organicTerritory && switch (desired) {
                     case WAREHOUSE, MARKET_SQUARE, GRANARY, GUARD_POST, SMITHY -> true;
                     default -> false;
@@ -744,9 +759,17 @@ public final class VillageProsperityEngine {
 
     public record ProjectPlan(ProjectType type, double requiredDevelopment) {}
 
+    private static boolean canSelect(EconomyState.VillageRecord village, ProjectType type) {
+        return !village.vanillaOnlyBuildings || VanillaBuildingCatalog.supports(village, type);
+    }
+
     /** Stable for a proposed project: waiting another day must not reroll the requested building. */
     static ProjectType residentialChoice(EconomyState.VillageRecord village, long seed) {
         if (village.developmentTier < 2) return ProjectType.COTTAGE;
+        if (village.vanillaOnlyBuildings) {
+            return unit(seed, village.villageId, village.projectSerial, PROJECT_SALT) < .2
+                    ? ProjectType.COTTAGE : ProjectType.HOUSE;
+        }
         // Pre-organic districts have a hard six-residence/twelve-project lifetime ceiling.
         // Retain their old capacity balance; the growing natural district gets the new mix.
         if (!village.organicTerritory)
@@ -771,6 +794,12 @@ public final class VillageProsperityEngine {
                 .count();
         boolean warehouse = completedProjects(village, ProjectType.WAREHOUSE) > 0;
         boolean mine = completedProjects(village, ProjectType.MINE_ENTRANCE) > 0;
+        // Real completed vanilla food/trade facilities and workshops provide a route through
+        // tiers 2/3 without inventing TES warehouses/mines or giving civic decorations benefits.
+        boolean vanillaInfrastructure = village.projects.stream().anyMatch(p -> isProjectOperational(p)
+                && p.vanillaPlan != null && (p.vanillaPlan.role().equals("food") || p.vanillaPlan.role().equals("trade")));
+        boolean vanillaCraft = village.projects.stream().anyMatch(p -> isProjectOperational(p)
+                && p.vanillaPlan != null && p.vanillaPlan.role().equals("craft"));
         int population = economicPopulation(village);
         int tier;
         if (population <= 0) {
@@ -779,9 +808,10 @@ public final class VillageProsperityEngine {
             tier = 5;
         } else if (population >= 18 && village.prosperity >= 65.0 && completed >= 4) {
             tier = 4;
-        } else if (population >= 12 && village.prosperity >= 55.0 && warehouse && mine) {
+        } else if (population >= 12 && village.prosperity >= 55.0
+                && ((warehouse && mine) || (vanillaInfrastructure && vanillaCraft))) {
             tier = 3;
-        } else if (population >= 8 && warehouse) {
+        } else if (population >= 8 && (warehouse || vanillaInfrastructure)) {
             tier = 2;
         } else if (population >= 5 || completed > 0) {
             tier = 1;
@@ -1220,8 +1250,7 @@ public final class VillageProsperityEngine {
     private static int completedProjects(EconomyState.VillageRecord village, ProjectType type) {
         return (int) village.projects.stream()
                 .filter(project -> project.type == type && isProjectOperational(project)
-                        && (project.vanillaPlan == null || (project.materializedComplete
-                                && !project.vanillaPlan.role().equals("civic"))))
+                        && (project.vanillaPlan == null || !project.vanillaPlan.role().equals("civic")))
                 .count();
     }
 

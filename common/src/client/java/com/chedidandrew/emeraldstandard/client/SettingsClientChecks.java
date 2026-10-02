@@ -10,6 +10,8 @@ import net.minecraft.client.gui.components.EditBox;
 final class SettingsClientChecks {
     static void verify(Minecraft game) throws Exception {
         EmeraldConfig active = EmeraldConfig.current();
+        require(EmeraldSettingsScreen.label(EmeraldConfig.VANILLA_ONLY_BUILDINGS_KEY).equals("Village: vanilla buildings only"),
+                "vanilla-only setting has no readable label");
         require(EmeraldSettingsScreen.label(EmeraldConfig.FORCED_DEVELOPMENT_KEY).equals("Forced instant development"),
                 "accelerated-development label regressed");
         require(!SettingsHelp.description(EmeraldConfig.FORCED_DEVELOPMENT_KEY).contains("DEBUG")
@@ -43,6 +45,10 @@ final class SettingsClientChecks {
             } while (true);
             require(!screen.draftValues().equals(EmeraldConfig.defaults().values()), "multi-page edits not exercised");
             ReaderClientChecks.press(screen, "A+");
+            ReaderClientChecks.press(screen, "Reset");
+            screen.changeToggle(EmeraldConfig.VANILLA_ONLY_BUILDINGS_KEY, true);
+            require(screen.draftValues().get(EmeraldConfig.VANILLA_ONLY_BUILDINGS_KEY).equals("true")
+                    && EmeraldConfig.current() == active, "vanilla-only preview applied before Apply");
             ReaderClientChecks.press(screen, "Reset");
             require(screen.draftValues().equals(EmeraldConfig.defaults().values()), "Reset missed off-page edits");
             require(screen.textPercent() == ReaderPreferences.DEFAULT_PERCENT, "Reset missed reader size");

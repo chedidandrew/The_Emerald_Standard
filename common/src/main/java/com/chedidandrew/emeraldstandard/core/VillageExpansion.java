@@ -134,6 +134,8 @@ public final class VillageExpansion {
         v.safety = root.safety;
         v.architectureCharacter = root.architectureCharacter;
         v.architectureDialect = root.architectureDialect;
+        v.naturalVillageStyle = root.naturalVillageStyle;
+        v.vanillaOnlyBuildings = root.vanillaOnlyBuildings;
         v.expansionMode = root.expansionMode;
         if (forced) VillageProsperityEngine.forceDevelopment(v, day);
         else VillageProsperityEngine.approveInitialDistrictHome(v, seed, day, physical);

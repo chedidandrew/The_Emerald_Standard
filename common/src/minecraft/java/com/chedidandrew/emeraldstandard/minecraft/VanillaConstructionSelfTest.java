@@ -18,6 +18,19 @@ final class VanillaConstructionSelfTest {
         for (int i=0;i<VanillaVillageBuildings.manifest().size();i++) VanillaVillageBuildings.tick(level.getServer());
         require(VanillaBuildingCatalog.plans().size()==VanillaVillageBuildings.manifest().size(),
                 "Runtime resource admission rejected default buildings: " + VanillaVillageBuildings.diagnostics());
+        for (String style : List.of("plains","desert","savanna","taiga","snowy")) {
+            var village = new EconomyState.VillageRecord(); village.villageId = UUID.randomUUID();
+            village.naturalVillageStyle = village.architectureDialect = style;
+            village.vanillaOnlyBuildings = true; village.developmentTier = 5;
+            for (var type : List.of(VillageProsperityEngine.ProjectType.HOUSE,
+                    VillageProsperityEngine.ProjectType.GRANARY, VillageProsperityEngine.ProjectType.SMITHY,
+                    VillageProsperityEngine.ProjectType.MARKET_SQUARE))
+                for (int serial=1;serial<=32;serial++) {
+                    var chosen = VanillaBuildingCatalog.choose(village,type,serial);
+                    require(chosen != null && chosen.style().equals(style), "Vanilla-only runtime catalog missing " + style + "/" + type);
+                }
+        }
+        System.out.println("PASS vanilla-only native catalog: five styles, housing/food/craft/trade, no probabilistic TES fallback");
         String[] names = VanillaVillageBuildings.manifest().stream()
                 .map(e -> e.id().substring(e.id().lastIndexOf('/')+1)).toArray(String[]::new);
         List<String> failures = new ArrayList<>();

@@ -73,6 +73,14 @@ public final class EconomyService {
     private boolean villageMarketIntegrationEnabled = true;
     private boolean villageAutomaticRecoveryEnabled = true;
     private boolean forcedVillageDevelopment;
+    private boolean vanillaOnlyVillageBuildings;
+
+    public synchronized void configureVanillaOnlyVillageBuildings(boolean enabled) {
+        vanillaOnlyVillageBuildings = enabled;
+        if (state != null) state.configureVanillaOnlyVillageBuildings(enabled);
+    }
+
+    public synchronized boolean vanillaOnlyVillageBuildings() { return vanillaOnlyVillageBuildings; }
 
     /** Explicit runtime/config opt-in, never a persisted implicit cheat or offline catch-up job. */
     public synchronized void configureForcedVillageDevelopment(boolean enabled) {
@@ -308,6 +316,7 @@ public final class EconomyService {
                     gameTicks,
                     overworldClockTicks);
             state.editor.playerReports=publicPlayerNews;
+            state.configureVanillaOnlyVillageBuildings(vanillaOnlyVillageBuildings);
             if (!recoverPersistedOverworldClock) {
                 // Compatibility overloads do not provide an independent world clock. Treat the
                 // supplied game tick as a fresh baseline so it cannot be counted a second time.
@@ -1945,7 +1954,8 @@ public final class EconomyService {
 
     public synchronized EconomyState.VillageRecord draftVillageDistrict(UUID villageId, long center) {
         if (!expansionReady(villageId) || expansionRoot(villageId).organicTerritory) return null;
-        return VillageExpansion.draft(expansionRoot(villageId), center, state.seed, state.economicDay, true, forcedVillageDevelopment);
+        var draft = VillageExpansion.draft(expansionRoot(villageId), center, state.seed, state.economicDay, true, forcedVillageDevelopment);
+        return draft.projects.isEmpty() ? null : draft;
     }
 
     public synchronized void advanceDistrictSiteSearch(UUID villageId) {
@@ -1978,6 +1988,10 @@ public final class EconomyService {
                 || planned.projects.getFirst().originPos == 0L || planned.projects.getFirst().designPlanHash.isEmpty())
             return false;
         var expected = VillageExpansion.draft(root, planned.centerPos, state.seed, state.economicDay, true, forcedVillageDevelopment);
+        if (expected.projects.size() != 1) return false;
+        if (vanillaOnlyVillageBuildings && (planned.projects.getFirst().vanillaPlan == null
+                || !planned.projects.getFirst().vanillaPlan.hash().equals(expected.projects.getFirst().vanillaPlan.hash())))
+            return false;
         if (!expected.villageId.equals(planned.villageId) || planned.population != 0
                 || planned.pendingSettlers != 4 || !planned.districtFounding
                 || planned.foodSupply != expected.foodSupply || planned.materialSupply != expected.materialSupply
@@ -1995,6 +2009,7 @@ public final class EconomyService {
             root.expansionSerial++;
             root.expansionApproved = false;
             state.villages.put(planned.villageId, planned.copy());
+            state.villages.get(planned.villageId).vanillaOnlyBuildings = vanillaOnlyVillageBuildings;
             VillageExpansion.prepareDay(state);
             dirty = true;
             saveState();

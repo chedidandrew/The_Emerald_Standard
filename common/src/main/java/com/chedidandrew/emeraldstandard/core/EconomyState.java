@@ -38,6 +38,13 @@ public static final int FORMAT_VERSION = 43;
     public static final int MAX_PROJECT_SITE_SEARCH_CANDIDATES = VillageSiteCandidates.MAX_CANDIDATES;
 
     public long seed;
+    /** World-config policy, reapplied on load; never part of the economy save format. */
+    transient boolean vanillaOnlyVillageBuildings;
+
+    void configureVanillaOnlyVillageBuildings(boolean enabled) {
+        vanillaOnlyVillageBuildings = enabled;
+        villages.values().forEach(v -> v.vanillaOnlyBuildings = enabled);
+    }
     public long economicDay;
     public long lastWallClockMs;
     public long lastGameTicks;
@@ -926,6 +933,8 @@ copy.designPlanHash = designPlanHash;
 public String architectureDialect = "";
         /** Positively identified vanilla structure family. Blank means no vanilla imports. */
         public String naturalVillageStyle = "";
+        /** Runtime selection policy only. Existing frozen projects never consult this flag. */
+        public transient boolean vanillaOnlyBuildings;
         public final ProsperityFund prosperityFund = new ProsperityFund();
         public final Map<UUID, ResidentRecord> residents = new LinkedHashMap<>();
         public final List<VillageProject> projects = new ArrayList<>();
@@ -1072,6 +1081,7 @@ public String architectureDialect = "";
             copy.architectureCharacter = architectureCharacter;
 copy.architectureDialect = architectureDialect;
             copy.naturalVillageStyle = naturalVillageStyle;
+            copy.vanillaOnlyBuildings = vanillaOnlyBuildings;
             ProsperityFund fundCopy = prosperityFund.copy();
             copy.prosperityFund.spendableMicro.putAll(fundCopy.spendableMicro);
             copy.prosperityFund.fastTrackSpendableMicro.putAll(
@@ -1148,6 +1158,7 @@ copy.architectureDialect = architectureDialect;
         EconomyState copy = new EconomyState();
         copy.pendingBankConstructions.putAll(pendingBankConstructions);
         copy.seed = seed;
+        copy.vanillaOnlyVillageBuildings = vanillaOnlyVillageBuildings;
         copy.economicDay = economicDay;
         copy.lastWallClockMs = lastWallClockMs;
         copy.lastGameTicks = lastGameTicks;
@@ -1447,6 +1458,7 @@ copy.architectureDialect = architectureDialect;
         return villages.computeIfAbsent(id, ignored -> {
             VillageRecord record = new VillageRecord();
             record.villageId = id;
+            record.vanillaOnlyBuildings = vanillaOnlyVillageBuildings;
             return record;
         });
     }

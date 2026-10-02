@@ -20,6 +20,7 @@ import java.util.TreeSet;
 /** Small world-local configuration with conservative bounds and atomic replacement. */
 public final class EmeraldConfig {
     public static final String FORCED_DEVELOPMENT_KEY = "village_prosperity.forced_instant_development";
+    public static final String VANILLA_ONLY_BUILDINGS_KEY = "village_prosperity.vanilla_only_buildings";
     public static final String GUARDS_ENABLED_KEY = "compat.guard_villagers.enabled";
     public static final String GUARDS_POINTS_KEY = "compat.guard_villagers.safety_per_guard";
     public static final String GUARDS_CAP_KEY = "compat.guard_villagers.maximum_safety_bonus";
@@ -35,6 +36,7 @@ public final class EmeraldConfig {
     private static final Set<String> KNOWN_KEYS = Set.of(
             BRIDGES_ENABLED, BRIDGE_LENGTH, BRIDGE_DEPTH, BRIDGE_JOBS,
             FORCED_DEVELOPMENT_KEY,
+            VANILLA_ONLY_BUILDINGS_KEY,
 GUARDS_ENABLED_KEY, GUARDS_POINTS_KEY, GUARDS_CAP_KEY,
             "news.public_player_reports", "news.anonymous_players", "news.approximate_locations", "news.explicit_property_only",
             "village_banks.enabled", "village_banks.scan_interval_ticks", "village_banks.region_size",
@@ -62,6 +64,7 @@ GUARDS_ENABLED_KEY, GUARDS_POINTS_KEY, GUARDS_CAP_KEY,
     private final boolean guardVillagersEnabled;
     private final int guardSafetyPerGuard, guardMaximumSafetyBonus;
     private final boolean forcedVillageDevelopment;
+    private final boolean vanillaOnlyVillageBuildings;
     private final int villageScanIntervalTicks;
     private final int villageRegionSize;
     private final int bankerRestrictionRadius;
@@ -89,7 +92,7 @@ GUARDS_ENABLED_KEY, GUARDS_POINTS_KEY, GUARDS_CAP_KEY,
     private final int prosperityFundMaximumMonthlySpending;
 
     private EmeraldConfig(
-            boolean forcedVillageDevelopment, boolean villageBanksEnabled, int villageScanIntervalTicks, int villageRegionSize,
+            boolean forcedVillageDevelopment, boolean vanillaOnlyVillageBuildings, boolean villageBanksEnabled, int villageScanIntervalTicks, int villageRegionSize,
             int bankerRestrictionRadius, int transactionCooldownTicks, boolean onboardingJoinHintEnabled,
             boolean marketEventsEnabled, boolean offlineProgressionEnabled, int maximumOfflineDays,
             boolean villageProsperitySimulationEnabled, boolean villageVisualProgressionEnabled,
@@ -111,6 +114,7 @@ boolean guardVillagersEnabled, int guardSafetyPerGuard, int guardMaximumSafetyBo
         this.guardMaximumSafetyBonus = guardMaximumSafetyBonus;
         this.villageBanksEnabled = villageBanksEnabled;
         this.forcedVillageDevelopment = forcedVillageDevelopment;
+        this.vanillaOnlyVillageBuildings = vanillaOnlyVillageBuildings;
         this.villageScanIntervalTicks = villageScanIntervalTicks;
         this.villageRegionSize = villageRegionSize;
         this.bankerRestrictionRadius = bankerRestrictionRadius;
@@ -158,6 +162,7 @@ boolean guardVillagersEnabled, int guardSafetyPerGuard, int guardMaximumSafetyBo
         }
         return new EmeraldConfig(
                 bool(properties, FORCED_DEVELOPMENT_KEY, false),
+                bool(properties, VANILLA_ONLY_BUILDINGS_KEY, false),
                 bool(properties, "village_banks.enabled", true),
                 bounded(properties, "village_banks.scan_interval_ticks", 200, 20, 12_000),
                 bounded(properties, "village_banks.region_size", 256, 128, 2_048),
@@ -204,6 +209,7 @@ Map<String, String> values = new LinkedHashMap<>();
         values.put("news.public_player_reports",""+newsPublic);values.put("news.anonymous_players",""+newsAnonymous);
         values.put("news.approximate_locations",""+newsApproximate);values.put("news.explicit_property_only",""+newsExplicit);
         values.put(FORCED_DEVELOPMENT_KEY, String.valueOf(forcedVillageDevelopment));
+        values.put(VANILLA_ONLY_BUILDINGS_KEY, String.valueOf(vanillaOnlyVillageBuildings));
         values.put(GUARDS_ENABLED_KEY, String.valueOf(guardVillagersEnabled));
         values.put(GUARDS_POINTS_KEY, String.valueOf(guardSafetyPerGuard));
         values.put(GUARDS_CAP_KEY, String.valueOf(guardMaximumSafetyBonus));
@@ -297,6 +303,7 @@ Map<String, String> values = new LinkedHashMap<>();
     public int guardSafetyPerGuard() { return guardSafetyPerGuard; }
     public int guardMaximumSafetyBonus() { return guardMaximumSafetyBonus; }
     public boolean forcedVillageDevelopment() { return forcedVillageDevelopment; }
+    public boolean vanillaOnlyVillageBuildings() { return vanillaOnlyVillageBuildings; }
     public int villageScanIntervalTicks() { return villageScanIntervalTicks; }
     public int villageRegionSize() { return villageRegionSize; }
     public int bankerRestrictionRadius() { return bankerRestrictionRadius; }
@@ -339,6 +346,7 @@ Map<String, String> values = new LinkedHashMap<>();
             System.getLogger("the_emerald_standard").log(System.Logger.Level.WARNING,
                     "Forced instant development enabled: permanent world changes, no economic gates, no automatic undo. Back up this world. Work remains loaded/protected and budgeted.");
         economy.configureForcedVillageDevelopment(forcedVillageDevelopment);
+        economy.configureVanillaOnlyVillageBuildings(vanillaOnlyVillageBuildings);
         economy.configureMarketEvents(marketEventsEnabled);
         economy.configurePlayerNews(newsPublic);
         economy.configureEconomicClock(offlineProgressionEnabled, maximumOfflineDays);
@@ -362,7 +370,7 @@ Map<String, String> values = new LinkedHashMap<>();
                         + "settler interval=%d ticks, prosperity fund=%s, endowments=%s, "
                         + "project sponsorship=%s, targeted donations=%s, donor recognition=%s, "
                         + "fast-track capital=%s, endowment payout=%.2f%%, emergency reserve=%d%%, "
-                        + "routine monthly spending cap=%d, forced instant development=%s",
+                        + "routine monthly spending cap=%d, forced instant development=%s, vanilla-only buildings=%s",
                 villageBanksEnabled, villageScanIntervalTicks, villageRegionSize, bankerRestrictionRadius,
                 transactionCooldownTicks, onboardingJoinHintEnabled, marketEventsEnabled, offlineProgressionEnabled,
                 maximumOfflineDays, villageProsperitySimulationEnabled, villageVisualProgressionEnabled,
@@ -372,11 +380,11 @@ Map<String, String> values = new LinkedHashMap<>();
                 prosperityFundProjectSponsorshipEnabled, prosperityFundTargetedDonationsEnabled,
                 prosperityFundDonorRecognitionEnabled, prosperityFundFastTrackCapitalEnabled,
                 prosperityFundEndowmentAnnualPayoutBps / 100.0, prosperityFundMinimumEmergencyReservePercent,
-                prosperityFundMaximumMonthlySpending, forcedVillageDevelopment);
+                prosperityFundMaximumMonthlySpending, forcedVillageDevelopment, vanillaOnlyVillageBuildings);
     }
 
     public static EmeraldConfig defaults() {
-        return new EmeraldConfig(false, true, 200, 256, 5, 5, true, true, true,
+        return new EmeraldConfig(false, false, true, 200, 256, 5, 5, true, true, true,
                 (int) EconomyService.MAX_TRUSTED_CATCH_UP_DAYS, true, true, true, true, 400,
                 DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, 2, 600,
                 true, true, true, true, true, true, 400, 20, DEFAULT_FUND_MONTHLY_ALLOWANCE,

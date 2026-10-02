@@ -137,7 +137,7 @@ final class AuthoredDoodadRefinements {
 
     /** The garden's decorative shrubs are live vegetation: their planting tiles must be soil. */
     static void ensureGardenShrubSubstrates(Builder stage, Materials p, int centerX, int z) {
-        if (stage.templateRevision < 3 || stage.templateRevision > 10) {
+        if (stage.templateRevision < 3 || stage.templateRevision > AuthoredVillageStructures.LATEST_TEMPLATE_REVISION) {
             return;
         }
         for (int x : new int[] {centerX - 3, centerX - 1}) {

@@ -103,6 +103,16 @@ public final class HandbookResourceRegressionTest {
         Path root = args.length == 0 ? Path.of(".") : Path.of(args[0]);
         String benchGuide = Files.readString(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/lang/en_us.json"));
+        check(benchGuide.contains("The district-center tooltip shows its full name once")
+                        && benchGuide.contains("Hover: name once,") && benchGuide.contains("then residents."),
+                "Guided and compact map help must explain the nonduplicated district hover details");
+        check(benchGuide.contains("Village: vanilla buildings only")
+                        && benchGuide.contains("Vanilla-only selection applies to ordinary planning")
+                        && benchGuide.contains("already-approved project keeps its frozen design")
+                        && benchGuide.contains("Banks & roads stay.") && benchGuide.contains("Missing plans wait.")
+                        && Files.readString(root.resolve("common/src/client/java/com/chedidandrew/emeraldstandard/client/HandbookChapters.java")).contains("\"building_catalog\"")
+                        && Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/EmeraldHandbook.java")).contains("sectionPage(\"building_catalog\",69"),
+                "Vanilla-only selection, exceptions, immutable plans and both handbook forms must stay discoverable");
         check(benchGuide.contains("Village Fund: monthly spending allowance")
                         && benchGuide.contains("240 E per 30-economic-day month")
                         && benchGuide.contains("shared 8 E daily limit for each village")
@@ -214,6 +224,11 @@ public final class HandbookResourceRegressionTest {
                 "VILX basket, migration and non-guaranteed targets must be explained in both handbooks");
         requireCreativeCatalog(root,language);
         requireNewspaperAppearance(root,language);
+        check(language.contains("Clean doorsteps.") && language.contains("Old plans stay.")
+                        && language.contains("without an extra raised dirt-path apron")
+                        && language.contains("supported access stairs are added where surveyed slopes require them")
+                        && language.contains("does not automatically remove older aprons or player alterations"),
+                "Both handbook forms explain clean entrances, required hillside access and frozen old plans");
         check(language.contains("Fitted foundations.") && language.contains("Joined entrances.")
                 && language.contains("never skipped merely because work takes time")
                 && language.contains("Completed repairs do not regenerate player alterations"),
@@ -415,7 +430,7 @@ public final class HandbookResourceRegressionTest {
             int minimum = chapter.group(1).contains("\"recipe_desk\"") ? 150 : 180;
             check(words >= minimum, "A reader chapter is still only a brief summary");
         }
-        check(chapterCount == 16 && sections.size() == 69, "Long-form chapter coverage changed");
+        check(chapterCount == 16 && sections.size() == 70, "Long-form chapter coverage changed");
         check(entries.get(prefix+"planning_building.body").contains("64 planned operations")
                 && entries.get(prefix+"planning_building.body").contains("not a hard upper bound")
                 && entries.get(prefix+"districts.body").contains("five deterministic candidate centers")
@@ -443,7 +458,7 @@ public final class HandbookResourceRegressionTest {
         check(entries.get(prefix + "village.body").contains("18 / 16")
                         && entries.get(prefix + "town_outputs.body").contains("F / M / T"),
                 "Town's housing and output examples must remain explained");
-        System.out.println("PASS 16 long-form handbook chapters, 69 sections and all seven funding purposes");
+        System.out.println("PASS 16 long-form handbook chapters, 70 sections and all seven funding purposes");
     }
 
     private static void requireResolvableHandbookSprites(String handbookSource) {

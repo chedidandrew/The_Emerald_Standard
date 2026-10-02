@@ -13,6 +13,7 @@ import java.util.Properties;
 /** Real file/validation regressions, not merely source-string wiring assertions. */
 public final class ReaderSettingsSelfTest {
     public static void main(String[] args) throws Exception {
+        verifyMapTooltipHeader();
         for (int width : new int[] {320, 426, 640, 960, 1920}) {
             for (int height : new int[] {240, 360, 540, 1080}) {
                 var layout = HandbookLayout.fit(width, height);
@@ -37,7 +38,8 @@ public final class ReaderSettingsSelfTest {
             Path world = dir.resolve("world/data");
             EmeraldConfig original = EmeraldConfig.load(world);
             original.applyTo(new EconomyService());
-            check(original.values().size() == 38, "incomplete settings snapshot");
+            check(original.values().size() == 39, "incomplete settings snapshot");
+            check(!original.vanillaOnlyVillageBuildings(), "vanilla-only expansion must be opt-in");
             check(original.bridgeSettings().equals(new EmeraldConfig.BridgeSettings(true,48,12,2)),
                     "bridge defaults or settings snapshot drift");
             check(original.newsPolicy().approximate()&&!original.newsPolicy().anonymous()
@@ -141,6 +143,36 @@ public final class ReaderSettingsSelfTest {
     private static void expectFailure(IOAction action) throws Exception {
         try { action.run(); } catch (IOException expected) { return; }
         throw new AssertionError("invalid edit was accepted");
+    }
+
+    private static void verifyMapTooltipHeader() throws Exception {
+        var method = com.chedidandrew.emeraldstandard.client.BankerScreen.class.getDeclaredMethod(
+                "mapMarkerHeader", com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Marker.class,
+                net.minecraft.network.chat.Component.class, net.minecraft.network.chat.Component.class,
+                net.minecraft.network.chat.Component.class);
+        method.setAccessible(true);
+        var name = net.minecraft.network.chat.Component.literal("Bright Juniperwell Market");
+        for (int housing : new int[] {-1,20}) {
+            var marker = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Marker(
+                    900,-20,1000,20,com.chedidandrew.emeraldstandard.core.VillageDistrictMap.DISTRICT,
+                    1,0,15,housing,949,-2);
+            String detail = housing < 0 ? "Residents: 15" : "Residents 15 / 20 housing";
+            var text = (net.minecraft.network.chat.Component) method.invoke(null,marker,name,name,
+                    net.minecraft.network.chat.Component.literal(detail));
+            check(text.getString().equals("Bright Juniperwell Market\n"+detail+"\nX: 949  Z: -2"),
+                    "District tooltip repeated its name or lost residents/center coordinates");
+            check(name.getString().equals("Bright Juniperwell Market"),"Tooltip mutated its heading");
+        }
+        for (int kind : new int[] {com.chedidandrew.emeraldstandard.core.VillageDistrictMap.BANK,
+                com.chedidandrew.emeraldstandard.core.VillageDistrictMap.PROJECT}) {
+            var marker = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Marker(949,-2,949,-2,kind,1,0,100,0);
+            var text = (net.minecraft.network.chat.Component) method.invoke(null,marker,
+                    net.minecraft.network.chat.Component.literal("Building"),name,
+                    net.minecraft.network.chat.Component.literal("Built"));
+            check(text.getString().equals("Building\nBright Juniperwell Market | Built\nX: 949  Z: -2"),
+                    "Building/Bank tooltip lost its owning district or status");
+        }
+        System.out.println("PASS district tooltip: one name, organic/legacy residents, coordinates and site ownership");
     }
     private static void check(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);

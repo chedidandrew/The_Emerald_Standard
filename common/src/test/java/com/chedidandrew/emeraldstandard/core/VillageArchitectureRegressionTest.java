@@ -54,7 +54,7 @@ public final class VillageArchitectureRegressionTest {
             for (VillageArchitecture.BlueprintDescriptor descriptor : descriptors) {
                 catalogSize++;
                 require(descriptor.type() == type
-                                && descriptor.templateRevision() == 10
+                                && descriptor.templateRevision() == 11
                                 && descriptor.width() > 0
                                 && descriptor.depth() > 0
                                 && descriptor.height() > 0
@@ -228,7 +228,7 @@ public final class VillageArchitectureRegressionTest {
             VillageArchitecture.BlueprintScale scale,
             boolean mirrorable) {
         VillageArchitecture.BlueprintDescriptor descriptor =
-                VillageArchitecture.requireBlueprint(templateId, 10);
+                VillageArchitecture.requireBlueprint(templateId, 11);
         require(descriptor.type() == type
                         && descriptor.width() == width
                         && descriptor.depth() == depth
@@ -236,7 +236,11 @@ public final class VillageArchitectureRegressionTest {
                         && descriptor.scale() == scale
                         && descriptor.mirrorable() == mirrorable
                         && VillageArchitecture.blueprints(type).contains(descriptor),
-                templateId + "@10 lost its active role, scale, envelope, or mirror contract");
+                templateId + "@11 lost its active role, scale, envelope, or mirror contract");
+        require(VillageArchitecture.blueprint(templateId, 10) != null
+                        && !VillageArchitecture.activeBlueprints().contains(
+                                VillageArchitecture.requireBlueprint(templateId, 10)),
+                "Revision 10 must stay resolvable without being selected for new projects");
         VillageArchitecture.BlueprintDescriptor historical =
                 VillageArchitecture.requireBlueprint(templateId, 2);
         require(historical.width() == width && historical.depth() == depth

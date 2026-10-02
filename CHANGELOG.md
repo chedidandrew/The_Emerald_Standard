@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased: 0.4.0-beta.56
+## Unreleased: 0.4.0-beta.57
+
+- Remove raised decorative entrance aprons from newly approved TES building designs, retaining original porches, lamps and terrain-aware access stairs. Saved older designs and existing world blocks remain unchanged.
+
+- Show district names once in map hover tooltips, retaining residents, coordinates, legacy coverage and building ownership details.
+
+- Add the optional world setting "Village: vanilla buildings only" for new matching Minecraft expansion designs across ordinary, funded and forced development. Default remains the mixed catalog.
+- Preserve approved designs and TES Banks/infrastructure; skip unsupported TES-only project needs and wait safely for unavailable matching catalogs rather than silently substituting buildings.
+- Recognize completed vanilla food/trade facilities and workshops in early development-tier requirements so vanilla-only towns can keep growing. Update both handbook forms and settings help.
+
+## Previous unreleased candidate: 0.4.0-beta.56
 
 - Replace numbered district map labels with stable generated names from over half a million combinations, including existing saves. Names follow the saved village identity, not discovery order.
 - Use the desert village sandstone palette for newly paved building approach trails as well as network connections; preserve completed paths, frozen geometry and safety checks.

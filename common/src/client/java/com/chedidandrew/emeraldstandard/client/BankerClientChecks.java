@@ -20,6 +20,13 @@ final class BankerClientChecks {
     private BankerClientChecks() { }
 
     static void verifyTooltipWrapping(Minecraft minecraft) {
+        var districtName = Component.translatable(PREFIX+"map.district", "Bright Juniperwell Market");
+        var district = new com.chedidandrew.emeraldstandard.core.VillageDistrictMap.Marker(900,-20,1000,20,
+                com.chedidandrew.emeraldstandard.core.VillageDistrictMap.DISTRICT,1,0,15,-1,949,-2);
+        var tooltip = BankerScreen.mapMarkerHeader(district,districtName,districtName,
+                Component.translatable(PREFIX+"map.residents_count",15));
+        if (!tooltip.getString().equals("Bright Juniperwell Market\nResidents: 15\nX: 949  Z: -2"))
+            throw new IllegalStateException("District tooltip repeats its localized name or loses residents/coordinates");
         try {
             Class.forName("net.minecraft.client.multiplayer.ClientChunkCache");
             if(!com.chedidandrew.emeraldstandard.minecraft.mixin.BiomeSeedAccess.class

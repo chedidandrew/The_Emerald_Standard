@@ -86,6 +86,8 @@ public final class BankerBriefings {
             appendWorkAdvice(out, "bank:"+bank.getKey(), player.level().getGameTime());
         }
         var need = economy.nextVillageProjectPlan(id);
+        if (com.chedidandrew.emeraldstandard.core.VanillaBuildingCatalog.waitingForCompatibleBuildings(v))
+            out.add(line("Vanilla-only expansion is waiting for validated buildings matching this village's saved style. Existing work can still finish; no TES replacement will be selected."));
         if (need != null) {
             out.add(line("PROPOSED NEXT PROJECT: "+name(need.type())));
             out.add(line("Materials "+number(v.materialSupply)+" / "+number(need.type().materialCost())

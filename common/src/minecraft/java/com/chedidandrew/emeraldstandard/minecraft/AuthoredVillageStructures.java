@@ -74,7 +74,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 10;
+    static final int LATEST_TEMPLATE_REVISION = 11;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
     private static final Map<String, Object> LIGHTING_COMPOSITION_LOCKS =
@@ -275,6 +275,9 @@ final class AuthoredVillageStructures {
         if (templateRevision >= 10) {
             AuthoredStairRefinements.apply(base, templateId);
         }
+        // Compose fixtures/planting first so removing a bare apron cannot move their anchors.
+        AuthoredEntranceCleanup.removeOptionalApron(stageOne, metadata);
+        AuthoredEntranceCleanup.removeOptionalApron(stageTwo, metadata);
         Blueprint blueprint = new Blueprint(
                 templateId,
                 templateRevision,
@@ -9532,9 +9535,10 @@ final class AuthoredVillageStructures {
     }
 
     /**
-     * Every current master receives a three-wide dirt-path approach. Larger civic and industrial
-     * buildings then gain stone shoulders, gate lamps and one role-readable forecourt anchor.
-     * This context remains legible at ordinary play distance and scales with the authored plan.
+     * Compose the historical approach and its fixtures consistently. Revision eleven strips
+     * unused raised apron cells after all dressing/lighting anchors have been selected; older
+     * saved masters retain their path rows and shoulders exactly. Gate lamps and role fixtures
+     * keep their original positions and supporting bases.
      */
     private static void appendPresentationStageOne(
             Builder stage,

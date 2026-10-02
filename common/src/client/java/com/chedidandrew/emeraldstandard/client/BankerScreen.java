@@ -828,6 +828,14 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
         return m.extra() >= 0 && m.extra() < types.length ? projectLabel(types[m.extra()]) : tr("map.site");
     }
 
+    /** District names already occupy the heading; other marker headings describe their site. */
+    static Component mapMarkerHeader(VillageDistrictMap.Marker marker, Component title,
+            Component district, Component detail) {
+        var text = title.copy().append("\n");
+        if (marker.kind() != VillageDistrictMap.DISTRICT) text.append(district).append(" | ");
+        return text.append(detail).append("\nX: " + (int) marker.x() + "  Z: " + (int) marker.z());
+    }
+
     private void drawDistrictMap(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         var page = menu.districtMap();
         if (!mapFitted && page != VillageDistrictMap.EMPTY) {
@@ -953,9 +961,8 @@ public final class BankerScreen extends AbstractContainerScreen<BankerMenu> {
                 Component detail = m.kind() == VillageDistrictMap.DISTRICT
                         ? m.extra() < 0 ? tr("map.residents_count", m.value()) : tr("map.residents", m.value(), m.extra())
                         : tr("map.status." + m.status());
-                Component text = mapMarkerTitle(m).copy().append("\n")
-                        .append(tr("map.district", DistrictNames.name(m.district()))).append(" | ").append(detail)
-                        .append("\nX: " + (int) m.x() + "  Z: " + (int) m.z());
+                Component text = mapMarkerHeader(m, mapMarkerTitle(m),
+                        tr("map.district", DistrictNames.name(m.district())), detail);
                 if (m.kind() == VillageDistrictMap.PROJECT) text = text.copy().append("\n")
                         .append(tr("map.progress", m.value()));
                 if (m.kind() == VillageDistrictMap.DISTRICT && m.extra()>=0) text = text.copy().append("\n")

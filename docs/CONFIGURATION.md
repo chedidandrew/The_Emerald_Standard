@@ -9,7 +9,7 @@ Edit the file while the server is stopped, or edit it and run `/emerald config r
 For the opt-in debug override, its confirmation and permanent-world-change risks,
 see [Forced development](FORCED_DEVELOPMENT.md).
 
-**Handbook > Settings** edits these same 34 keys in an open owning single-player
+**Handbook > Settings** edits these same world settings in an open owning single-player
 world. Fabric's optional Mod Menu Configure action and NeoForge's config action open the same
 screen. Apply validates the whole draft before atomic replacement; Done discards unapplied
 world edits. Remote clients and title-screen sessions cannot edit world files. Reader text size
@@ -40,6 +40,7 @@ that local reader preference and cannot write server/world settings.
 | `village_prosperity.simulation_enabled` | `true` | `true`, `false` | Advances abstract settlement economies. |
 | `village_prosperity.forced_instant_development` | `false` | `true`, `false` | Optional rapid construction and site surveys. Food-funded arrivals still require verified safe housing. Requires explicit confirmation in the editor, then Apply. Permanent world changes; see below. |
 | `village_prosperity.visual_progression_enabled` | `true` | `true`, `false` | Allows queued structures and settlers to materialize in loaded chunks. |
+| `village_prosperity.vanilla_only_buildings` | `false` | `true`, `false` | **Village: vanilla buildings only.** New expansion projects use validated Minecraft buildings of the saved village style. TES Banks/infrastructure remain; existing buildings and approved plans are unchanged. Applies to normal, funded and forced approvals, not natural world generation. |
 | `village_prosperity.market_integration_enabled` | `true` | `true`, `false` | Allows eligible settlement fundamentals to influence market sectors. |
 | `village_prosperity.automatic_recovery_enabled` | `true` | `true`, `false` | Allows eligible non-player-caused extinction to recover after its cooldown. |
 | `village_prosperity.scan_interval_ticks` | `400` | `40`–`24000` | Delay between loaded-player settlement census scans. |
@@ -57,6 +58,24 @@ that local reader preference and cannot write server/world settings.
 | `village_prosperity.max_monthly_treasury_spending` | `240` | `1`–`1000000` | **Village Fund: monthly spending allowance.** Routine automatic Fund spending per 30 economic days, in emeralds (default: 8 per economic day per village). Existing saved values stay unchanged. Fast-track capital is instead bounded by one selected project's exact unmet requirements. |
 
 Integers must be written without decimal points. Boolean values are case-insensitive, but must be `true` or `false`. Blank or omitted known settings use their documented defaults.
+
+### Vanilla-only expansion
+
+Enable **Village: vanilla buildings only**, then Apply, for matching Minecraft houses,
+farms and profession buildings without newly commissioned TES development buildings.
+The economy, Fund, settlers, progressive construction and world protections continue.
+Completed vanilla food/trade facilities and craft workshops provide an alternative to
+the TES Warehouse/Mine requirements for tiers 2/3; tiers 4/5 retain their population,
+Prosperity and operational-project requirements. Homes use their actual saved bed counts.
+Unbuilt physical imports do not grant these benefits. Simulation-only projects remain abstract.
+
+This deliberately retains TES Banks, roads, bridges, fences and workers. Banks and bridges
+have separate switches. Existing buildings and every already-approved plan remain unchanged;
+turning the option off restores mixed selection only for future projects. Unsupported TES-only
+roles are skipped instead of consuming Fund capital or blocking the next available need.
+Unknown source families and unavailable, overridden or still-validating matching templates wait
+safely without a TES or cross-biome fallback. This does not import village-overhaul buildings
+or modify Minecraft's world-generation rules. Older configs without the key keep mixed selection.
 
 The former `village_prosperity.construction_interval_ticks` (1–200) and
 `village_prosperity.construction_blocks_per_tick` (1–64) remain accepted as legacy inputs.

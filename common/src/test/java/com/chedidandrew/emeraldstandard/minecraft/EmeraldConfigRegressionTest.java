@@ -16,6 +16,7 @@ public final class EmeraldConfigRegressionTest {
     }
 
     public static void main(String[] args) throws Exception {
+        vanillaOnlySettings();
         require(EmeraldConfig.current().marketEventsEnabled()
                         && EmeraldConfig.current().offlineProgressionEnabled()
                         && EmeraldConfig.current().maximumOfflineDays()
@@ -181,6 +182,29 @@ public final class EmeraldConfigRegressionTest {
             properties.load(input);
         }
         return properties;
+    }
+
+    private static void vanillaOnlySettings() throws Exception {
+        String key = EmeraldConfig.VANILLA_ONLY_BUILDINGS_KEY;
+        require(!EmeraldConfig.defaults().vanillaOnlyVillageBuildings()
+                        && "false".equals(EmeraldConfig.defaults().values().get(key)),
+                "Default/Reset must preserve mixed TES and vanilla buildings");
+        require(!EmeraldConfig.parse(new Properties()).vanillaOnlyVillageBuildings(),
+                "Older settings without the key must preserve mixed selection");
+        Path dir = Files.createTempDirectory("tes-vanilla-only-config-");
+        var initial = EmeraldConfig.load(dir); var service = new EconomyService();
+        initial.applyTo(service); service.configureEconomicClock(false,30); service.start(dir,77,0);
+        var enabled = EmeraldConfig.update(dir,initial,java.util.Map.of(key,"true"));
+        require(service.vanillaOnlyVillageBuildings() && enabled.vanillaOnlyVillageBuildings()
+                        && enabled.summary().contains("vanilla-only buildings=true"), "Apply/diagnostics omitted policy");
+        require("true".equals(read(dir.resolve(FILE_NAME)).getProperty(key)), "GUI setting not saved");
+        var reloaded = EmeraldConfig.reload(); reloaded.applyTo(service);
+        require(service.vanillaOnlyVillageBuildings(),"Reload lost vanilla-only policy");
+        requireThrows(() -> EmeraldConfig.update(dir,reloaded,java.util.Map.of(key,"maybe")), "Invalid boolean accepted");
+        require(EmeraldConfig.current()==reloaded && service.vanillaOnlyVillageBuildings()
+                        && "true".equals(read(dir.resolve(FILE_NAME)).getProperty(key)), "Rejected edit changed world/file/policy");
+        var reset = EmeraldConfig.update(dir,reloaded,java.util.Map.of(key,"false"));
+        require(!reset.vanillaOnlyVillageBuildings() && !service.vanillaOnlyVillageBuildings(),"Disable failed");
     }
 
     private static void write(Path path, Properties properties) throws IOException {

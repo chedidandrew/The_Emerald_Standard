@@ -27,6 +27,9 @@ public final class AuthoredVillageStructuresSelfTest {
             AuthoredSmithyRoofSelfTest.run();
             return;
         }
+        if (args.length == 1 && args[0].equals("entrances")) {
+            AuthoredEntranceCleanupSelfTest.run(); return;
+        }
         VillageBankVersionSevenSelfTest.run();
         SupportedConstructionOrderSelfTest.run();
         AuthoredRevisionCompatibilitySelfTest.run();
@@ -41,6 +44,7 @@ public final class AuthoredVillageStructuresSelfTest {
         AuthoredLandscapeRefinementsSelfTest.reportCurrentGallery();
         AuthoredDoodadSurvivalSelfTest.run();
         AuthoredApproachRefinementsSelfTest.run();
+        AuthoredEntranceCleanupSelfTest.run();
         AuthoredMarketRefinementsSelfTest.run();
         GalleryAttachmentExpectationsSelfTest.run();
         long started = System.nanoTime();

@@ -97,7 +97,7 @@ final class AuthoredDoodadSurvivalSelfTest {
             Builder stage = garden(revision, Set.of());
             List<Cell> before = stage.values();
             AuthoredDoodadRefinements.ensureGardenShrubSubstrates(stage, p, 5, 9);
-            if (revision < 3 || revision > 10) {
+            if (revision < 3 || revision > AuthoredVillageStructures.LATEST_TEMPLATE_REVISION) {
                 require(before.equals(stage.values()), "Soil refinement changed frozen revision " + revision);
                 continue;
             }

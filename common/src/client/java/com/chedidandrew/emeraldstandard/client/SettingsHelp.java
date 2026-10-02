@@ -7,6 +7,7 @@ public final class SettingsHelp {
     private SettingsHelp() {}
     public static String description(String key) {
         String help = switch (key) {
+            case EmeraldConfig.VANILLA_ONLY_BUILDINGS_KEY -> "New village expansion buildings use only validated Minecraft designs matching the village's saved style. TES Banks, paths, bridges and crews remain. Existing buildings and approved plans are unchanged. Economy, funding and growth continue; unavailable or uncertain catalogs wait safely instead of using TES buildings. Off restores the mixed catalog. Does not change Minecraft world generation.";
             case EmeraldConfig.BRIDGES_ENABLED -> "Survey and build shared village footbridges. Off pauses new and unfinished bridges without removing them. Existing crossings remain usable.";
             case EmeraldConfig.BRIDGE_LENGTH -> "Longest water crossing in blocks, excluding the six-block approach on each shore. Shorter crossings and land detours are preferred. Existing saved designs keep their length. Range: 2–64.";
             case EmeraldConfig.BRIDGE_DEPTH -> "Maximum pier depth below the water surface. Deep water is left open where the span permits; unsupported crossings are deferred. Existing saved designs are unchanged. Range: 2–24.";
