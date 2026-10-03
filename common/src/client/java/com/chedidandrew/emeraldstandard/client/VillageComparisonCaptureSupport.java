@@ -145,6 +145,15 @@ public final class VillageComparisonCaptureSupport {
                     + "Curated template comparison, not naturally generated villages or Carol ratings.\n"
                     + "Completed " + Instant.now() + "\n", StandardOpenOption.CREATE_NEW);
             logger.info("Comparison capture complete: {}", directory);
+            if(Boolean.getBoolean(PROPERTY+".rear")&&!Boolean.getBoolean(PROPERTY+".stopWhenComplete")) {
+                onServer(context.server(),()-> {
+                    var player=context.server().getPlayerList().getPlayer(context.player());
+                    if(player!=null&&VillageComparisonGallery.isReady(context.server()))
+                        context.server().getCommands().performPrefixedCommand(player.createCommandSourceStack(),
+                                "emerald comparison visit "+selected.stream().min(Integer::compareTo).orElseThrow()+" back");
+                    return null;
+                });
+            }
         } catch (Exception failure) {
             logger.error("Comparison capture failed; incomplete batches are not final evidence", failure);
         } finally {

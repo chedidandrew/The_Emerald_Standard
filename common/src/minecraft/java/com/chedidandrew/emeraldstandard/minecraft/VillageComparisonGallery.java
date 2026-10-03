@@ -142,10 +142,10 @@ public final class VillageComparisonGallery {
                 || !Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)
                 || Boolean.getBoolean(ENABLE_PROPERTY + ".capture")) return;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 279");
+            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 173 back");
             player.sendSystemMessage(Component.literal("Full architecture review: 52 designs + Bank + 22 compact designs per style. "
                     + "Plains 1–75; Desert 76–150; Savanna 151–225; Taiga 226–300; Snowy 301–375. "
-                    + "Use /emerald comparison visit <number>. Every building has a sign. Review only; main unchanged."));
+                    + "Use /emerald comparison visit <number>, or add back for the rear elevation. Every building has a sign. Review only; main unchanged."));
         }
     }
 
@@ -186,7 +186,7 @@ public final class VillageComparisonGallery {
                     pose(e.index(), "pair", midX, e.surfaceY(), e.modZ(),
                             PAIR_PITCH - 16, Math.max(e.modHeight(), e.vanillaHeight())),
                     e.modZ(), Math.max(e.modHeight(), e.vanillaHeight())));
-            views.add(clearPreviousRow(STATES.get(server).pairs, e,
+            views.add(Boolean.getBoolean(ENABLE_PROPERTY+".capture.rear") ? rearPose(e) : clearPreviousRow(STATES.get(server).pairs, e,
                     pose(e.index(), "mod", e.modX() + e.modWidth() / 2.0,
                             e.surfaceY(), e.modZ() - 7, e.modWidth() + 14, e.modHeight()),
                     e.modZ() - 7, e.modHeight()));
@@ -256,7 +256,8 @@ public final class VillageComparisonGallery {
                                 .executes(VillageComparisonGallery::visitContext)))
                 .then(Commands.literal("visit")
                         .then(Commands.argument("index", IntegerArgumentType.integer(1, expectedPairCount()))
-                                .executes(VillageComparisonGallery::visit)));
+                                .executes(VillageComparisonGallery::visit)
+                                .then(Commands.literal("back").executes(context->visit(context,true)))));
     }
 
     public static int expectedPairCount() {
@@ -830,6 +831,9 @@ public final class VillageComparisonGallery {
     }
 
     private static int visit(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        return visit(context,false);
+    }
+    private static int visit(CommandContext<CommandSourceStack> context,boolean rear) throws CommandSyntaxException {
         MinecraftServer server = context.getSource().getServer();
         BuildState state = STATES.get(server);
         int index = IntegerArgumentType.getInteger(context, "index");
@@ -842,7 +846,7 @@ public final class VillageComparisonGallery {
         player.setGameMode(GameType.CREATIVE);
         player.getAbilities().flying = true;
         player.onUpdateAbilities();
-        ViewPose pose = clearPreviousRow(state.pairs, e,
+        ViewPose pose = rear ? rearPose(e) : clearPreviousRow(state.pairs, e,
                 pose(index, "pair", e.plotX() + HALF_PITCH, e.surfaceY(), e.modZ(),
                         PAIR_PITCH - 16, Math.max(e.modHeight(), e.vanillaHeight())),
                 e.modZ(), Math.max(e.modHeight(), e.vanillaHeight()));
@@ -852,6 +856,14 @@ public final class VillageComparisonGallery {
                 + ": " + e.modTemplate() + "@" + e.modRevision() + " / " + e.vanillaTemplate()
                 + ". " + e.relationship()), false);
         return 1;
+    }
+
+    private static ViewPose rearPose(ComparisonEntry e) {
+        ViewPose front=pose(e.index(),"mod-rear",e.modX()+e.modWidth()/2.0,e.surfaceY(),0,
+                e.modWidth()+10,e.modHeight());
+        double standoff=-front.z();
+        return new ViewPose(e.index(),"mod-rear",front.x(),front.y(),e.modZ()+e.modDepth()+standoff,
+                180,18,70);
     }
 
     private static int visitContext(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {

@@ -75,9 +75,9 @@ final class PlainsLegacyArchitecturePreview {
                 id, maxX-minX+1, maxZ-minZ+1);
         Set<BlockPos> access = new HashSet<>();
         original.access().forEach(pos -> access.add(pos.offset(offset)));
-        return PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(new BiomeArchitecturePreview.Plan(sample, Map.copyOf(copy), Set.copyOf(access),
+        return PreviewFacadePrograms.apply(PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(new BiomeArchitecturePreview.Plan(sample, Map.copyOf(copy), Set.copyOf(access),
                 original.entrance().offset(offset),
-                copy.keySet().stream().mapToInt(BlockPos::getY).max().orElseThrow()+1)));
+                copy.keySet().stream().mapToInt(BlockPos::getY).max().orElseThrow()+1))));
     }
 
     /** Upper roof/awnings only: keep furniture and dark accent timber below eaves unchanged. */

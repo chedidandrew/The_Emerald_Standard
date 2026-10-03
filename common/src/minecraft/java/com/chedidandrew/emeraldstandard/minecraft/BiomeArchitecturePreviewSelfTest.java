@@ -48,6 +48,8 @@ public final class BiomeArchitecturePreviewSelfTest {
                     +" cells; "+plan.access().size()+" reachable declared approaches; "+beds+" beds; lighting admitted");
         }
         verifyFullCatalog();
+        verifyFacadeRejections();
+        PreviewFacadePrograms.report(BiomeArchitectureCatalogPreview.samples());
         PreviewDoorwayAudit.report();
         if(VillageArchitecture.activeBlueprints().size()!=52
                 ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
@@ -58,6 +60,34 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
         }
+    }
+    private static void verifyFacadeRejections() {
+        var sample=PreviewCompactBuildings.samples(VillageArchitecture.BiomeDialect.SAVANNA).getFirst();
+        var plan=BiomeArchitecturePreview.plan(sample);
+        var audit=PreviewFacadePrograms.audit(plan);
+        if(audit.skin().isEmpty()) throw new AssertionError("Compact facade had no actual detail work");
+        var bed=plan.cells().entrySet().stream().filter(e->e.getValue().getBlock() instanceof BedBlock)
+                .map(java.util.Map.Entry::getKey).findFirst().orElseThrow();
+        var changed=new java.util.HashMap<>(plan.cells());changed.put(bed,Blocks.STONE.defaultBlockState());
+        expectFacadeFailure(plan,changed,"interior furnishing replaced");
+        var wall=audit.skin().iterator().next();
+        changed=new java.util.HashMap<>(plan.cells());changed.put(wall,Blocks.AIR.defaultBlockState());
+        expectFacadeFailure(plan,changed,"unsealed facade opening");
+        var lamp=audit.added().stream().filter(at->plan.cells().get(at).is(Blocks.LANTERN)).findFirst().orElseThrow();
+        changed=new java.util.HashMap<>(plan.cells());changed.remove(lamp.above());
+        expectFacadeFailure(plan,changed,"missing exterior lantern bearing");
+        var gap=PreviewRoomLayout.reachable(plan.cells(),plan.entrance()).stream()
+                .filter(at->!plan.cells().containsKey(at)).findFirst().orElseThrow();
+        changed=new java.util.HashMap<>(plan.cells());changed.put(gap,Blocks.STONE.defaultBlockState());
+        expectFacadeFailure(plan,changed,"unscoped interior air filled");
+        System.out.println("PASS facade negatives: interior edits, unsealed walls, unscoped additions and missing lantern bearings rejected");
+    }
+    private static void expectFacadeFailure(BiomeArchitecturePreview.Plan p,
+            java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> cells,String reason) {
+        try { PreviewFacadePrograms.validate(new BiomeArchitecturePreview.Plan(p.sample(),java.util.Map.copyOf(cells),
+                p.access(),p.entrance(),p.height())); }
+        catch(IllegalStateException expected) { return; }
+        throw new AssertionError("Invalid facade admitted: "+reason);
     }
     private static void verifyChairGeometry() {
         for(var toward:net.minecraft.core.Direction.Plane.HORIZONTAL) {
@@ -168,6 +198,7 @@ public final class BiomeArchitecturePreviewSelfTest {
             for(var sample:region) {
                 try {
                 var plan=BiomeArchitecturePreview.plan(sample);
+                PreviewFacadePrograms.validate(plan);
                 boolean compact=PreviewCompactBuildings.isCompact(sample);
                 var joins=compact?java.util.Set.<net.minecraft.core.BlockPos>of():BiomeArchitectureCatalogPreview.roofJoins(sample);
                 PreviewRoofEnvelope.validate(plan.cells(),joins);

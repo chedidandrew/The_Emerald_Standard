@@ -16,7 +16,7 @@ public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
     public static final String CATALOG_PROPERTY = PROPERTY + ".fullCatalog";
-    public static final int REVISION = 8;
+    public static final int REVISION = 9;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
@@ -67,7 +67,7 @@ public final class BiomeArchitecturePreview {
         b.details();
         b.regionalCraft();
         PreviewTaigaCraft.apply(b);
-        Plan plan = PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(b.finish()));
+        Plan plan = PreviewFacadePrograms.apply(PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(b.finish())));
         validate(plan);
         return plan;
     }

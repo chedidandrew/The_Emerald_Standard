@@ -36,6 +36,7 @@ final class BiomeArchitectureCatalogPreview {
             CACHE.put(sample.id(),new Plan(sample,source.cells(),source.access(),source.entrance(),source.height()));
             PreviewDoorwayAudit.alias(source,sample.id());
             PreviewRoomLayout.alias(source,sample.id());
+            PreviewFacadePrograms.alias(source,sample.id());
             result.add(sample);
             result.addAll(PreviewCompactBuildings.samples(style));
         }
@@ -114,6 +115,7 @@ final class BiomeArchitectureCatalogPreview {
         Set<BlockPos> joins=new HashSet<>(); b.roofJoins.keySet().forEach(pos->joins.add(pos.offset(3,0,3)));
         ROOF_JOINS.put(s.id(),Set.copyOf(joins));
         Plan plan=PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(new Plan(s,Map.copyOf(translated),Set.copyOf(access),b.entrance.offset(3,0,3),b.finish().height())));
+        plan=PreviewFacadePrograms.apply(plan);
         BiomeArchitecturePreview.validate(plan); return plan;
     }
     private static void roof(Builder b,int x0,int x1,int z0,int z1,int y) {

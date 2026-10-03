@@ -145,6 +145,7 @@ final class PreviewCompactBuildings {
         for(int z=f+1;z<back-1;z++) if(!b.cells.containsKey(new BlockPos(c,1,z))) b.put(c,1,z,rug);
         Plan p=PreviewDoorwayAudit.correct(b.finish());
         PreviewRoomLayout.register(p,partitions,d.upper()?1:0,floors,targets);
+        p=PreviewFacadePrograms.apply(p);
         BiomeArchitecturePreview.validate(p); return p;
     }
     private static void roof(Builder b,Spec d,int l,int r,int f,int back,int h) {
