@@ -22,6 +22,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyDoorwayGlazing();
         verifyWindowLighting();
         verifyFloorBearingRejection();
+        verifyRoomCeilings();
         verifySupportRejections();
         verifyOutdoorGrade();
         verifyTaigaOverhangs();
@@ -64,6 +65,15 @@ public final class BiomeArchitecturePreviewSelfTest {
         PreviewDoorwayAudit.report();
         PreviewDoorwayGlazing.report(BiomeArchitectureCatalogPreview.samples());
         PreviewWindowLighting.report(BiomeArchitectureCatalogPreview.samples());
+        int dividerColumns=0,upperLevels=0;
+        for(var sample:BiomeArchitectureCatalogPreview.samples()) {
+            var p=BiomeArchitecturePreview.plan(sample);
+            PreviewRoomLayout.validate(p);
+            dividerColumns+=PreviewRoomLayout.layout(p).dividerTops().size();
+            upperLevels+=PreviewRoomLayout.layout(p).upperLevels();
+        }
+        System.out.println("CEILING CENSUS: 375 designs; "+dividerColumns+" closed divider columns; "+upperLevels
+                +" accessible upper levels; zero usable floor areas below three-block structural headroom");
         if(VillageArchitecture.activeBlueprints().size()!=52
                 ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
                 ||VillageBankManager.galleryBankStructureVersion()!=12)
@@ -73,6 +83,48 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
         }
+    }
+    private static void verifyRoomCeilings() {
+        for(var style:VillageArchitecture.BiomeDialect.values()) {
+            var p=ceilingFixture(style,8);
+            var layout=PreviewRoomLayout.layout(p);
+            if(layout.partitions()==0||layout.dividerTops().isEmpty()||layout.upperLevels()!=1)
+                throw new AssertionError("Finished rooms and three-block loft missing: "+style);
+            var ceiling=new net.minecraft.core.BlockPos(4,4,4);
+            if(!net.minecraft.world.level.block.Block.isShapeFullBlock(p.cells().get(ceiling)
+                    .getCollisionShape(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,ceiling)))
+                throw new AssertionError("Missing finished room ceiling: "+style);
+            if(PreviewRoomLayout.layout(ceilingFixture(style,7)).upperLevels()!=0)
+                throw new AssertionError("Two-block loft admitted: "+style);
+            var changed=new java.util.HashMap<>(p.cells());
+            changed.put(new net.minecraft.core.BlockPos(7,3,4),Blocks.STONE.defaultBlockState());
+            expectRoomFailure(p,changed,"ceiling below three clear blocks");
+            changed=new java.util.HashMap<>(p.cells());
+            changed.put(new net.minecraft.core.BlockPos(4,3,4),Blocks.STONE.defaultBlockState());
+            expectRoomFailure(p,changed,"ceiling below three clear blocks over bed");
+            changed=new java.util.HashMap<>(p.cells());
+            changed.remove(layout.dividerTops().iterator().next().above());
+            expectRoomFailure(p,changed,"room divider does not meet its ceiling");
+        }
+        System.out.println("PASS room ceilings: five biome finishes, closed partitions, three-block lofts; low ceilings and uncapped dividers rejected");
+    }
+    private static BiomeArchitecturePreview.Plan ceilingFixture(VillageArchitecture.BiomeDialect style,int roof) {
+        var b=new BiomeArchitecturePreview.Builder(new BiomeArchitecturePreview.Sample(style,"HOUSE","ceiling_fixture_"+style+roof,16,17));
+        b.room(2,11,2,13,roof-1);b.terrace(2,11,2,13,roof);b.door(6,2);b.floor(5,7,0,1);
+        b.beds(4,4,1);
+        // Sleeping space is not walkable air: its low beam must still be lifted.
+        b.put(4,3,4,Blocks.OAK_PLANKS);b.put(4,3,5,Blocks.OAK_PLANKS);
+        b.access.add(new net.minecraft.core.BlockPos(6,1,10));
+        return PreviewRoomLayout.apply(b.finish());
+    }
+    private static void expectRoomFailure(BiomeArchitecturePreview.Plan p,
+            java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> cells,String reason) {
+        try { PreviewRoomLayout.validate(new BiomeArchitecturePreview.Plan(p.sample(),java.util.Map.copyOf(cells),p.access(),p.entrance(),p.height())); }
+        catch(IllegalStateException expected) {
+            if(!expected.getMessage().contains(reason)) throw expected;
+            return;
+        }
+        throw new AssertionError("Invalid room admitted: "+reason);
     }
     private static void verifyOutdoorGrade() {
         var sample=BiomeArchitecturePreview.samples().getFirst();

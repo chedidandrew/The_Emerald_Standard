@@ -26,6 +26,12 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String taiga=Files.readString(root.resolve(path+"PreviewTaigaCraft.java"));
         String facade=Files.readString(root.resolve(path+"PreviewFacadePrograms.java"));
         String glazing=Files.readString(root.resolve(path+"PreviewDoorwayGlazing.java"));
+        require(rooms.contains("ceilingRooms(source,cells,floors)")&&rooms.contains("validateHeights(p)")
+                &&rooms.contains("clearThird(cells,new BlockPos(x+dx,y+1,z))")
+                &&rooms.contains("layout.dividerTops()")&&rooms.contains("room divider does not meet its ceiling")
+                &&rooms.contains("closeLowAtticEdges(source,cells,access)")
+                &&compact.contains("dividerTops")&&preview.contains("PreviewRoomLayout.validate(p)"),
+                "Finished review rooms close partitions at their ceilings and enforce three-block headroom on final composition");
         require(facade.contains("jambs=PreviewDoorwayGlazing.frame(source.sample(),cells)")&&facade.contains("skin.addAll(jambs)")
                 &&facade.contains("PreviewDoorwayGlazing.validate(p)")&&preview.contains("PreviewDoorwayGlazing.validate(p)")
                 &&glazing.contains("Map.copyOf(cells)")&&glazing.contains("Unframed doorway glazing")

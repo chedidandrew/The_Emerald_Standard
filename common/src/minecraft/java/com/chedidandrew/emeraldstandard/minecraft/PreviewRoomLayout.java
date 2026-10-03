@@ -12,15 +12,18 @@ import net.minecraft.world.level.block.state.properties.*;
 
 /** Room composition and real climbable upper levels for the isolated art-review catalog. */
 final class PreviewRoomLayout {
-    record Layout(int partitions,int upperLevels,Set<BlockPos> floors,Set<BlockPos> upperTargets) { }
+    record Layout(int partitions,int upperLevels,Set<BlockPos> floors,Set<BlockPos> upperTargets,Set<BlockPos> dividerTops) { }
     private static final Map<String,Layout> LAYOUTS=new HashMap<>();
-    static Layout layout(Plan p) { return LAYOUTS.getOrDefault(p.sample().id(),new Layout(0,0,Set.of(),Set.of())); }
+    static Layout layout(Plan p) { return LAYOUTS.getOrDefault(p.sample().id(),new Layout(0,0,Set.of(),Set.of(),Set.of())); }
     static void alias(Plan p,String id) { LAYOUTS.put(id,layout(p)); }
     static boolean floorBearing(Plan p,BlockPos at) {
         return layout(p).floors().contains(at)&&full(p.cells(),at);
     }
     static void validate(Plan p) {
         Layout layout=layout(p);
+        validateHeights(p);
+        for(BlockPos at:layout.dividerTops()) if(!full(p.cells(),at)||!structural(p.cells().get(at.above()),at.above()))
+            throw new IllegalStateException(p.sample().id()+" room divider does not meet its ceiling: "+at);
         if(layout.partitions()>0||layout.upperLevels()>0) {
             Set<BlockPos> reach=reachable(p.cells(),p.entrance());
             if(!reach.containsAll(p.access())||!reach.containsAll(layout.upperTargets()))
@@ -46,8 +49,10 @@ final class PreviewRoomLayout {
         if(source.sample().id().startsWith("compact_")) return source;
         Map<BlockPos,BlockState> cells=new LinkedHashMap<>(source.cells());
         Set<BlockPos> access=new HashSet<>(source.access());
-        Set<BlockPos> floors=new HashSet<>(),upperTargets=new HashSet<>();
+        Set<BlockPos> floors=new HashSet<>(),upperTargets=new HashSet<>(),dividerTops=new HashSet<>();
         int partitions=0,levels=0;
+        liftLowBeams(source,cells);
+        ceilingRooms(source,cells,floors);
         if(!source.sample().role().equals("MARKET_SQUARE")) {
             // Back sleeping rooms or work/storage offices: doors and lintels, not knee-high logs.
             List<Integer> bedRows=cells.entrySet().stream().filter(e->e.getValue().getBlock() instanceof BedBlock
@@ -58,11 +63,13 @@ final class PreviewRoomLayout {
             rows.addAll(List.of(back-4,back-6,source.entrance().getZ()+3));
             for(int row=back-3;row>source.entrance().getZ()+2;row--) if(!rows.contains(row)) rows.add(row);
             for(int row:rows) if(row>source.entrance().getZ()+1
-                    &&partitions<2&&partition(source,cells,access,row)) partitions++;
+                    &&partitions<2&&partition(source,cells,access,row,dividerTops)) partitions++;
             if(addAttic(source,cells,access,floors,upperTargets)) levels++;
         }
-        if(partitions>0||levels>0) lightRooms(source,cells);
-        LAYOUTS.put(source.sample().id(),new Layout(partitions,levels,Set.copyOf(floors),Set.copyOf(upperTargets)));
+        closeLowAtticEdges(source,cells,access);
+        floors.removeIf(at->!full(cells,at)); // A later ladder hatch is not a floor bearing.
+        if(partitions>0||levels>0||!floors.isEmpty()) lightRooms(source,cells);
+        LAYOUTS.put(source.sample().id(),new Layout(partitions,levels,Set.copyOf(floors),Set.copyOf(upperTargets),Set.copyOf(dividerTops)));
         Plan result=new Plan(source.sample(),Map.copyOf(cells),Set.copyOf(access),source.entrance(),source.height());
         PreviewDoorwayAudit.validate(result);
         validate(result);
@@ -73,7 +80,7 @@ final class PreviewRoomLayout {
         return cells.keySet().stream().filter(at->at.getY()==0&&at.getX()==x)
                 .mapToInt(BlockPos::getZ).max().orElse(p.sample().depth()-1);
     }
-    private static boolean partition(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> access,int z) {
+    private static boolean partition(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> access,int z,Set<BlockPos> tops) {
         int center=p.entrance().getX(),left=center,right=center;
         while(full(cells,new BlockPos(left-1,0,z))) left--;
         while(full(cells,new BlockPos(right+1,0,z))) right++;
@@ -87,10 +94,22 @@ final class PreviewRoomLayout {
                     &&!state.isAir()&&!(state.getBlock() instanceof RotatedPillarBlock)) return false;
         }
         Map<BlockPos,BlockState> draft=new LinkedHashMap<>(cells);
+        Set<BlockPos> proposedTops=new HashSet<>();
         Block wall=p.sample().style()==BiomeDialect.DESERT?Blocks.SMOOTH_SANDSTONE
                 :p.sample().style()==BiomeDialect.SAVANNA?Blocks.ACACIA_PLANKS
                 :p.sample().style()==BiomeDialect.PLAINS?Blocks.OAK_PLANKS:Blocks.SPRUCE_PLANKS;
-        for(int x=left+1;x<right;x++) for(int y=1;y<=3;y++) draft.put(new BlockPos(x,y,z),wall.defaultBlockState());
+        for(int x=left+1;x<right;x++) {
+            int top=ceiling(draft,new BlockPos(x,1,z),p.height());
+            if(top<4) return false;
+            proposedTops.add(new BlockPos(x,top-1,z));
+            for(int y=1;y<top;y++) {
+                BlockPos at=new BlockPos(x,y,z);
+                // A partition must meet its ceiling, without burying an authored fixture.
+                BlockState existing=draft.get(at);
+                if(y>3&&existing!=null&&!existing.isAir()&&!existing.is(Blocks.IRON_CHAIN)) return false;
+                draft.put(at,wall.defaultBlockState());
+            }
+        }
         Block door=new BiomeArchitecturePreview.Builder(p.sample()).p.door();
         BlockState lower=door.defaultBlockState().setValue(DoorBlock.FACING,Direction.NORTH);
         draft.put(new BlockPos(center,1,z),lower);
@@ -99,7 +118,7 @@ final class PreviewRoomLayout {
         var test=new Plan(p.sample(),Map.copyOf(draft),Set.copyOf(access),p.entrance(),p.height());
         try { PreviewDoorwayAudit.validate(test); }
         catch(IllegalStateException error) { return false; }
-        cells.clear(); cells.putAll(draft); return true;
+        cells.clear(); cells.putAll(draft);tops.addAll(proposedTops); return true;
     }
     private static boolean addAttic(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> access,
             Set<BlockPos> floors,Set<BlockPos> targets) {
@@ -118,6 +137,7 @@ final class PreviewRoomLayout {
             boolean space=true;
             for(int z=z0;z<=z1;z++) for(int dx=-1;dx<=1;dx++)
                 space&=PreviewDoorwayAudit.clear(cells,new BlockPos(x+dx,y+1,z))
+                        &&clearThird(cells,new BlockPos(x+dx,y+1,z))
                         &&covered(cells,new BlockPos(x+dx,y+1,z));
             if(!space) continue;
             // A full wall-to-wall floor plate is carried by the existing perimeter, not a
@@ -159,6 +179,137 @@ final class PreviewRoomLayout {
                     &&!state.getCollisionShape(EmptyBlockGetter.INSTANCE,at).isEmpty()) return true;
         }
         return false;
+    }
+    private static Block finishMaterial(Plan p) {
+        return p.sample().style()==BiomeDialect.DESERT?Blocks.SMOOTH_SANDSTONE
+                :p.sample().style()==BiomeDialect.SAVANNA?Blocks.ACACIA_PLANKS
+                :p.sample().style()==BiomeDialect.PLAINS?Blocks.OAK_PLANKS:Blocks.SPRUCE_PLANKS;
+    }
+    private static boolean structural(BlockState state,BlockPos at) {
+        return state!=null&&!state.hasBlockEntity()&&!(state.getBlock() instanceof DoorBlock)
+                &&!(state.getBlock() instanceof LadderBlock)&&!(state.getBlock() instanceof LanternBlock)
+                &&!state.is(Blocks.IRON_CHAIN)&&(Block.isShapeFullBlock(state.getCollisionShape(EmptyBlockGetter.INSTANCE,at))
+                        ||state.getBlock() instanceof SlabBlock||state.getBlock() instanceof StairBlock
+                        ||state.getBlock() instanceof IronBarsBlock);
+    }
+    static boolean clearThird(Map<BlockPos,BlockState> cells,BlockPos feet) {
+        return !structural(cells.get(feet.above(2)),feet.above(2));
+    }
+    static void validateHeights(Plan p) {
+        // Beds are not walkable air, but their sleeping space is still part of a room.
+        for(var entry:p.cells().entrySet()) if(entry.getValue().getBlock() instanceof BedBlock
+                &&!clearThird(p.cells(),entry.getKey()))
+            throw new IllegalStateException(p.sample().id()+" ceiling below three clear blocks over bed: "+entry.getKey());
+        for(BlockPos feet:reachable(p.cells(),p.entrance())) {
+            BlockState foot=p.cells().get(feet);
+            // Vanilla doors remain two blocks tall; a ladder hatch is a transition,
+            // not the ceiling of a habitable room. Usable floor areas get three blocks.
+            if(foot!=null&&(foot.getBlock() instanceof DoorBlock||foot.getBlock() instanceof LadderBlock)
+                    ||ladder(p.cells().get(feet.below()))) continue;
+            if(!clearThird(p.cells(),feet)) throw new IllegalStateException(p.sample().id()+" ceiling below three clear blocks: "+feet);
+        }
+    }
+    private static int ceiling(Map<BlockPos,BlockState> cells,BlockPos feet,int height) {
+        for(int y=feet.getY()+2;y<=height;y++) {
+            BlockPos at=new BlockPos(feet.getX(),y,feet.getZ());
+            if(structural(cells.get(at),at)) return y;
+        }
+        return -1;
+    }
+    private static void liftLowBeams(Plan p,Map<BlockPos,BlockState> cells) {
+        // Move low ground-floor ties/canopies up, retaining any already higher roof.
+        Set<BlockPos> lifted=new HashSet<>();
+        Set<BlockPos> occupied=new HashSet<>(reachable(cells,p.entrance()));
+        cells.forEach((at,state)-> {if(state.getBlock() instanceof BedBlock) occupied.add(at);});
+        for(BlockPos feet:occupied) {
+            BlockState foot=cells.get(feet);
+            if(feet.getY()!=1||foot!=null&&(foot.getBlock() instanceof DoorBlock||foot.getBlock() instanceof LadderBlock)) continue;
+            BlockPos at=feet.above(2);BlockState state=cells.get(at);
+            if(!structural(state,at)) continue;
+            BlockState above=cells.get(at.above());
+            if(above!=null&&above.hasBlockEntity()) throw new IllegalStateException("Low beam carries protected fixture: "+p.sample().id()+" "+at);
+            cells.remove(at);
+            if(!structural(above,at.above())) {
+                // A partial decorative strip must become a carried full ceiling course.
+                cells.put(at.above(),state.getBlock() instanceof SlabBlock||state.getBlock() instanceof StairBlock
+                        ||state.getBlock() instanceof IronBarsBlock
+                        ?finishMaterial(p).defaultBlockState():state);
+                lifted.add(at.above());removeChainsAbove(cells,at.above());
+            }
+            BlockState lamp=cells.get(at.below());
+            if(lamp!=null&&lamp.getBlock() instanceof LanternBlock&&lamp.getValue(LanternBlock.HANGING)) {
+                cells.remove(at.below());cells.put(at,lamp);
+            }
+            for(Direction side:Direction.Plane.HORIZONTAL) {
+                BlockPos fixture=at.relative(side);BlockState attached=cells.get(fixture);
+                if(attached!=null&&attached.getBlock() instanceof WallTorchBlock&&attached.getValue(WallTorchBlock.FACING)==side) {
+                    cells.remove(fixture);
+                    if(!cells.containsKey(fixture.above())) cells.put(fixture.above(),attached);
+                }
+            }
+        }
+        for(BlockPos at:lifted) for(Direction side:Direction.Plane.HORIZONTAL) {
+            BlockPos bearing=at.relative(side);
+            if(cells.containsKey(bearing)) continue;
+            boolean post=true;
+            for(int y=0;y<4;y++) post&=full(cells,new BlockPos(bearing.getX(),y,bearing.getZ()));
+            if(post) cells.put(bearing,cells.get(bearing.below()));
+        }
+    }
+    private static void removeChainsAbove(Map<BlockPos,BlockState> cells,BlockPos at) {
+        for(BlockPos pos=at.above();;pos=pos.above()) {
+            BlockState state=cells.get(pos);
+            if(state==null||!state.is(Blocks.IRON_CHAIN)||state.getValue(BlockStateProperties.AXIS)!=Direction.Axis.Y) break;
+            cells.remove(pos);
+        }
+    }
+    private static void ceilingRooms(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> floors) {
+        if(p.sample().role().equals("MARKET_SQUARE")) return;
+        // Flood the outside at window height with walls, panes and closed doors as barriers.
+        Set<BlockPos> outside=new HashSet<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();queue.add(new BlockPos(-1,2,-1));
+        while(!queue.isEmpty()) {
+            BlockPos at=queue.removeFirst();
+            if(at.getX()<-1||at.getZ()<-1||at.getX()>p.sample().width()||at.getZ()>p.sample().depth()||!outside.add(at)) continue;
+            BlockState state=cells.get(at);
+            if(state!=null&&!state.isAir()) continue;
+            for(Direction side:Direction.Plane.HORIZONTAL) queue.add(at.relative(side));
+        }
+        Set<BlockPos> hatches=new HashSet<>();
+        for(BlockPos at:reachable(cells,p.entrance())) if(at.getY()>1) {
+            hatches.add(at);hatches.add(at.above());hatches.add(at.above(2));
+        }
+        var before=Map.copyOf(cells);
+        for(int x=0;x<p.sample().width();x++) for(int z=0;z<p.sample().depth();z++) {
+            BlockPos at=new BlockPos(x,4,z),feet=new BlockPos(x,1,z);
+            if(outside.contains(feet.above())||!full(cells,feet.below())||!covered(before,feet)||hatches.contains(at)) continue;
+            BlockState current=cells.get(at);
+            if(current!=null&&!current.isAir()&&!(current.getBlock() instanceof LanternBlock)&&!current.is(Blocks.IRON_CHAIN)) continue;
+            cells.put(at,finishMaterial(p).defaultBlockState());floors.add(at);removeChainsAbove(cells,at);
+        }
+        // Narrow appendages may meet only partial roof shapes, which cannot carry a
+        // floor plate. Retain their authored ceiling instead of adding a floating cap.
+        Set<BlockPos> carried=new HashSet<>();queue.clear();
+        cells.keySet().stream().filter(at->at.getY()==0).forEach(queue::add);
+        while(!queue.isEmpty()) {
+            BlockPos at=queue.removeFirst();BlockState state=cells.get(at);
+            if(state==null||!Block.isShapeFullBlock(state.getCollisionShape(EmptyBlockGetter.INSTANCE,at))||!carried.add(at)) continue;
+            for(Direction side:Direction.values()) queue.add(at.relative(side));
+        }
+        for(BlockPos at:new HashSet<>(floors)) if(!carried.contains(at)) {
+            cells.remove(at);floors.remove(at);
+        }
+    }
+    private static void closeLowAtticEdges(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> access) {
+        // Finished knee walls exclude the shallow eaves from the usable loft, not a
+        // hidden two-block-high walking zone. Existing functional targets stay clear.
+        for(BlockPos feet:reachable(cells,p.entrance())) {
+            BlockState foot=cells.get(feet);
+            if(feet.getY()<=1||ladder(cells.get(feet.below()))||foot!=null&&(foot.getBlock() instanceof DoorBlock||foot.getBlock() instanceof LadderBlock)
+                    ||clearThird(cells,feet)) continue;
+            if(access.contains(feet)) throw new IllegalStateException("Low occupied upper room: "+p.sample().id()+" "+feet);
+            cells.put(feet,finishMaterial(p).defaultBlockState());
+            cells.put(feet.above(),finishMaterial(p).defaultBlockState());
+        }
     }
     private static void lightRooms(Plan p,Map<BlockPos,BlockState> cells) {
         // Real roof-attached pendants on a regular room grid, never a solid lamp pedestal
@@ -211,6 +362,9 @@ final class PreviewRoomLayout {
         return state!=null&&state.isFaceSturdy(EmptyBlockGetter.INSTANCE,at,Direction.UP);
     }
     static void register(Plan p,int partitions,int upperLevels,Set<BlockPos> floors,Set<BlockPos> targets) {
-        LAYOUTS.put(p.sample().id(),new Layout(partitions,upperLevels,Set.copyOf(floors),Set.copyOf(targets)));
+        register(p,partitions,upperLevels,floors,targets,Set.of());
+    }
+    static void register(Plan p,int partitions,int upperLevels,Set<BlockPos> floors,Set<BlockPos> targets,Set<BlockPos> tops) {
+        LAYOUTS.put(p.sample().id(),new Layout(partitions,upperLevels,Set.copyOf(floors),Set.copyOf(targets),Set.copyOf(tops)));
     }
 }

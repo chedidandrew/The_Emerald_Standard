@@ -352,3 +352,56 @@ and terrain reader guidance, chapter routing and compact handbook routing. This
 is opt-in review geometry only, not production adoption, a recipe change or an
 automatic repair of existing saves. Existing explanations remain accurate;
 unrelated handbook prose is not changed to advertise an unfinished rollout.
+
+## Finished room ceilings and three-block minimum height
+
+Room dividers previously ended three blocks above the floor while the roof could
+be much higher. This left separated rooms open into a shared, unfinished roof
+void. The attic admission check also accepted two-block walking clearance.
+
+Enclosed review rooms now receive supported, biome-matched finished ceilings.
+Ground-floor rooms have three clear structural blocks above their floor; compact
+upper rooms use the same clearance between their second floor and ceiling.
+Dividers extend to the actual ceiling and record every top column, including
+door lintels, for final-composition validation. Existing climbable floor hatches
+and functional approaches remain open. Low ground-floor beams are raised with
+their supporting posts and attached fixtures rather than leaving disconnected
+trim behind. Narrow appendages retain their authored roof where no fully carried
+ceiling plate can be added.
+
+New attics require three-block headroom, not two. Shallow roof edges become
+finished knee walls outside the usable loft. Where a safe loft cannot fit, it is
+not added; this preserves the regional exterior roof instead of stretching every
+building into the same box. Vanilla two-block door openings and ladder hatches
+remain normal transitions, not habitable rooms. Open market stalls stay open.
+
+Native admission checks the final decorated plan, not only the room draft. All
+375 designs and 13 early prototypes pass room/access, furniture, bed, seating,
+roof, native-shape support and night-lighting checks. The catalog has 4,438 closed
+divider columns and 67 accessible upper levels, with zero usable floor areas
+below three-block structural headroom, including both halves of every bed.
+Five-biome fixtures prove that a
+three-block loft is accepted, a two-block loft is not built, and deliberately
+lowered ceilings (over walking space or beds) or uncapped partitions are rejected.
+Final glazing and lamp composition now records 5,921 blind-glazing infills and 936 redundant lantern
+removals; the existing 11 coverage-dependent close pairs are confined to open
+market designs. No production design, recipe or growth-selection behavior changes.
+
+Validation: Fabric native admission and assemble, the complete common regression
+suite and filtered NeoForge loader test pass. Fresh compact profile
+`build/biome-preview-catalog-r10-12` completed 375 pairs / 750 actual structures,
+signature `49fddb6fbdd3cdd0`, content revision 17 and comparison schema 1. Its
+ten-view Plains #14 / Taiga #233 capture completed and actual interior screenshots
+were inspected for finished ceilings and capped partitions. The earlier #57
+compact-home batch in profile r10-11 stopped safely at a blocked camera pose;
+that partial batch is not counted as completed visual evidence. Compact upper
+rooms are covered by native height/access checks. Both intermediate profiles
+remain preserved alongside earlier review saves. Interactive review opens at
+Plains #14 in daylight, with signs and navigation commands retained. Main and
+production's frozen 52 revision-11 designs / version-12 Bank remain unchanged.
+
+Handbook accuracy review: rechecked the full building-catalog, construction-safety
+and terrain reader text, their compact pages and chapter/lectern routing against
+the implementation. This is opt-in review geometry only; the guidance on frozen
+production plans, existing saves and construction safety remains accurate.
+Unrelated handbook prose remains unchanged pending approved production adoption.

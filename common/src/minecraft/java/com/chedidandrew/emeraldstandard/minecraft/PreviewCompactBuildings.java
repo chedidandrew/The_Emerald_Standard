@@ -44,7 +44,7 @@ final class PreviewCompactBuildings {
     private static Plan build(Sample s) {
         Spec d=spec(s); Builder b=new Builder(s);
         int l=2,r=l+d.width()-1,f=2,back=f+d.depth()-1,c=(l+r)/2,h=d.upper()?8:4;
-        Set<BlockPos> floors=new HashSet<>(),targets=new HashSet<>();
+        Set<BlockPos> floors=new HashSet<>(),targets=new HashSet<>(),dividerTops=new HashSet<>();
         b.room(l,r,f,back,h);
         b.floor(c-1,c+1,0,1);
         // Different regional envelopes; Taiga is the requested bark-on log gable.
@@ -77,10 +77,16 @@ final class PreviewCompactBuildings {
             for(int y=1;y<=4;y++) b.put(ladderX,y,z,Blocks.LADDER.defaultBlockState().setValue(LadderBlock.FACING,Direction.NORTH));
             floors.remove(new BlockPos(ladderX,4,z));
             targets.add(new BlockPos(c,5,back-2)); b.access.addAll(targets);
-            // Upper ceilings carry pendants and leave two clear blocks at the hatch.
+            // Upper ceilings carry pendants above three clear blocks at the hatch.
             for(int x=l;x<=r;x++) b.put(x,8,f+2,b.p.log());
             b.put(c,7,f+2,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true));
         }
+        // Finished room ceilings meet the partitions; roof voids are not living rooms.
+        for(int y:d.upper()?new int[]{4,8}:new int[]{4})
+            for(int x=l+1;x<r;x++) for(int z=f+1;z<back;z++) {
+                BlockPos at=new BlockPos(x,y,z);
+                if(!b.cells.containsKey(at)) {b.put(x,y,z,b.p.floor());floors.add(at);}
+            }
         for(int x=l;x<=r;x++) b.put(x,4,f+1,b.p.log());
         b.put(c,3,f+1,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true));
         int partitions=0;
@@ -92,8 +98,8 @@ final class PreviewCompactBuildings {
             // Sleeping quarters behind a framed internal door; sitting/kitchen space in front.
             if(d.depth()>=9) {
                 int row=f+3;
-                partitions+=partition(b,l,r,c,row,1);
-                if(d.upper()) partitions+=partition(b,l,r,c,row,5);
+                partitions+=partition(b,l,r,c,row,1,dividerTops);
+                if(d.upper()) partitions+=partition(b,l,r,c,row,5,dividerTops);
             }
             b.put(l+1,1,f+1,Blocks.CRAFTING_TABLE);
             if(d.width()>=7) {
@@ -113,10 +119,10 @@ final class PreviewCompactBuildings {
             b.put(l+1,1,f+2,station); b.access.add(new BlockPos(c,1,f+2));
             b.put(r-1,1,back-1,d.role().equals("GRANARY")?Blocks.HAY_BLOCK:Blocks.BARREL);
             b.put(r-1,2,back-1,d.role().equals("BANK")?Blocks.BOOKSHELF:Blocks.LANTERN);
-            if(d.depth()>=9&&!d.role().equals("MARKET_SQUARE")) partitions+=partition(b,l,r,c,f+4,1);
+            if(d.depth()>=9&&!d.role().equals("MARKET_SQUARE")) partitions+=partition(b,l,r,c,f+4,1,dividerTops);
             if(d.upper()) {
                 b.put(l+1,5,f+1,Blocks.BOOKSHELF); b.put(r-1,5,f+1,Blocks.BARREL);
-                partitions+=partition(b,l,r,c,f+3,5);
+                partitions+=partition(b,l,r,c,f+3,5,dividerTops);
             }
             if(d.role().equals("SMITHY")) {
                 b.put(l+1,1,back-1,Blocks.BLAST_FURNACE.defaultBlockState().setValue(BlockStateProperties.LIT,true));
@@ -144,7 +150,7 @@ final class PreviewCompactBuildings {
                 ?Blocks.CARPET.orange():s.style()==BiomeDialect.TAIGA?Blocks.CARPET.green():Blocks.CARPET.red();
         for(int z=f+1;z<back-1;z++) if(!b.cells.containsKey(new BlockPos(c,1,z))) b.put(c,1,z,rug);
         Plan p=PreviewDoorwayAudit.correct(b.finish());
-        PreviewRoomLayout.register(p,partitions,d.upper()?1:0,floors,targets);
+        PreviewRoomLayout.register(p,partitions,d.upper()?1:0,floors,targets,dividerTops);
         p=PreviewFacadePrograms.apply(p);
         BiomeArchitecturePreview.validate(p); return p;
     }
@@ -272,8 +278,9 @@ final class PreviewCompactBuildings {
             b.access.add(new BlockPos(x+(i%2==0?1:-1),y,z));
         }
     }
-    private static int partition(Builder b,int l,int r,int c,int z,int y) {
+    private static int partition(Builder b,int l,int r,int c,int z,int y,Set<BlockPos> tops) {
         for(int x=l+1;x<r;x++) for(int yy=y;yy<=y+2;yy++) b.put(x,yy,z,b.p.wall());
+        for(int x=l+1;x<r;x++) tops.add(new BlockPos(x,y+2,z));
         var door=b.p.door().defaultBlockState().setValue(DoorBlock.FACING,Direction.NORTH);
         b.put(c,y,z,door); b.put(c,y+1,z,door.setValue(DoorBlock.HALF,DoubleBlockHalf.UPPER));
         return 1;
