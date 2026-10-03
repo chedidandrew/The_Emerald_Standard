@@ -18,6 +18,12 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String seating=Files.readString(root.resolve(path+"PreviewSeatingAudit.java"));
         String roof=Files.readString(root.resolve(path+"PreviewRoofEnvelope.java"));
         String doorway=Files.readString(root.resolve(path+"PreviewDoorwayAudit.java"));
+        String rooms=Files.readString(root.resolve(path+"PreviewRoomLayout.java"));
+        String tiers=Files.readString(root.resolve(path+"PreviewArchitectureTiers.java"));
+        String compact=Files.readString(root.resolve(path+"PreviewCompactBuildings.java"));
+        require(catalog.contains("PreviewCompactBuildings.samples(style)")&&compact.contains("PreviewRoomLayout.register")
+                &&rooms.contains("LadderBlock")&&rooms.contains("covered(cells")&&tiers.contains("TINY(1), SMALL(1), MEDIUM(2)")
+                &&tiers.contains("new Random(projectSeed)"),"Compact staged progression and reachable enclosed upper storeys");
         require(catalog.contains("PreviewDoorwayAudit.correct")&&legacy.contains("PreviewDoorwayAudit.correct")
                 &&preview.contains("PreviewDoorwayAudit.validate(p)")&&doorway.contains("disconnected doorway")
                 &&doorway.contains("orphan door upper")&&doorway.contains("DoorBlock.OPEN,true"),
@@ -39,7 +45,7 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         require(catalog.contains("PreviewRoofEnvelope.seal(b)")&&exteriors.contains("PreviewRoofEnvelope.carry")
                 &&roof.contains("Block.isShapeFullBlock")&&roof.contains("for(int y=wallTop+1;y<roofBase;y++)"),
                 "Every raised roof range has its own full-height weather curb above the occupied storey");
-        require(preview.contains("REVISION = 7")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
+        require(preview.contains("REVISION = 8")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
                 &&preview.contains("walkable(cells,at)")&&preview.contains("CarpetBlock"),
                 "Revision-three regional craft and rug admission");
         require(preview.contains("validateFurnitureSupport(p)")&&preview.contains("Reversed counter endpoints"),
@@ -61,7 +67,10 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
             require(!Files.readString(root.resolve(path + name)).contains("PreviewExteriorPrograms")
                     &&!Files.readString(root.resolve(path + name)).contains("PreviewSeatingAudit")
                     &&!Files.readString(root.resolve(path + name)).contains("PreviewRoofEnvelope")
-                    &&!Files.readString(root.resolve(path + name)).contains("PreviewDoorwayAudit"),
+                    &&!Files.readString(root.resolve(path + name)).contains("PreviewDoorwayAudit")
+                    &&!Files.readString(root.resolve(path + name)).contains("PreviewArchitectureTiers")
+                    &&!Files.readString(root.resolve(path + name)).contains("PreviewCompactBuildings")
+                    &&!Files.readString(root.resolve(path + name)).contains("PreviewRoomLayout"),
                     "Review helpers leaked into production: " + name);
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")

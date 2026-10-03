@@ -142,9 +142,9 @@ public final class VillageComparisonGallery {
                 || !Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)
                 || Boolean.getBoolean(ENABLE_PROPERTY + ".capture")) return;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 160");
-            player.sendSystemMessage(Component.literal("Full architecture review: 52 designs + Bank per style. "
-                    + "Plains 1–53; Desert 54–106; Savanna 107–159; Taiga 160–212; Snowy 213–265. "
+            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 279");
+            player.sendSystemMessage(Component.literal("Full architecture review: 52 designs + Bank + 22 compact designs per style. "
+                    + "Plains 1–75; Desert 76–150; Savanna 151–225; Taiga 226–300; Snowy 301–375. "
                     + "Use /emerald comparison visit <number>. Every building has a sign. Review only; main unchanged."));
         }
     }
@@ -388,7 +388,8 @@ public final class VillageComparisonGallery {
             Rotation rotation = entranceRotation(template);
             Vec3i size = template.getSize(rotation);
             boolean full = Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY);
-            int local = result.size() % 53, district = result.size() / 53;
+            int regionSize=(int)BiomeArchitecturePreview.reviewSamples().stream().filter(s->s.style()==sample.style()).count();
+            int local = result.size() % regionSize, district = result.size() / regionSize;
             int plotX = full ? district * DISTRICT_PITCH + (local % COLUMNS) * PAIR_PITCH : result.size() * PAIR_PITCH;
             int plotZ = full ? (local / COLUMNS) * ROW_PITCH : 0;
             int modX = plotX + (HALF_PITCH - sample.width()) / 2;
@@ -556,12 +557,14 @@ public final class VillageComparisonGallery {
         placeLabel(level, new BlockPos(e.plotX() + 8, e.surfaceY(), e.plotZ() + 4),
                 "#" + e.index() + " " + e.dialect(), "MOD: " + e.role(), e.modTemplate(), "Use /emerald");
         if (pair.preview != null && Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)) {
-            String id = BiomeArchitectureCatalogPreview.masterId(pair.preview.sample());
+            var sample=pair.preview.sample();
+            String id = PreviewCompactBuildings.isCompact(sample)?PreviewCompactBuildings.spec(sample).id():BiomeArchitectureCatalogPreview.masterId(sample);
             int first = id.indexOf('_'), last = id.lastIndexOf('_');
-            String family = first >= 0 && last > first ? id.substring(first + 1, last).replace('_', ' ') : "Bank";
+            String family = PreviewCompactBuildings.isCompact(sample)?PreviewCompactBuildings.spec(sample).name()
+                    :first >= 0 && last > first ? id.substring(first + 1, last).replace('_', ' ') : "Bank";
             placeLabel(level, new BlockPos(e.modX() + e.modWidth()/2, e.surfaceY(), e.modZ()-3),
                     "#" + e.index() + " " + e.dialect(), e.role().replace('_', ' '), family,
-                    "/emerald comparison");
+                    PreviewArchitectureTiers.size(sample)+" / tier "+PreviewArchitectureTiers.size(sample).minimumTier+"+");
         }
         placeLabel(level, new BlockPos(e.plotX() + HALF_PITCH + 8, e.surfaceY(), e.plotZ() + 4),
                 "#" + e.index() + " VANILLA", shortName(e.vanillaTemplate()), "Actual village NBT", "Curated, not worldgen");

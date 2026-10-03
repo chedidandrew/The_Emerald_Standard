@@ -16,7 +16,7 @@ public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
     public static final String CATALOG_PROPERTY = PROPERTY + ".fullCatalog";
-    public static final int REVISION = 7;
+    public static final int REVISION = 8;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
@@ -54,6 +54,7 @@ public final class BiomeArchitecturePreview {
         return List.copyOf(samples);
     }
     public static Plan plan(Sample sample) {
+        if(sample.id().startsWith("compact_")) return PreviewCompactBuildings.plan(sample);
         if(sample.id().startsWith("catalog_")) return BiomeArchitectureCatalogPreview.plan(sample);
         if (sample.style()==BiomeDialect.PLAINS) return PlainsLegacyArchitecturePreview.plan(sample.role());
         Builder b = new Builder(sample);
@@ -65,7 +66,8 @@ public final class BiomeArchitecturePreview {
         }
         b.details();
         b.regionalCraft();
-        Plan plan = PreviewDoorwayAudit.correct(b.finish());
+        PreviewTaigaCraft.apply(b);
+        Plan plan = PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(b.finish()));
         validate(plan);
         return plan;
     }
@@ -221,7 +223,7 @@ public final class BiomeArchitecturePreview {
                     Blocks.ACACIA_PLANKS, Blocks.COBBLESTONE, Blocks.ACACIA_STAIRS,
                     Blocks.ACACIA_SLAB, Blocks.ACACIA_PLANKS, Blocks.ACACIA_STAIRS,
                     Blocks.ACACIA_SLAB, Blocks.ACACIA_DOOR);
-            case TAIGA -> new Palette(Blocks.SPRUCE_PLANKS, Blocks.SPRUCE_LOG,
+            case TAIGA -> new Palette(Blocks.COBBLESTONE, Blocks.SPRUCE_LOG,
                     Blocks.SPRUCE_PLANKS, Blocks.COBBLESTONE, Blocks.SPRUCE_STAIRS,
                     Blocks.SPRUCE_SLAB, Blocks.SPRUCE_PLANKS, Blocks.SPRUCE_STAIRS,
                     Blocks.SPRUCE_SLAB, Blocks.SPRUCE_DOOR);
@@ -293,7 +295,8 @@ public final class BiomeArchitecturePreview {
                 int rise=shallow?Math.min(x-x0,x1-x)/2:Math.min(x-x0,x1-x);
                 int roofY=y+rise;
                 for(int z=z0;z<=z1;z++) {
-                    put(x,roofY,z,x==mid?p.roofSlab.defaultBlockState():p.roofStairs.defaultBlockState()
+                    put(x,roofY,z,s.style()==BiomeDialect.TAIGA ? Blocks.SPRUCE_LOG.defaultBlockState()
+                            .setValue(BlockStateProperties.AXIS,Direction.Axis.Z) : x==mid?p.roofSlab.defaultBlockState():p.roofStairs.defaultBlockState()
                             .setValue(StairBlock.FACING,x<mid?Direction.EAST:Direction.WEST));
                     if(snow) {
                         put(x,roofY,z,p.roof);
@@ -310,6 +313,7 @@ public final class BiomeArchitecturePreview {
             }
         }
         void hip(int x0,int x1,int z0,int z1,int y) {
+            if(s.style()==BiomeDialect.TAIGA) { gable(x0,x1,z0,z1,y,false); return; }
             for(int x=x0;x<=x1;x++) for(int z=z0;z<=z1;z++) {
                 int ring=Math.min(Math.min(x-x0,x1-x),Math.min(z-z0,z1-z));
                 int top=y+Math.min(2,ring);
@@ -591,6 +595,7 @@ public final class BiomeArchitecturePreview {
     }
 
     public static void validate(Plan p) {
+        PreviewRoomLayout.validate(p);
         PreviewDoorwayAudit.validate(p);
         PreviewSeatingAudit.validate(p.cells(),PreviewSeatingAudit.lowStairs(p.cells()));
         validateFurnitureSupport(p);
@@ -630,6 +635,7 @@ public final class BiomeArchitecturePreview {
             if(tableTop&&below!=null&&below.getBlock() instanceof FenceBlock) meetsTop=true;
             boolean grounded=meetsTop;
             for(BlockPos foot=pos.below();grounded&&foot.getY()>=0;foot=foot.below()) {
+                if(PreviewRoomLayout.floorBearing(p,foot)) break;
                 BlockState bearing=p.cells().get(foot);
                 boolean leg=tableTop&&foot.equals(pos.below())&&bearing!=null&&bearing.getBlock() instanceof FenceBlock;
                 grounded=bearing!=null&&(leg||bearing.isFaceSturdy(EmptyBlockGetter.INSTANCE,foot,Direction.UP));
@@ -639,14 +645,7 @@ public final class BiomeArchitecturePreview {
         });
     }
     private static Set<BlockPos> reachable(Plan p) {
-        Set<BlockPos> reach=new HashSet<>(); ArrayDeque<BlockPos> queue=new ArrayDeque<>();
-        queue.add(p.entrance());
-        while(!queue.isEmpty()) {
-            BlockPos pos=queue.removeFirst();
-            if(!walkable(p.cells(),pos)||!reach.add(pos)) continue;
-            for(Direction d:Direction.Plane.HORIZONTAL) queue.add(pos.relative(d));
-        }
-        return reach;
+        return PreviewRoomLayout.reachable(p.cells(),p.entrance());
     }
     private static boolean walkable(Map<BlockPos,BlockState> cells,BlockPos pos) {
         BlockState floor=cells.get(pos.below());

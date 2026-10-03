@@ -19,6 +19,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyChairGeometry();
         verifyRoofJoinRejections();
         verifyDoorwayRejections();
+        verifyFloorBearingRejection();
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
@@ -152,29 +153,41 @@ public final class BiomeArchitecturePreviewSelfTest {
     }
     private static void verifyFullCatalog() {
         var samples=BiomeArchitectureCatalogPreview.samples();
-        if(samples.size()!=265||samples.stream().map(BiomeArchitecturePreview.Sample::id).distinct().count()!=265)
-            throw new AssertionError("Full review requires 52 designs and Bank in each of five styles");
+        if(samples.size()!=375||samples.stream().map(BiomeArchitecturePreview.Sample::id).distinct().count()!=375)
+            throw new AssertionError("Full review requires 52 designs, Bank and 22 compact designs in each of five styles");
+        verifyTierPolicy(samples);
         var failures=new java.util.ArrayList<String>();
         for(var style:VillageArchitecture.BiomeDialect.values()) {
             var region=samples.stream().filter(s->s.style()==style).toList();
-            if(region.size()!=53) throw new AssertionError("Incomplete style: "+style);
+            if(region.size()!=75) throw new AssertionError("Incomplete style: "+style);
             var unique=new java.util.HashSet<java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>>();
             var programs=new java.util.HashSet<PreviewExteriorPrograms.Program>();
             var silhouettes=new java.util.HashMap<String,String>();
-            int chairs=0,roofJoins=0;
+            int chairs=0,roofJoins=0,rooms=0,upper=0;
             var interiors=new StringBuilder();
             for(var sample:region) {
                 try {
                 var plan=BiomeArchitecturePreview.plan(sample);
-                appendInteriorSnapshot(interiors,plan);
-                var joins=BiomeArchitectureCatalogPreview.roofJoins(sample);
+                boolean compact=PreviewCompactBuildings.isCompact(sample);
+                var joins=compact?java.util.Set.<net.minecraft.core.BlockPos>of():BiomeArchitectureCatalogPreview.roofJoins(sample);
                 PreviewRoofEnvelope.validate(plan.cells(),joins);
                 roofJoins+=joins.size();
                 if(!plan.equals(BiomeArchitecturePreview.plan(sample))) throw new AssertionError("Unstable catalog plan");
                 if(!unique.add(plan.cells())) throw new AssertionError("Duplicate design geometry: "+sample.id());
                 chairs+=PreviewSeatingAudit.validate(plan.cells(),PreviewSeatingAudit.lowStairs(plan.cells()));
                 if(sample.width()>50||sample.depth()>74) throw new AssertionError("Catalog exceeds review plot");
-                if(style==VillageArchitecture.BiomeDialect.PLAINS) {
+                var layout=PreviewRoomLayout.layout(plan); rooms+=layout.partitions(); upper+=layout.upperLevels();
+                if(!PreviewRoomLayout.reachable(plan.cells(),plan.entrance()).containsAll(layout.upperTargets()))
+                    throw new AssertionError("Unreachable upper storey");
+                if(compact) {
+                    BiomeArchitecturePreview.validate(plan);
+                    long beds=plan.cells().values().stream().filter(s->s.getBlock() instanceof BedBlock
+                            &&s.getValue(BedBlock.PART)==BedPart.HEAD).count();
+                    if(beds!=PreviewCompactBuildings.spec(sample).beds()) throw new AssertionError("Compact bed capacity "+beds);
+                    String previous=silhouettes.putIfAbsent("compact:"+exteriorSilhouette(plan),sample.id());
+                    if(previous!=null) throw new AssertionError("Repeated compact exterior silhouette: "+previous+" / "+sample.id());
+                    verifyUpperLevelRejections(plan);
+                } else if(style==VillageArchitecture.BiomeDialect.PLAINS) {
                     var source=sample.role().equals("BANK")?PlainsLegacyArchitecturePreview.source("BANK")
                             :PlainsLegacyArchitecturePreview.source(sample.role(),BiomeArchitectureCatalogPreview.masterId(sample));
                     verifyLegacyCopy(plan,source);
@@ -195,6 +208,14 @@ public final class BiomeArchitecturePreviewSelfTest {
                     long moss=plan.cells().values().stream().filter(s->s.is(Blocks.MOSSY_COBBLESTONE)).count();
                     long plain=plan.cells().values().stream().filter(s->s.is(Blocks.COBBLESTONE)).count();
                     if(moss>3||plain<=moss) throw new AssertionError("Excess Taiga moss: "+sample.id());
+                    if(PreviewDoorwayAudit.baseline(plan).entrySet().stream().anyMatch(e->e.getKey().getY()>=4
+                            &&(e.getValue().is(Blocks.SPRUCE_STAIRS)||e.getValue().is(Blocks.SPRUCE_SLAB)
+                                ||e.getValue().is(Blocks.SPRUCE_PLANKS)&&!layout.floors().contains(e.getKey()))))
+                        throw new AssertionError("Non-log timber roofing in Taiga: "+sample.id());
+                    long courses=plan.cells().entrySet().stream().filter(e->e.getKey().getY()>=4&&e.getValue().is(Blocks.SPRUCE_LOG)
+                            &&e.getValue().getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS)
+                                    !=net.minecraft.core.Direction.Axis.Y).count();
+                    if(courses<8) throw new AssertionError("Missing horizontal bark-on roof courses: "+sample.id());
                 }
                 if(style==VillageArchitecture.BiomeDialect.DESERT&&plan.cells().values().stream()
                         .anyMatch(s->s.is(Blocks.ACACIA_STAIRS)||s.is(Blocks.ACACIA_PLANKS)||s.is(Blocks.ACACIA_LOG)))
@@ -214,17 +235,50 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(style!=VillageArchitecture.BiomeDialect.PLAINS&&programs.size()!=52)
                 failures.add("Incomplete unique exterior programs: "+style+" "+programs.size());
             System.out.println("PASS style seating audit "+style+": "+chairs+" unambiguous table-facing ground seats");
-            String original=switch(style) {
-                case PLAINS -> "3a17e46a086f292a452127ca6cbd51c8fc5bbb9459dd6aeafebb8da5b6f4120f";
-                case DESERT -> "628b3fcd91b0fc8509b275ddc426bc7d4de518666a292e06241d7513c1e29628";
-                case SAVANNA -> "ee253082394e7bd9372e884f8339ab3405190b18b0c3a084498eb2d6e0fe9272";
-                case TAIGA -> "15f35a0efe02801888f908966a32bb8c58f897053c399c54ae85c129bb155091";
-                case SNOWY -> "bd7e29c082e49f7540f1021518d821031e6d12486ba51f512fae5dd4d5ea0483";
-            };
-            if(!original.equals(snapshotHash(interiors.toString()))) failures.add("Pre-doorway occupied-storey snapshot changed: "+style);
-            else System.out.println("PASS retained pre-doorway snapshot "+style+"; "+roofJoins+" closed roof joins");
+            // Revision 8 explicitly redesigns interiors. Do not re-bless the retired revision-7
+            // interior hashes: enforce usable rooms/levels, beds, doors, seating and supports.
+            if(rooms<12||upper<8) failures.add("Insufficient purposeful rooms/upper levels: "+style+" "+rooms+"/"+upper);
+            System.out.println("ROOM COMPOSITION "+style+": "+rooms+" partitioned rooms; "+upper+" accessible upper levels; "+roofJoins+" closed roof joins");
         }
         if(!failures.isEmpty()) throw new AssertionError("Catalog admission failures ("+failures.size()+"): "+failures);
+    }
+    private static void verifyTierPolicy(java.util.List<BiomeArchitecturePreview.Sample> samples) {
+        for(var style:VillageArchitecture.BiomeDialect.values()) for(String role:samples.stream().map(BiomeArchitecturePreview.Sample::role).distinct().toList()) {
+            var first=PreviewArchitectureTiers.eligible(samples,style,role,1);
+            var fifth=PreviewArchitectureTiers.eligible(samples,style,role,5);
+            if(first.size()<2||first.stream().anyMatch(s->PreviewArchitectureTiers.size(s).minimumTier!=1)
+                    ||!fifth.containsAll(first)||fifth.size()!=samples.stream().filter(s->s.style()==style&&s.role().equals(role)).count())
+                throw new AssertionError("Tier progression missing compact designs: "+style+" "+role);
+            var selected=PreviewArchitectureTiers.select(samples,style,role,1,12345);
+            if(!first.contains(selected)||!selected.equals(PreviewArchitectureTiers.select(samples,style,role,1,12345)))
+                throw new AssertionError("Unstable staged tier selection");
+        }
+        System.out.println("PASS staged tiers: two compact designs per role/style at tier 1; all sizes retained at tier 5; seeded selection deterministic");
+    }
+    private static void verifyUpperLevelRejections(BiomeArchitecturePreview.Plan plan) {
+        if(PreviewRoomLayout.layout(plan).upperLevels()==0) return;
+        var targets=PreviewRoomLayout.layout(plan).upperTargets();
+        var rung=plan.cells().entrySet().stream().filter(e->e.getValue().is(Blocks.LADDER)&&e.getKey().getY()==2)
+                .map(java.util.Map.Entry::getKey).findFirst().orElseThrow();
+        for(boolean solid:new boolean[]{false,true}) {
+            var broken=new java.util.HashMap<>(plan.cells());
+            if(solid) broken.put(rung.above(2),Blocks.COBBLESTONE.defaultBlockState()); else broken.remove(rung);
+            if(PreviewRoomLayout.reachable(broken,plan.entrance()).containsAll(targets))
+                throw new AssertionError("Disconnected upper floor admitted in "+plan.sample().id());
+        }
+        var target=targets.iterator().next(); var blocked=new java.util.HashMap<>(plan.cells());
+        blocked.put(target.above(),Blocks.COBBLESTONE.defaultBlockState());
+        if(PreviewRoomLayout.reachable(blocked,plan.entrance()).contains(target)) throw new AssertionError("Low upper headroom admitted");
+    }
+    private static void verifyFloorBearingRejection() {
+        var sample=new BiomeArchitecturePreview.Sample(VillageArchitecture.BiomeDialect.TAIGA,"HOUSE","floor_bearing_negative",7,7);
+        var ground=net.minecraft.core.BlockPos.ZERO; var floor=ground.above(4);
+        var p=new BiomeArchitecturePreview.Plan(sample,java.util.Map.of(ground,Blocks.COBBLESTONE.defaultBlockState(),
+                floor,Blocks.SPRUCE_PLANKS.defaultBlockState()),java.util.Set.of(),ground.above(),6);
+        PreviewRoomLayout.register(p,0,0,java.util.Set.of(floor),java.util.Set.of());
+        try { PreviewRoomLayout.validate(p); throw new AssertionError("Floating upper floor admitted"); }
+        catch(IllegalStateException expected) { if(!expected.getMessage().contains("unanchored upper-floor plate")) throw expected; }
+        System.out.println("PASS elevated floor plates require structural connection to ground; floating islands rejected");
     }
     private static void appendInteriorSnapshot(StringBuilder target,BiomeArchitecturePreview.Plan plan) {
         target.append(plan.sample().id()).append('\n');

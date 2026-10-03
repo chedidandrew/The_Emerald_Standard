@@ -122,7 +122,7 @@ final class PreviewDoorwayAudit {
         // Audit every added wing, not just furniture targets. Plains upper-floor traversal
         // remains covered by its original native admission; its doors get clearance checks above.
         if(plan.sample().style()!=com.chedidandrew.emeraldstandard.core.VillageArchitecture.BiomeDialect.PLAINS) {
-            Set<BlockPos> reach=reach(cells,plan.entrance());
+            Set<BlockPos> reach=PreviewRoomLayout.reachable(cells,plan.entrance());
             for(BlockPos door:doors) if(!reach.contains(door))
                 throw new IllegalStateException(plan.sample().id()+" disconnected doorway: "+door);
         }
