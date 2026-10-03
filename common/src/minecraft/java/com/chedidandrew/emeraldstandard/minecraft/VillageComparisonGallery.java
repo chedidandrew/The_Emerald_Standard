@@ -128,6 +128,7 @@ public final class VillageComparisonGallery {
                 }
                 state.nextCourt++;
             } else {
+                validateSettledReviewLadders(server.overworld(),state.pairs);
                 writeIndex(server, state);
                 writeSignature(server.overworld(), state.signature, true);
                 state.ready = true;
@@ -306,6 +307,7 @@ public final class VillageComparisonGallery {
             }
             state.next = pairs.size();
             state.nextCourt = courts.size();
+            validateSettledReviewLadders(level,pairs);
             state.ready = true;
         } else if (!hasHeader) {
             requireEmptyMarkers(level, pairs.size() + courts.size());
@@ -581,6 +583,8 @@ public final class VillageComparisonGallery {
                     level.getBlockState(block.position()).canSurvive(level, block.position()));
         }
         if(pair.preview!=null) {
+            int ladders=validateReviewLadders(level,pair);
+            if(ladders>0) LOGGER.info("Comparison #{} ladder survival passed: {} rungs",e.index(),ladders);
             // Native survival for every new outdoor cell, including crops/lily pads absent from
             // the historical attachment whitelist. Do not assume an abstract support is enough.
             for(var cell:PreviewOutdoorPrograms.site(pair.preview).cells().entrySet()) {
@@ -606,6 +610,25 @@ public final class VillageComparisonGallery {
         placeLabel(level, new BlockPos(e.plotX() + HALF_PITCH + 8, e.surfaceY(), e.plotZ() + 4),
                 "#" + e.index() + " VANILLA", shortName(e.vanillaTemplate()), "Actual village NBT", "Curated, not worldgen");
         setChecked(level, pairMarker(level, e.index()), Blocks.EMERALD_BLOCK.defaultBlockState());
+    }
+
+    private static int validateReviewLadders(ServerLevel level,ResolvedPair pair) {
+        if(pair.preview==null) return 0;
+        int rungs=0;
+        BlockPos origin=new BlockPos(pair.entry.modX(),pair.entry.surfaceY(),pair.entry.modZ());
+        for(var cell:pair.preview.cells().entrySet()) if(cell.getValue().getBlock() instanceof net.minecraft.world.level.block.LadderBlock) {
+            BlockPos at=origin.offset(cell.getKey());BlockState actual=level.getBlockState(at);
+            var expected=new StructureGalleryBlock(at,cell.getValue());
+            StructureGallery.validateAttachmentState(pair.entry.index(),expected,actual,actual.canSurvive(level,at));
+            if(!actual.equals(expected.state())) throw new IllegalStateException("Review ladder changed orientation: "+at);
+            rungs++;
+        }
+        return rungs;
+    }
+    private static void validateSettledReviewLadders(ServerLevel level,List<ResolvedPair> pairs) {
+        int rungs=0;
+        for(ResolvedPair pair:pairs) rungs+=validateReviewLadders(level,pair);
+        if(rungs>0) LOGGER.info("Review settled ladder survival passed: {} rungs across {} designs",rungs,pairs.size());
     }
 
     private static void requireEmptyPlot(ServerLevel level, ComparisonEntry e) {

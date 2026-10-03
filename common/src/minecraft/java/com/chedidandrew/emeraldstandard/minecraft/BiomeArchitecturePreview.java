@@ -605,6 +605,7 @@ public final class BiomeArchitecturePreview {
     }
 
     public static void validate(Plan p) {
+        PreviewLadderSupport.validate(p.sample().id(),p.cells());
         PreviewRoomLayout.validate(p);
         PreviewDoorwayAudit.validate(p);
         PreviewDoorwayGlazing.validate(p);

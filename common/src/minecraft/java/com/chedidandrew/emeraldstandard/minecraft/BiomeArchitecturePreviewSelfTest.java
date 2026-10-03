@@ -24,6 +24,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyFloorBearingRejection();
         verifyRoomCeilings();
         verifyInteriorCirculation();
+        verifyLadderSupports();
         verifySupportRejections();
         verifyOutdoorGrade();
         verifyTaigaOverhangs();
@@ -66,7 +67,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         PreviewDoorwayAudit.report();
         PreviewDoorwayGlazing.report(BiomeArchitectureCatalogPreview.samples());
         PreviewWindowLighting.report(BiomeArchitectureCatalogPreview.samples());
-        int dividerColumns=0,upperLevels=0;
+        int dividerColumns=0,upperLevels=0,ladderRungs=0,ladderFrames=0,ladderDesigns=0;
         for(var sample:BiomeArchitectureCatalogPreview.samples()) {
             var p=BiomeArchitecturePreview.plan(sample);
             PreviewRoomLayout.validate(p);
@@ -75,7 +76,15 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(!narrow.isEmpty()||!drops.isEmpty()) throw new AssertionError("Incomplete circulation "+sample.id()+": narrow="+narrow+" drops="+drops);
             dividerColumns+=PreviewRoomLayout.layout(p).dividerTops().size();
             upperLevels+=PreviewRoomLayout.layout(p).upperLevels();
+            int rungs=(int)p.cells().values().stream().filter(s->s.getBlock() instanceof net.minecraft.world.level.block.LadderBlock).count();
+            if(rungs>0) ladderDesigns++;
+            ladderRungs+=rungs;
+            var frames=PreviewFacadePrograms.audit(p).ladderBearings();ladderFrames+=frames.size();
+            if(!frames.isEmpty()) System.out.println("LADDER FRAMED "+sample.id()+": "+frames);
+            verifyLadderPlacementOrder(p);
         }
+        System.out.println("LADDER CENSUS: 375 designs; "+ladderDesigns+" ladder-bearing designs; "+ladderRungs
+                +" sturdy-backed rungs; "+ladderFrames+" glazed bearings framed; all ladders placed after their supports");
         System.out.println("CEILING CENSUS: 375 designs; "+dividerColumns+" closed divider columns; "+upperLevels
                 +" accessible upper levels; zero usable floor areas below three-block structural headroom");
         System.out.println("CIRCULATION CENSUS: 375 designs; zero long one-block enclosed corridors; zero unguarded indoor upper-floor drops; roofed walking areas have block-light >=7 without skylight");
@@ -87,6 +96,53 @@ public final class BiomeArchitecturePreviewSelfTest {
         } finally {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
+        }
+    }
+    private static void verifyLadderSupports() {
+        for(var style:VillageArchitecture.BiomeDialect.values()) for(var facing:net.minecraft.core.Direction.Plane.HORIZONTAL) {
+            var sample=new BiomeArchitecturePreview.Sample(style,"HOUSE","ladder_fixture_"+style.id()+"_"+facing,11,11);
+            var cells=new java.util.LinkedHashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+            var rung=new net.minecraft.core.BlockPos(5,1,5);
+            var backing=rung.relative(facing.getOpposite());
+            var glass=backing.relative(facing.getClockWise());
+            for(int y=0;y<=4;y++) cells.put(backing.atY(y),Blocks.COBBLESTONE.defaultBlockState());
+            for(int y=1;y<=4;y++) cells.put(rung.atY(y),Blocks.LADDER.defaultBlockState()
+                    .setValue(net.minecraft.world.level.block.LadderBlock.FACING,facing));
+            cells.put(glass,Blocks.GLASS_PANE.defaultBlockState());
+            PreviewLadderSupport.validate(sample.id(),cells);
+            for(var bad:java.util.List.of(Blocks.GLASS_PANE,Blocks.STAINED_GLASS_PANE.blue(),Blocks.AIR)) {
+                var broken=new java.util.LinkedHashMap<>(cells);
+                broken.put(backing.above(),bad.defaultBlockState());
+                try { PreviewLadderSupport.validate(sample.id(),broken);throw new AssertionError("Non-sturdy ladder bearing admitted"); }
+                catch(IllegalStateException expected) { if(!expected.getMessage().contains("Unsupported review ladder")) throw expected; }
+                var p=new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(broken),java.util.Set.of(),rung,6);
+                if(bad==Blocks.AIR) {
+                    try { PreviewLadderSupport.frameGlazedBearings(p,broken);throw new AssertionError("Arbitrary missing ladder wall repaired"); }
+                    catch(IllegalStateException expected) { if(!expected.getMessage().contains("Unsupported review ladder")) throw expected; }
+                } else {
+                    var changed=PreviewLadderSupport.frameGlazedBearings(p,broken);
+                    if(!changed.equals(java.util.Set.of(backing.above()))
+                            ||!broken.get(backing.above()).is(PreviewDoorwayGlazing.jamb(sample))
+                            ||!broken.get(glass).is(Blocks.GLASS_PANE)
+                            ||!PreviewLadderSupport.frameGlazedBearings(p,broken).isEmpty())
+                        throw new AssertionError("Ladder mullion changed neighboring glazing or was not idempotent");
+                }
+            }
+            var expected=new StructureGalleryBlock(rung,cells.get(rung));
+            try { StructureGallery.validateAttachmentState(0,expected,Blocks.AIR.defaultBlockState(),true);
+                throw new AssertionError("A disappeared rung passed native survival as air"); }
+            catch(IllegalStateException rejected) { if(!rejected.getMessage().contains("missing or unsupported")) throw rejected; }
+        }
+        System.out.println("PASS ladder supports: five palettes/four directions; ordinary and stained panes rejected, scoped mullions preserve windows, missing walls and vanished rungs rejected");
+    }
+    private static void verifyLadderPlacementOrder(BiomeArchitecturePreview.Plan p) {
+        var blocks=p.blocks(net.minecraft.core.BlockPos.ZERO);
+        var positions=new java.util.HashMap<net.minecraft.core.BlockPos,Integer>();
+        for(int i=0;i<blocks.size();i++) positions.put(blocks.get(i).position(),i);
+        for(var block:blocks) if(block.state().getBlock() instanceof net.minecraft.world.level.block.LadderBlock) {
+            var backing=block.position().relative(block.state().getValue(net.minecraft.world.level.block.LadderBlock.FACING).getOpposite());
+            if(!positions.containsKey(backing)||positions.get(backing)>=positions.get(block.position()))
+                throw new AssertionError("Ladder placed before bearing: "+p.sample().id()+" "+block.position());
         }
     }
     private static void verifyRoomCeilings() {

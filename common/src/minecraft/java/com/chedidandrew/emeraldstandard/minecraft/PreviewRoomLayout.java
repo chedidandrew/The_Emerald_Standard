@@ -137,7 +137,7 @@ final class PreviewRoomLayout {
             BlockPos ladder=new BlockPos(x,1,z1);
             if(!PreviewDoorwayAudit.clear(cells,ladder)||!full(cells,ladder.below())) continue;
             boolean bearing=true;
-            for(int yy=1;yy<=y;yy++) bearing&=full(cells,new BlockPos(x,yy,back));
+            for(int yy=1;yy<=y;yy++) bearing&=PreviewLadderSupport.sturdy(cells,new BlockPos(x,yy,back),Direction.NORTH);
             if(!bearing) continue;
             int left=x,right=x;
             while(full(cells,new BlockPos(left-1,0,z0))) left--;

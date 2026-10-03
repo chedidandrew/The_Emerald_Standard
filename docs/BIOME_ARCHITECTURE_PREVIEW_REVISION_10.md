@@ -452,3 +452,45 @@ construction-safety and terrain reader guidance, corresponding compact pages and
 chapter/lectern routes. This remains an opt-in review catalog, not production
 adoption, a recipe change or an automatic alteration of existing saves. The
 existing guidance remains accurate; unrelated handbook prose is unchanged.
+
+## Window-backed ladders and placement survival
+
+The guard watch, blockhouse, gatehouse and citadel designs in Desert, Savanna,
+Taiga and Snowy had ladders crossing existing wall windows. Thirty-two pane
+cells across those sixteen designs could not carry their ladder segments.
+They now become solid regional mullions (cut sandstone, acacia or spruce logs),
+retaining the climb position and neighboring glazing. The final composition
+validates every ladder against the native sturdy face in its actual direction.
+Missing walls, doors or furniture are never silently replaced by this repair.
+Attic selection also checks the attachment face rather than just upward support,
+and facade glazing checks attachments at each edited height.
+
+Review placement now installs ladders after all their bearings. Previously,
+bottom-up ordering could expose a rung to neighbor updates while a later wall
+block was still air. Final live checks require the expected ladder to remain,
+with its correct orientation and native survival; air cannot pass merely because
+air itself can survive. The complete catalog is rechecked after placement settles
+and again when a completed review save is reopened. Nothing respawns broken
+rungs or hides failed placement.
+
+Validation: five-biome, four-direction native fixtures reject ordinary/stained
+pane bearings, missing walls and vanished ladder segments, and verify scoped,
+repeatable framing without changing neighboring windows. All 375 final designs
+pass, including 91 ladder-bearing designs and 493 sturdy-backed rungs. Placement
+order is checked for every rung. Fabric native admission/assemble, the complete
+common regression suite and filtered NeoForge loader test pass. Production's
+52 revision-11 designs and version-12 Bank remain unchanged.
+
+Fresh compact labeled profile `build/biome-preview-catalog-r10-14` placed all
+375 pairs / 750 actual structures, signature `78d50c40ab7be7dd`, content revision
+17 and comparison schema 1. Its actual-world settled survival check passed all
+493 rungs. Fifteen Desert #118 / Savanna #193 / Taiga #268 captures completed;
+selected actual interior views were inspected. The all-rung claim comes from
+native/live block checks, not visually inspecting every ladder. Earlier worlds
+are preserved, not automatically repaired. Main remains unchanged.
+
+Handbook accuracy review: rechecked the complete building-catalog,
+construction-safety and terrain reader guidance, corresponding compact text and
+chapter/lectern routing. This fixes only the opt-in architecture review catalog
+and its placement checks, not production construction, recipes or existing player
+saves. Current handbook guidance remains accurate; unrelated prose is unchanged.

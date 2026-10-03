@@ -11,7 +11,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 /** Review-only elevations, honest glazing and lighting. Every change has an explicit audit scope. */
 final class PreviewFacadePrograms {
     record Audit(Map<BlockPos,BlockState> before, Set<BlockPos> skin, Set<BlockPos> added, Set<BlockPos> removed,
-            Set<BlockPos> jambs,Set<BlockPos> windows,Map<Direction,Integer> faces) { }
+            Set<BlockPos> jambs,Set<BlockPos> windows,Set<BlockPos> ladderBearings,Map<Direction,Integer> faces) { }
     record Composition(int width,int spacing,int phase,int frame,boolean planted) { }
     private static final Map<String,Audit> AUDITS=new HashMap<>();
     private static final Map<String,Set<BlockPos>> LANES=new HashMap<>();
@@ -56,13 +56,15 @@ final class PreviewFacadePrograms {
             faces.put(face,count);
         }
         Set<BlockPos> jambs=PreviewDoorwayGlazing.frame(source.sample(),cells);
+        Set<BlockPos> ladderBearings=PreviewLadderSupport.frameGlazedBearings(source,cells);
+        skin.addAll(ladderBearings);
         Set<BlockPos> windows=PreviewWindowLighting.sealBlindWindows(source,cells);
         skin.addAll(jambs);skin.addAll(windows);
         added.addAll(PreviewWindowLighting.brightenRooms(source,cells));
         var lighting=PreviewWindowLighting.thinLanterns(source,cells);
         added.removeAll(lighting.removed());added.addAll(lighting.added());
         Plan result=new Plan(source.sample(),Map.copyOf(cells),source.access(),source.entrance(),source.height());
-        AUDITS.put(source.sample().id(),new Audit(source.cells(),Set.copyOf(skin),Set.copyOf(added),lighting.removed(),jambs,windows,Map.copyOf(faces)));
+        AUDITS.put(source.sample().id(),new Audit(source.cells(),Set.copyOf(skin),Set.copyOf(added),lighting.removed(),jambs,windows,ladderBearings,Map.copyOf(faces)));
         validate(result);
         return result;
     }
@@ -99,9 +101,10 @@ final class PreviewFacadePrograms {
             if(i%c.spacing()==c.phase()) {
                 for(int j=0;j<c.width()&&i+j<run.size()-1;j++) {
                     BlockPos window=run.get(i+j);
-                    if(doorLane(source,window)||attached(source,window,face)) continue;
+                    if(doorLane(source,window)) continue;
                     for(int y=2;y<=3;y++) {
                         BlockPos target=new BlockPos(window.getX(),y,window.getZ());
+                        if(attached(source,target,face)) continue;
                         BlockState old=source.cells().get(target);
                         if(old!=null&&Block.isShapeFullBlock(old.getCollisionShape(EmptyBlockGetter.INSTANCE,target))) {
                             edit(cells,target,Blocks.GLASS.defaultBlockState(),skin); changes++;
@@ -322,6 +325,7 @@ final class PreviewFacadePrograms {
         for(BlockPos at:p.cells().keySet()) if(!audit.before().containsKey(at)&&!audit.added().contains(at))
             throw new IllegalStateException("Unscoped exterior addition: "+at);
         PreviewDoorwayAudit.validate(p);
+        PreviewLadderSupport.validate(p.sample().id(),p.cells());
         PreviewDoorwayGlazing.validate(p);
         PreviewWindowLighting.validate(p);
     }

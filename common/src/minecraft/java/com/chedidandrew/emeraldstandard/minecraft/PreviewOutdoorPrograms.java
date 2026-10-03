@@ -36,7 +36,10 @@ final class PreviewOutdoorPrograms {
     static List<StructureGalleryBlock> blocks(BiomeArchitecturePreview.Plan p,BlockPos origin) {
         var cells=new HashMap<>(p.cells()); cells.putAll(site(p).cells());
         return cells.entrySet().stream().sorted(Map.Entry.comparingByKey(Comparator
-                .comparingInt((BlockPos at)->at.getY()).thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX)))
+                // Install every bearing before ladders; a valid final map alone cannot stop
+                // neighbor updates popping a rung while its later wall block is still air.
+                .comparingInt((BlockPos at)->cells.get(at).getBlock() instanceof LadderBlock?1:0)
+                .thenComparingInt(BlockPos::getY).thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX)))
                 .map(e->new StructureGalleryBlock(origin.offset(e.getKey()),e.getValue())).toList();
     }
     private static final class Yard {

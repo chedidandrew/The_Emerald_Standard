@@ -26,6 +26,16 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String taiga=Files.readString(root.resolve(path+"PreviewTaigaCraft.java"));
         String facade=Files.readString(root.resolve(path+"PreviewFacadePrograms.java"));
         String glazing=Files.readString(root.resolve(path+"PreviewDoorwayGlazing.java"));
+        String ladders=Files.readString(root.resolve(path+"PreviewLadderSupport.java"));
+        require(preview.contains("PreviewLadderSupport.validate(p.sample().id(),p.cells())")
+                &&facade.contains("PreviewLadderSupport.frameGlazedBearings(source,cells)")
+                &&facade.contains("if(attached(source,target,face)) continue")
+                &&ladders.contains("support.isFaceSturdy(EmptyBlockGetter.INSTANCE,at,face)")
+                &&outdoors.contains("cells.get(at).getBlock() instanceof LadderBlock?1:0")
+                &&gallery.contains("StructureGallery.validateAttachmentState(pair.entry.index(),expected,actual,actual.canSurvive(level,at))")
+                &&gallery.contains("validateSettledReviewLadders(server.overworld(),state.pairs)")
+                &&gallery.contains("validateSettledReviewLadders(level,pairs)"),
+                "Review ladders retain sturdy window mullions, install after bearings and cannot disappear unnoticed in live placement");
         require(rooms.contains("widenCorridors(source,cells,access)")&&rooms.contains("Math.abs(at.getZ()-z)<4")
                 &&rooms.contains("guardUpperEdges(source,cells,access)")&&rooms.contains("unguarded upper-floor drop")
                 &&facade.contains("PreviewWindowLighting.brightenRooms(source,cells)"),
@@ -129,6 +139,7 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
             require(!Files.readString(root.resolve(path+name)).contains("PreviewSupportAudit"),"Review support audit leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewDoorwayGlazing"),"Review glazing audit leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewWindowLighting"),"Review window/light composition leaked into production");
+            require(!Files.readString(root.resolve(path+name)).contains("PreviewLadderSupport"),"Review ladder support leaked into production");
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")
                 && init.contains("'1,2,3,4,5,6,7,8,9,10,11,12,13'"), "Preview launcher coverage");
