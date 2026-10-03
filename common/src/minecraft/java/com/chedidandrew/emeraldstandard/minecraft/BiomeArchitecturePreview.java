@@ -203,7 +203,8 @@ public final class BiomeArchitecturePreview {
         b.access.add(new BlockPos(12, 1, 11));
         b.put(10, 1, 8, Blocks.ANVIL); b.access.add(new BlockPos(10, 1, 7));
         b.put(14, 1, 8, Blocks.CAULDRON);
-        b.put(12, 1, 5, Blocks.GRINDSTONE); b.access.add(new BlockPos(12, 1, 4));
+        b.put(12, 1, 5, Blocks.GRINDSTONE.defaultBlockState().setValue(GrindstoneBlock.FACE,AttachFace.FLOOR));
+        b.access.add(new BlockPos(12, 1, 4));
         b.lamp(3, 3, 2); b.lamp(3, 3, 8); b.lamp(3, 3, 13);
         b.lamp(9, 3, 2); b.lamp(15, 3, 5); b.lamp(9, 3, 11);
     }

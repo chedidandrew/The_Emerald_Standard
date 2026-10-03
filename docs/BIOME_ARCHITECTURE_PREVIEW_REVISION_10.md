@@ -125,3 +125,48 @@ guidance and the compact terrain page. This remains an opted-in review catalog,
 not a change to released village generation, recipes or saved production plans;
 those explanations remain accurate and need no unrelated edits. The review
 branch remains separate from `main` pending the user's approval.
+
+## Whole-catalog floating-geometry audit
+
+Desert front-frieze teeth now sit immediately on the frieze instead of one block
+above it. Open forge ranges could previously leave those sandstone ornaments
+suspended above their pergola. The 20 compact home variants now include stone
+footing below their side-garden fences. Freestanding grindstones in the catalog
+and the earlier Desert forge prototype are explicitly floor-mounted rather than
+using the wall-mounted default.
+
+`PreviewSupportAudit` traces native outline-box contact from authored ground
+cells through the complete building and its outdoor site. A disconnected group
+fails just as an isolated block does. Full-block and half-slab gaps are distinguished;
+continuous stepped roof edges are admitted, but sole diagonal point contact is
+not. Fence, pane and wall arms are resolved against neighboring blueprint cells.
+Lantern attachment hooks, rooted crops over farmland and lily pads over retained
+water have explicit geometry handling; these still need a connected bearing and
+retain the independent native survival checks. This is a flat authored-site
+geometry admission check, not structural physics or permission to repair terrain.
+
+The check is required when validating each review site, before its blocks can be
+returned for gallery placement. It never automatically deletes decorations or
+fills arbitrary air. Negative tests cover isolated trim, half-slab air gaps,
+ungrounded brackets carrying lamps, point-only contact and connected-but-floating
+canopies. Positive tests retain carried canopies, native fence arms, roof-edge
+contact, supported pendant chains and rooted crops.
+
+Fabric native admission/assemble and the filtered NeoForge loader test both pass
+with zero disconnected shape cells in all 375 catalog designs and all 13 earlier
+prototypes. The common regression suite passes, including the placement-wiring
+and production-isolation guard. Existing room, bed, lighting, roof, doorway,
+furniture and landscape admission checks continue to pass.
+
+Fresh profile `build/biome-preview-catalog-r10-05` has completed all 375 comparison
+pairs (750 structures), including native outdoor survival checks. Its signature
+is `e9aa4a93a137eac5`, content revision 17, schema 1. Minecraft is left open at
+Desert #76, with all identifying signs retained; earlier worlds are preserved.
+The exhaustive claim here concerns automated blueprint admission, not a manual
+visual inspection of every elevation or automatic edits to existing worlds.
+
+Handbook accuracy review: checked chapter routing, building-catalog,
+construction-safety and terrain reader guidance and compact terrain-page routing
+against unchanged production behavior. No new recipe, live generation feature or
+world-repair promise is introduced. Those explanations remain accurate; the
+review-only check is documented here rather than advertised as a released change.

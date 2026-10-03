@@ -224,7 +224,10 @@ final class BiomeArchitectureCatalogPreview {
         for(int x:new int[]{forgeX-1,forgeX+1}) b.pier(x,d-3,2,b.p.trim());
         b.put(split+2,1,5,Blocks.ANVIL); b.access.add(new BlockPos(split+2,1,4));
         b.put(w-2,1,3,Blocks.CAULDRON);
-        if(variant%2==0) { b.put(2,1,d-5,Blocks.GRINDSTONE); b.access.add(new BlockPos(3,1,d-5)); }
+        if(variant%2==0) {
+            b.put(2,1,d-5,Blocks.GRINDSTONE.defaultBlockState().setValue(GrindstoneBlock.FACE,AttachFace.FLOOR));
+            b.access.add(new BlockPos(3,1,d-5));
+        }
     }
     private static void mine(Builder b,int variant) {
         int w=b.s.width(),d=b.s.depth(),mid=w/2;
@@ -293,7 +296,9 @@ final class BiomeArchitectureCatalogPreview {
         if(!b.s.role().equals("MARKET_SQUARE")) {
             if(b.s.style()==BiomeDialect.DESERT) {
                 for(int x=0;x<w;x++) b.put(x,h,front,Blocks.CHISELED_SANDSTONE);
-                for(int x=0;x<w;x+=4) b.put(x,h+2,front,Blocks.CUT_SANDSTONE);
+                // Small parapet teeth sit directly on the frieze, not a block above an
+                // open forge pergola or half-height terrace curb.
+                for(int x=0;x<w;x+=4) b.put(x,h+1,front,Blocks.CUT_SANDSTONE);
             } else if(b.s.style()==BiomeDialect.SAVANNA) {
                 for(int x:new int[]{0,w-1}) for(int z=front+1;z<d-1;z++) b.put(x,h,z,Blocks.TERRACOTTA);
                 for(int x=1;x<w-1;x++) if(Math.abs(x-b.entrance.getX())>2) b.put(x,1,0,Blocks.ACACIA_FENCE);

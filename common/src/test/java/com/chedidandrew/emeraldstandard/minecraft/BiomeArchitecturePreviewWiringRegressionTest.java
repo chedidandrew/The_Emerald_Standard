@@ -22,6 +22,10 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String tiers=Files.readString(root.resolve(path+"PreviewArchitectureTiers.java"));
         String compact=Files.readString(root.resolve(path+"PreviewCompactBuildings.java"));
         String outdoors=Files.readString(root.resolve(path+"PreviewOutdoorPrograms.java"));
+        String support=Files.readString(root.resolve(path+"PreviewSupportAudit.java"));
+        require(outdoors.contains("PreviewSupportAudit.validate(all,p.sample().id())")
+                &&support.contains(".getShape(EmptyBlockGetter.INSTANCE")&&support.contains("Floating review geometry")
+                &&support.contains("at.getY()<=0"),"All review sites reject disconnected native-shape geometry before placement");
         require(preview.contains("PreviewOutdoorPrograms.blocks(this,origin)")
                 &&outdoors.contains("Outdoor addition inside protected building bounds")
                 &&outdoors.contains("Uncontained water")&&outdoors.contains("Disconnected outdoor circulation")
@@ -82,6 +86,7 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
                     "Review helpers leaked into production: " + name);
             require(!Files.readString(root.resolve(path+name)).contains("PreviewFacadePrograms"),"Facades leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewOutdoorPrograms"),"Outdoor site programs leaked into production");
+            require(!Files.readString(root.resolve(path+name)).contains("PreviewSupportAudit"),"Review support audit leaked into production");
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")
                 && init.contains("'1,2,3,4,5,6,7,8,9,10,11,12,13'"), "Preview launcher coverage");

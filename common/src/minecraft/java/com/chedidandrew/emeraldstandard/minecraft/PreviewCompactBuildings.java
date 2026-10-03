@@ -200,7 +200,11 @@ final class PreviewCompactBuildings {
         switch(d.role()) {
             case "COTTAGE","HOUSE" -> {
                 // Side garden, attached sill and a little hedge; no planter in the doorway.
-                for(int z=f+1;z<=f+3;z++) { b.put(r+1,0,z,Blocks.GRASS_BLOCK); b.put(r+2,1,z,rail); }
+                for(int z=f+1;z<=f+3;z++) {
+                    b.put(r+1,0,z,Blocks.GRASS_BLOCK);
+                    b.put(r+2,0,z,stone); // The garden boundary has an authored ground bearing.
+                    b.put(r+2,1,z,rail);
+                }
                 b.put(r+1,1,f+1,b.s.style()==BiomeDialect.DESERT?Blocks.DEAD_BUSH:Blocks.POPPY);
                 b.put(r+1,1,f+3,b.s.style()==BiomeDialect.TAIGA?Blocks.FERN:Blocks.DANDELION);
                 if(d.id().equals("garden_cottage")) for(int x=c-1;x<=c+1;x++) b.put(x,5,0,b.p.roof());

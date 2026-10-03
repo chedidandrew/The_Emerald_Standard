@@ -288,6 +288,7 @@ final class PreviewOutdoorPrograms {
                     ||state.is(Blocks.ACACIA_LOG)||state.is(Blocks.ACACIA_PLANKS)))throw new IllegalStateException("Non-desert outdoor palette");
         }
         PreviewDoorwayAudit.validate(new BiomeArchitecturePreview.Plan(p.sample(),Map.copyOf(all),p.access(),p.entrance(),p.height()));
+        PreviewSupportAudit.validate(all,p.sample().id());
     }
     private static boolean full(BlockState state,BlockPos at) {
         return state!=null&&state.isFaceSturdy(EmptyBlockGetter.INSTANCE,at,Direction.UP);

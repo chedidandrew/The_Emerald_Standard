@@ -20,6 +20,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyRoofJoinRejections();
         verifyDoorwayRejections();
         verifyFloorBearingRejection();
+        verifySupportRejections();
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
@@ -52,6 +53,8 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyFacadeRejections();
         PreviewFacadePrograms.report(BiomeArchitectureCatalogPreview.samples());
         PreviewOutdoorPrograms.report(BiomeArchitectureCatalogPreview.samples());
+        PreviewSupportAudit.report(BiomeArchitecturePreview.samples());
+        PreviewSupportAudit.report(BiomeArchitectureCatalogPreview.samples());
         verifyOutdoorRejections();
         PreviewDoorwayAudit.report();
         if(VillageArchitecture.activeBlueprints().size()!=52
@@ -63,6 +66,57 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
         }
+    }
+    private static void verifySupportRejections() {
+        var cells=new java.util.HashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+        var zero=net.minecraft.core.BlockPos.ZERO;
+        cells.put(zero,Blocks.SANDSTONE.defaultBlockState());
+        cells.put(zero.above(2),Blocks.CUT_SANDSTONE.defaultBlockState());
+        expectSupportFailure(cells,"air gap below sandstone trim");
+        cells.put(zero.above(),Blocks.SANDSTONE_SLAB.defaultBlockState());
+        expectSupportFailure(cells,"half-slab air gap");
+        cells.put(zero.above(),Blocks.CUT_SANDSTONE.defaultBlockState());
+        PreviewSupportAudit.validate(cells,"supported parapet");
+        cells.clear();cells.put(zero,Blocks.SANDSTONE.defaultBlockState());
+        cells.put(zero.offset(2,3,0),Blocks.SANDSTONE.defaultBlockState());
+        cells.put(zero.offset(2,2,0),Blocks.LANTERN.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.LanternBlock.HANGING,true));
+        expectSupportFailure(cells,"lamp attached to an ungrounded bracket");
+        cells.clear();cells.put(zero,Blocks.SANDSTONE.defaultBlockState());
+        cells.put(zero.offset(1,1,1),Blocks.SANDSTONE.defaultBlockState());
+        expectSupportFailure(cells,"sole diagonal corner contact");
+        cells.clear();cells.put(zero,Blocks.SANDSTONE.defaultBlockState());
+        cells.put(zero.above(2),Blocks.OAK_SLAB.defaultBlockState());
+        cells.put(zero.above(2).east(),Blocks.OAK_SLAB.defaultBlockState());
+        expectSupportFailure(cells,"internally connected floating canopy");
+        cells.put(zero.above(),Blocks.OAK_LOG.defaultBlockState());
+        PreviewSupportAudit.validate(cells,"carried canopy");
+        cells.clear();cells.put(zero,Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.above(),Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.above().east(),Blocks.OAK_FENCE.defaultBlockState());
+        PreviewSupportAudit.validate(cells,"neighbor-connected fence arm");
+        cells.clear();cells.put(zero,Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.offset(1,1,0),Blocks.OAK_STAIRS.defaultBlockState());
+        PreviewSupportAudit.validate(cells,"continuous stepped roof edge");
+        cells.clear();cells.put(zero,Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.above(),Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.above(2),Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.above(3),Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.above(3).east(),Blocks.OAK_LOG.defaultBlockState());
+        cells.put(zero.above(2).east(),Blocks.IRON_CHAIN.defaultBlockState());
+        cells.put(zero.above().east(),Blocks.LANTERN.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.LanternBlock.HANGING,true));
+        PreviewSupportAudit.validate(cells,"supported pendant hook and chain");
+        cells.clear();cells.put(zero,Blocks.FARMLAND.defaultBlockState());
+        cells.put(zero.above(),Blocks.WHEAT.defaultBlockState());
+        PreviewSupportAudit.validate(cells,"native farmland offset with rooted crop");
+        System.out.println("PASS support negatives: isolated trim, half-slab gap, ungrounded lamp bracket, point-only contact and floating canopy");
+    }
+    private static void expectSupportFailure(java.util.Map<net.minecraft.core.BlockPos,
+            net.minecraft.world.level.block.state.BlockState> cells,String reason) {
+        try { PreviewSupportAudit.validate(cells,reason); }
+        catch(IllegalStateException expected) { return; }
+        throw new AssertionError("Floating geometry admitted: "+reason);
     }
     private static void verifyDesertDoors(BiomeArchitecturePreview.Plan plan) {
         if(plan.sample().style()!=VillageArchitecture.BiomeDialect.DESERT) return;
