@@ -41,8 +41,9 @@ public final class BiomeArchitecturePreview {
                     samples.add(PlainsLegacyArchitecturePreview.plan(role).sample());
                 continue;
             }
-            samples.add(new Sample(style, "HOUSE", style.id() + "_hearth_home", 13, 13));
-            samples.add(new Sample(style, "BANK", style.id() + "_village_bank", 17, 17));
+            int roofMargin=style==BiomeDialect.TAIGA?2:0;
+            samples.add(new Sample(style, "HOUSE", style.id() + "_hearth_home", 13+roofMargin, 13+roofMargin));
+            samples.add(new Sample(style, "BANK", style.id() + "_village_bank", 17+roofMargin, 17+roofMargin));
             if (style == BiomeDialect.PLAINS || style == BiomeDialect.DESERT)
                 samples.add(new Sample(style, "INN", style.id() + "_guesthouse", 21, 17));
             if (style == BiomeDialect.DESERT)
@@ -54,7 +55,8 @@ public final class BiomeArchitecturePreview {
         if(sample.id().startsWith("compact_")) return PreviewCompactBuildings.plan(sample);
         if(sample.id().startsWith("catalog_")) return BiomeArchitectureCatalogPreview.plan(sample);
         if (sample.style()==BiomeDialect.PLAINS) return PlainsLegacyArchitecturePreview.plan(sample.role());
-        Builder b = new Builder(sample);
+        boolean taiga=sample.style()==BiomeDialect.TAIGA;
+        Builder b = new Builder(taiga?new Sample(sample.style(),sample.role(),sample.id(),sample.width()-2,sample.depth()-2):sample);
         switch (sample.role()) {
             case "BANK" -> bank(b);
             case "INN" -> inn(b);
@@ -64,7 +66,14 @@ public final class BiomeArchitecturePreview {
         b.details();
         b.regionalCraft();
         PreviewTaigaCraft.apply(b);
-        Plan plan = PreviewFacadePrograms.apply(PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(b.finish())));
+        Plan shell=b.finish();
+        if(taiga) {
+            Map<BlockPos,BlockState> cells=new LinkedHashMap<>();
+            shell.cells().forEach((at,state)->cells.put(at.offset(1,0,1),state));
+            Set<BlockPos> access=new HashSet<>();shell.access().forEach(at->access.add(at.offset(1,0,1)));
+            shell=new Plan(sample,Map.copyOf(cells),Set.copyOf(access),shell.entrance().offset(1,0,1),shell.height());
+        }
+        Plan plan = PreviewFacadePrograms.apply(PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(shell)));
         validate(plan);
         return plan;
     }
@@ -238,6 +247,7 @@ public final class BiomeArchitecturePreview {
     static final class Builder {
         final Sample s; final Palette p; final Map<BlockPos, BlockState> cells = new LinkedHashMap<>();
         final Map<BlockPos,BlockState> roofJoins=new LinkedHashMap<>();
+        final Map<BlockPos,BlockState> roofEaves=new LinkedHashMap<>();
         final Set<BlockPos> access = new HashSet<>(); BlockPos entrance;
         Builder(Sample s) { this.s = s; p = palette(s.style()); }
         void put(int x, int y, int z, Block block) { put(x, y, z, block.defaultBlockState()); }
@@ -283,6 +293,7 @@ public final class BiomeArchitecturePreview {
                 if(x==x0||x==x1||z==z0||z==z1) put(x,y+1,z,p.roofSlab);
             }
             for(int x:new int[]{x0,x1}) for(int z:new int[]{z0,z1}) put(x,y+1,z,p.roof);
+            for(int x=x0;x<=x1;x++) PreviewTaigaCraft.course(this,Direction.Axis.Z,x,z0,z1,y,x0,x1);
         }
         void gable(int x0,int x1,int z0,int z1,int y,boolean snow) {
             // Taiga has a tall log gable; snowy uses a lower two-course step profile.
@@ -292,6 +303,7 @@ public final class BiomeArchitecturePreview {
             for(int x=x0;x<=x1;x++) {
                 int rise=shallow?Math.min(x-x0,x1-x)/2:Math.min(x-x0,x1-x);
                 int roofY=y+rise;
+                PreviewTaigaCraft.course(this,Direction.Axis.Z,x,z0,z1,roofY,x0,x1);
                 for(int z=z0;z<=z1;z++) {
                     put(x,roofY,z,s.style()==BiomeDialect.TAIGA ? Blocks.SPRUCE_LOG.defaultBlockState()
                             .setValue(BlockStateProperties.AXIS,Direction.Axis.Z) : x==mid?p.roofSlab.defaultBlockState():p.roofStairs.defaultBlockState()

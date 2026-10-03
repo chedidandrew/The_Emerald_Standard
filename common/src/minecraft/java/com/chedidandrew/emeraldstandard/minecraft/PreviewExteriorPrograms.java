@@ -166,6 +166,7 @@ final class PreviewExteriorPrograms {
         int zm=(z0+z1)/2;
         for(int z=z0;z<=z1;z++) {
             int rise=Math.min(z-z0,z1-z)/(snow?2:1);
+            PreviewTaigaCraft.course(b,Direction.Axis.X,z,x0,x1,y+rise,z0,z1);
             for(int x=x0;x<=x1;x++) {
                 b.put(x,y+rise,z,snow?b.p.roof().defaultBlockState():z==zm?b.p.roofSlab().defaultBlockState()
                         :b.p.roofStairs().defaultBlockState().setValue(StairBlock.FACING,z<zm?Direction.SOUTH:Direction.NORTH));
@@ -179,6 +180,7 @@ final class PreviewExteriorPrograms {
         int max=b.s.style()==BiomeDialect.TAIGA?3:2;
         for(int x=x0;x<=x1;x++) {
             int step=(reverse?x1-x:x-x0)*max/Math.max(1,x1-x0);
+            PreviewTaigaCraft.course(b,Direction.Axis.Z,x,z0,z1,y+step,x0,x1);
             for(int z=z0;z<=z1;z++) {
                 b.put(x,y+step,z,b.p.roof());
                 if(b.s.style()==BiomeDialect.SNOWY) b.put(x,y+step+1,z,Blocks.SNOW);

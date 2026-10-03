@@ -126,7 +126,9 @@ public final class VillageComparisonGalleryWiringRegressionTest {
         String previousRow = body(source, "private static ViewPose clearPreviousRow(");
         require(framing.contains("(16.0 / 9.0) * 0.65")
                         && framing.contains("Math.max(horizontalDistance, verticalDistance)")
-                        && previousRow.contains("e.plotZ() == entry.plotZ() - ROW_PITCH")
+                        && previousRow.contains("previousPreviewRow(") && previousRow.contains("if(previous==null) return camera")
+                        && source.contains("e.plotX() == entry.plotX() && e.plotZ() < entry.plotZ()")
+                        && source.contains(".max(Comparator.comparingInt(ComparisonEntry::plotZ))")
                         && previousRow.contains("exitFraction >= 1.0")
                         && previousRow.contains("roofClearance - targetY * exitFraction")
                         && body(source, "public static List<ViewPose> captureViews(").contains("clearPreviousRow("),

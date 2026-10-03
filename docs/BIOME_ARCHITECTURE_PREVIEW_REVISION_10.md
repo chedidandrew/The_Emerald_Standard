@@ -3,7 +3,8 @@
 Branch: `codex/biome-architecture-preview`. Review-only; not merged into main or
 selected by normal development. Existing approved buildings and earlier review
 saves are untouched. The building catalog still contains 375 designs, including
-110 compact designs. Building geometry and interior arrangements are unchanged.
+110 compact designs. The initial yard pass retained building geometry and interior
+arrangements; later refinements are recorded below, including Taiga roof overhangs.
 
 ## Outdoor composition
 
@@ -212,3 +213,50 @@ This remains an opted-in architecture-review catalog, not released village
 generation, a new recipe or automatic repair of existing worlds. Those
 explanations remain accurate without unrelated edits. Existing review worlds
 are preserved and `main` remains untouched pending user approval.
+
+## Taiga roof depth and compact review layout
+
+Explicit Taiga roof courses now draft one-block front/rear end-grain projections
+and lateral log eaves. Gables, turned ridges, lean-to ranges, courtyards,
+multiple ranges and low roof decks keep their original pitch and ridge heights.
+The projecting material is bark-on spruce log with the axis along its course.
+Final composition adds only vacant cells: occupied chimneys, another roof range,
+doorways and decorative fixtures are retained. Catalog and compact roofs stay
+within their existing reserved padding; the two early Taiga prototypes reserve
+a one-block border and translate their original shells into it. Normal gameplay
+blueprints and other biomes' architecture are not migrated or reskinned.
+
+The full comparison gallery now uses 112-block pair columns and 72-block rows
+instead of 160 and 128. Biome districts occupy a three-by-two grid with 16-block
+separators instead of a long five-district strip. Every complete outdoor site
+and actual rotated vanilla reference is checked against its reserved half-parcel
+before placement; compressing the gallery never clips yards or overlays another
+design. Existing worlds retain their previous arrangement and signature.
+
+Camera clearance finds the nearest actual preceding parcel in the same column,
+including across the new district separators, and admits columns with no previous
+parcel. It no longer assumes that every nonzero row has a predecessor exactly
+one row pitch away. Front/rear visits and identifying signs are retained.
+
+Native tests cover all ten roof forms, connected supports, one-block front/rear
+and side projections, occupied-cell preservation and other-biome isolation.
+All 375 complete outdoor footprints fit disjoint compact parcels. Layout tests
+cover ordinary rows, lower-district boundaries, absent predecessors and rejection
+of oversized references. Existing roof joins, rooms, beds, seating, lighting,
+doorways and native survival gates remain enabled.
+
+Fabric native admission/assemble, the common regression suite and the filtered
+NeoForge loader test pass. All 375 designs and 13 early prototypes retain zero
+disconnected shape cells; all 858 doors retain clear sides. Fresh compact profile
+`build/biome-preview-catalog-r10-07` completed 375 pairs / 750 actual structures.
+Its signature is `859759bfcddce8b1`, content revision 17, comparison schema 1.
+After the camera-boundary correction, its five-view Taiga #233 capture completed;
+the actual exterior and paired views were inspected for roof projection and
+tighter spacing. Interactive review opens at Taiga #233 in daylight. Earlier
+review worlds are preserved, and `main` remains untouched pending approval.
+
+Handbook accuracy review: checked reader building-catalog guidance, chapter
+routing and compact/terrain guidance against unchanged production behavior.
+These are opt-in review geometry and gallery navigation refinements, not a
+released generation mode, recipe or automatic repair of existing saves; no
+unrelated handbook text is changed to advertise unfinished production adoption.

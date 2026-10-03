@@ -23,6 +23,18 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String compact=Files.readString(root.resolve(path+"PreviewCompactBuildings.java"));
         String outdoors=Files.readString(root.resolve(path+"PreviewOutdoorPrograms.java"));
         String support=Files.readString(root.resolve(path+"PreviewSupportAudit.java"));
+        String taiga=Files.readString(root.resolve(path+"PreviewTaigaCraft.java"));
+        require(taiga.contains("first-1,last+1")&&taiga.contains("b.cells.putIfAbsent(at,state)")
+                &&preview.contains("PreviewTaigaCraft.course(this")&&exteriors.contains("PreviewTaigaCraft.course(b")
+                &&compact.contains("PreviewTaigaCraft.course(b"),"Taiga courses explicitly project roofs without overwriting occupied geometry");
+        require(gallery.contains("PREVIEW_HALF_PITCH = 56")&&gallery.contains("PREVIEW_ROW_PITCH = 72")
+                &&gallery.contains("(district%3)*districtWidth")&&gallery.contains("(district/3)*districtDepth")
+                &&gallery.contains("validatePreviewParcel(plan,size.getX(),size.getZ())"),
+                "Compact review districts reserve complete yards and real reference template bounds");
+        require(gallery.contains("!state.reviewOpened")&&gallery.contains("state.reviewOpened=openCatalogReview(server)")
+                &&gallery.contains("server.getPlayerList().getPlayers().isEmpty()) return false")
+                &&gallery.contains("\"time set noon\""),
+                "Fresh and reopened review worlds open the exterior once after a player is present");
         require(outdoors.contains("PreviewSupportAudit.validate(p,all)")
                 &&support.contains(".getShape(EmptyBlockGetter.INSTANCE")&&support.contains("Floating review geometry")
                 &&support.contains("at.getY()<=0"),"All review sites reject disconnected native-shape geometry before placement");

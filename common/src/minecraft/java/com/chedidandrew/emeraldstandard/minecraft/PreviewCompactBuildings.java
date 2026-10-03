@@ -155,6 +155,7 @@ final class PreviewCompactBuildings {
             int mid=(f+back)/2;
             for(int z=f;z<=back;z++) {
                 int y=h+1+Math.min(z-f,back-z);
+                PreviewTaigaCraft.course(b,Direction.Axis.X,z,l,r,y,f,back);
                 for(int x=l;x<=r;x++) {
                     BlockState top=b.s.style()==BiomeDialect.TAIGA?Blocks.SPRUCE_LOG.defaultBlockState()
                             .setValue(BlockStateProperties.AXIS,Direction.Axis.X)
@@ -171,6 +172,7 @@ final class PreviewCompactBuildings {
             boolean reverse=d.role().equals("MINE_ENTRANCE");
             for(int x=l;x<=r;x++) {
                 int rise=(reverse?r-x:x-l)/2,top=h+1+rise;
+                PreviewTaigaCraft.course(b,Direction.Axis.Z,x,f,back,top,l,r);
                 for(int z=f;z<=back;z++) {
                     b.put(x,top,z,b.s.style()==BiomeDialect.TAIGA?Blocks.SPRUCE_LOG.defaultBlockState()
                             .setValue(BlockStateProperties.AXIS,Direction.Axis.Z):b.p.roof().defaultBlockState());
@@ -182,6 +184,7 @@ final class PreviewCompactBuildings {
             // A low, broad merchants' canopy, not the steep residential roof profile.
             for(int x=l;x<=r;x++) {
                 int top=h+1+Math.min(x-l,r-x)/2;
+                PreviewTaigaCraft.course(b,Direction.Axis.Z,x,f,back,top,l,r);
                 for(int z=f;z<=back;z++) {
                     b.put(x,top,z,b.s.style()==BiomeDialect.TAIGA?Blocks.SPRUCE_LOG.defaultBlockState()
                             .setValue(BlockStateProperties.AXIS,Direction.Axis.Z):b.p.roof().defaultBlockState());

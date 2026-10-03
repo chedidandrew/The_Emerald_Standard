@@ -64,9 +64,11 @@ public final class VillageComparisonGallery {
     public static final int COMPARISON_SCHEMA = 1;
     private static final Logger LOGGER = LoggerFactory.getLogger("the_emerald_standard_comparison");
     private static final int COLUMNS = 8;
-    private static final int HALF_PITCH = Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY) ? 80 : 56;
+    static final int PREVIEW_HALF_PITCH = 56;
+    static final int PREVIEW_ROW_PITCH = 72;
+    private static final int HALF_PITCH = 56;
     private static final int PAIR_PITCH = HALF_PITCH * 2;
-    private static final int ROW_PITCH = Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY) ? 128 : 96;
+    private static final int ROW_PITCH = Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY) ? PREVIEW_ROW_PITCH : 96;
     private static final int DISTRICT_PITCH = COLUMNS * PAIR_PITCH + 128;
     private static final int FOUNDATION_DEPTH = 6;
     private static final Map<MinecraftServer, BuildState> STATES = new WeakHashMap<>();
@@ -93,6 +95,8 @@ public final class VillageComparisonGallery {
     public static void tick(MinecraftServer server) {
         BuildState state = STATES.get(server);
         if (state == null || state.ready || state.failure != null || !isExactWorld(server)) {
+            if(state!=null&&state.ready&&state.failure==null&&isExactWorld(server)&&!state.reviewOpened)
+                state.reviewOpened=openCatalogReview(server);
             return;
         }
         try {
@@ -127,7 +131,7 @@ public final class VillageComparisonGallery {
                 writeIndex(server, state);
                 writeSignature(server.overworld(), state.signature, true);
                 state.ready = true;
-                openCatalogReview(server);
+                state.reviewOpened=openCatalogReview(server);
                 LOGGER.info("Village comparison ready: {} pairs plus {} vanilla context courts; {} actual structures",
                         state.pairs.size(), state.courts.size(), state.pairs.size() * 2 + state.courts.size() * 4);
             }
@@ -137,16 +141,19 @@ public final class VillageComparisonGallery {
         }
     }
 
-    private static void openCatalogReview(MinecraftServer server) {
+    private static boolean openCatalogReview(MinecraftServer server) {
         if (!Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)
                 || !Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)
-                || Boolean.getBoolean(ENABLE_PROPERTY + ".capture")) return;
+                || Boolean.getBoolean(ENABLE_PROPERTY + ".capture")
+                ||server.getPlayerList().getPlayers().isEmpty()) return false;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 204");
+            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 233");
+            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "time set noon");
             player.sendSystemMessage(Component.literal("Full architecture review: 52 designs + Bank + 22 compact designs per style. "
                     + "Plains 1–75; Desert 76–150; Savanna 151–225; Taiga 226–300; Snowy 301–375. "
                     + "Use /emerald comparison visit <number>, or add back for the rear elevation. Every building has a sign. Review only; main unchanged."));
         }
+        return true;
     }
 
     /** Exact readiness for optional capture harnesses. No screenshot batch should start earlier. */
@@ -390,21 +397,39 @@ public final class VillageComparisonGallery {
             Vec3i size = template.getSize(rotation);
             boolean full = Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY);
             int regionSize=(int)BiomeArchitecturePreview.reviewSamples().stream().filter(s->s.style()==sample.style()).count();
-            int local = result.size() % regionSize, district = result.size() / regionSize;
-            int plotX = full ? district * DISTRICT_PITCH + (local % COLUMNS) * PAIR_PITCH : result.size() * PAIR_PITCH;
-            int plotZ = full ? (local / COLUMNS) * ROW_PITCH : 0;
+            BlockPos plot=previewPlotOrigin(result.size(),regionSize,full);
+            int plotX=plot.getX(),plotZ=plot.getZ();
             int modX = plotX + (HALF_PITCH - sample.width()) / 2;
             int vanillaX = plotX + HALF_PITCH + (HALF_PITCH - size.getX()) / 2;
+            validatePreviewParcel(plan,size.getX(),size.getZ());
             BlockPos vanillaOrigin = template.getZeroPositionWithTransform(
-                    new BlockPos(vanillaX, vanillaOriginY(surfaceY), plotZ + 18), Mirror.NONE, rotation);
+                    new BlockPos(vanillaX, vanillaOriginY(surfaceY), plotZ + 12), Mirror.NONE, rotation);
             ComparisonEntry entry = new ComparisonEntry(result.size()+1, sample.style().id(), sample.role(),
                     sample.id(), BiomeArchitecturePreview.REVISION, reference.toString(),
                     "Art-direction prototype; " + analogueDescription(sample.role()), surfaceY, plotX, plotZ,
-                    modX, plotZ + 18, sample.width(), sample.depth(), plan.height(),
-                    vanillaX, plotZ + 18, size.getX(), size.getZ(), size.getY());
+                    modX, plotZ + 12, sample.width(), sample.depth(), plan.height(),
+                    vanillaX, plotZ + 12, size.getX(), size.getZ(), size.getY());
             result.add(new ResolvedPair(entry, null, sample.style(), template, vanillaOrigin, rotation, plan));
         }
         return List.copyOf(result);
+    }
+
+    /** Compact review-only districts in a three-by-two grid, with every complete yard reserved. */
+    static BlockPos previewPlotOrigin(int ordinal,int regionSize,boolean full) {
+        if(!full) return new BlockPos(ordinal*PREVIEW_HALF_PITCH*2,0,0);
+        int local=ordinal%regionSize,district=ordinal/regionSize;
+        int districtWidth=COLUMNS*PREVIEW_HALF_PITCH*2+16;
+        int districtDepth=((regionSize+COLUMNS-1)/COLUMNS)*PREVIEW_ROW_PITCH+16;
+        return new BlockPos((district%3)*districtWidth+(local%COLUMNS)*PREVIEW_HALF_PITCH*2,0,
+                (district/3)*districtDepth+(local/COLUMNS)*PREVIEW_ROW_PITCH);
+    }
+    static void validatePreviewParcel(BiomeArchitecturePreview.Plan plan,int vanillaWidth,int vanillaDepth) {
+        int x=(PREVIEW_HALF_PITCH-plan.sample().width())/2;
+        var site=PreviewOutdoorPrograms.site(plan);
+        if(x+site.minX()<2||x+site.maxX()>=PREVIEW_HALF_PITCH-2
+                ||12+site.minZ()<6||12+site.maxZ()>=PREVIEW_ROW_PITCH-2
+                ||vanillaWidth+4>PREVIEW_HALF_PITCH||12+vanillaDepth>=PREVIEW_ROW_PITCH-2)
+            throw new IllegalStateException("Compact review parcel exceeded: "+plan.sample().id());
     }
 
     private static List<VillageCourt> resolveCourts(ServerLevel level, int surfaceY) {
@@ -918,9 +943,8 @@ public final class VillageComparisonGallery {
         if (entry.plotZ() == 0) {
             return camera;
         }
-        ComparisonEntry previous = pairs.stream().map(ResolvedPair::entry)
-                .filter(e -> e.plotX() == entry.plotX() && e.plotZ() == entry.plotZ() - ROW_PITCH)
-                .findFirst().orElseThrow();
+        ComparisonEntry previous = previousPreviewRow(pairs.stream().map(ResolvedPair::entry).toList(),entry);
+        if(previous==null) return camera;
         double previousRear = Math.max(previous.modZ() + previous.modDepth() + 8,
                 previous.vanillaZ() + previous.vanillaDepth()) + 2.0;
         if (camera.z() > previousRear) {
@@ -940,6 +964,12 @@ public final class VillageComparisonGallery {
         float pitch = (float) Math.toDegrees(Math.atan2(eyeY - targetY, distance));
         return new ViewPose(camera.pairIndex(), camera.view(), camera.x(), eyeY - 1.62,
                 camera.z(), camera.yaw(), pitch, camera.verticalFovDegrees());
+    }
+
+    static ComparisonEntry previousPreviewRow(List<ComparisonEntry> entries,ComparisonEntry entry) {
+        // First rows of lower districts have an intentional gap, not a predecessor one pitch away.
+        return entries.stream().filter(e -> e.plotX() == entry.plotX() && e.plotZ() < entry.plotZ())
+                .max(Comparator.comparingInt(ComparisonEntry::plotZ)).orElse(null);
     }
 
     private static String shortName(String path) {
@@ -975,6 +1005,7 @@ public final class VillageComparisonGallery {
     }
 
     private static final class BuildState {
+        private boolean reviewOpened;
         private final List<ResolvedPair> pairs;
         private final List<VillageCourt> courts;
         private final long signature;

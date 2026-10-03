@@ -22,6 +22,8 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyFloorBearingRejection();
         verifySupportRejections();
         verifyOutdoorGrade();
+        verifyTaigaOverhangs();
+        verifyCompactReviewLayout();
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
@@ -104,6 +106,66 @@ public final class BiomeArchitecturePreviewSelfTest {
         try { PreviewSupportAudit.validate(p,unsupported);throw new AssertionError("Above-grade outdoor prop treated as ground"); }
         catch(IllegalStateException expected) { }
         System.out.println("PASS outdoor grade: exact one-block cells/routes transform, 375 flush sites, original building cells retained and unsupported y=0 props rejected");
+    }
+    private static void verifyTaigaOverhangs() {
+        for(var style:VillageArchitecture.BiomeDialect.values()) for(var form:PreviewExteriorPrograms.Form.values()) {
+            var b=new BiomeArchitecturePreview.Builder(new BiomeArchitecturePreview.Sample(style,"HOUSE","compact_roof_fixture",18,18));
+            b.room(2,13,2,13,4);
+            PreviewExteriorPrograms.shell(b,form,2,13,2,13,6,0,4);
+            PreviewRoofEnvelope.seal(b);
+            var before=java.util.Map.copyOf(b.cells);
+            PreviewTaigaCraft.apply(b);
+            if(style!=VillageArchitecture.BiomeDialect.TAIGA) {
+                if(!b.roofEaves.isEmpty()||!before.equals(b.cells)) throw new AssertionError("Taiga eaves changed another biome");
+                continue;
+            }
+            if(b.roofEaves.isEmpty())throw new AssertionError("Roof form missing eaves: "+form);
+            b.roofEaves.forEach((at,log)-> {
+                if(!before.containsKey(at)&&!log.equals(b.cells.get(at)))throw new AssertionError("Missing projected log course: "+form+" "+at);
+            });
+            PreviewRoofEnvelope.validate(b.cells,b.roofJoins.keySet());
+            PreviewSupportAudit.validate(b.cells,"taiga-eaves-"+form);
+        }
+        var b=new BiomeArchitecturePreview.Builder(new BiomeArchitecturePreview.Sample(VillageArchitecture.BiomeDialect.TAIGA,"HOUSE","compact_roof_fixture",14,14));
+        b.room(2,11,2,11,4);b.gable(2,11,2,11,5,false);
+        var protectedCell=new net.minecraft.core.BlockPos(5,8,1);
+        b.cells.put(protectedCell,Blocks.COBBLESTONE.defaultBlockState());
+        PreviewTaigaCraft.apply(b);
+        if(!b.cells.get(new net.minecraft.core.BlockPos(2,5,1)).is(Blocks.SPRUCE_LOG)
+                ||!b.cells.get(new net.minecraft.core.BlockPos(1,5,5)).is(Blocks.SPRUCE_LOG)
+                ||!b.cells.get(new net.minecraft.core.BlockPos(5,8,12)).is(Blocks.SPRUCE_LOG)
+                ||!b.cells.get(protectedCell).is(Blocks.COBBLESTONE))throw new AssertionError("One-block gable/eave projection or occupied-cell preservation failed");
+        System.out.println("PASS Taiga eaves: all ten roof forms carried; front, rear and side log projections; occupied geometry and other biomes retained");
+    }
+    private static void verifyCompactReviewLayout() {
+        var samples=BiomeArchitectureCatalogPreview.samples();
+        var origins=new java.util.ArrayList<net.minecraft.core.BlockPos>();
+        var entries=new java.util.ArrayList<VillageComparisonGallery.ComparisonEntry>();
+        int maxX=0,maxZ=0;
+        for(int i=0;i<samples.size();i++) {
+            var plan=BiomeArchitecturePreview.plan(samples.get(i));
+            VillageComparisonGallery.validatePreviewParcel(plan,1,1);
+            var origin=VillageComparisonGallery.previewPlotOrigin(i,75,true);
+            for(var old:origins) if(Math.abs(origin.getX()-old.getX())<112&&Math.abs(origin.getZ()-old.getZ())<72)
+                throw new AssertionError("Compact parcels overlap: "+i);
+            origins.add(origin);maxX=Math.max(maxX,origin.getX()+112);maxZ=Math.max(maxZ,origin.getZ()+72);
+            entries.add(new VillageComparisonGallery.ComparisonEntry(i+1,samples.get(i).style().id(),"HOUSE","fixture",10,
+                    "vanilla","fixture",0,origin.getX(),origin.getZ(),origin.getX()+8,origin.getZ()+12,20,20,12,
+                    origin.getX()+68,origin.getZ()+12,9,9,6));
+        }
+        if(origins.get(1).getX()-origins.getFirst().getX()!=112
+                ||origins.get(8).getZ()-origins.getFirst().getZ()!=72
+                ||origins.get(225).getX()!=0||origins.get(225).getZ()!=736
+                ||maxX>2736||maxZ>1472)throw new AssertionError("Compact district grid regressed");
+        if(VillageComparisonGallery.previousPreviewRow(entries,entries.getFirst())!=null
+                ||VillageComparisonGallery.previousPreviewRow(entries,entries.get(8))!=entries.getFirst()
+                ||VillageComparisonGallery.previousPreviewRow(entries,entries.get(225))!=entries.get(72)
+                ||VillageComparisonGallery.previousPreviewRow(java.util.List.of(entries.get(225)),entries.get(225))!=null)
+            throw new AssertionError("Camera predecessor lookup failed at district boundary or missing row");
+        try { VillageComparisonGallery.validatePreviewParcel(BiomeArchitecturePreview.plan(samples.getFirst()),200,200);
+            throw new AssertionError("Oversized reference admitted into compact parcel");
+        } catch(IllegalStateException expected) { }
+        System.out.println("PASS compact review: 375 disjoint parcels, complete yards reserved; 112-block columns / 72-block rows; three-by-two district grid");
     }
     private static void verifySupportRejections() {
         var cells=new java.util.HashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
