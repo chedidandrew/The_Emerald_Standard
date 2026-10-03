@@ -618,6 +618,10 @@ public final class BiomeArchitecturePreview {
         for(BlockPos pos:p.cells().keySet()) if(pos.getX()<0||pos.getZ()<0
                 ||pos.getX()>=p.sample().width()||pos.getZ()>=p.sample().depth())
             throw new IllegalStateException("Preview exceeds declared envelope: "+p.sample().id());
+        lighting(p).requireSpawnSafe();
+    }
+    static WholeBuildingLightingValidator.ValidationReport lighting(Plan p) {
+        Set<BlockPos> reach=reachable(p);
         Map<Voxel,Integer> dampening=new HashMap<>();
         List<WholeBuildingLightingValidator.LightEmitter> lights=new ArrayList<>();
         p.cells().forEach((pos,state)->{
@@ -625,11 +629,11 @@ public final class BiomeArchitecturePreview {
             if(state.getLightEmission()>0) lights.add(new WholeBuildingLightingValidator.LightEmitter(voxel,state.getLightEmission()));
             if(state.getLightDampening()>0) dampening.put(voxel,state.getLightDampening());
         });
-        WholeBuildingLightingValidator.validate(new WholeBuildingLightingValidator.LightingSnapshot(
+        return WholeBuildingLightingValidator.validate(new WholeBuildingLightingValidator.LightingSnapshot(
                 p.sample().id(),new WholeBuildingLightingValidator.Bounds(new Voxel(-1,-1,-1),
                 new Voxel(p.sample().width(),p.height()+1,p.sample().depth())),
                 reach.stream().map(pos->new Voxel(pos.getX(),pos.getY(),pos.getZ())).collect(java.util.stream.Collectors.toSet()),
-                dampening,lights)).requireSpawnSafe();
+                dampening,lights));
     }
     static void validateFurnitureSupport(Plan p) {
         // Native survival alone admits slabs hovering in mid-air. Check these interior fixtures
@@ -655,7 +659,7 @@ public final class BiomeArchitecturePreview {
                 throw new IllegalStateException(p.sample().id()+" unsupported interior fixture at "+pos+": "+state);
         });
     }
-    private static Set<BlockPos> reachable(Plan p) {
+    static Set<BlockPos> reachable(Plan p) {
         return PreviewRoomLayout.reachable(p.cells(),p.entrance());
     }
     private static boolean walkable(Map<BlockPos,BlockState> cells,BlockPos pos) {

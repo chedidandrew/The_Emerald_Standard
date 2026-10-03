@@ -147,7 +147,7 @@ public final class VillageComparisonGallery {
                 || Boolean.getBoolean(ENABLE_PROPERTY + ".capture")
                 ||server.getPlayerList().getPlayers().isEmpty()) return false;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 229");
+            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 14");
             server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "time set noon");
             player.sendSystemMessage(Component.literal("Full architecture review: 52 designs + Bank + 22 compact designs per style. "
                     + "Plains 1–75; Desert 76–150; Savanna 151–225; Taiga 226–300; Snowy 301–375. "

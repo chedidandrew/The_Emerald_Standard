@@ -167,6 +167,7 @@ final class PreviewRoomLayout {
         List<BlockPos> ordered=routes.stream().sorted(Comparator.comparingInt((BlockPos at)->at.getY())
                 .thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX)).toList();
         Set<BlockPos> fixtures=new HashSet<>();
+        cells.forEach((at,state)-> { if(state.getBlock() instanceof LanternBlock) fixtures.add(at); });
         for(BlockPos feet:ordered) {
             if(fixtures.stream().anyMatch(at->Math.abs(at.getX()-feet.getX())+Math.abs(at.getZ()-feet.getZ())<=4
                     &&Math.abs(at.getY()-(feet.getY()+2))<=1)) continue;

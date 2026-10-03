@@ -8,10 +8,10 @@ import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
-/** Review-only elevations and doorway jambs. Only scoped wall skins and outside air may change. */
+/** Review-only elevations, honest glazing and lighting. Every change has an explicit audit scope. */
 final class PreviewFacadePrograms {
-    record Audit(Map<BlockPos,BlockState> before, Set<BlockPos> skin, Set<BlockPos> added,
-            Map<Direction,Integer> faces) { }
+    record Audit(Map<BlockPos,BlockState> before, Set<BlockPos> skin, Set<BlockPos> added, Set<BlockPos> removed,
+            Set<BlockPos> jambs,Set<BlockPos> windows,Map<Direction,Integer> faces) { }
     record Composition(int width,int spacing,int phase,int frame,boolean planted) { }
     private static final Map<String,Audit> AUDITS=new HashMap<>();
     private static final Map<String,Set<BlockPos>> LANES=new HashMap<>();
@@ -55,9 +55,13 @@ final class PreviewFacadePrograms {
             count+=upperElevation(source,cells,face,composition,palette,skin);
             faces.put(face,count);
         }
-        skin.addAll(PreviewDoorwayGlazing.frame(source.sample(),cells));
+        Set<BlockPos> jambs=PreviewDoorwayGlazing.frame(source.sample(),cells);
+        Set<BlockPos> windows=PreviewWindowLighting.sealBlindWindows(source,cells);
+        skin.addAll(jambs);skin.addAll(windows);
+        var lighting=PreviewWindowLighting.thinLanterns(source,cells);
+        added.removeAll(lighting.removed());added.addAll(lighting.added());
         Plan result=new Plan(source.sample(),Map.copyOf(cells),source.access(),source.entrance(),source.height());
-        AUDITS.put(source.sample().id(),new Audit(source.cells(),Set.copyOf(skin),Set.copyOf(added),Map.copyOf(faces)));
+        AUDITS.put(source.sample().id(),new Audit(source.cells(),Set.copyOf(skin),Set.copyOf(added),lighting.removed(),jambs,windows,Map.copyOf(faces)));
         validate(result);
         return result;
     }
@@ -288,7 +292,8 @@ final class PreviewFacadePrograms {
         Audit audit=AUDITS.get(p.sample().id());
         if(audit==null) throw new IllegalStateException("Missing facade audit: "+p.sample().id());
         for(var entry:audit.before().entrySet()) {
-            if(!audit.skin().contains(entry.getKey())&&!Objects.equals(entry.getValue(),p.cells().get(entry.getKey())))
+            if(!audit.skin().contains(entry.getKey())&&!audit.removed().contains(entry.getKey())
+                    &&!Objects.equals(entry.getValue(),p.cells().get(entry.getKey())))
                 throw new IllegalStateException("Facade changed protected interior/roof: "+entry.getKey());
         }
         for(BlockPos at:audit.skin()) {
@@ -296,12 +301,20 @@ final class PreviewFacadePrograms {
             if(state==null||!Block.isShapeFullBlock(state.getCollisionShape(EmptyBlockGetter.INSTANCE,at)))
                 throw new IllegalStateException("Facade opened an unsealed wall: "+at);
         }
+        for(BlockPos at:audit.removed()) {
+            BlockState before=audit.before().get(at);
+            if(p.cells().containsKey(at)||before!=null&&!(before.getBlock() instanceof LanternBlock)&&!before.is(Blocks.IRON_CHAIN))
+                throw new IllegalStateException("Unscoped lighting removal: "+at);
+        }
         for(BlockPos at:audit.added()) {
             BlockState state=p.cells().get(at);
             if(state==null||state.isAir()) throw new IllegalStateException("Missing facade member: "+at);
             if(state.is(Blocks.LANTERN)) {
-                BlockState support=p.cells().get(at.above());
-                if(support==null||!support.isFaceSturdy(EmptyBlockGetter.INSTANCE,at.above(),Direction.DOWN))
+                boolean hanging=state.getValue(LanternBlock.HANGING);
+                BlockPos bearing=hanging?at.above():at.below();BlockState support=p.cells().get(bearing);
+                boolean chain=hanging&&support!=null&&support.is(Blocks.IRON_CHAIN)
+                        &&support.getValue(BlockStateProperties.AXIS)==Direction.Axis.Y;
+                if(support==null||!chain&&!support.isFaceSturdy(EmptyBlockGetter.INSTANCE,bearing,hanging?Direction.DOWN:Direction.UP))
                     throw new IllegalStateException("Floating facade lantern: "+at);
             }
         }
@@ -309,6 +322,7 @@ final class PreviewFacadePrograms {
             throw new IllegalStateException("Unscoped exterior addition: "+at);
         PreviewDoorwayAudit.validate(p);
         PreviewDoorwayGlazing.validate(p);
+        PreviewWindowLighting.validate(p);
     }
     static void report(List<Sample> samples) {
         for(var style:com.chedidandrew.emeraldstandard.core.VillageArchitecture.BiomeDialect.values()) {

@@ -26,11 +26,18 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String taiga=Files.readString(root.resolve(path+"PreviewTaigaCraft.java"));
         String facade=Files.readString(root.resolve(path+"PreviewFacadePrograms.java"));
         String glazing=Files.readString(root.resolve(path+"PreviewDoorwayGlazing.java"));
-        require(facade.contains("skin.addAll(PreviewDoorwayGlazing.frame(source.sample(),cells))")
+        require(facade.contains("jambs=PreviewDoorwayGlazing.frame(source.sample(),cells)")&&facade.contains("skin.addAll(jambs)")
                 &&facade.contains("PreviewDoorwayGlazing.validate(p)")&&preview.contains("PreviewDoorwayGlazing.validate(p)")
                 &&glazing.contains("Map.copyOf(cells)")&&glazing.contains("Unframed doorway glazing")
                 &&glazing.contains("if(pane(before.get(at)))"),
                 "All final review facades frame existing door-adjacent panes without filling air or overriding native pane arms");
+        String composition=Files.readString(root.resolve(path+"PreviewWindowLighting.java"));
+        require(facade.contains("PreviewWindowLighting.sealBlindWindows(source,cells)")
+                &&facade.contains("PreviewWindowLighting.thinLanterns(source,cells)")
+                &&composition.contains("reference.requireSpawnSafe()")&&composition.contains("light.spawnSafe()")
+                &&rooms.contains("if(state.getBlock() instanceof LanternBlock) fixtures.add(at)")
+                &&composition.contains("Blind review window"),
+                "Final windows have meaningful views and room lighting considers authored lanterns while preserving night coverage");
         require(taiga.contains("first-1,last+1")&&taiga.contains("b.cells.putIfAbsent(at,state)")
                 &&preview.contains("PreviewTaigaCraft.course(this")&&exteriors.contains("PreviewTaigaCraft.course(b")
                 &&compact.contains("PreviewTaigaCraft.course(b"),"Taiga courses explicitly project roofs without overwriting occupied geometry");
@@ -111,6 +118,7 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
             require(!Files.readString(root.resolve(path+name)).contains("PreviewOutdoorPrograms"),"Outdoor site programs leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewSupportAudit"),"Review support audit leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewDoorwayGlazing"),"Review glazing audit leaked into production");
+            require(!Files.readString(root.resolve(path+name)).contains("PreviewWindowLighting"),"Review window/light composition leaked into production");
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")
                 && init.contains("'1,2,3,4,5,6,7,8,9,10,11,12,13'"), "Preview launcher coverage");

@@ -20,6 +20,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyRoofJoinRejections();
         verifyDoorwayRejections();
         verifyDoorwayGlazing();
+        verifyWindowLighting();
         verifyFloorBearingRejection();
         verifySupportRejections();
         verifyOutdoorGrade();
@@ -62,6 +63,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyOutdoorRejections();
         PreviewDoorwayAudit.report();
         PreviewDoorwayGlazing.report(BiomeArchitectureCatalogPreview.samples());
+        PreviewWindowLighting.report(BiomeArchitectureCatalogPreview.samples());
         if(VillageArchitecture.activeBlueprints().size()!=52
                 ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
                 ||VillageBankManager.galleryBankStructureVersion()!=12)
@@ -299,6 +301,80 @@ public final class BiomeArchitecturePreviewSelfTest {
             catch(IllegalStateException expected) { }
         }
         System.out.println("PASS native chair-back geometry and negative admission in all four directions");
+    }
+    private static void verifyWindowLighting() {
+        for(var style:VillageArchitecture.BiomeDialect.values()) for(var normal:net.minecraft.core.Direction.Plane.HORIZONTAL) {
+            var sample=new BiomeArchitecturePreview.Sample(style,"HOUSE","view_test",11,11);
+            var at=new net.minecraft.core.BlockPos(5,2,5);
+            var cells=new java.util.LinkedHashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+            var wall=new BiomeArchitecturePreview.Builder(sample).p.wall().defaultBlockState();
+            for(int side=-1;side<=1;side++) for(int y=1;y<=4;y++)
+                cells.put(new net.minecraft.core.BlockPos(at.getX(),y,at.getZ()).relative(normal.getClockWise(),side),wall);
+            cells.put(at,Blocks.GLASS_PANE.defaultBlockState());cells.put(at.above(),Blocks.STAINED_GLASS_PANE.green().defaultBlockState());
+            var p=new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),java.util.Set.of(),new net.minecraft.core.BlockPos(1,1,1),6);
+            PreviewWindowLighting.validate(p);
+            // A two-block-deep room remains valid even when a wall is close beyond it.
+            cells.put(at.relative(normal,3),wall);cells.put(at.above().relative(normal,3),wall);
+            if(!PreviewWindowLighting.view(cells,at)) throw new AssertionError("Honest shallow room glazing rejected");
+            // A long gap parallel to the window is not a view through its normal.
+            cells.put(at.relative(normal,2),wall);cells.put(at.above().relative(normal,2),wall);
+            if(PreviewWindowLighting.view(cells,at)) throw new AssertionError("Window looking across a one-block wall gap retained");
+            // Isolate that one-cell pocket on each side and cap it: it is merely a wall recess.
+            for(int y=2;y<=3;y++) for(var side:java.util.List.of(normal.getClockWise(),normal.getCounterClockWise()))
+                cells.put(new net.minecraft.core.BlockPos(at.getX(),y,at.getZ()).relative(normal).relative(side),wall);
+            if(PreviewWindowLighting.view(cells,at)) throw new AssertionError("Blind recessed window retained");
+            try {
+                PreviewWindowLighting.validate(new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),p.access(),p.entrance(),6));
+                throw new AssertionError("Final admission allowed a blind window");
+            } catch(IllegalStateException expected) { }
+            var before=java.util.Map.copyOf(cells);
+            var changed=PreviewWindowLighting.sealBlindWindows(p,cells);
+            if(!changed.equals(java.util.Set.of(at,at.above()))||cells.size()!=before.size()) throw new AssertionError("Window repair scope changed");
+            before.forEach((pos,state)-> {
+                if(!changed.contains(pos)&&!state.equals(cells.get(pos))) throw new AssertionError("Window repair cut a protected wall or furnishing");
+            });
+            if(!PreviewWindowLighting.sealBlindWindows(p,cells).isEmpty()) throw new AssertionError("Non-idempotent window repair");
+            cells.clear();
+            for(int x=3;x<=7;x++) for(int z=3;z<=7;z++) cells.put(new net.minecraft.core.BlockPos(x,4,z),Blocks.GLASS.defaultBlockState());
+            for(var pos:cells.keySet()) if(!PreviewWindowLighting.view(cells,pos)) throw new AssertionError("Honest roof skylight rejected");
+        }
+        var sample=new BiomeArchitecturePreview.Sample(VillageArchitecture.BiomeDialect.PLAINS,"HOUSE","light_test",9,9);
+        var cells=new java.util.LinkedHashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+        for(int x=0;x<9;x++) for(int z=0;z<9;z++) {
+            cells.put(new net.minecraft.core.BlockPos(x,0,z),Blocks.OAK_PLANKS.defaultBlockState());
+            cells.put(new net.minecraft.core.BlockPos(x,5,z),Blocks.OAK_PLANKS.defaultBlockState());
+            if(x==0||z==0||x==8||z==8) for(int y=1;y<5;y++)
+                cells.put(new net.minecraft.core.BlockPos(x,y,z),Blocks.OAK_PLANKS.defaultBlockState());
+        }
+        for(var lamp:java.util.List.of(new net.minecraft.core.BlockPos(2,3,2),new net.minecraft.core.BlockPos(3,3,2),
+                new net.minecraft.core.BlockPos(6,3,6),new net.minecraft.core.BlockPos(2,3,6))) {
+            cells.put(lamp,Blocks.LANTERN.defaultBlockState().setValue(net.minecraft.world.level.block.LanternBlock.HANGING,true));
+            cells.put(lamp.above(),Blocks.IRON_CHAIN.defaultBlockState());
+        }
+        var p=new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),java.util.Set.of(),new net.minecraft.core.BlockPos(4,1,1),6);
+        try { PreviewWindowLighting.validate(p);throw new AssertionError("Final admission allowed a lighting cluster"); }
+        catch(IllegalStateException expected) { }
+        var before=java.util.Map.copyOf(cells);var lighting=BiomeArchitecturePreview.lighting(p);
+        var changes=PreviewWindowLighting.thinLanterns(p,cells);
+        if(changes.removed().isEmpty()) throw new AssertionError("Redundant adjacent fixtures retained");
+        for(var entry:before.entrySet())
+            if(!(entry.getValue().getBlock() instanceof net.minecraft.world.level.block.LanternBlock)&&!entry.getValue().is(Blocks.IRON_CHAIN)
+                    &&!entry.getValue().equals(cells.get(entry.getKey()))) throw new AssertionError("Light pruning changed structure");
+        var fixed=new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),p.access(),p.entrance(),6);
+        if(PreviewWindowLighting.crowdedPairs(fixed)!=0) throw new AssertionError("Lighting cluster retained");
+        var light=BiomeArchitecturePreview.lighting(fixed);light.requireSpawnSafe();
+        for(var feet:BiomeArchitecturePreview.reachable(p)) {
+            var voxel=new com.chedidandrew.emeraldstandard.core.WholeBuildingBlueprint.Voxel(feet.getX(),feet.getY(),feet.getZ());
+            if(light.blockLightAt(voxel)<Math.min(7,lighting.blockLightAt(voxel))) throw new AssertionError("Lighting coverage lost");
+        }
+        for(var at:changes.removed()) if(before.get(at).is(Blocks.LANTERN)&&cells.containsKey(at.above()))
+            throw new AssertionError("Unused pendant chain remained");
+        PreviewSupportAudit.validate(cells,"lighting fixture");
+        if(!PreviewWindowLighting.thinLanterns(fixed,cells).removed().isEmpty()) throw new AssertionError("Non-idempotent light pruning");
+        cells.put(new net.minecraft.core.BlockPos(4,3,3),Blocks.OAK_PLANKS.defaultBlockState());
+        if(PreviewWindowLighting.crowded(cells,new net.minecraft.core.BlockPos(3,3,3),new net.minecraft.core.BlockPos(5,3,3)))
+            throw new AssertionError("Separate rooms treated as one lighting cluster");
+        System.out.println("PASS window/light negatives: backed niches and one-block wall gaps sealed without carving rooms; honest shallow rooms and skylights retained; redundant lamps and unused chains removed; midnight coverage, separation, supports and repeatability preserved");
     }
     private static void verifyDoorwayGlazing() {
         for(var style:VillageArchitecture.BiomeDialect.values())

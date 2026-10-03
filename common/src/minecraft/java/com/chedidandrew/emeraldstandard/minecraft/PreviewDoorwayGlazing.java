@@ -65,7 +65,7 @@ final class PreviewDoorwayGlazing {
             Plan plan=BiomeArchitecturePreview.plan(samples.get(i));
             validate(plan);
             var audit=PreviewFacadePrograms.audit(plan);
-            long edits=audit.skin().stream().filter(at->pane(audit.before().get(at))).count();
+            long edits=audit.jambs().size();
             if(edits>0) {
                 designs++;frames+=Math.toIntExact(edits);
                 System.out.println("GLAZING FRAMED #"+(i+1)+" "+plan.sample().id()+": "+edits+" existing pane cells");

@@ -298,3 +298,57 @@ terrain explanations, long-form chapter routing and compact handbook routing.
 This is isolated review geometry, not production adoption, a new recipe or an
 automatic repair of existing villages. No unrelated handbook prose was changed
 to advertise this unfinished production rollout.
+
+## Meaningful windows and restrained lantern placement
+
+Final review composition now checks glazing after room partitions, attached
+wings, roof framing and facade detail are present. A retained window needs open
+viewing space on both sides of an axis, including two cells of viewing depth;
+a wall across a one-block service gap is not a meaningful view. Genuine room
+windows and roof skylights remain. Blind panes/full glass are replaced in place
+with nearby matching opaque wall material. No walls are carved, floors cut or
+furnishings removed to manufacture a view. Door jamb edits retain their separate
+audit scope and census.
+
+Room lighting now accounts for all authored lanterns before proposing additional
+fixtures. The final pass removes redundant close, visible lantern pairs and their
+unused vertical pendant chains. Where a light is indispensable, relocation uses
+vacant positions on existing desk or ceiling supports in the same space, outside
+walking headroom; it never hangs new pendants from glazing. Close-pair detection
+uses four-block spatial separation and opaque-wall occlusion, so lights serving
+separate enclosed rooms do not count as one cluster.
+
+Every removal or move must preserve spawn safety and at least block-light seven
+on previously brighter reachable floor cells; originally dimmer cells retain
+their previous level. Thus reducing visual clutter does not merely rely on
+daytime sunlight. Final admission rejects blind windows and close lantern pairs
+in every non-market building type. Eleven pairs remain across seven open-market
+designs at separate task-light positions where neither deletion nor a supported
+move preserves that coverage; these are an explicit market exception, not an
+unreported zero-cluster claim.
+
+Native fixtures cover five palettes, four window directions, direct and recessed
+wall-backed views, one-block parallel gaps, retained two-block-deep room views,
+skylights, protected-cell preservation and idempotence. Lighting fixtures cover
+negative admission, adjacent lamp removal, chain cleanup, midnight floor-light
+coverage, real supports and separation by an opaque partition. The final census
+records 4,386 blind glazing cells replaced and 741 redundant lanterns removed
+across 375 designs. All 375 designs and 13 early prototypes pass existing native
+support/room/roof/door admission; no disconnected shape cells remain. Production's
+frozen 52 revision-11 designs and version-12 Bank remain unchanged.
+
+Fabric native admission/assemble, the common regression suite and the filtered
+NeoForge loader test pass. Fresh compact profile `build/biome-preview-catalog-r10-10`
+completed 375 pairs / 750 actual structures with signature `355369e80246f773`,
+content revision 17 and comparison schema 1. Its ten-view Plains #14 / Taiga #239
+capture completed. Actual exterior and entrance views were inspected; this
+revealed the one-block service-gap case and prompted the stricter depth check
+before the final rebuild. Interactive review reopens at Plains #14 in daylight,
+with identifying signs and visit/back commands retained. Previous profiles,
+including that first visual-check pass, are preserved. Main is unchanged.
+
+Handbook accuracy review: checked long-form building-catalog, construction-safety
+and terrain reader guidance, chapter routing and compact handbook routing. This
+is opt-in review geometry only, not production adoption, a recipe change or an
+automatic repair of existing saves. Existing explanations remain accurate;
+unrelated handbook prose is not changed to advertise an unfinished rollout.
