@@ -17,6 +17,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         System.setProperty(StructureGallery.ENABLE_PROPERTY,"true");
         try {
         verifyChairGeometry();
+        verifyRoofJoinRejections();
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
@@ -75,6 +76,37 @@ public final class BiomeArchitecturePreviewSelfTest {
         }
         System.out.println("PASS native chair-back geometry and negative admission in all four directions");
     }
+    private static void verifyRoofJoinRejections() {
+        for(var style:VillageArchitecture.BiomeDialect.values()) {
+            if(style==VillageArchitecture.BiomeDialect.PLAINS) continue;
+            for(var form:PreviewExteriorPrograms.Form.values()) for(int wallTop:new int[]{4,5,6}) {
+                var sample=new BiomeArchitecturePreview.Sample(style,"HOUSE","join_test",18,16);
+                var b=new BiomeArchitecturePreview.Builder(sample);
+                b.room(0,17,2,15,wallTop);
+                var occupied=new java.util.HashMap<>(b.cells);
+                PreviewExteriorPrograms.shell(b,form,0,17,2,15,wallTop+2,1,wallTop);
+                PreviewRoofEnvelope.seal(b);
+                PreviewRoofEnvelope.validate(b.cells,b.roofJoins.keySet());
+                occupied.forEach((pos,state)-> {
+                    if(!state.equals(b.cells.get(pos))) throw new AssertionError("Roof touched occupied-storey cell: "+pos);
+                });
+                var at=b.roofJoins.keySet().iterator().next();
+                var cells=new java.util.HashMap<>(b.cells);
+                cells.remove(at);
+                expectRoofJoinFailure(cells,b.roofJoins.keySet());
+                cells.put(at,b.p.roofSlab().defaultBlockState());
+                expectRoofJoinFailure(cells,b.roofJoins.keySet());
+                cells.put(at,Blocks.GLASS.defaultBlockState());
+                PreviewRoofEnvelope.validate(cells,b.roofJoins.keySet());
+            }
+        }
+        System.out.println("PASS 120 regional roof-envelope cases; missing cells and half-slab air bands rejected; glazed joins admitted");
+    }
+    private static void expectRoofJoinFailure(java.util.Map<net.minecraft.core.BlockPos,
+            net.minecraft.world.level.block.state.BlockState> cells,java.util.Set<net.minecraft.core.BlockPos> joins) {
+        try { PreviewRoofEnvelope.validate(cells,joins); throw new AssertionError("Roof gap admitted"); }
+        catch(IllegalStateException expected) { if(!expected.getMessage().contains("roof-to-wall join")) throw expected; }
+    }
     private static void verifyFullCatalog() {
         var samples=BiomeArchitectureCatalogPreview.samples();
         if(samples.size()!=265||samples.stream().map(BiomeArchitecturePreview.Sample::id).distinct().count()!=265)
@@ -86,10 +118,15 @@ public final class BiomeArchitecturePreviewSelfTest {
             var unique=new java.util.HashSet<java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>>();
             var programs=new java.util.HashSet<PreviewExteriorPrograms.Program>();
             var silhouettes=new java.util.HashMap<String,String>();
-            int chairs=0;
+            int chairs=0,roofJoins=0;
+            var interiors=new StringBuilder();
             for(var sample:region) {
                 try {
                 var plan=BiomeArchitecturePreview.plan(sample);
+                appendInteriorSnapshot(interiors,plan);
+                var joins=BiomeArchitectureCatalogPreview.roofJoins(sample);
+                PreviewRoofEnvelope.validate(plan.cells(),joins);
+                roofJoins+=joins.size();
                 if(!plan.equals(BiomeArchitecturePreview.plan(sample))) throw new AssertionError("Unstable catalog plan");
                 if(!unique.add(plan.cells())) throw new AssertionError("Duplicate design geometry: "+sample.id());
                 chairs+=PreviewSeatingAudit.validate(plan.cells(),PreviewSeatingAudit.lowStairs(plan.cells()));
@@ -134,8 +171,31 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(style!=VillageArchitecture.BiomeDialect.PLAINS&&programs.size()!=52)
                 failures.add("Incomplete unique exterior programs: "+style+" "+programs.size());
             System.out.println("PASS style seating audit "+style+": "+chairs+" unambiguous table-facing ground seats");
+            String original=switch(style) {
+                case PLAINS -> "3a17e46a086f292a452127ca6cbd51c8fc5bbb9459dd6aeafebb8da5b6f4120f";
+                case DESERT -> "628b3fcd91b0fc8509b275ddc426bc7d4de518666a292e06241d7513c1e29628";
+                case SAVANNA -> "ee253082394e7bd9372e884f8339ab3405190b18b0c3a084498eb2d6e0fe9272";
+                case TAIGA -> "15f35a0efe02801888f908966a32bb8c58f897053c399c54ae85c129bb155091";
+                case SNOWY -> "bd7e29c082e49f7540f1021518d821031e6d12486ba51f512fae5dd4d5ea0483";
+            };
+            if(!original.equals(snapshotHash(interiors.toString()))) failures.add("Revision-5 occupied-storey snapshot changed: "+style);
+            else System.out.println("PASS exterior-only snapshot "+style+": all cells Y<=4 unchanged; "+roofJoins+" closed roof joins");
         }
         if(!failures.isEmpty()) throw new AssertionError("Catalog admission failures ("+failures.size()+"): "+failures);
+    }
+    private static void appendInteriorSnapshot(StringBuilder target,BiomeArchitecturePreview.Plan plan) {
+        target.append(plan.sample().id()).append('\n');
+        plan.cells().entrySet().stream().filter(entry->entry.getKey().getY()<=4)
+                .sorted(java.util.Comparator.comparingInt((java.util.Map.Entry<net.minecraft.core.BlockPos,
+                        net.minecraft.world.level.block.state.BlockState> entry)->entry.getKey().getX())
+                        .thenComparingInt(entry->entry.getKey().getY()).thenComparingInt(entry->entry.getKey().getZ()))
+                .forEach(entry->target.append(entry.getKey().getX()).append(',').append(entry.getKey().getY())
+                        .append(',').append(entry.getKey().getZ()).append(':').append(entry.getValue()).append('\n'));
+    }
+    private static String snapshotHash(String value) {
+        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
+        catch(java.security.NoSuchAlgorithmException error) { throw new AssertionError(error); }
     }
     /** Palette/furnishing-independent top-height and footprint projection, normalized in X/Z.
      * A differently colored or simply resized copy of one shell must not qualify as variety. */

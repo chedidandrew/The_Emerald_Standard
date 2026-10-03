@@ -16,7 +16,7 @@ public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
     public static final String CATALOG_PROPERTY = PROPERTY + ".fullCatalog";
-    public static final int REVISION = 5;
+    public static final int REVISION = 6;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
@@ -237,6 +237,7 @@ public final class BiomeArchitecturePreview {
     }
     static final class Builder {
         final Sample s; final Palette p; final Map<BlockPos, BlockState> cells = new LinkedHashMap<>();
+        final Map<BlockPos,BlockState> roofJoins=new LinkedHashMap<>();
         final Set<BlockPos> access = new HashSet<>(); BlockPos entrance;
         Builder(Sample s) { this.s = s; p = palette(s.style()); }
         void put(int x, int y, int z, Block block) { put(x, y, z, block.defaultBlockState()); }

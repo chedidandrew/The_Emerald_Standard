@@ -73,29 +73,30 @@ final class PreviewExteriorPrograms {
     private static Program p(Form form,Wing wing,int level,int position) { return new Program(form,wing,level,position); }
     static void roof(Builder b,String id,int front,int h,int endX) {
         var p=program(id);
-        shell(b,p.roof(),0,endX,front,b.s.depth()-1,h+1+p.level(),p.position());
+        shell(b,p.roof(),0,endX,front,b.s.depth()-1,h+1+p.level(),p.position(),h);
         if(id.contains("dormer")) {
             int w=b.s.width();
             for(int x:new int[]{w/3,w-1-w/3}) dormer(b,x,front,h+2);
         }
     }
-    static void shell(Builder b,Form form,int x0,int x1,int z0,int z1,int y,int side) {
-        if(x1-x0<3||z1-z0<3) { regional(b,x0,x1,z0,z1,y); return; }
+    static void shell(Builder b,Form form,int x0,int x1,int z0,int z1,int y,int side,int wallTop) {
+        PreviewRoofEnvelope.carry(b,x0,x1,z0,z1,wallTop,y);
+        if(x1-x0<3||z1-z0<3) { regional(b,x0,x1,z0,z1,y,wallTop); return; }
         boolean desert=b.s.style()==BiomeDialect.DESERT;
         int mid=(x0+x1)/2,zm=(z0+z1)/2;
         switch(form) {
             case GABLE -> {
-                regional(b,x0,x1,z0,z1,y);
+                regional(b,x0,x1,z0,z1,y,wallTop);
                 if(desert) raised(b,mid-1,mid+1,z0+2,z1-2,y+1,2);
             }
             case LONG -> {
                 if(desert) { b.terrace(x0,x1,z0,z1,y); raised(b,x0+1,mid,z0+1,z1-1,y+1,2); }
-                else ridgeZ(b,x0,x1,z0,z1,y);
+                else ridgeZ(b,x0,x1,z0,z1,y,wallTop);
             }
             case CROSS -> {
-                regional(b,x0,x1,z0,z1,y);
+                regional(b,x0,x1,z0,z1,y,wallTop);
                 if(desert) raised(b,x0+1,x1-1,zm-1,zm+1,y+1,2);
-                else ridgeZ(b,mid-2,mid+2,z0,z1,y+1);
+                else ridgeZ(b,mid-2,mid+2,z0,z1,y+1,wallTop);
             }
             case HIP -> {
                 if(desert) {
@@ -104,29 +105,32 @@ final class PreviewExteriorPrograms {
                 } else b.hip(x0,x1,z0,z1,y);
             }
             case SPLIT -> {
-                regional(b,x0,mid,z0,z1,y+side);
-                regional(b,mid+1,x1,z0,z1,y+1-side);
+                regional(b,x0,mid,z0,z1,y+side,wallTop);
+                regional(b,mid+1,x1,z0,z1,y+1-side,wallTop);
                 for(int yy=y-1;yy<=y+1;yy++) for(int z:new int[]{z0,z1}) b.put(mid+1,yy,z,b.p.log());
             }
             case MULTI -> {
                 int third=Math.max(3,(x1-x0+1)/3);
-                regional(b,x0,x0+third-1,z0,z1,y);
-                regional(b,x0+third,x1-third,z0,z1,y+1+side);
-                regional(b,x1-third+1,x1,z0,z1,y);
+                regional(b,x0,x0+third-1,z0,z1,y,wallTop);
+                regional(b,x0+third,x1-third,z0,z1,y+1+side,wallTop);
+                regional(b,x1-third+1,x1,z0,z1,y,wallTop);
             }
-            case MONO -> lean(b,x0,x1,z0,z1,y,side==1);
+            case MONO -> lean(b,x0,x1,z0,z1,y,side==1,wallTop);
             case OFFSET -> {
                 int split=x1-Math.max(3,(x1-x0+1)/3);
-                regional(b,x0,split,z0,z1,y+1);
-                lean(b,split+1,x1,z0,z1,y,side==1);
+                regional(b,x0,split,z0,z1,y+1,wallTop);
+                lean(b,split+1,x1,z0,z1,y,side==1,wallTop);
             }
             case COURT -> {
-                regional(b,x0,x0+2,z0,z1,y+1);
-                regional(b,x1-2,x1,z0,z1,y+1);
-                if(desert) { b.terrace(x0+3,x1-3,z0,z0+2,y+1); b.terrace(x0+3,x1-3,z1-2,z1,y+1); }
+                regional(b,x0,x0+2,z0,z1,y+1,wallTop);
+                regional(b,x1-2,x1,z0,z1,y+1,wallTop);
+                if(desert) {
+                    regional(b,x0+3,x1-3,z0,z0+2,y+1,wallTop);
+                    regional(b,x0+3,x1-3,z1-2,z1,y+1,wallTop);
+                }
                 else {
-                    ridgeZ(b,x0+3,x1-3,z0,z0+2,y+1);
-                    ridgeZ(b,x0+3,x1-3,z1-2,z1,y+1);
+                    ridgeZ(b,x0+3,x1-3,z0,z0+2,y+1,wallTop);
+                    ridgeZ(b,x0+3,x1-3,z1-2,z1,y+1,wallTop);
                 }
                 // A real recessed, glazed light court, rather than a second giant gable.
                 for(int x=x0+3;x<=x1-3;x++) for(int z=z0+3;z<=z1-3;z++) b.put(x,y,z,Blocks.GLASS);
@@ -140,11 +144,9 @@ final class PreviewExteriorPrograms {
                 raised(b,side==0?x0+1:x1-3,side==0?x0+3:x1-1,z1-3,z1-1,y+1,2);
             }
         }
-        // Higher eaves have carried masonry/log ends; no daylight slit over the wall.
-        for(int yy=5;yy<y;yy++) for(int x=x0;x<=x1;x++) for(int z=z0;z<=z1;z++)
-            if(x==x0||x==x1||z==z0||z==z1) b.put(x,yy,z,b.p.wall());
     }
-    private static void regional(Builder b,int x0,int x1,int z0,int z1,int y) {
+    private static void regional(Builder b,int x0,int x1,int z0,int z1,int y,int wallTop) {
+        PreviewRoofEnvelope.carry(b,x0,x1,z0,z1,wallTop,y);
         switch(b.s.style()) {
             case DESERT -> b.terrace(x0,x1,z0,z1,y);
             case SAVANNA -> b.hip(x0,x1,z0,z1,y);
@@ -157,7 +159,8 @@ final class PreviewExteriorPrograms {
             b.put(x,y+h,z,b.p.roof());
         }
     }
-    private static void ridgeZ(Builder b,int x0,int x1,int z0,int z1,int y) {
+    private static void ridgeZ(Builder b,int x0,int x1,int z0,int z1,int y,int wallTop) {
+        PreviewRoofEnvelope.carry(b,x0,x1,z0,z1,wallTop,y);
         if(b.s.style()==BiomeDialect.SAVANNA) { b.hip(x0,x1,z0,z1,y); return; }
         boolean snow=b.s.style()==BiomeDialect.SNOWY;
         int zm=(z0+z1)/2;
@@ -171,7 +174,8 @@ final class PreviewExteriorPrograms {
             }
         }
     }
-    private static void lean(Builder b,int x0,int x1,int z0,int z1,int y,boolean reverse) {
+    private static void lean(Builder b,int x0,int x1,int z0,int z1,int y,boolean reverse,int wallTop) {
+        PreviewRoofEnvelope.carry(b,x0,x1,z0,z1,wallTop,y);
         int max=b.s.style()==BiomeDialect.TAIGA?3:2;
         for(int x=x0;x<=x1;x++) {
             int step=(reverse?x1-x:x-x0)*max/Math.max(1,x1-x0);
@@ -186,7 +190,7 @@ final class PreviewExteriorPrograms {
     private static void dormer(Builder b,int x,int z,int y) {
         for(int dx=-1;dx<=1;dx++) for(int yy=y;yy<=y+2;yy++) b.put(x+dx,yy,z,b.p.wall());
         b.put(x,y+1,z,Blocks.GLASS);
-        regional(b,x-1,x+1,z-1,z+1,y+3);
+        regional(b,x-1,x+1,z-1,z+1,y+3,y+2);
     }
     static void appendages(Builder b,String id,int h) {
         Program p=program(id); int w=b.s.width(),d=b.s.depth(),mid=w/2;
@@ -213,7 +217,7 @@ final class PreviewExteriorPrograms {
     }
     private static void bay(Builder b,int center,int z0,int z1,int h) {
         int x0=center-1,x1=center+1;
-        b.room(x0,x1,z0,z1,h); regional(b,x0,x1,z0,z1,h+1);
+        b.room(x0,x1,z0,z1,h); regional(b,x0,x1,z0,z1,h+1,h);
         door(b,center,z0); door(b,center,z1);
         hanging(b,center,(z0+z1)/2);
         for(int x:new int[]{x0,x1}) b.put(x,2,(z0+z1)/2,Blocks.GLASS_PANE);
@@ -259,14 +263,14 @@ final class PreviewExteriorPrograms {
         b.floor(w,w+2,0,z1); b.room(w,w+2,z0,z1,6+level);
         door(b,w+1,z0);
         b.put(w+2,4,z0+1,Blocks.GLASS_PANE);
-        regional(b,w,w+2,z0,z1,7+level); hanging(b,w+1,z0+1);
+        regional(b,w,w+2,z0,z1,7+level,6+level); hanging(b,w+1,z0+1);
     }
     private static void gate(Builder b,int w,int level) {
         b.floor(0,w-1,-3,0);
         for(int x0:new int[]{0,w-3}) {
             b.room(x0,x0+2,-3,-1,4+level);
             b.put(x0+1,2,-3,Blocks.GLASS_PANE);
-            regional(b,x0,x0+2,-3,-1,5+level);
+            regional(b,x0,x0+2,-3,-1,5+level,4+level);
         }
         for(int x=3;x<w-3;x++) { b.put(x,5,-2,b.p.log()); b.put(x,6,-2,b.p.roofSlab()); }
         b.put(w/2,4,-2,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true));

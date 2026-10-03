@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.properties.*;
 /** Complete art-review catalog only. Not a production recipe, persisted design or migration. */
 final class BiomeArchitectureCatalogPreview {
     private static final Map<String,Plan> CACHE=new LinkedHashMap<>();
+    private static final Map<String,Set<BlockPos>> ROOF_JOINS=new LinkedHashMap<>();
     private static List<Sample> samples;
 
     static synchronized List<Sample> samples() {
@@ -42,6 +43,7 @@ final class BiomeArchitectureCatalogPreview {
         return CACHE.computeIfAbsent(sample.id(),key->build(sample));
     }
     static String masterId(Sample s) { return s.id().substring(("catalog_"+s.style().id()+"_").length()); }
+    static Set<BlockPos> roofJoins(Sample sample) { plan(sample); return ROOF_JOINS.getOrDefault(sample.id(),Set.of()); }
 
     private static Plan build(Sample s) {
         Builder b=new Builder(new Sample(s.style(),s.role(),s.id(),s.width()-6,s.depth()-6));
@@ -95,6 +97,7 @@ final class BiomeArchitectureCatalogPreview {
         }
         b.details();
         PreviewExteriorPrograms.appendages(b,id,h);
+        PreviewRoofEnvelope.seal(b);
         // Later porch/clerestory/light composition can replace a roof bearing. A snow layer
         // is optional dressing: keep it only where the final roof actually supports it.
         b.cells.entrySet().removeIf(e->e.getValue().is(Blocks.SNOW)
@@ -104,6 +107,8 @@ final class BiomeArchitectureCatalogPreview {
         Map<BlockPos,BlockState> translated=new LinkedHashMap<>();
         b.cells.forEach((pos,state)->translated.put(pos.offset(3,0,3),state));
         Set<BlockPos> access=new HashSet<>(); b.access.forEach(pos->access.add(pos.offset(3,0,3)));
+        Set<BlockPos> joins=new HashSet<>(); b.roofJoins.keySet().forEach(pos->joins.add(pos.offset(3,0,3)));
+        ROOF_JOINS.put(s.id(),Set.copyOf(joins));
         Plan plan=new Plan(s,Map.copyOf(translated),Set.copyOf(access),b.entrance.offset(3,0,3),b.finish().height());
         BiomeArchitecturePreview.validate(plan); return plan;
     }

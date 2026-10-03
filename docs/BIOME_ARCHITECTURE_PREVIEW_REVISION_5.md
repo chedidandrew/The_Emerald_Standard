@@ -1,5 +1,8 @@
 # Architecture review revision 5 — seating and exterior identities
 
+Historical review checkpoint. See [revision 6](BIOME_ARCHITECTURE_PREVIEW_REVISION_6.md)
+for the raised-roof enclosure fix. Keep this revision's signed save intact.
+
 Review branch: `codex/biome-architecture-preview`. Normal generation, production
 blueprints, costs and migrations are unchanged. **Do not merge into main without
 the user's explicit approval.** This is the next in-game review, not a gameplay rollout.
