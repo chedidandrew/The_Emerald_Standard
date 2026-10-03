@@ -17,6 +17,11 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String exteriors=Files.readString(root.resolve(path+"PreviewExteriorPrograms.java"));
         String seating=Files.readString(root.resolve(path+"PreviewSeatingAudit.java"));
         String roof=Files.readString(root.resolve(path+"PreviewRoofEnvelope.java"));
+        String doorway=Files.readString(root.resolve(path+"PreviewDoorwayAudit.java"));
+        require(catalog.contains("PreviewDoorwayAudit.correct")&&legacy.contains("PreviewDoorwayAudit.correct")
+                &&preview.contains("PreviewDoorwayAudit.validate(p)")&&doorway.contains("disconnected doorway")
+                &&doorway.contains("orphan door upper")&&doorway.contains("DoorBlock.OPEN,true"),
+                "All review doors have collision, complete-half and attached-room admission");
         require(preview.contains("Boolean.getBoolean(CATALOG_PROPERTY)")&&catalog.contains("StructureGalleryPlan.goldMasters()")
                 &&gallery.contains("BiomeArchitecturePreview.reviewSamples()")&&init.contains("tesArchitectureFullCatalog")
                 &&launcher.contains("[switch]$FullCatalog"),"Full catalog remains separately opted in");
@@ -34,7 +39,7 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         require(catalog.contains("PreviewRoofEnvelope.seal(b)")&&exteriors.contains("PreviewRoofEnvelope.carry")
                 &&roof.contains("Block.isShapeFullBlock")&&roof.contains("for(int y=wallTop+1;y<roofBase;y++)"),
                 "Every raised roof range has its own full-height weather curb above the occupied storey");
-        require(preview.contains("REVISION = 6")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
+        require(preview.contains("REVISION = 7")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
                 &&preview.contains("walkable(cells,at)")&&preview.contains("CarpetBlock"),
                 "Revision-three regional craft and rug admission");
         require(preview.contains("validateFurnitureSupport(p)")&&preview.contains("Reversed counter endpoints"),
@@ -55,7 +60,8 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
                     "Prototype leaked into production: " + name);
             require(!Files.readString(root.resolve(path + name)).contains("PreviewExteriorPrograms")
                     &&!Files.readString(root.resolve(path + name)).contains("PreviewSeatingAudit")
-                    &&!Files.readString(root.resolve(path + name)).contains("PreviewRoofEnvelope"),
+                    &&!Files.readString(root.resolve(path + name)).contains("PreviewRoofEnvelope")
+                    &&!Files.readString(root.resolve(path + name)).contains("PreviewDoorwayAudit"),
                     "Review helpers leaked into production: " + name);
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")

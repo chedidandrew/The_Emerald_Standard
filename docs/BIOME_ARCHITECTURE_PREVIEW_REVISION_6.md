@@ -1,5 +1,9 @@
 # Architecture review revision 6 — exterior roof enclosure
 
+Historical roof-only revision. The current review adds doorway and wing connections in
+[revision 7](BIOME_ARCHITECTURE_PREVIEW_REVISION_7.md); its necessary route edits are tracked
+separately from this revision's unchanged-interior baseline.
+
 Review branch: `codex/biome-architecture-preview`. **No merge into main without explicit
 approval.** The user asked to focus on exterior roof gaps and leave the interiors alone.
 This remains an opt-in art-review catalog, not a new production template revision.

@@ -18,6 +18,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         try {
         verifyChairGeometry();
         verifyRoofJoinRejections();
+        verifyDoorwayRejections();
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
@@ -46,6 +47,7 @@ public final class BiomeArchitecturePreviewSelfTest {
                     +" cells; "+plan.access().size()+" reachable declared approaches; "+beds+" beds; lighting admitted");
         }
         verifyFullCatalog();
+        PreviewDoorwayAudit.report();
         if(VillageArchitecture.activeBlueprints().size()!=52
                 ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
                 ||VillageBankManager.galleryBankStructureVersion()!=12)
@@ -75,6 +77,47 @@ public final class BiomeArchitecturePreviewSelfTest {
             catch(IllegalStateException expected) { }
         }
         System.out.println("PASS native chair-back geometry and negative admission in all four directions");
+    }
+    private static void verifyDoorwayRejections() {
+        var sample=new BiomeArchitecturePreview.Sample(VillageArchitecture.BiomeDialect.TAIGA,"HOUSE","doorway_test",9,5);
+        var cells=new java.util.LinkedHashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+        for(int x=0;x<=2;x++) for(int z=0;z<=3;z++)
+            cells.put(new net.minecraft.core.BlockPos(x,0,z),Blocks.SPRUCE_PLANKS.defaultBlockState());
+        var at=new net.minecraft.core.BlockPos(1,1,1);
+        for(var facing:net.minecraft.core.Direction.Plane.HORIZONTAL)
+            for(var hinge:net.minecraft.world.level.block.state.properties.DoorHingeSide.values()) {
+                var lower=Blocks.SPRUCE_DOOR.defaultBlockState().setValue(net.minecraft.world.level.block.DoorBlock.FACING,facing)
+                        .setValue(net.minecraft.world.level.block.DoorBlock.HINGE,hinge);
+                cells.put(at,lower);
+                cells.put(at.above(),lower.setValue(net.minecraft.world.level.block.DoorBlock.HALF,
+                        net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER));
+                var plan=new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),java.util.Set.of(),at,5);
+                if(PreviewDoorwayAudit.validate(plan)!=1) throw new AssertionError("Doorway count");
+                for(var obstacle:java.util.List.of(Blocks.SPRUCE_LOG,Blocks.POTTED_FERN,Blocks.SPRUCE_FENCE,Blocks.STONE_BRICKS)) {
+                    var blocked=new java.util.LinkedHashMap<>(cells);
+                    blocked.put(at.relative(facing),obstacle.defaultBlockState());
+                    expectDoorwayFailure(new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(blocked),java.util.Set.of(),at,5),"blocked door");
+                }
+                var lowCanopy=new java.util.LinkedHashMap<>(cells);
+                lowCanopy.put(at.relative(facing).above(),Blocks.SPRUCE_SLAB.defaultBlockState()
+                        .setValue(net.minecraft.world.level.block.SlabBlock.TYPE,net.minecraft.world.level.block.state.properties.SlabType.TOP));
+                expectDoorwayFailure(new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(lowCanopy),java.util.Set.of(),at,5),"blocked door");
+                var orphan=new java.util.LinkedHashMap<>(cells); orphan.remove(at);
+                expectDoorwayFailure(new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(orphan),java.util.Set.of(),at,5),"orphan door upper");
+                var missing=new java.util.LinkedHashMap<>(cells); missing.remove(at.above());
+                expectDoorwayFailure(new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(missing),java.util.Set.of(),at,5),"incomplete doorway");
+            }
+        // Clear space on both sides alone does not prove a secondary door is connected.
+        for(int x=6;x<=8;x++) for(int z=0;z<=3;z++)
+            cells.put(new net.minecraft.core.BlockPos(x,0,z),Blocks.SPRUCE_PLANKS.defaultBlockState());
+        var remote=new net.minecraft.core.BlockPos(7,1,1);
+        cells.put(remote,cells.get(at)); cells.put(remote.above(),cells.get(at.above()));
+        expectDoorwayFailure(new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),java.util.Set.of(),at,5),"disconnected doorway");
+        System.out.println("PASS 57 doorway negatives and eight open-door positives: four directions, both hinges, plants/logs/fences/walls, low canopies, missing halves and disconnected rooms");
+    }
+    private static void expectDoorwayFailure(BiomeArchitecturePreview.Plan plan,String reason) {
+        try { PreviewDoorwayAudit.validate(plan); throw new AssertionError("Invalid doorway admitted: "+reason); }
+        catch(IllegalStateException expected) { if(!expected.getMessage().contains(reason)) throw expected; }
     }
     private static void verifyRoofJoinRejections() {
         for(var style:VillageArchitecture.BiomeDialect.values()) {
@@ -178,14 +221,14 @@ public final class BiomeArchitecturePreviewSelfTest {
                 case TAIGA -> "15f35a0efe02801888f908966a32bb8c58f897053c399c54ae85c129bb155091";
                 case SNOWY -> "bd7e29c082e49f7540f1021518d821031e6d12486ba51f512fae5dd4d5ea0483";
             };
-            if(!original.equals(snapshotHash(interiors.toString()))) failures.add("Revision-5 occupied-storey snapshot changed: "+style);
-            else System.out.println("PASS exterior-only snapshot "+style+": all cells Y<=4 unchanged; "+roofJoins+" closed roof joins");
+            if(!original.equals(snapshotHash(interiors.toString()))) failures.add("Pre-doorway occupied-storey snapshot changed: "+style);
+            else System.out.println("PASS retained pre-doorway snapshot "+style+"; "+roofJoins+" closed roof joins");
         }
         if(!failures.isEmpty()) throw new AssertionError("Catalog admission failures ("+failures.size()+"): "+failures);
     }
     private static void appendInteriorSnapshot(StringBuilder target,BiomeArchitecturePreview.Plan plan) {
         target.append(plan.sample().id()).append('\n');
-        plan.cells().entrySet().stream().filter(entry->entry.getKey().getY()<=4)
+        PreviewDoorwayAudit.baseline(plan).entrySet().stream().filter(entry->entry.getKey().getY()<=4)
                 .sorted(java.util.Comparator.comparingInt((java.util.Map.Entry<net.minecraft.core.BlockPos,
                         net.minecraft.world.level.block.state.BlockState> entry)->entry.getKey().getX())
                         .thenComparingInt(entry->entry.getKey().getY()).thenComparingInt(entry->entry.getKey().getZ()))
@@ -254,12 +297,13 @@ public final class BiomeArchitecturePreviewSelfTest {
     private static void verifyLegacyCopy(BiomeArchitecturePreview.Plan plan,PlainsLegacyArchitecturePreview.Source original) {
         int minX=original.cells().keySet().stream().mapToInt(net.minecraft.core.BlockPos::getX).min().orElseThrow();
         int minZ=original.cells().keySet().stream().mapToInt(net.minecraft.core.BlockPos::getZ).min().orElseThrow();
-        if(original.cells().size()!=plan.cells().size()) throw new AssertionError("Plains geometry changed");
+        var baseline=PreviewDoorwayAudit.baseline(plan);
+        if(original.cells().size()!=baseline.size()) throw new AssertionError("Plains geometry changed outside doorway audit");
         int changed=0;
         var corrected=PreviewSeatingAudit.corrected(original.cells(),original.seats());
         PreviewSeatingAudit.validate(corrected,original.seats());
         for(var entry:original.cells().entrySet()) {
-            var actual=plan.cells().get(entry.getKey().offset(-minX,0,-minZ));
+            var actual=baseline.get(entry.getKey().offset(-minX,0,-minZ));
             var expected=original.roofCells().contains(entry.getKey())
                     ? PlainsLegacyArchitecturePreview.oakRoof(corrected.get(entry.getKey()),entry.getKey().getY()) : corrected.get(entry.getKey());
             if(!expected.equals(actual)) throw new AssertionError("Unaudited legacy change: "+entry.getKey());
@@ -273,6 +317,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         }
         // Some open-market or already-oak legacy masters do not contain dark roof cells.
         if(changed==0&&!plan.sample().id().startsWith("catalog_")) throw new AssertionError("No oak roof substitution in "+plan.sample().id());
-        System.out.println("PASS exact legacy Plains copy: "+changed+" roof/seat cells corrected; all other cells unchanged");
+        System.out.println("PASS retained pre-doorway legacy Plains copy: "+changed+" roof/seat cells corrected; "
+                +PreviewDoorwayAudit.edits(plan)+" separately scoped doorway edits in final plan");
     }
 }
