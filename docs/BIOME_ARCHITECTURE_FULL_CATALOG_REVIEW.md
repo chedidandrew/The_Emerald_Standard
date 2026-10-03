@@ -1,5 +1,9 @@
 # Full biome architecture review — revision 4
 
+Historical revision-4 record. The next review fixes chair directions and the repetitive
+exterior envelopes; see [revision 5](BIOME_ARCHITECTURE_PREVIEW_REVISION_5.md).
+Keep this revision's signed worlds intact instead of repainting them with new plans.
+
 Review branch: `codex/biome-architecture-preview`. Not merged into `main` and not
 selected by normal village generation. The user approved expanding the small revision-3
 checkpoint into the full review catalog, but has not approved gameplay rollout.

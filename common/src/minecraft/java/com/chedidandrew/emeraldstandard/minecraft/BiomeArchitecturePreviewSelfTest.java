@@ -16,6 +16,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         String galleryBefore=System.getProperty(StructureGallery.ENABLE_PROPERTY);
         System.setProperty(StructureGallery.ENABLE_PROPERTY,"true");
         try {
+        verifyChairGeometry();
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
@@ -54,6 +55,26 @@ public final class BiomeArchitecturePreviewSelfTest {
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
         }
     }
+    private static void verifyChairGeometry() {
+        for(var toward:net.minecraft.core.Direction.Plane.HORIZONTAL) {
+            var seat=Blocks.OAK_STAIRS.defaultBlockState().setValue(net.minecraft.world.level.block.StairBlock.FACING,toward.getOpposite());
+            var boxes=seat.getShape(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,net.minecraft.core.BlockPos.ZERO).toAabbs();
+            var high=boxes.stream().filter(box->box.minY>=0.49).findFirst().orElseThrow();
+            double highX=(high.minX+high.maxX)/2-0.5,highZ=(high.minZ+high.maxZ)/2-0.5;
+            if(highX*toward.getStepX()+highZ*toward.getStepZ()>=0)
+                throw new AssertionError("Native stair back is toward the table: "+toward);
+            var at=net.minecraft.core.BlockPos.ZERO.above();
+            var table=at.relative(toward);
+            var cells=new java.util.HashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+            cells.put(at,seat); cells.put(table,Blocks.OAK_FENCE.defaultBlockState());
+            cells.put(table.above(),Blocks.OAK_PRESSURE_PLATE.defaultBlockState());
+            if(PreviewSeatingAudit.validate(cells,java.util.Set.of(at))!=1) throw new AssertionError("Missing seat target");
+            cells.put(at,seat.setValue(net.minecraft.world.level.block.StairBlock.FACING,toward));
+            try { PreviewSeatingAudit.validate(cells,java.util.Set.of(at)); throw new AssertionError("Outward chair admitted"); }
+            catch(IllegalStateException expected) { }
+        }
+        System.out.println("PASS native chair-back geometry and negative admission in all four directions");
+    }
     private static void verifyFullCatalog() {
         var samples=BiomeArchitectureCatalogPreview.samples();
         if(samples.size()!=265||samples.stream().map(BiomeArchitecturePreview.Sample::id).distinct().count()!=265)
@@ -63,17 +84,27 @@ public final class BiomeArchitecturePreviewSelfTest {
             var region=samples.stream().filter(s->s.style()==style).toList();
             if(region.size()!=53) throw new AssertionError("Incomplete style: "+style);
             var unique=new java.util.HashSet<java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>>();
+            var programs=new java.util.HashSet<PreviewExteriorPrograms.Program>();
+            var silhouettes=new java.util.HashMap<String,String>();
+            int chairs=0;
             for(var sample:region) {
                 try {
                 var plan=BiomeArchitecturePreview.plan(sample);
                 if(!plan.equals(BiomeArchitecturePreview.plan(sample))) throw new AssertionError("Unstable catalog plan");
                 if(!unique.add(plan.cells())) throw new AssertionError("Duplicate design geometry: "+sample.id());
+                chairs+=PreviewSeatingAudit.validate(plan.cells(),PreviewSeatingAudit.lowStairs(plan.cells()));
                 if(sample.width()>50||sample.depth()>74) throw new AssertionError("Catalog exceeds review plot");
                 if(style==VillageArchitecture.BiomeDialect.PLAINS) {
                     var source=sample.role().equals("BANK")?PlainsLegacyArchitecturePreview.source("BANK")
                             :PlainsLegacyArchitecturePreview.source(sample.role(),BiomeArchitectureCatalogPreview.masterId(sample));
                     verifyLegacyCopy(plan,source);
                 } else {
+                    if(!sample.role().equals("BANK")&&!programs.add(PreviewExteriorPrograms.program(BiomeArchitectureCatalogPreview.masterId(sample))))
+                        throw new AssertionError("Repeated exterior program: "+sample.id());
+                    if(!sample.role().equals("BANK")) {
+                        String previous=silhouettes.putIfAbsent(exteriorSilhouette(plan),sample.id());
+                        if(previous!=null) throw new AssertionError("Repeated normalized exterior silhouette: "+previous+" / "+sample.id());
+                    }
                     BiomeArchitecturePreview.validate(plan);
                     long beds=plan.cells().values().stream().filter(s->s.getBlock() instanceof BedBlock
                             &&s.getValue(BedBlock.PART)==BedPart.HEAD).count();
@@ -100,8 +131,32 @@ public final class BiomeArchitecturePreviewSelfTest {
                     System.err.println("CATALOG FAILURE "+failures.getLast());
                 }
             }
+            if(style!=VillageArchitecture.BiomeDialect.PLAINS&&programs.size()!=52)
+                failures.add("Incomplete unique exterior programs: "+style+" "+programs.size());
+            System.out.println("PASS style seating audit "+style+": "+chairs+" unambiguous table-facing ground seats");
         }
         if(!failures.isEmpty()) throw new AssertionError("Catalog admission failures ("+failures.size()+"): "+failures);
+    }
+    /** Palette/furnishing-independent top-height and footprint projection, normalized in X/Z.
+     * A differently colored or simply resized copy of one shell must not qualify as variety. */
+    private static String exteriorSilhouette(BiomeArchitecturePreview.Plan plan) {
+        int width=plan.sample().width(),depth=plan.sample().depth();
+        int[][] heights=new int[width][depth];
+        boolean[][] floors=new boolean[width][depth];
+        for(var entry:plan.cells().entrySet()) {
+            var pos=entry.getKey(); var state=entry.getValue();
+            if(pos.getY()==0) floors[pos.getX()][pos.getZ()]=true;
+            if(pos.getY()<4||state.is(Blocks.SNOW)||state.is(Blocks.LANTERN)||state.is(Blocks.IRON_CHAIN)
+                    ||state.getBlock() instanceof net.minecraft.world.level.block.FlowerPotBlock) continue;
+            if(!state.getCollisionShape(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,pos).isEmpty())
+                heights[pos.getX()][pos.getZ()]=Math.max(heights[pos.getX()][pos.getZ()],pos.getY());
+        }
+        var result=new StringBuilder();
+        for(int z=0;z<32;z++) for(int x=0;x<32;x++) {
+            int px=Math.min(width-1,x*width/32),pz=Math.min(depth-1,z*depth/32);
+            result.append((char)('A'+heights[px][pz])).append(floors[px][pz]?'1':'0');
+        }
+        return result.toString();
     }
     private static void verifyFurnitureRejections(BiomeArchitecturePreview.Plan plan) {
         var at=new net.minecraft.core.BlockPos(plan.entrance().getX(),1,plan.entrance().getZ()+1);
@@ -141,20 +196,23 @@ public final class BiomeArchitecturePreviewSelfTest {
         int minZ=original.cells().keySet().stream().mapToInt(net.minecraft.core.BlockPos::getZ).min().orElseThrow();
         if(original.cells().size()!=plan.cells().size()) throw new AssertionError("Plains geometry changed");
         int changed=0;
+        var corrected=PreviewSeatingAudit.corrected(original.cells(),original.seats());
+        PreviewSeatingAudit.validate(corrected,original.seats());
         for(var entry:original.cells().entrySet()) {
             var actual=plan.cells().get(entry.getKey().offset(-minX,0,-minZ));
             var expected=original.roofCells().contains(entry.getKey())
-                    ? PlainsLegacyArchitecturePreview.oakRoof(entry.getValue(),entry.getKey().getY()) : entry.getValue();
-            if(!expected.equals(actual)) throw new AssertionError("Non-roof legacy change: "+entry.getKey());
+                    ? PlainsLegacyArchitecturePreview.oakRoof(corrected.get(entry.getKey()),entry.getKey().getY()) : corrected.get(entry.getKey());
+            if(!expected.equals(actual)) throw new AssertionError("Unaudited legacy change: "+entry.getKey());
             if(!actual.equals(entry.getValue())) {
                 changed++;
                 for(var property:entry.getValue().getProperties())
-                    if(!actual.hasProperty(property)||!actual.getValue(property).equals(entry.getValue().getValue(property)))
+                    if(!actual.hasProperty(property)||(!property.equals(net.minecraft.world.level.block.StairBlock.FACING)
+                            &&!actual.getValue(property).equals(entry.getValue().getValue(property))))
                         throw new AssertionError("Roof state property changed: "+property.getName());
             }
         }
         // Some open-market or already-oak legacy masters do not contain dark roof cells.
         if(changed==0&&!plan.sample().id().startsWith("catalog_")) throw new AssertionError("No oak roof substitution in "+plan.sample().id());
-        System.out.println("PASS exact legacy Plains copy: "+changed+" oak roof cells; all other cells unchanged");
+        System.out.println("PASS exact legacy Plains copy: "+changed+" roof/seat cells corrected; all other cells unchanged");
     }
 }

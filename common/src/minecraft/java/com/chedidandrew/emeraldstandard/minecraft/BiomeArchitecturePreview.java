@@ -16,7 +16,7 @@ public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
     public static final String CATALOG_PROPERTY = PROPERTY + ".fullCatalog";
-    public static final int REVISION = 4;
+    public static final int REVISION = 5;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
@@ -358,7 +358,8 @@ public final class BiomeArchitecturePreview {
             bench(x,z-1,length,Direction.SOUTH); bench(x,z+1,length,Direction.NORTH);
         }
         void bench(int x,int z,int length,Direction facing) {
-            for(int i=0;i<length;i++) put(x+i,1,z,p.stairs.defaultBlockState().setValue(StairBlock.FACING,facing));
+            // facing is where a seated person looks. Minecraft's stair direction is the backrest.
+            for(int i=0;i<length;i++) put(x+i,1,z,p.stairs.defaultBlockState().setValue(StairBlock.FACING,facing.getOpposite()));
         }
         void niche(int x,int z) {
             put(x,1,z,p.trim); put(x,2,z,Blocks.POTTED_FERN);
@@ -589,6 +590,7 @@ public final class BiomeArchitecturePreview {
     }
 
     public static void validate(Plan p) {
+        PreviewSeatingAudit.validate(p.cells(),PreviewSeatingAudit.lowStairs(p.cells()));
         validateFurnitureSupport(p);
         Set<BlockPos> reach=reachable(p);
         if(!reach.containsAll(p.access())) {

@@ -26,7 +26,7 @@ final class BiomeArchitectureCatalogPreview {
                     Plan plan=PlainsLegacyArchitecturePreview.catalog(role,id);
                     CACHE.put(plan.sample().id(),plan); result.add(plan.sample());
                 } else result.add(new Sample(style,role,"catalog_"+style.id()+"_"+id,
-                        descriptor.width(),descriptor.depth()));
+                        descriptor.width()+6,descriptor.depth()+6));
             }
             var bank=BiomeArchitecturePreview.samples().stream()
                     .filter(s->s.style()==style&&s.role().equals("BANK")).findFirst().orElseThrow();
@@ -44,28 +44,29 @@ final class BiomeArchitectureCatalogPreview {
     static String masterId(Sample s) { return s.id().substring(("catalog_"+s.style().id()+"_").length()); }
 
     private static Plan build(Sample s) {
-        Builder b=new Builder(s);
+        Builder b=new Builder(new Sample(s.style(),s.role(),s.id(),s.width()-6,s.depth()-6));
         String id=masterId(s);
         var descriptor=VillageArchitecture.activeBlueprints().stream().filter(d->d.templateId().equals(id))
                 .findFirst().orElseThrow();
         if(!descriptor.type().name().equals(s.role())) throw new IllegalArgumentException("Catalog role mismatch");
         int variant=Integer.parseInt(id.substring(id.lastIndexOf('_')+1));
-        int w=s.width(),d=s.depth(),mid=w/2;
+        int w=b.s.width(),d=b.s.depth(),mid=w/2;
         boolean open=s.role().equals("MARKET_SQUARE"),smith=s.role().equals("SMITHY");
         int front=s.style()==BiomeDialect.DESERT?1:2;
         int h=s.role().equals("GUARD_POST")?6:s.role().equals("EXCHANGE_HALL")?5:4;
         b.floor(0,w-1,0,d-1);
         if(open) {
             b.pergola(0,w-1,front,d-1,h);
+            PreviewExteriorPrograms.roof(b,id,front,h,w-1);
             b.entrance=new BlockPos(mid,1,front);
         } else if(smith) {
             int split=w/2;
-            b.room(0,split,front,d-1,h); roof(b,0,split,front,d-1,h+1);
+            b.room(0,split,front,d-1,h); PreviewExteriorPrograms.roof(b,id,front,h,split);
             b.pergola(split+1,w-1,front,d-1,h);
             b.door(split/2,front);
             for(int y=1;y<=2;y++) b.remove(split,y,d/2);
         } else {
-            b.room(0,w-1,front,d-1,h); roof(b,0,w-1,front,d-1,h+1);
+            b.room(0,w-1,front,d-1,h); PreviewExteriorPrograms.roof(b,id,front,h,w-1);
             windows(b,front,h);
             b.door(mid,front);
             if(s.style()!=BiomeDialect.DESERT) b.porch(2,w-3,0,front,3);
@@ -93,13 +94,18 @@ final class BiomeArchitectureCatalogPreview {
             b.pier(0,0,3,b.p.log()); b.pier(w-1,0,3,b.p.log()); b.lamp(mid,3,0);
         }
         b.details();
+        PreviewExteriorPrograms.appendages(b,id,h);
         // Later porch/clerestory/light composition can replace a roof bearing. A snow layer
         // is optional dressing: keep it only where the final roof actually supports it.
         b.cells.entrySet().removeIf(e->e.getValue().is(Blocks.SNOW)
                 && (b.cells.get(e.getKey().below())==null
                 || !b.cells.get(e.getKey().below()).isFaceSturdy(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,
                         e.getKey().below(),Direction.UP)));
-        Plan plan=b.finish(); BiomeArchitecturePreview.validate(plan); return plan;
+        Map<BlockPos,BlockState> translated=new LinkedHashMap<>();
+        b.cells.forEach((pos,state)->translated.put(pos.offset(3,0,3),state));
+        Set<BlockPos> access=new HashSet<>(); b.access.forEach(pos->access.add(pos.offset(3,0,3)));
+        Plan plan=new Plan(s,Map.copyOf(translated),Set.copyOf(access),b.entrance.offset(3,0,3),b.finish().height());
+        BiomeArchitecturePreview.validate(plan); return plan;
     }
     private static void roof(Builder b,int x0,int x1,int z0,int z1,int y) {
         switch(b.s.style()) {

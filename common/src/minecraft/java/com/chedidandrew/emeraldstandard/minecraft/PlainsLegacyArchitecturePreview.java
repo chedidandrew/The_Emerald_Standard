@@ -11,7 +11,7 @@ import net.minecraft.world.level.block.state.BlockState;
 /** Read-only copies of CURRENT Plains designs, not new production descriptors or migrations. */
 final class PlainsLegacyArchitecturePreview {
     record Source(Map<BlockPos, BlockState> cells, BlockPos entrance, Set<BlockPos> access,
-            Set<BlockPos> roofCells) { }
+            Set<BlockPos> roofCells, Set<BlockPos> seats) { }
     private static final Map<String, BiomeArchitecturePreview.Plan> CACHE = new HashMap<>();
 
     static synchronized BiomeArchitecturePreview.Plan plan(String role) {
@@ -29,24 +29,30 @@ final class PlainsLegacyArchitecturePreview {
             for (var cell : VillageBankManager.galleryBankBlueprint(BlockPos.ZERO, BiomeDialect.PLAINS))
                 cells.put(cell.position(), cell.state());
             // The frozen Bank uses these dark-wood pieces in its upper roof and portico canopies;
-            // its seats and low forecourt accents stay below this band and remain untouched.
+            // its seats and low forecourt accents stay below this roof palette band.
+            // The separate chair audit may correct a seat's direction, never its material/shape.
             cells.forEach((pos,state)-> { if(!oakRoof(state,pos.getY()).equals(state)) roofCells.add(pos); });
             return new Source(Map.copyOf(cells), new BlockPos(6, 1, 1), Set.of(new BlockPos(6, 1, 6)),
-                    Set.copyOf(roofCells));
+                    Set.copyOf(roofCells),PreviewSeatingAudit.lowStairs(cells));
         }
         var blueprint = AuthoredVillageStructures.plan(ProjectType.valueOf(role),
                 id, 11, VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,
                 VillageArchitecture.Character.MERCANTILE, BiomeDialect.PLAINS);
+        Set<BlockPos> seats=new HashSet<>();
         for (var stage : List.of(blueprint.base(), blueprint.stageOne(), blueprint.stageTwo()))
             for (var cell : stage) {
                 BlockPos pos=new BlockPos(cell.x(),cell.y(),cell.z());
                 cells.put(pos,cell.state());
                 if(cell.phase()==AuthoredVillageStructures.Phase.ROOF) roofCells.add(pos);
                 else roofCells.remove(pos);
+                seats.remove(pos);
+                if(cell.state().getBlock() instanceof StairBlock
+                        &&(cell.phase()==AuthoredVillageStructures.Phase.FIXTURE||cell.phase()==AuthoredVillageStructures.Phase.DECOR))
+                    seats.add(pos);
             }
         // The original native admission handles upper floors, ladders and their protected routes.
         return new Source(Map.copyOf(cells), blueprint.metadata().entranceInside(),
-                blueprint.metadata().accessTargets(), Set.copyOf(roofCells));
+                blueprint.metadata().accessTargets(), Set.copyOf(roofCells),Set.copyOf(seats));
     }
 
     private static BiomeArchitecturePreview.Plan build(String role) {
@@ -62,7 +68,8 @@ final class PlainsLegacyArchitecturePreview {
         int maxZ = original.cells().keySet().stream().mapToInt(BlockPos::getZ).max().orElseThrow();
         BlockPos offset = new BlockPos(-minX, 0, -minZ);
         Map<BlockPos, BlockState> copy = new LinkedHashMap<>();
-        original.cells().forEach((pos, state) -> copy.put(pos.offset(offset),
+        var corrected=PreviewSeatingAudit.corrected(original.cells(),original.seats());
+        corrected.forEach((pos, state) -> copy.put(pos.offset(offset),
                 original.roofCells().contains(pos) ? oakRoof(state,pos.getY()) : state));
         var sample = new BiomeArchitecturePreview.Sample(BiomeDialect.PLAINS, role,
                 id, maxX-minX+1, maxZ-minZ+1);

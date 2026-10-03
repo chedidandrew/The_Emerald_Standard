@@ -14,6 +14,8 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String launcher = Files.readString(root.resolve("scripts/open-village-comparison.ps1"));
         String legacy=Files.readString(root.resolve(path+"PlainsLegacyArchitecturePreview.java"));
         String catalog=Files.readString(root.resolve(path+"BiomeArchitectureCatalogPreview.java"));
+        String exteriors=Files.readString(root.resolve(path+"PreviewExteriorPrograms.java"));
+        String seating=Files.readString(root.resolve(path+"PreviewSeatingAudit.java"));
         require(preview.contains("Boolean.getBoolean(CATALOG_PROPERTY)")&&catalog.contains("StructureGalleryPlan.goldMasters()")
                 &&gallery.contains("BiomeArchitecturePreview.reviewSamples()")&&init.contains("tesArchitectureFullCatalog")
                 &&launcher.contains("[switch]$FullCatalog"),"Full catalog remains separately opted in");
@@ -21,8 +23,14 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
                 &&!catalog.contains("Blocks.MOSSY_COBBLESTONE_STAIRS"),"Taiga cobblestone with sparse weathering only");
         require(legacy.contains("AuthoredVillageStructures.plan")&&legacy.contains("galleryBankBlueprint")
                 &&legacy.contains("AuthoredVillageStructures.Phase.ROOF")&&legacy.contains("target.withPropertiesOf(state)"),
-                "Plains must copy current native designs with a shape-preserving roof-only palette override");
-        require(preview.contains("REVISION = 4")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
+                "Plains must copy current native designs with a shape-preserving roof palette override");
+        require(legacy.contains("PreviewSeatingAudit.corrected(original.cells(),original.seats())")
+                &&seating.contains("towardTable.getOpposite()")&&preview.contains("facing.getOpposite()"),
+                "Chair backs point away from the table without changing stair material or shape");
+        require(catalog.contains("PreviewExteriorPrograms.roof")&&catalog.contains("PreviewExteriorPrograms.appendages")
+                &&exteriors.contains("case COURT")&&exteriors.contains("case OFFSET")&&exteriors.contains("case TWIN_BAYS"),
+                "Catalog composes explicit roof and attached-wing programs, not one resized shell");
+        require(preview.contains("REVISION = 5")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
                 &&preview.contains("walkable(cells,at)")&&preview.contains("CarpetBlock"),
                 "Revision-three regional craft and rug admission");
         require(preview.contains("validateFurnitureSupport(p)")&&preview.contains("Reversed counter endpoints"),
@@ -41,6 +49,9 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
                 "VillageBankManager.java", "VillageDevelopmentRuntime.java"}) {
             require(!Files.readString(root.resolve(path + name)).contains("BiomeArchitecturePreview"),
                     "Prototype leaked into production: " + name);
+            require(!Files.readString(root.resolve(path + name)).contains("PreviewExteriorPrograms")
+                    &&!Files.readString(root.resolve(path + name)).contains("PreviewSeatingAudit"),
+                    "Review helpers leaked into production: " + name);
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")
                 && init.contains("'1,2,3,4,5,6,7,8,9,10,11,12,13'"), "Preview launcher coverage");
