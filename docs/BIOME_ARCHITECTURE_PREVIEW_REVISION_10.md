@@ -103,3 +103,25 @@ unchanged production selection. This is an internal opted-in art review, not a n
 live generation feature, so no unrelated recipe or production handbook text is
 changed to advertise unreleased landscapes. Production-isolation coverage now
 also guards `PreviewOutdoorPrograms`.
+
+## Desert jungle-door refinement
+
+All 75 Desert review designs now use jungle doors, including entrance doors and
+room-partition doors. Room partitions reuse the shared regional palette instead
+of a separate oak fallback. Door positions, facing, hinges and paired halves are
+unchanged; no other region's palette or geometry is changed. Native admission
+checks reject any non-jungle Desert door in both prototypes and the full catalog.
+
+Fabric native admission/assemble, the common regression suite and the filtered
+NeoForge loader test pass. The doorway audit still finds 858 complete doors with
+zero blocked sides. A fresh live profile, `build/biome-preview-catalog-r10-04`,
+placed all 375 pairs (750 structures) with the existing native survival gates.
+Its signature is `e8c5f5160fb2f0cc`, content revision 17, comparison schema 1.
+Minecraft is left open at Desert #76's front entrance, with identifying signs
+throughout the catalog. Previous review saves are preserved.
+
+Handbook accuracy review: rechecked chapter routing, building-catalog reader
+guidance and the compact terrain page. This remains an opted-in review catalog,
+not a change to released village generation, recipes or saved production plans;
+those explanations remain accurate and need no unrelated edits. The review
+branch remains separate from `main` pending the user's approval.

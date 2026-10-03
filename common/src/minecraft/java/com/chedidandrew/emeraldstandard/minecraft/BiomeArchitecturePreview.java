@@ -215,7 +215,7 @@ public final class BiomeArchitecturePreview {
             case DESERT -> new Palette(Blocks.SMOOTH_SANDSTONE, Blocks.CUT_SANDSTONE,
                     Blocks.SMOOTH_SANDSTONE, Blocks.CHISELED_SANDSTONE, Blocks.SANDSTONE_STAIRS,
                     Blocks.SANDSTONE_SLAB, Blocks.SMOOTH_SANDSTONE, Blocks.SANDSTONE_STAIRS,
-                    Blocks.SANDSTONE_SLAB, Blocks.OAK_DOOR);
+                    Blocks.SANDSTONE_SLAB, Blocks.JUNGLE_DOOR);
             case SAVANNA -> new Palette(Blocks.ACACIA_PLANKS, Blocks.ACACIA_LOG,
                     Blocks.ACACIA_PLANKS, Blocks.COBBLESTONE, Blocks.ACACIA_STAIRS,
                     Blocks.ACACIA_SLAB, Blocks.ACACIA_PLANKS, Blocks.ACACIA_STAIRS,

@@ -23,6 +23,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
+            verifyDesertDoors(plan);
             if(!plan.equals(BiomeArchitecturePreview.plan(sample))) throw new AssertionError("Nondeterministic sample");
             long beds=plan.cells().values().stream().filter(s->s.getBlock() instanceof BedBlock
                     &&s.getValue(BedBlock.PART)==BedPart.HEAD).count();
@@ -62,6 +63,13 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
         }
+    }
+    private static void verifyDesertDoors(BiomeArchitecturePreview.Plan plan) {
+        if(plan.sample().style()!=VillageArchitecture.BiomeDialect.DESERT) return;
+        if(plan.cells().values().stream()
+                .anyMatch(state->state.getBlock() instanceof net.minecraft.world.level.block.DoorBlock
+                        &&!state.is(Blocks.JUNGLE_DOOR)))
+            throw new AssertionError("Non-jungle desert door: "+plan.sample().id());
     }
     private static void verifyFacadeRejections() {
         var sample=PreviewCompactBuildings.samples(VillageArchitecture.BiomeDialect.SAVANNA).getFirst();
@@ -225,6 +233,7 @@ public final class BiomeArchitecturePreviewSelfTest {
             for(var sample:region) {
                 try {
                 var plan=BiomeArchitecturePreview.plan(sample);
+                verifyDesertDoors(plan);
                 PreviewFacadePrograms.validate(plan);
                 boolean compact=PreviewCompactBuildings.isCompact(sample);
                 var joins=compact?java.util.Set.<net.minecraft.core.BlockPos>of():BiomeArchitectureCatalogPreview.roofJoins(sample);

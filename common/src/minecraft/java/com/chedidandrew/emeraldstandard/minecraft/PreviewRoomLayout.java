@@ -91,8 +91,7 @@ final class PreviewRoomLayout {
                 :p.sample().style()==BiomeDialect.SAVANNA?Blocks.ACACIA_PLANKS
                 :p.sample().style()==BiomeDialect.PLAINS?Blocks.OAK_PLANKS:Blocks.SPRUCE_PLANKS;
         for(int x=left+1;x<right;x++) for(int y=1;y<=3;y++) draft.put(new BlockPos(x,y,z),wall.defaultBlockState());
-        Block door=p.sample().style()==BiomeDialect.SAVANNA?Blocks.ACACIA_DOOR
-                :p.sample().style()==BiomeDialect.TAIGA||p.sample().style()==BiomeDialect.SNOWY?Blocks.SPRUCE_DOOR:Blocks.OAK_DOOR;
+        Block door=new BiomeArchitecturePreview.Builder(p.sample()).p.door();
         BlockState lower=door.defaultBlockState().setValue(DoorBlock.FACING,Direction.NORTH);
         draft.put(new BlockPos(center,1,z),lower);
         draft.put(new BlockPos(center,2,z),lower.setValue(DoorBlock.HALF,DoubleBlockHalf.UPPER));
