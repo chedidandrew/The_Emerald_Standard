@@ -117,4 +117,6 @@ not copied player/chunk data. Old R1/R2 worlds and captures are retained, and cu
 their stale layout signatures instead of repainting them. No file was installed in a normal
 Minecraft profile.
 
-**Awaiting visual review. No full-catalog expansion or merge into main without approval.**
+The user subsequently approved full-catalog expansion. See
+[revision 4 full review](BIOME_ARCHITECTURE_FULL_CATALOG_REVIEW.md). This document and its
+captured checkpoint remain historical; merging into main still requires explicit approval.

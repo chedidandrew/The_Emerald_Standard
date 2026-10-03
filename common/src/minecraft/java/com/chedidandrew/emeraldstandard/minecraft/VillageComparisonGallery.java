@@ -127,12 +127,25 @@ public final class VillageComparisonGallery {
                 writeIndex(server, state);
                 writeSignature(server.overworld(), state.signature, true);
                 state.ready = true;
+                openCatalogReview(server);
                 LOGGER.info("Village comparison ready: {} pairs plus {} vanilla context courts; {} actual structures",
                         state.pairs.size(), state.courts.size(), state.pairs.size() * 2 + state.courts.size() * 4);
             }
         } catch (RuntimeException exception) {
             state.failure = exception.getMessage() == null ? exception.toString() : exception.getMessage();
             LOGGER.error("Comparison build stopped without clearing or rebuilding existing blocks", exception);
+        }
+    }
+
+    private static void openCatalogReview(MinecraftServer server) {
+        if (!Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)
+                || !Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)
+                || Boolean.getBoolean(ENABLE_PROPERTY + ".capture")) return;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 160");
+            player.sendSystemMessage(Component.literal("Full architecture review: 52 designs + Bank per style. "
+                    + "Plains 1–53; Desert 54–106; Savanna 107–159; Taiga 160–212; Snowy 213–265. "
+                    + "Use /emerald comparison visit <number>. Every building has a sign. Review only; main unchanged."));
         }
     }
 
@@ -247,7 +260,7 @@ public final class VillageComparisonGallery {
     }
 
     public static int expectedPairCount() {
-        if (Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)) return BiomeArchitecturePreview.samples().size();
+        if (Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)) return BiomeArchitecturePreview.reviewSamples().size();
         return (StructureGalleryPlan.goldMasters().size() + 1)
                 * VillageArchitecture.BiomeDialect.values().length;
     }
@@ -368,22 +381,25 @@ public final class VillageComparisonGallery {
     private static List<ResolvedPair> resolvePreviewPairs(ServerLevel level, int surfaceY) {
         List<Identifier> available = vanillaTemplates(level);
         List<ResolvedPair> result = new ArrayList<>();
-        for (var sample : BiomeArchitecturePreview.samples()) {
+        for (var sample : BiomeArchitecturePreview.reviewSamples()) {
             var plan = BiomeArchitecturePreview.plan(sample);
             Identifier reference = vanillaCandidates(available, sample.style().id(), sample.role()).getFirst();
             StructureTemplate template = level.getStructureManager().get(reference).orElseThrow();
             Rotation rotation = entranceRotation(template);
             Vec3i size = template.getSize(rotation);
-            int plotX = result.size() * PAIR_PITCH;
+            boolean full = Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY);
+            int local = result.size() % 53, district = result.size() / 53;
+            int plotX = full ? district * DISTRICT_PITCH + (local % COLUMNS) * PAIR_PITCH : result.size() * PAIR_PITCH;
+            int plotZ = full ? (local / COLUMNS) * ROW_PITCH : 0;
             int modX = plotX + (HALF_PITCH - sample.width()) / 2;
             int vanillaX = plotX + HALF_PITCH + (HALF_PITCH - size.getX()) / 2;
             BlockPos vanillaOrigin = template.getZeroPositionWithTransform(
-                    new BlockPos(vanillaX, vanillaOriginY(surfaceY), 18), Mirror.NONE, rotation);
+                    new BlockPos(vanillaX, vanillaOriginY(surfaceY), plotZ + 18), Mirror.NONE, rotation);
             ComparisonEntry entry = new ComparisonEntry(result.size()+1, sample.style().id(), sample.role(),
                     sample.id(), BiomeArchitecturePreview.REVISION, reference.toString(),
-                    "Art-direction prototype; " + analogueDescription(sample.role()), surfaceY, plotX, 0,
-                    modX, 18, sample.width(), sample.depth(), plan.height(),
-                    vanillaX, 18, size.getX(), size.getZ(), size.getY());
+                    "Art-direction prototype; " + analogueDescription(sample.role()), surfaceY, plotX, plotZ,
+                    modX, plotZ + 18, sample.width(), sample.depth(), plan.height(),
+                    vanillaX, plotZ + 18, size.getX(), size.getZ(), size.getY());
             result.add(new ResolvedPair(entry, null, sample.style(), template, vanillaOrigin, rotation, plan));
         }
         return List.copyOf(result);
@@ -517,8 +533,9 @@ public final class VillageComparisonGallery {
             if (!level.getBlockState(block.position()).equals(block.state())) {
                 level.setBlock(block.position(), block.state(), Block.UPDATE_ALL);
                 if (!level.getBlockState(block.position()).is(block.state().getBlock())) {
-                    throw new IllegalStateException("Production comparison placement failed at "
-                            + block.position().toShortString());
+                    throw new IllegalStateException("Comparison #" + e.index() + " " + e.modTemplate()
+                            + " placement failed at " + block.position().toShortString() + ": expected "
+                            + block.state() + "; actual " + level.getBlockState(block.position()));
                 }
             }
         }
@@ -538,6 +555,14 @@ public final class VillageComparisonGallery {
         }
         placeLabel(level, new BlockPos(e.plotX() + 8, e.surfaceY(), e.plotZ() + 4),
                 "#" + e.index() + " " + e.dialect(), "MOD: " + e.role(), e.modTemplate(), "Use /emerald");
+        if (pair.preview != null && Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)) {
+            String id = BiomeArchitectureCatalogPreview.masterId(pair.preview.sample());
+            int first = id.indexOf('_'), last = id.lastIndexOf('_');
+            String family = first >= 0 && last > first ? id.substring(first + 1, last).replace('_', ' ') : "Bank";
+            placeLabel(level, new BlockPos(e.modX() + e.modWidth()/2, e.surfaceY(), e.modZ()-3),
+                    "#" + e.index() + " " + e.dialect(), e.role().replace('_', ' '), family,
+                    "/emerald comparison");
+        }
         placeLabel(level, new BlockPos(e.plotX() + HALF_PITCH + 8, e.surfaceY(), e.plotZ() + 4),
                 "#" + e.index() + " VANILLA", shortName(e.vanillaTemplate()), "Actual village NBT", "Curated, not worldgen");
         setChecked(level, pairMarker(level, e.index()), Blocks.EMERALD_BLOCK.defaultBlockState());
@@ -759,7 +784,7 @@ public final class VillageComparisonGallery {
                 .append("Signature: ").append(Long.toUnsignedString(state.signature, 16))
                 .append("; content revision: ").append(StructureGalleryPlan.GALLERY_CONTENT_REVISION)
                 .append("; comparison schema: ").append(COMPARISON_SCHEMA).append(".\n\n")
-                .append("| Pair | District | Production master | Vanilla template | Relationship |\n")
+                .append("| Pair | District | Design | Vanilla template | Relationship |\n")
                 .append("| ---: | --- | --- | --- | --- |\n");
         for (ResolvedPair pair : state.pairs) {
             ComparisonEntry e = pair.entry;

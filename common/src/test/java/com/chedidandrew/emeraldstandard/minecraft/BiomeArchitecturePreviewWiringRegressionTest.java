@@ -13,10 +13,16 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String init = Files.readString(root.resolve("scripts/village-comparison-client.init.gradle"));
         String launcher = Files.readString(root.resolve("scripts/open-village-comparison.ps1"));
         String legacy=Files.readString(root.resolve(path+"PlainsLegacyArchitecturePreview.java"));
+        String catalog=Files.readString(root.resolve(path+"BiomeArchitectureCatalogPreview.java"));
+        require(preview.contains("Boolean.getBoolean(CATALOG_PROPERTY)")&&catalog.contains("StructureGalleryPlan.goldMasters()")
+                &&gallery.contains("BiomeArchitecturePreview.reviewSamples()")&&init.contains("tesArchitectureFullCatalog")
+                &&launcher.contains("[switch]$FullCatalog"),"Full catalog remains separately opted in");
+        require(catalog.contains("Blocks.COBBLESTONE")&&catalog.contains("At most two low")
+                &&!catalog.contains("Blocks.MOSSY_COBBLESTONE_STAIRS"),"Taiga cobblestone with sparse weathering only");
         require(legacy.contains("AuthoredVillageStructures.plan")&&legacy.contains("galleryBankBlueprint")
                 &&legacy.contains("AuthoredVillageStructures.Phase.ROOF")&&legacy.contains("target.withPropertiesOf(state)"),
                 "Plains must copy current native designs with a shape-preserving roof-only palette override");
-        require(preview.contains("REVISION = 3")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
+        require(preview.contains("REVISION = 4")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
                 &&preview.contains("walkable(cells,at)")&&preview.contains("CarpetBlock"),
                 "Revision-three regional craft and rug admission");
         require(preview.contains("validateFurnitureSupport(p)")&&preview.contains("Reversed counter endpoints"),

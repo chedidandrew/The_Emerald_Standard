@@ -1,6 +1,7 @@
 // Dedicated comparison profile. Never enables the old gallery's auto-build or capture paths.
 gradle.beforeProject { project ->
     def preview = project.providers.gradleProperty('tesArchitecturePreview').orElse('false').get()
+    def fullCatalog = project.providers.gradleProperty('tesArchitectureFullCatalog').orElse('false').get()
     def world = preview == 'true' ? 'TES_Biome_Architecture_Preview' : 'TES_Village_Comparison'
     def targetPath = project.providers.gradleProperty('tesComparisonGameDir')
             .orElse('run/comparison-26.2').get()
@@ -18,6 +19,7 @@ gradle.beforeProject { project ->
             vmArg '-Dthe_emerald_standard.villageComparison=true'
             vmArg '-Dthe_emerald_standard.villageComparison.autoBuild=true'
             vmArg "-Dthe_emerald_standard.biomeArchitecturePreview=${preview}"
+            vmArg "-Dthe_emerald_standard.biomeArchitecturePreview.fullCatalog=${fullCatalog}"
             vmArg "-Dthe_emerald_standard.villageComparison.capture=${capture}"
             vmArg "-Dthe_emerald_standard.villageComparison.capture.pairs=${capturePairs}"
             vmArg "-Dthe_emerald_standard.villageComparison.capture.stopWhenComplete=${captureStop}"
@@ -34,6 +36,7 @@ gradle.beforeProject { project ->
                 run.systemProperty('the_emerald_standard.villageComparison', 'true')
                 run.systemProperty('the_emerald_standard.villageComparison.autoBuild', 'true')
                 run.systemProperty('the_emerald_standard.biomeArchitecturePreview', preview)
+                run.systemProperty('the_emerald_standard.biomeArchitecturePreview.fullCatalog', fullCatalog)
                 run.systemProperty('the_emerald_standard.villageComparison.capture', capture)
                 run.systemProperty('the_emerald_standard.villageComparison.capture.pairs', capturePairs)
                 run.systemProperty('the_emerald_standard.villageComparison.capture.stopWhenComplete', captureStop)

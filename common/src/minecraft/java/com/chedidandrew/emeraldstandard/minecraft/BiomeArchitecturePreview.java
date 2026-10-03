@@ -15,7 +15,8 @@ import net.minecraft.world.level.block.state.properties.*;
 public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
-    public static final int REVISION = 3;
+    public static final String CATALOG_PROPERTY = PROPERTY + ".fullCatalog";
+    public static final int REVISION = 4;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
@@ -53,6 +54,7 @@ public final class BiomeArchitecturePreview {
         return List.copyOf(samples);
     }
     public static Plan plan(Sample sample) {
+        if(sample.id().startsWith("catalog_")) return BiomeArchitectureCatalogPreview.plan(sample);
         if (sample.style()==BiomeDialect.PLAINS) return PlainsLegacyArchitecturePreview.plan(sample.role());
         Builder b = new Builder(sample);
         switch (sample.role()) {
@@ -66,6 +68,9 @@ public final class BiomeArchitecturePreview {
         Plan plan = b.finish();
         validate(plan);
         return plan;
+    }
+    public static List<Sample> reviewSamples() {
+        return Boolean.getBoolean(CATALOG_PROPERTY) ? BiomeArchitectureCatalogPreview.samples() : samples();
     }
 
     private static void home(Builder b) {
@@ -204,7 +209,7 @@ public final class BiomeArchitecturePreview {
         b.lamp(9, 3, 2); b.lamp(15, 3, 5); b.lamp(9, 3, 11);
     }
 
-    private record Palette(Block wall, Block log, Block floor, Block trim, Block stairs,
+    record Palette(Block wall, Block log, Block floor, Block trim, Block stairs,
             Block slab, Block roof, Block roofStairs, Block roofSlab, Block door) { }
     private static Palette palette(BiomeDialect style) {
         return switch (style) {
@@ -217,7 +222,7 @@ public final class BiomeArchitecturePreview {
                     Blocks.ACACIA_SLAB, Blocks.ACACIA_PLANKS, Blocks.ACACIA_STAIRS,
                     Blocks.ACACIA_SLAB, Blocks.ACACIA_DOOR);
             case TAIGA -> new Palette(Blocks.SPRUCE_PLANKS, Blocks.SPRUCE_LOG,
-                    Blocks.SPRUCE_PLANKS, Blocks.MOSSY_COBBLESTONE, Blocks.SPRUCE_STAIRS,
+                    Blocks.SPRUCE_PLANKS, Blocks.COBBLESTONE, Blocks.SPRUCE_STAIRS,
                     Blocks.SPRUCE_SLAB, Blocks.SPRUCE_PLANKS, Blocks.SPRUCE_STAIRS,
                     Blocks.SPRUCE_SLAB, Blocks.SPRUCE_DOOR);
             case SNOWY -> new Palette(Blocks.SPRUCE_PLANKS, Blocks.STRIPPED_SPRUCE_LOG,
@@ -230,7 +235,7 @@ public final class BiomeArchitecturePreview {
                     Blocks.OAK_SLAB, Blocks.OAK_DOOR);
         };
     }
-    private static final class Builder {
+    static final class Builder {
         final Sample s; final Palette p; final Map<BlockPos, BlockState> cells = new LinkedHashMap<>();
         final Set<BlockPos> access = new HashSet<>(); BlockPos entrance;
         Builder(Sample s) { this.s = s; p = palette(s.style()); }
@@ -502,7 +507,8 @@ public final class BiomeArchitecturePreview {
                         stove(2,7); recordsAlcove(11,15,7,Blocks.SPRUCE_LOG);
                         for(int x=1;x<=15;x++) put(x,5,2,Blocks.SPRUCE_LOG.defaultBlockState()
                                 .setValue(BlockStateProperties.AXIS,Direction.Axis.X));
-                        for(int x:new int[]{1,15}) for(int z=3;z<=15;z++) put(x,0,z,Blocks.MOSSY_COBBLESTONE);
+                        for(int x:new int[]{1,15}) for(int z=3;z<=15;z++) put(x,0,z,Blocks.COBBLESTONE);
+                        put(1,0,13,Blocks.MOSSY_COBBLESTONE); put(15,0,5,Blocks.MOSSY_COBBLESTONE);
                     }
                     case SNOWY -> {
                         // Sheltered wind porch and a warm reading/stove side, not a Taiga recolor.
@@ -540,7 +546,8 @@ public final class BiomeArchitecturePreview {
                     }
                     case TAIGA -> {
                         shutters(3,front); shutters(9,front);
-                        for(int x=2;x<=10;x++) if(x!=6) put(x,1,front,Blocks.MOSSY_COBBLESTONE);
+                        for(int x=2;x<=10;x++) if(x!=6) put(x,1,front,Blocks.COBBLESTONE);
+                        put(2,1,front,Blocks.MOSSY_COBBLESTONE);
                         put(2,1,5,Blocks.BOOKSHELF); put(2,2,5,Blocks.LANTERN);
                     }
                     case SNOWY -> {
@@ -567,7 +574,7 @@ public final class BiomeArchitecturePreview {
         void stoneFront() {
             for(int x=1;x<16;x++) for(int y=1;y<=3;y++) {
                 BlockState at=cells.get(new BlockPos(x,y,2));
-                if(at!=null&&at.is(p.wall)) put(x,y,2,Blocks.MOSSY_COBBLESTONE);
+                if(at!=null&&at.is(p.wall)) put(x,y,2,Blocks.COBBLESTONE);
             }
         }
         void shutters(int center,int z) {

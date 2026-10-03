@@ -19,6 +19,9 @@ final class PlainsLegacyArchitecturePreview {
     }
 
     static Source source(String role) {
+        return source(role,role.equals("INN")?"inn_gallery_01":"house_cross_01");
+    }
+    static Source source(String role,String id) {
         Map<BlockPos, BlockState> cells = new LinkedHashMap<>();
         Set<BlockPos> roofCells = new HashSet<>();
         if (role.equals("BANK")) {
@@ -31,8 +34,7 @@ final class PlainsLegacyArchitecturePreview {
             return new Source(Map.copyOf(cells), new BlockPos(6, 1, 1), Set.of(new BlockPos(6, 1, 6)),
                     Set.copyOf(roofCells));
         }
-        String id = role.equals("INN") ? "inn_gallery_01" : "house_cross_01";
-        var blueprint = AuthoredVillageStructures.plan(role.equals("INN") ? ProjectType.INN : ProjectType.HOUSE,
+        var blueprint = AuthoredVillageStructures.plan(ProjectType.valueOf(role),
                 id, 11, VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,
                 VillageArchitecture.Character.MERCANTILE, BiomeDialect.PLAINS);
         for (var stage : List.of(blueprint.base(), blueprint.stageOne(), blueprint.stageTwo()))
@@ -48,7 +50,12 @@ final class PlainsLegacyArchitecturePreview {
     }
 
     private static BiomeArchitecturePreview.Plan build(String role) {
-        Source original = source(role);
+        return copy(source(role),role,"plains_legacy_" + role.toLowerCase(Locale.ROOT) + "_oak_roof");
+    }
+    static synchronized BiomeArchitecturePreview.Plan catalog(String role,String id) {
+        return CACHE.computeIfAbsent("catalog_"+id,key->copy(source(role,id),role,"catalog_plains_"+id));
+    }
+    private static BiomeArchitecturePreview.Plan copy(Source original,String role,String id) {
         int minX = original.cells().keySet().stream().mapToInt(BlockPos::getX).min().orElseThrow();
         int minZ = original.cells().keySet().stream().mapToInt(BlockPos::getZ).min().orElseThrow();
         int maxX = original.cells().keySet().stream().mapToInt(BlockPos::getX).max().orElseThrow();
@@ -58,7 +65,7 @@ final class PlainsLegacyArchitecturePreview {
         original.cells().forEach((pos, state) -> copy.put(pos.offset(offset),
                 original.roofCells().contains(pos) ? oakRoof(state,pos.getY()) : state));
         var sample = new BiomeArchitecturePreview.Sample(BiomeDialect.PLAINS, role,
-                "plains_legacy_" + role.toLowerCase(Locale.ROOT) + "_oak_roof", maxX-minX+1, maxZ-minZ+1);
+                id, maxX-minX+1, maxZ-minZ+1);
         Set<BlockPos> access = new HashSet<>();
         original.access().forEach(pos -> access.add(pos.offset(offset)));
         return new BiomeArchitecturePreview.Plan(sample, Map.copyOf(copy), Set.copyOf(access),
