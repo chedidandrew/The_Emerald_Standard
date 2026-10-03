@@ -496,3 +496,58 @@ construction-safety and terrain reader guidance, corresponding compact text and
 chapter/lectern routing. This fixes only the opt-in architecture review catalog
 and its placement checks, not production construction, recipes or existing player
 saves. Current handbook guidance remains accurate; unrelated prose is unchanged.
+
+## Purposeful furnishing for sparse rooms
+
+The opt-in catalog now dresses sparse enclosed rooms and reachable upper floors
+with small, purpose-led modules. Homes receive storage, crafting, books and
+kitchen corners; Inns receive food preparation and guest storage; Guard Posts
+receive fletching/map/storage stations; Mines, Smithies, Granaries, Warehouses
+and banking halls receive their corresponding work or storage blocks. Supported
+planted sideboards, taller book/storage cabinets and regional small rugs add
+domestic detail without changing the exterior or replacing existing furnishings.
+
+The placement budget considers room area and existing functional blocks. Tiny
+rooms, already furnished spaces and open structures do not receive a compulsory
+furniture quota. New wall cabinets retain two clear walking columns in front,
+their usable approach is declared and verified reachable, and their bases require
+native sturdy support. Door approaches, ladder rungs/landings, existing access
+targets, the reverse review camera and window view depth remain reserved. Pots
+whose full bearing path cannot pass the existing furniture-support gate are
+omitted while the sound cabinet can remain. Nothing weakens the support audit.
+Room, window, doorway and seating validation gates run before acceptance; final
+composition also restores comfortable night lighting and thins redundant lamps.
+
+Native census: 210 designs / 337 rooms receive 1,819 additional furnishing cells,
+including 336 upper-floor cells. Plains: 33 designs / 44 rooms; Desert: 44 / 74;
+Savanna: 43 / 68; Taiga: 46 / 78; Snowy: 44 / 73. All 375 final designs and the
+13 early prototypes pass native admission. Five-biome fixtures verify additive
+placement, usable approaches, preservation of original cells, deterministic
+results and rejection of missing furniture bearings. Wiring tests enforce
+review-only isolation and lighting recomposition after furnishing. The complete
+common regression suite, Fabric native admission/assemble and filtered NeoForge
+loader test pass. Production's 52 revision-11 designs and version-12 Bank remain
+unchanged.
+
+The settled-world check also requires every newly added furnishing cell to
+retain its exact authored state, native survival and a sturdy floor/cabinet
+bearing. It runs both after placement and when reopening a completed review save;
+air cannot masquerade as a surviving missing decoration.
+
+Fresh compact labeled profile `build/biome-preview-catalog-r10-15` contains all
+375 pairs / 750 actual structures; signature `e40433b4e67432e5`, content revision
+17 / comparison schema 1. Saved-world reopening passed all 1,819 added
+furnishing cells and all 493 ladder rungs. Interactive review is left open in
+Creative flight at Plains #14 in daylight, with visit/back commands and signs.
+The complete fifteen-view Plains #1 / Savanna #151 / Taiga #233 batch was
+inspected at selected actual interior views. An earlier #14 / #164 / #207 batch
+stopped at the compact loft's solid entrance-camera collision and is explicitly
+incomplete, not final evidence. No claim is made of visually inspecting every
+room; full-catalog support and circulation coverage comes from native/live
+checks. Earlier worlds remain preserved and main remains unchanged.
+
+Handbook accuracy review: re-read building-catalog and construction-safety
+reader/compact guidance and checked Building projects chapter and lectern routes.
+No production design selection, construction ownership, recipes, service rules
+or existing saves change. This is review-only room dressing; current handbook
+guidance remains accurate, with no artificial unrelated prose changes.

@@ -11,7 +11,8 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 /** Review-only elevations, honest glazing and lighting. Every change has an explicit audit scope. */
 final class PreviewFacadePrograms {
     record Audit(Map<BlockPos,BlockState> before, Set<BlockPos> skin, Set<BlockPos> added, Set<BlockPos> removed,
-            Set<BlockPos> jambs,Set<BlockPos> windows,Set<BlockPos> ladderBearings,Map<Direction,Integer> faces) { }
+            Set<BlockPos> jambs,Set<BlockPos> windows,Set<BlockPos> ladderBearings,
+            PreviewInteriorFurnishings.Edits furnishings,Map<Direction,Integer> faces) { }
     record Composition(int width,int spacing,int phase,int frame,boolean planted) { }
     private static final Map<String,Audit> AUDITS=new HashMap<>();
     private static final Map<String,Set<BlockPos>> LANES=new HashMap<>();
@@ -60,11 +61,14 @@ final class PreviewFacadePrograms {
         skin.addAll(ladderBearings);
         Set<BlockPos> windows=PreviewWindowLighting.sealBlindWindows(source,cells);
         skin.addAll(jambs);skin.addAll(windows);
-        added.addAll(PreviewWindowLighting.brightenRooms(source,cells));
-        var lighting=PreviewWindowLighting.thinLanterns(source,cells);
+        var furnishings=PreviewInteriorFurnishings.apply(source,cells);
+        added.addAll(furnishings.additions().keySet());
+        Plan furnished=new Plan(source.sample(),Map.copyOf(cells),furnishings.approaches(),source.entrance(),source.height());
+        added.addAll(PreviewWindowLighting.brightenRooms(furnished,cells));
+        var lighting=PreviewWindowLighting.thinLanterns(furnished,cells);
         added.removeAll(lighting.removed());added.addAll(lighting.added());
-        Plan result=new Plan(source.sample(),Map.copyOf(cells),source.access(),source.entrance(),source.height());
-        AUDITS.put(source.sample().id(),new Audit(source.cells(),Set.copyOf(skin),Set.copyOf(added),lighting.removed(),jambs,windows,ladderBearings,Map.copyOf(faces)));
+        Plan result=new Plan(source.sample(),Map.copyOf(cells),furnishings.approaches(),source.entrance(),source.height());
+        AUDITS.put(source.sample().id(),new Audit(source.cells(),Set.copyOf(skin),Set.copyOf(added),lighting.removed(),jambs,windows,ladderBearings,furnishings,Map.copyOf(faces)));
         validate(result);
         return result;
     }
@@ -278,7 +282,7 @@ final class PreviewFacadePrograms {
                 ||id.endsWith("_bricks")||id.endsWith("_terracotta")||id.endsWith("_sandstone")
                 ||id.endsWith("_planks")||state.getBlock() instanceof RotatedPillarBlock;
     }
-    private static Set<BlockPos> outside(Plan p,int y) {
+    static Set<BlockPos> outside(Plan p,int y) {
         Set<BlockPos> seen=new HashSet<>(); ArrayDeque<BlockPos> queue=new ArrayDeque<>();
         BlockPos start=new BlockPos(-1,y,-1); seen.add(start);queue.add(start);
         while(!queue.isEmpty()) {
@@ -326,6 +330,7 @@ final class PreviewFacadePrograms {
             throw new IllegalStateException("Unscoped exterior addition: "+at);
         PreviewDoorwayAudit.validate(p);
         PreviewLadderSupport.validate(p.sample().id(),p.cells());
+        PreviewInteriorFurnishings.validate(p,audit.furnishings());
         PreviewDoorwayGlazing.validate(p);
         PreviewWindowLighting.validate(p);
     }

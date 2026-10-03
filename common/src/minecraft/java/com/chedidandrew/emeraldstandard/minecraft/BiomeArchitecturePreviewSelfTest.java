@@ -24,6 +24,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyFloorBearingRejection();
         verifyRoomCeilings();
         verifyInteriorCirculation();
+        verifyRoomFurnishings();
         verifyLadderSupports();
         verifySupportRejections();
         verifyOutdoorGrade();
@@ -67,6 +68,17 @@ public final class BiomeArchitecturePreviewSelfTest {
         PreviewDoorwayAudit.report();
         PreviewDoorwayGlazing.report(BiomeArchitectureCatalogPreview.samples());
         PreviewWindowLighting.report(BiomeArchitectureCatalogPreview.samples());
+        for(var style:VillageArchitecture.BiomeDialect.values()) {
+            int designs=0,rooms=0,blocks=0,upper=0;
+            for(var sample:BiomeArchitectureCatalogPreview.samples()) if(sample.style()==style) {
+                var edits=PreviewFacadePrograms.audit(BiomeArchitecturePreview.plan(sample)).furnishings();
+                if(!edits.additions().isEmpty()) designs++;
+                rooms+=edits.rooms();blocks+=edits.additions().size();
+                upper+=(int)edits.additions().keySet().stream().filter(at->at.getY()>3).count();
+            }
+            if(designs==0||upper==0) throw new AssertionError("Missing room/upper-floor furniture coverage "+style);
+            System.out.println("FURNISHING CENSUS "+style+": "+designs+" designs, "+rooms+" rooms, "+blocks+" added cells, "+upper+" upper-floor cells");
+        }
         int dividerColumns=0,upperLevels=0,ladderRungs=0,ladderFrames=0,ladderDesigns=0;
         for(var sample:BiomeArchitectureCatalogPreview.samples()) {
             var p=BiomeArchitecturePreview.plan(sample);
@@ -97,6 +109,30 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
         }
+    }
+    private static void verifyRoomFurnishings() {
+        for(var style:VillageArchitecture.BiomeDialect.values()) {
+            var source=ceilingFixture(style,8);
+            var cells=new java.util.LinkedHashMap<>(source.cells());
+            var edits=PreviewInteriorFurnishings.apply(source,cells);
+            var furnished=new BiomeArchitecturePreview.Plan(source.sample(),java.util.Map.copyOf(cells),edits.approaches(),source.entrance(),source.height());
+            if(edits.additions().isEmpty()||edits.rooms()==0) throw new AssertionError("Empty room left unfurnished "+style);
+            source.cells().forEach((at,state)-> {if(!state.equals(cells.get(at))) throw new AssertionError("Original furniture replaced "+at);});
+            PreviewInteriorFurnishings.validate(furnished,edits);
+            PreviewRoomLayout.validate(furnished);PreviewDoorwayAudit.validate(furnished);
+            PreviewWindowLighting.validateViews(furnished);BiomeArchitecturePreview.validateFurnitureSupport(furnished);
+            if(!PreviewRoomLayout.reachable(cells,source.entrance()).containsAll(edits.approaches()))
+                throw new AssertionError("Unreachable workstation");
+            var repeat=new java.util.LinkedHashMap<>(source.cells());
+            if(!edits.equals(PreviewInteriorFurnishings.apply(source,repeat))||!cells.equals(repeat))
+                throw new AssertionError("Nondeterministic furnishings");
+            var at=edits.additions().keySet().iterator().next();var broken=new java.util.LinkedHashMap<>(cells);
+            broken.remove(at.below());
+            try {PreviewInteriorFurnishings.validate(new BiomeArchitecturePreview.Plan(source.sample(),java.util.Map.copyOf(broken),edits.approaches(),source.entrance(),source.height()),edits);
+                throw new AssertionError("Missing furniture bearing accepted");}
+            catch(IllegalStateException expected) { }
+        }
+        System.out.println("PASS additive room furnishings: five palettes, usable approaches, original furniture retained, repeatability and missing-bearing rejection");
     }
     private static void verifyLadderSupports() {
         for(var style:VillageArchitecture.BiomeDialect.values()) for(var facing:net.minecraft.core.Direction.Plane.HORIZONTAL) {

@@ -227,12 +227,15 @@ final class PreviewWindowLighting {
         for(BlockPos feet:PreviewRoomLayout.reachable(p.cells(),p.entrance())) if(indoor(p,feet)
                 &&light.blockLightAt(new com.chedidandrew.emeraldstandard.core.WholeBuildingBlueprint.Voxel(feet.getX(),feet.getY(),feet.getZ()))<7)
             throw new IllegalStateException("Dark review room: "+p.sample().id()+" "+feet);
-        for(var entry:p.cells().entrySet()) if(glass(entry.getValue())&&!view(p.cells(),entry.getKey()))
-            throw new IllegalStateException("Blind review window: "+p.sample().id()+" at "+entry.getKey());
+        validateViews(p);
         // Open markets retain indispensable task lights at separate covered stalls.
         // Enclosed building types must never regress to visible lantern clusters.
         if(!p.sample().role().equals("MARKET_SQUARE")&&crowdedPairs(p)>0)
             throw new IllegalStateException("Crowded review lanterns: "+p.sample().id());
+    }
+    static void validateViews(Plan p) {
+        for(var entry:p.cells().entrySet()) if(glass(entry.getValue())&&!view(p.cells(),entry.getKey()))
+            throw new IllegalStateException("Blind review window: "+p.sample().id()+" at "+entry.getKey());
     }
     private static Plan with(Plan p,Map<BlockPos,BlockState> cells) {
         return new Plan(p.sample(),Map.copyOf(cells),p.access(),p.entrance(),p.height());

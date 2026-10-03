@@ -38,7 +38,7 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
                 "Review ladders retain sturdy window mullions, install after bearings and cannot disappear unnoticed in live placement");
         require(rooms.contains("widenCorridors(source,cells,access)")&&rooms.contains("Math.abs(at.getZ()-z)<4")
                 &&rooms.contains("guardUpperEdges(source,cells,access)")&&rooms.contains("unguarded upper-floor drop")
-                &&facade.contains("PreviewWindowLighting.brightenRooms(source,cells)"),
+                &&facade.contains("PreviewWindowLighting.brightenRooms(furnished,cells)"),
                 "Review circulation widens cramped enclosed passages, guards loft drops and restores comfortable night lighting");
         require(rooms.contains("ceilingRooms(source,cells,floors)")&&rooms.contains("validateHeights(p)")
                 &&rooms.contains("clearThird(cells,new BlockPos(x+dx,y+1,z))")
@@ -52,8 +52,19 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
                 &&glazing.contains("if(pane(before.get(at)))"),
                 "All final review facades frame existing door-adjacent panes without filling air or overriding native pane arms");
         String composition=Files.readString(root.resolve(path+"PreviewWindowLighting.java"));
+        String furnishing=Files.readString(root.resolve(path+"PreviewInteriorFurnishings.java"));
+        require(facade.contains("PreviewInteriorFurnishings.apply(source,cells)")
+                &&facade.contains("PreviewInteriorFurnishings.validate(p,audit.furnishings())")
+                &&furnishing.contains("PreviewWindowLighting.validateViews(p)")
+                &&furnishing.contains("BiomeArchitecturePreview.validateFurnitureSupport(p)")
+                &&furnishing.contains("required.add(approach)")
+                &&furnishing.contains("existingFunctions(cells,room)")
+                &&gallery.contains("validateSettledReviewFurnishings(server.overworld(),state.pairs)")
+                &&gallery.contains("validateSettledReviewFurnishings(level,pairs)")
+                &&gallery.contains("!actual.equals(cell.getValue())||!actual.canSurvive(level,at)"),
+                "Review furnishings remain additive, access-aware, window-safe and density-budgeted");
         require(facade.contains("PreviewWindowLighting.sealBlindWindows(source,cells)")
-                &&facade.contains("PreviewWindowLighting.thinLanterns(source,cells)")
+                &&facade.contains("PreviewWindowLighting.thinLanterns(furnished,cells)")
                 &&composition.contains("reference.requireSpawnSafe()")&&composition.contains("light.spawnSafe()")
                 &&rooms.contains("if(state.getBlock() instanceof LanternBlock) fixtures.add(at)")
                 &&composition.contains("Blind review window"),
@@ -140,6 +151,7 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
             require(!Files.readString(root.resolve(path+name)).contains("PreviewDoorwayGlazing"),"Review glazing audit leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewWindowLighting"),"Review window/light composition leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewLadderSupport"),"Review ladder support leaked into production");
+            require(!Files.readString(root.resolve(path+name)).contains("PreviewInteriorFurnishings"),"Review furniture leaked into production");
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")
                 && init.contains("'1,2,3,4,5,6,7,8,9,10,11,12,13'"), "Preview launcher coverage");

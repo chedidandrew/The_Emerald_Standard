@@ -129,6 +129,7 @@ public final class VillageComparisonGallery {
                 state.nextCourt++;
             } else {
                 validateSettledReviewLadders(server.overworld(),state.pairs);
+                validateSettledReviewFurnishings(server.overworld(),state.pairs);
                 writeIndex(server, state);
                 writeSignature(server.overworld(), state.signature, true);
                 state.ready = true;
@@ -308,6 +309,7 @@ public final class VillageComparisonGallery {
             state.next = pairs.size();
             state.nextCourt = courts.size();
             validateSettledReviewLadders(level,pairs);
+            validateSettledReviewFurnishings(level,pairs);
             state.ready = true;
         } else if (!hasHeader) {
             requireEmptyMarkers(level, pairs.size() + courts.size());
@@ -629,6 +631,22 @@ public final class VillageComparisonGallery {
         int rungs=0;
         for(ResolvedPair pair:pairs) rungs+=validateReviewLadders(level,pair);
         if(rungs>0) LOGGER.info("Review settled ladder survival passed: {} rungs across {} designs",rungs,pairs.size());
+    }
+
+    private static void validateSettledReviewFurnishings(ServerLevel level,List<ResolvedPair> pairs) {
+        int checked=0;
+        for(ResolvedPair pair:pairs) {
+            if(pair.preview==null) continue;
+            BlockPos origin=new BlockPos(pair.entry.modX(),pair.entry.surfaceY(),pair.entry.modZ());
+            for(var cell:PreviewFacadePrograms.audit(pair.preview).furnishings().additions().entrySet()) {
+                BlockPos at=origin.offset(cell.getKey());BlockState actual=level.getBlockState(at);
+                if(!actual.equals(cell.getValue())||!actual.canSurvive(level,at)
+                        ||!level.getBlockState(at.below()).isFaceSturdy(level,at.below(),net.minecraft.core.Direction.UP))
+                    throw new IllegalStateException("Missing or unsupported settled review furniture: #"+pair.entry.index()+" "+at+" "+actual);
+                checked++;
+            }
+        }
+        if(checked>0) LOGGER.info("Review settled furnishing survival passed: {} added cells across {} designs",checked,pairs.size());
     }
 
     private static void requireEmptyPlot(ServerLevel level, ComparisonEntry e) {
