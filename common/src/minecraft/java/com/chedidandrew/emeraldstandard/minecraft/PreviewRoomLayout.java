@@ -22,8 +22,12 @@ final class PreviewRoomLayout {
     static void validate(Plan p) {
         Layout layout=layout(p);
         validateHeights(p);
+        if(!enclosedCorridors(p).isEmpty())
+            throw new IllegalStateException(p.sample().id()+" cramped enclosed corridor: "+enclosedCorridors(p));
         for(BlockPos at:layout.dividerTops()) if(!full(p.cells(),at)||!structural(p.cells().get(at.above()),at.above()))
             throw new IllegalStateException(p.sample().id()+" room divider does not meet its ceiling: "+at);
+        if(!upperDrops(p.cells(),p.entrance()).isEmpty())
+            throw new IllegalStateException(p.sample().id()+" unguarded upper-floor drop: "+upperDrops(p.cells(),p.entrance()));
         if(layout.partitions()>0||layout.upperLevels()>0) {
             Set<BlockPos> reach=reachable(p.cells(),p.entrance());
             if(!reach.containsAll(p.access())||!reach.containsAll(layout.upperTargets()))
@@ -53,6 +57,7 @@ final class PreviewRoomLayout {
         int partitions=0,levels=0;
         liftLowBeams(source,cells);
         ceilingRooms(source,cells,floors);
+        widenCorridors(source,cells,access);
         if(!source.sample().role().equals("MARKET_SQUARE")) {
             // Back sleeping rooms or work/storage offices: doors and lintels, not knee-high logs.
             List<Integer> bedRows=cells.entrySet().stream().filter(e->e.getValue().getBlock() instanceof BedBlock
@@ -67,6 +72,7 @@ final class PreviewRoomLayout {
             if(addAttic(source,cells,access,floors,upperTargets)) levels++;
         }
         closeLowAtticEdges(source,cells,access);
+        guardUpperEdges(source,cells,access);
         floors.removeIf(at->!full(cells,at)); // A later ladder hatch is not a floor bearing.
         if(partitions>0||levels>0||!floors.isEmpty()) lightRooms(source,cells);
         LAYOUTS.put(source.sample().id(),new Layout(partitions,levels,Set.copyOf(floors),Set.copyOf(upperTargets),Set.copyOf(dividerTops)));
@@ -81,6 +87,8 @@ final class PreviewRoomLayout {
                 .mapToInt(BlockPos::getZ).max().orElse(p.sample().depth()-1);
     }
     private static boolean partition(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> access,int z,Set<BlockPos> tops) {
+        // Two parallel screens must not manufacture a one-block-wide passage.
+        if(tops.stream().anyMatch(at->Math.abs(at.getZ()-z)<4)) return false;
         int center=p.entrance().getX(),left=center,right=center;
         while(full(cells,new BlockPos(left-1,0,z))) left--;
         while(full(cells,new BlockPos(right+1,0,z))) right++;
@@ -115,6 +123,7 @@ final class PreviewRoomLayout {
         draft.put(new BlockPos(center,1,z),lower);
         draft.put(new BlockPos(center,2,z),lower.setValue(DoorBlock.HALF,DoubleBlockHalf.UPPER));
         if(!reachable(draft,p.entrance()).containsAll(access)) return false;
+        if(narrowCorridors(draft,p.entrance()).size()>narrowCorridors(cells,p.entrance()).size()) return false;
         var test=new Plan(p.sample(),Map.copyOf(draft),Set.copyOf(access),p.entrance(),p.height());
         try { PreviewDoorwayAudit.validate(test); }
         catch(IllegalStateException error) { return false; }
@@ -150,8 +159,10 @@ final class PreviewRoomLayout {
             for(int xx=left;xx<=right;xx++) for(int z=z0;z<=back;z++) {
                 BlockPos at=new BlockPos(xx,y,z);
                 // Retain the authored roof curb, chimney and perimeter material.
-                if(!draft.containsKey(at)||draft.get(at).isAir()) {
+                if(!draft.containsKey(at)||draft.get(at).isAir()||draft.get(at).is(Blocks.IRON_CHAIN)
+                        ||draft.get(at).getBlock() instanceof LanternBlock) {
                     draft.put(at,floor.defaultBlockState()); plate.add(at);
+                    removeChainsAbove(draft,at);
                 }
             }
             BlockState climbing=Blocks.LADDER.defaultBlockState().setValue(LadderBlock.FACING,Direction.NORTH);
@@ -309,6 +320,129 @@ final class PreviewRoomLayout {
             if(access.contains(feet)) throw new IllegalStateException("Low occupied upper room: "+p.sample().id()+" "+feet);
             cells.put(feet,finishMaterial(p).defaultBlockState());
             cells.put(feet.above(),finishMaterial(p).defaultBlockState());
+        }
+    }
+    static Set<BlockPos> narrowCorridors(Map<BlockPos,BlockState> cells,BlockPos entrance) {
+        Set<BlockPos> reach=reachable(cells,entrance),result=new HashSet<>();
+        for(BlockPos feet:reach) for(Direction along:List.of(Direction.EAST,Direction.SOUTH)) {
+            Direction side=along.getClockWise();List<BlockPos> run=new ArrayList<>();
+            for(BlockPos at=feet;reach.contains(at)&&covered(cells,at)&&wallColumn(cells,at.relative(side))
+                    &&wallColumn(cells,at.relative(side.getOpposite()));at=at.relative(along)) run.add(at);
+            if(run.size()>=4) result.addAll(run);
+        }
+        return Set.copyOf(result);
+    }
+    static Set<BlockPos> enclosedCorridors(Plan p) {
+        Set<BlockPos> outside=new HashSet<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();queue.add(new BlockPos(-1,2,-1));
+        while(!queue.isEmpty()) {
+            BlockPos at=queue.removeFirst();
+            if(at.getX()<-1||at.getZ()<-1||at.getX()>p.sample().width()||at.getZ()>p.sample().depth()||!outside.add(at)) continue;
+            BlockState state=p.cells().get(at);
+            if(state!=null&&!state.isAir()) continue;
+            for(Direction side:Direction.Plane.HORIZONTAL) queue.add(at.relative(side));
+        }
+        var result=new HashSet<>(narrowCorridors(p.cells(),p.entrance()));
+        result.removeIf(at->outside.contains(at.above())||p.cells().get(at)!=null&&p.cells().get(at).getBlock() instanceof DoorBlock);
+        Set<BlockPos> longRuns=new HashSet<>();
+        for(BlockPos at:result) for(Direction along:List.of(Direction.EAST,Direction.SOUTH)) {
+            List<BlockPos> run=new ArrayList<>();
+            for(BlockPos next=at;result.contains(next);next=next.relative(along)) run.add(next);
+            if(run.size()>=4) longRuns.addAll(run);
+        }
+        return Set.copyOf(longRuns);
+    }
+    private static boolean wallColumn(Map<BlockPos,BlockState> cells,BlockPos at) {
+        for(int y=0;y<2;y++) {
+            BlockState state=cells.get(at.above(y));
+            if(state==null||state.hasBlockEntity()||!(Block.isShapeFullBlock(state.getCollisionShape(EmptyBlockGetter.INSTANCE,at.above(y)))
+                    ||state.getBlock() instanceof IronBarsBlock)) return false;
+        }
+        return true;
+    }
+    private static void widenCorridors(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> access) {
+        // Open a divider into the neighboring room, never an exterior wall or a cabinet.
+        Set<BlockPos> outside=new HashSet<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();queue.add(new BlockPos(-1,2,-1));
+        while(!queue.isEmpty()) {
+            BlockPos at=queue.removeFirst();
+            if(at.getX()<-1||at.getZ()<-1||at.getX()>p.sample().width()||at.getZ()>p.sample().depth()||!outside.add(at)) continue;
+            BlockState state=cells.get(at);
+            if(state!=null&&!state.isAir()) continue;
+            for(Direction side:Direction.Plane.HORIZONTAL) queue.add(at.relative(side));
+        }
+        for(int pass=0;pass<4;pass++) {
+            var cramped=narrowCorridors(cells,p.entrance()).stream().sorted(Comparator.comparingInt((BlockPos b)->b.getY())
+                    .thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX)).toList();
+            boolean changed=false;
+            for(BlockPos feet:cramped) for(Direction side:Direction.Plane.HORIZONTAL) {
+                if(feet.getY()!=1) continue;
+                BlockPos wall=feet.relative(side),room=wall.relative(side);
+                if(!wallColumn(cells,wall)||outside.contains(feet.above())) continue;
+                List<BlockPos> columns=new ArrayList<>();columns.add(wall);
+                for(int depth=0;depth<3&&wallColumn(cells,room)&&!outside.contains(room.above());depth++) {
+                    columns.add(room);room=room.relative(side);
+                }
+                boolean intoRoom=walkable(cells,room)&&covered(cells,room)&&!outside.contains(room.above());
+                // A one-cell enclosed connecting wing has no adjacent room to borrow.
+                // Move its side wall out by one cell, carrying its foundation and ceiling.
+                boolean extend=columns.size()==1&&full(cells,wall.below())&&!full(cells,room.below())&&PreviewDoorwayAudit.clear(cells,room)
+                        &&structural(cells.get(feet.above(3)),feet.above(3))
+                        &&structural(cells.get(wall.above(3)),wall.above(3))
+                        &&(!cells.containsKey(room.above(2))||structural(cells.get(room.above(2)),room.above(2)))
+                        &&(!cells.containsKey(room.above(3))||structural(cells.get(room.above(3)),room.above(3)))
+                        &&room.getX()>0&&room.getZ()>0&&room.getX()<p.sample().width()-1&&room.getZ()<p.sample().depth()-1;
+                if(!intoRoom&&!extend) continue;
+                boolean safe=true;
+                for(BlockPos column:columns) for(int y=1;y<=3;y++) {
+                    BlockPos at=new BlockPos(column.getX(),y,column.getZ());BlockState state=cells.get(at);
+                    safe&=state!=null&&!state.hasBlockEntity()
+                            &&(Block.isShapeFullBlock(state.getCollisionShape(EmptyBlockGetter.INSTANCE,at))
+                                    ||state.getBlock() instanceof IronBarsBlock||state.getBlock() instanceof FenceBlock);
+                    for(Direction face:Direction.Plane.HORIZONTAL) {
+                        BlockState fixture=cells.get(at.relative(face));
+                        if(fixture!=null&&fixture.getBlock() instanceof WallTorchBlock) safe=false;
+                    }
+                }
+                if(!safe) continue;
+                Map<BlockPos,BlockState> draft=new LinkedHashMap<>(cells);
+                if(extend) {
+                    draft.put(room.below(),cells.get(wall.below()));
+                    draft.put(wall.below(),cells.get(feet.below()));
+                    for(int y=0;y<3;y++) draft.put(room.above(y),cells.get(wall.above(y)));
+                    draft.putIfAbsent(room.above(3),cells.get(wall.above(3)));
+                }
+                for(BlockPos column:columns) for(int y=1;y<=3;y++) draft.remove(new BlockPos(column.getX(),y,column.getZ()));
+                if(!reachable(draft,p.entrance()).containsAll(access)||!PreviewSupportAudit.floating(draft).isEmpty()) continue;
+                cells.clear();cells.putAll(draft);changed=true;break;
+            }
+            if(!changed) break;
+        }
+    }
+    static Set<BlockPos> upperDrops(Map<BlockPos,BlockState> cells,BlockPos entrance) {
+        Set<BlockPos> result=new HashSet<>();
+        for(BlockPos feet:reachable(cells,entrance)) {
+            if(feet.getY()<5||ladder(cells.get(feet))||ladder(cells.get(feet.below()))||!full(cells,feet.below())) continue;
+            for(Direction side:Direction.Plane.HORIZONTAL) {
+                BlockPos gap=feet.relative(side);
+                if(full(cells,gap.below())||ladder(cells.get(gap))||ladder(cells.get(gap.below()))
+                        ||!full(cells,new BlockPos(gap.getX(),0,gap.getZ()))
+                        ||!PreviewDoorwayAudit.clear(cells,gap)||!covered(cells,gap)) continue;
+                result.add(feet);
+            }
+        }
+        return Set.copyOf(result);
+    }
+    static void guardUpperEdges(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> access) {
+        Block rail=p.sample().style()==BiomeDialect.DESERT?Blocks.SANDSTONE_WALL
+                :p.sample().style()==BiomeDialect.SAVANNA?Blocks.ACACIA_FENCE
+                :p.sample().style()==BiomeDialect.PLAINS?Blocks.OAK_FENCE:Blocks.SPRUCE_FENCE;
+        var edges=upperDrops(cells,p.entrance()).stream().sorted(Comparator.comparingInt((BlockPos b)->b.getY())
+                .thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX)).toList();
+        for(BlockPos at:edges) {
+            BlockState old=cells.get(at);
+            if(access.contains(at)||old!=null&&!old.isAir()&&!(old.getBlock() instanceof CarpetBlock)) continue;
+            Map<BlockPos,BlockState> draft=new LinkedHashMap<>(cells);draft.put(at,rail.defaultBlockState());
+            if(!reachable(draft,p.entrance()).containsAll(access)) continue;
+            cells.clear();cells.putAll(draft);
         }
     }
     private static void lightRooms(Plan p,Map<BlockPos,BlockState> cells) {

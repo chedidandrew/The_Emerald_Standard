@@ -58,6 +58,7 @@ final class PreviewFacadePrograms {
         Set<BlockPos> jambs=PreviewDoorwayGlazing.frame(source.sample(),cells);
         Set<BlockPos> windows=PreviewWindowLighting.sealBlindWindows(source,cells);
         skin.addAll(jambs);skin.addAll(windows);
+        added.addAll(PreviewWindowLighting.brightenRooms(source,cells));
         var lighting=PreviewWindowLighting.thinLanterns(source,cells);
         added.removeAll(lighting.removed());added.addAll(lighting.added());
         Plan result=new Plan(source.sample(),Map.copyOf(cells),source.access(),source.entrance(),source.height());

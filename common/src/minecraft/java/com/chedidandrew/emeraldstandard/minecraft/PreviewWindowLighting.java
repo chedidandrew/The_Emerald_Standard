@@ -113,6 +113,42 @@ final class PreviewWindowLighting {
         }
         return new LightingEdits(Set.copyOf(removed),Set.copyOf(added));
     }
+    private static boolean indoor(Plan p,BlockPos feet) {
+        for(int y=feet.getY()+3;y<p.height();y++) {
+            BlockPos top=new BlockPos(feet.getX(),y,feet.getZ());BlockState state=p.cells().get(top);
+            if(state!=null&&!(state.getBlock() instanceof LanternBlock)&&!state.is(Blocks.IRON_CHAIN)
+                    &&state.isFaceSturdy(EmptyBlockGetter.INSTANCE,top,Direction.DOWN)) return true;
+        }
+        return false;
+    }
+    static Set<BlockPos> brightenRooms(Plan p,Map<BlockPos,BlockState> cells) {
+        Set<BlockPos> added=new HashSet<>();
+        for(int pass=0;pass<80;pass++) {
+            Plan draftPlan=with(p,cells);var light=BiomeArchitecturePreview.lighting(draftPlan);
+            var dim=PreviewRoomLayout.reachable(cells,p.entrance()).stream().filter(at->indoor(draftPlan,at)
+                    &&light.blockLightAt(new com.chedidandrew.emeraldstandard.core.WholeBuildingBlueprint.Voxel(at.getX(),at.getY(),at.getZ()))<7)
+                    .sorted(ORDER).toList();
+            if(dim.isEmpty()) return Set.copyOf(added);
+            boolean changed=false;
+            for(BlockPos feet:dim) {
+                List<BlockPos> positions=new ArrayList<>();
+                for(BlockPos candidate:PreviewRoomLayout.reachable(cells,p.entrance()))
+                    if(candidate.getY()==feet.getY()&&candidate.distManhattan(feet)<=4) positions.add(candidate.above(2));
+                positions.sort(Comparator.comparingInt((BlockPos at)->at.distManhattan(feet.above(2))).thenComparing(ORDER));
+                for(BlockPos at:positions) {
+                    if(cells.containsKey(at)||lanterns(cells).stream().anyMatch(other->crowded(cells,at,other))) continue;
+                    Map<BlockPos,BlockState> draft=new LinkedHashMap<>(cells);Set<BlockPos> placed=new HashSet<>();
+                    if(!placeLamp(draft,at,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true),placed)) continue;
+                    var improved=BiomeArchitecturePreview.lighting(with(p,draft));
+                    if(improved.blockLightAt(new com.chedidandrew.emeraldstandard.core.WholeBuildingBlueprint.Voxel(feet.getX(),feet.getY(),feet.getZ()))<7) continue;
+                    cells.clear();cells.putAll(draft);added.addAll(placed);changed=true;break;
+                }
+                if(changed) break;
+            }
+            if(!changed) throw new IllegalStateException("Cannot comfortably light review room: "+p.sample().id()+" "+dim.stream().limit(5).toList());
+        }
+        throw new IllegalStateException("Review room lighting did not converge: "+p.sample().id());
+    }
     private static boolean coverage(com.chedidandrew.emeraldstandard.core.WholeBuildingLightingValidator.ValidationReport light,
             com.chedidandrew.emeraldstandard.core.WholeBuildingLightingValidator.ValidationReport reference,
             List<com.chedidandrew.emeraldstandard.core.WholeBuildingBlueprint.Voxel> floors) {
@@ -187,6 +223,10 @@ final class PreviewWindowLighting {
         return pairs;
     }
     static void validate(Plan p) {
+        var light=BiomeArchitecturePreview.lighting(p);
+        for(BlockPos feet:PreviewRoomLayout.reachable(p.cells(),p.entrance())) if(indoor(p,feet)
+                &&light.blockLightAt(new com.chedidandrew.emeraldstandard.core.WholeBuildingBlueprint.Voxel(feet.getX(),feet.getY(),feet.getZ()))<7)
+            throw new IllegalStateException("Dark review room: "+p.sample().id()+" "+feet);
         for(var entry:p.cells().entrySet()) if(glass(entry.getValue())&&!view(p.cells(),entry.getKey()))
             throw new IllegalStateException("Blind review window: "+p.sample().id()+" at "+entry.getKey());
         // Open markets retain indispensable task lights at separate covered stalls.

@@ -405,3 +405,50 @@ and terrain reader text, their compact pages and chapter/lectern routing against
 the implementation. This is opt-in review geometry only; the guidance on frozen
 production plans, existing saves and construction safety remains accurate.
 Unrelated handbook prose remains unchanged pending approved production adoption.
+
+## Circulation, nighttime comfort and finished upper floors
+
+Parallel room partitions now reserve at least three air columns between their
+wall rows and reject layouts that introduce long, one-block-wide passages.
+Existing cramped enclosed corridors are opened into neighboring rooms where
+safe, including doubled interior wall courses. Narrow connecting wings can gain
+a locally widened foundation, wall and carried ceiling without replacing the
+whole building. Protected furnishings, fixture attachments and required routes
+are retained. Standard doors and short entrance transitions remain vanilla-sized;
+this is not a claim that every niche or doorway is three blocks wide.
+
+Upper floor plates now replace intersecting pendant-chain and lantern cells with
+solid flooring. Chains above the inserted floor are removed. Deliberate indoor
+loft openings receive supported biome-matched fences or sandstone walls, while
+ladder hatches and access targets stay usable. Final admission rejects unguarded
+indoor upper-floor drops and long enclosed one-block corridors.
+
+Roofed reachable walking cells must have block light at least seven without
+skylight. Additional supported lights are placed only where native propagation
+actually illuminates the dim target; the existing four-block, wall-aware lamp
+separation and coverage-preserving pruning remain in force. This addresses dark
+hallway ends without relying on daylight or adding a cluster of fixtures.
+
+Five-biome native fixtures cover widening, deliberate dark-room rejection,
+supported and repeatable lighting, chain-pierced floor repair, missing-floor
+rejection and safe regional barriers around intentional openings. All 375 final
+designs pass: zero long enclosed one-block corridors, zero unguarded indoor loft
+drops, three-block structural headroom, 67 accessible upper levels and 3,611
+closed divider columns. The final composition records 5,561 blind-glazing infills,
+952 redundant lamp removals and zero close lantern pairs. Production's frozen
+52 revision-11 designs and version-12 Bank remain unchanged.
+
+Validation: Fabric native admission/assemble, the complete common regression
+suite and filtered NeoForge loader test pass. Fresh compact labeled profile
+`build/biome-preview-catalog-r10-13` placed all 375 pairs / 750 actual structures;
+signature `1779fe71f53429a6`, content revision 17 and comparison schema 1. Its
+15-view Plains #14 / Desert #90 / Taiga #233 capture completed. Actual nighttime
+interiors were inspected for finished ceilings, readable lighting and clear
+circulation. Upper-floor edge coverage is native validation, not a claim of
+visually inspecting every loft. Earlier review worlds remain preserved.
+
+Handbook accuracy review: rechecked the complete building-catalog,
+construction-safety and terrain reader guidance, corresponding compact pages and
+chapter/lectern routes. This remains an opt-in review catalog, not production
+adoption, a recipe change or an automatic alteration of existing saves. The
+existing guidance remains accurate; unrelated handbook prose is unchanged.

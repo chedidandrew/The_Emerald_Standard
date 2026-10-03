@@ -23,6 +23,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyWindowLighting();
         verifyFloorBearingRejection();
         verifyRoomCeilings();
+        verifyInteriorCirculation();
         verifySupportRejections();
         verifyOutdoorGrade();
         verifyTaigaOverhangs();
@@ -69,11 +70,15 @@ public final class BiomeArchitecturePreviewSelfTest {
         for(var sample:BiomeArchitectureCatalogPreview.samples()) {
             var p=BiomeArchitecturePreview.plan(sample);
             PreviewRoomLayout.validate(p);
+            var narrow=PreviewRoomLayout.enclosedCorridors(p);
+            var drops=PreviewRoomLayout.upperDrops(p.cells(),p.entrance());
+            if(!narrow.isEmpty()||!drops.isEmpty()) throw new AssertionError("Incomplete circulation "+sample.id()+": narrow="+narrow+" drops="+drops);
             dividerColumns+=PreviewRoomLayout.layout(p).dividerTops().size();
             upperLevels+=PreviewRoomLayout.layout(p).upperLevels();
         }
         System.out.println("CEILING CENSUS: 375 designs; "+dividerColumns+" closed divider columns; "+upperLevels
                 +" accessible upper levels; zero usable floor areas below three-block structural headroom");
+        System.out.println("CIRCULATION CENSUS: 375 designs; zero long one-block enclosed corridors; zero unguarded indoor upper-floor drops; roofed walking areas have block-light >=7 without skylight");
         if(VillageArchitecture.activeBlueprints().size()!=52
                 ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
                 ||VillageBankManager.galleryBankStructureVersion()!=12)
@@ -114,6 +119,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         b.beds(4,4,1);
         // Sleeping space is not walkable air: its low beam must still be lifted.
         b.put(4,3,4,Blocks.OAK_PLANKS);b.put(4,3,5,Blocks.OAK_PLANKS);
+        for(int y=4;y<roof;y++) b.put(8,y,10,Blocks.IRON_CHAIN);
         b.access.add(new net.minecraft.core.BlockPos(6,1,10));
         return PreviewRoomLayout.apply(b.finish());
     }
@@ -125,6 +131,46 @@ public final class BiomeArchitecturePreviewSelfTest {
             return;
         }
         throw new AssertionError("Invalid room admitted: "+reason);
+    }
+    private static void verifyInteriorCirculation() {
+        for(var style:VillageArchitecture.BiomeDialect.values()) {
+            var b=new BiomeArchitecturePreview.Builder(new BiomeArchitecturePreview.Sample(style,"HOUSE","corridor_fixture_"+style,18,20));
+            b.room(2,14,2,16,7);b.terrace(2,14,2,16,8);b.door(7,2);b.floor(6,8,0,1);
+            for(int x:new int[]{6,8}) for(int z=3;z<=13;z++) for(int y=1;y<=7;y++) b.put(x,y,z,b.p.wall());
+            var source=b.finish();
+            if(PreviewRoomLayout.enclosedCorridors(source).isEmpty()) throw new AssertionError("Cramped corridor fixture did not exercise repair");
+            expectRoomFailure(source,source.cells(),"cramped enclosed corridor");
+            var fixed=PreviewRoomLayout.apply(source);
+            if(!PreviewRoomLayout.enclosedCorridors(fixed).isEmpty()) throw new AssertionError("Cramped room corridor retained: "+style);
+            PreviewSupportAudit.validate(fixed.cells(),"widened corridor");
+            var cells=new java.util.LinkedHashMap<>(fixed.cells());
+            cells.entrySet().removeIf(e->e.getValue().getBlock() instanceof net.minecraft.world.level.block.LanternBlock||e.getValue().is(Blocks.IRON_CHAIN));
+            var dark=new BiomeArchitecturePreview.Plan(fixed.sample(),java.util.Map.copyOf(cells),fixed.access(),fixed.entrance(),fixed.height());
+            try { PreviewWindowLighting.validate(dark);throw new AssertionError("Dark indoor hallway admitted"); }
+            catch(IllegalStateException expected) { if(!expected.getMessage().contains("Dark review room")) throw expected; }
+            PreviewWindowLighting.brightenRooms(dark,cells);
+            var lit=new BiomeArchitecturePreview.Plan(fixed.sample(),java.util.Map.copyOf(cells),fixed.access(),fixed.entrance(),fixed.height());
+            PreviewWindowLighting.validate(lit);PreviewSupportAudit.validate(cells,"comfortable corridor lighting");
+            if(!PreviewWindowLighting.brightenRooms(lit,cells).isEmpty()) throw new AssertionError("Non-idempotent indoor lighting");
+            var loft=ceilingFixture(style,8);var hole=new net.minecraft.core.BlockPos(6,4,10);
+            var broken=new java.util.LinkedHashMap<>(loft.cells());broken.remove(hole);
+            expectRoomFailure(loft,broken,"unguarded upper-floor drop");
+            var chainSlot=new net.minecraft.core.BlockPos(8,4,10);
+            if(!loft.cells().get(chainSlot).isFaceSturdy(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,chainSlot,net.minecraft.core.Direction.UP)
+                    ||loft.cells().get(chainSlot.above())!=null&&loft.cells().get(chainSlot.above()).is(Blocks.IRON_CHAIN))
+                throw new AssertionError("Hanging chain pierced the finished loft floor");
+            var opening=new net.minecraft.core.BlockPos(4,4,10);
+            var guarded=new java.util.LinkedHashMap<>(loft.cells());guarded.remove(opening);
+            PreviewRoomLayout.guardUpperEdges(loft,guarded,new java.util.HashSet<>(loft.access()));
+            if(!PreviewRoomLayout.upperDrops(guarded,loft.entrance()).isEmpty()
+                    ||!PreviewRoomLayout.reachable(guarded,loft.entrance()).containsAll(loft.access()))
+                throw new AssertionError("Intentional loft opening lacks a safe reachable railing: "+style);
+            if(guarded.values().stream().noneMatch(s->s.getBlock() instanceof net.minecraft.world.level.block.FenceBlock
+                    ||s.getBlock() instanceof net.minecraft.world.level.block.WallBlock))
+                throw new AssertionError("Missing regional loft barrier");
+            PreviewSupportAudit.validate(guarded,"guarded loft opening");
+        }
+        System.out.println("PASS interior circulation: five-biome corridor widening, supported night lighting, repeatability and upper-floor hole rejection");
     }
     private static void verifyOutdoorGrade() {
         var sample=BiomeArchitecturePreview.samples().getFirst();
