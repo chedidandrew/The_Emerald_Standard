@@ -1,7 +1,8 @@
 # Biome architecture — first review preview
 
-Historical revision-one screenshots. The [current revision-two preview](BIOME_ARCHITECTURE_PREVIEW_REVISION_2.md)
-restores existing TES Plains architecture with oak roofs and adds details to the other families.
+Historical revision-one screenshots. The [current revision-three preview](BIOME_ARCHITECTURE_PREVIEW_REVISION_3.md)
+retains existing TES Plains architecture with oak roofs, adds regional craft, and fixes floating
+furnishings. [Revision two](BIOME_ARCHITECTURE_PREVIEW_REVISION_2.md) is preserved for comparison.
 
 Branch: `codex/biome-architecture-preview`. Based on beta.57, commit `26b049b`.
 **Not merged into main. Not enabled in normal village generation.**

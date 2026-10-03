@@ -30,6 +30,7 @@ public final class BiomeArchitecturePreviewSelfTest {
                 throw new AssertionError("Unexpected beds in "+sample.id());
             if(sample.style()==VillageArchitecture.BiomeDialect.PLAINS) verifyLegacyCopy(plan);
             else {
+                verifyFurnitureRejections(plan);
                 if(plan.cells().values().stream().noneMatch(s->s.getBlock() instanceof net.minecraft.world.level.block.CarpetBlock))
                     throw new AssertionError("Missing deliberate rug in "+sample.id());
                 if(plan.cells().values().stream().noneMatch(s->s.getBlock() instanceof net.minecraft.world.level.block.FlowerPotBlock))
@@ -50,6 +51,35 @@ public final class BiomeArchitecturePreviewSelfTest {
         } finally {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
+        }
+    }
+    private static void verifyFurnitureRejections(BiomeArchitecturePreview.Plan plan) {
+        var at=new net.minecraft.core.BlockPos(plan.entrance().getX(),1,plan.entrance().getZ()+1);
+        for(var state:java.util.List.of(Blocks.SANDSTONE_SLAB.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.SlabBlock.TYPE,
+                        net.minecraft.world.level.block.state.properties.SlabType.TOP),Blocks.POTTED_CACTUS.defaultBlockState(),
+                        Blocks.OAK_PRESSURE_PLATE.defaultBlockState())) {
+            var cells=new java.util.HashMap<>(plan.cells());
+            if(!state.is(Blocks.SANDSTONE_SLAB)) cells.remove(at.below());
+            cells.put(at,state);
+            var broken=new BiomeArchitecturePreview.Plan(plan.sample(),java.util.Map.copyOf(cells),
+                    plan.access(),plan.entrance(),plan.height());
+            try {
+                BiomeArchitecturePreview.validateFurnitureSupport(broken);
+                throw new AssertionError("Floating fixture admitted: "+state);
+            } catch(IllegalStateException expected) {
+                if(!expected.getMessage().contains("unsupported interior fixture")) throw expected;
+            }
+        }
+        var cells=new java.util.HashMap<>(plan.cells());
+        cells.remove(at.below()); cells.put(at,Blocks.BARREL.defaultBlockState());
+        cells.put(at.above(),Blocks.POTTED_CACTUS.defaultBlockState());
+        try {
+            BiomeArchitecturePreview.validateFurnitureSupport(new BiomeArchitecturePreview.Plan(plan.sample(),
+                    java.util.Map.copyOf(cells),plan.access(),plan.entrance(),plan.height()));
+            throw new AssertionError("Floating cabinet with pot admitted");
+        } catch(IllegalStateException expected) {
+            if(!expected.getMessage().contains("unsupported interior fixture")) throw expected;
         }
     }
     private static void verifyLegacyCopy(BiomeArchitecturePreview.Plan plan) {

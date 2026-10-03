@@ -16,9 +16,11 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         require(legacy.contains("AuthoredVillageStructures.plan")&&legacy.contains("galleryBankBlueprint")
                 &&legacy.contains("AuthoredVillageStructures.Phase.ROOF")&&legacy.contains("target.withPropertiesOf(state)"),
                 "Plains must copy current native designs with a shape-preserving roof-only palette override");
-        require(preview.contains("REVISION = 2")&&preview.contains("b.details()")
+        require(preview.contains("REVISION = 3")&&preview.contains("b.details()")&&preview.contains("b.regionalCraft()")
                 &&preview.contains("walkable(cells,at)")&&preview.contains("CarpetBlock"),
-                "Revision-two detail and rug admission");
+                "Revision-three regional craft and rug admission");
+        require(preview.contains("validateFurnitureSupport(p)")&&preview.contains("Reversed counter endpoints"),
+                "Floating fixture and counter admission");
         require(preview.contains("TES_Biome_Architecture_Preview")
                 && gallery.contains("BiomeArchitecturePreview.WORLD.equals(name.toString())")
                 && gallery.contains("WORLD_DIRECTORY.equals(name.toString())"), "Exact save isolation");

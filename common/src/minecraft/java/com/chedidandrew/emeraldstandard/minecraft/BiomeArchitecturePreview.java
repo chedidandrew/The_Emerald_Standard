@@ -15,7 +15,7 @@ import net.minecraft.world.level.block.state.properties.*;
 public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
-    public static final int REVISION = 2;
+    public static final int REVISION = 3;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
@@ -62,6 +62,7 @@ public final class BiomeArchitecturePreview {
             default -> home(b);
         }
         b.details();
+        b.regionalCraft();
         Plan plan = b.finish();
         validate(plan);
         return plan;
@@ -73,7 +74,7 @@ public final class BiomeArchitecturePreview {
             case DESERT -> {
                 b.room(0, 9, 0, 12, 4); b.terrace(0, 9, 0, 12, 5);
                 b.floor(10, 12, 0, 12); b.pergola(10, 12, 1, 10, 4);
-                b.counter(10, 5, 2, 8); b.put(11, 2, 8, Blocks.POTTED_CACTUS);
+                b.counter(10, 11, 1, 8); b.put(11, 2, 8, Blocks.POTTED_CACTUS);
                 b.door(5, 0); b.window(0, 5, true); b.window(9, 5, true);
                 b.beds(1, 8, 2); b.kitchen(6, 10); b.table(6, 5, 2);
                 b.storage(1, 5); b.niche(1, 2); b.lamp(7, 3, 2); b.lamp(7, 3, 7);
@@ -152,7 +153,7 @@ public final class BiomeArchitecturePreview {
         }
         b.storage(2, 13); b.storage(13, 13); b.niche(1, 8);
         for (int x : new int[]{2, 14}) for (int z : new int[]{3, 8, 12}) b.lamp(x, 3, z);
-        b.lamp(8, 3, 13); b.lamp(8, 3, 4);
+        b.lamp(8, 3, 13); b.lamp(8, 4, 4);
         // Color is an inset floor, not an opaque green block obstacle.
         for (int z = 3; z <= 9; z++) b.put(8, 0, z, Blocks.DYED_TERRACOTTA.green());
     }
@@ -176,7 +177,8 @@ public final class BiomeArchitecturePreview {
         b.table(3, 4, 3); b.table(15, 4, 3);
         b.kitchen(2, 7); b.counter(14, 17, 1, 7);
         b.put(17, 2, 7, Blocks.FLOWER_POT);
-        for (int x : new int[]{3, 10, 17}) for (int z : new int[]{2, 8, 12, 15}) b.lamp(x, 3, z);
+        for (int x : new int[]{3, 10, 17}) for (int z : new int[]{2, 8, 12, 15})
+            b.lamp(x, x==10&&z==2?4:3, z);
         b.niche(1, 2);
     }
 
@@ -317,11 +319,13 @@ public final class BiomeArchitecturePreview {
                 put(bx,1,z,bed.setValue(BedBlock.PART,BedPart.FOOT));
                 put(bx,1,z+1,bed.setValue(BedBlock.PART,BedPart.HEAD));
                 access.add(new BlockPos(bx+1,1,z));
-                put(bx,1,z-1,p.slab.defaultBlockState().setValue(SlabBlock.TYPE,SlabType.TOP));
+                // A full bedside cabinet meets both floor and pot; a top slab here floated.
+                put(bx,1,z-1,Blocks.BARREL);
                 put(bx,2,z-1, s.style()==BiomeDialect.DESERT ? Blocks.POTTED_CACTUS : Blocks.POTTED_DANDELION);
             }
         }
         void counter(int x0,int x1,int y,int z) {
+            if(x0>x1) throw new IllegalArgumentException("Reversed counter endpoints");
             for(int x=x0;x<=x1;x++) {
                 put(x,y,z,p.trim); put(x,y+1,z,p.slab.defaultBlockState().setValue(SlabBlock.TYPE,SlabType.BOTTOM));
             }
@@ -340,10 +344,12 @@ public final class BiomeArchitecturePreview {
             put(x,2,z,p.slab); put(x+1,2,z,p.slab);
         }
         void table(int x,int z,int length) {
-            for(int i=0;i<length;i++) put(x+i,1,z,
-                    i==0||i==length-1 ? p.stairs.defaultBlockState().setValue(StairBlock.HALF,Half.TOP)
-                            .setValue(StairBlock.FACING,i==0?Direction.WEST:Direction.EAST)
-                            : p.slab.defaultBlockState().setValue(SlabBlock.TYPE,SlabType.TOP));
+            // Grounded trestles/pedestals and thin tops, rather than unsupported slab spans.
+            for(int i=0;i<length;i++) {
+                put(x+i,1,z,s.style()==BiomeDialect.DESERT ? Blocks.CUT_SANDSTONE : fence());
+                put(x+i,2,z,s.style()==BiomeDialect.DESERT ? Blocks.OAK_PRESSURE_PLATE
+                        : s.style()==BiomeDialect.SAVANNA ? Blocks.ACACIA_PRESSURE_PLATE : Blocks.SPRUCE_PRESSURE_PLATE);
+            }
             bench(x,z-1,length,Direction.SOUTH); bench(x,z+1,length,Direction.NORTH);
         }
         void bench(int x,int z,int length,Direction facing) {
@@ -396,8 +402,8 @@ public final class BiomeArchitecturePreview {
             for(int i=0;i<cabinets.size();i+=2) {
                 BlockPos at=cabinets.get(i).above();
                 if(cells.get(at)!=null && cells.get(at).getBlock() instanceof SlabBlock) {
-                    put(at.getX(),at.getY(),at.getZ(),p.slab.defaultBlockState().setValue(SlabBlock.TYPE,SlabType.TOP));
-                    if(!cells.containsKey(at.above())) put(at.getX(),at.getY()+1,at.getZ(),plant);
+                    // The pot sits directly on the barrel. Raising its slab cap left a half-block gap.
+                    put(at.getX(),at.getY(),at.getZ(),plant);
                 }
             }
             // Rugs follow the circulation spine; only empty supported floor cells are eligible.
@@ -421,6 +427,154 @@ public final class BiomeArchitecturePreview {
                 }
             }
         }
+        Block fence() { return s.style()==BiomeDialect.SAVANNA ? Blocks.ACACIA_FENCE : Blocks.SPRUCE_FENCE; }
+
+        void pier(int x,int z,int height,Block material) {
+            for(int y=1;y<=height;y++) put(x,y,z,material);
+        }
+        void framedFront(int center,int z) {
+            // In-plane jambs and sills don't create stray entrance obstacles.
+            for(int x:new int[]{center-2,center+2}) for(int y=1;y<=4;y++) put(x,y,z,p.log);
+            for(int x=center-1;x<=center+1;x++) {
+                put(x,1,z,p.trim); put(x,4,z,p.log);
+            }
+        }
+        void recordsAlcove(int x0,int x1,int z,Block frame) {
+            pier(x0,z,3,frame); pier(x1,z,3,frame);
+            for(int x=x0+1;x<x1;x++) {
+                put(x,1,z,Blocks.BOOKSHELF); put(x,2,z,Blocks.CHISELED_BOOKSHELF);
+                put(x,3,z,p.slab); access.add(new BlockPos(x,1,z-1));
+            }
+            for(int x=x0;x<=x1;x++) put(x,4,z,frame);
+        }
+        void stove(int x,int z) {
+            put(x,1,z,Blocks.SMOKER.defaultBlockState().setValue(BlockStateProperties.LIT,true));
+            access.add(new BlockPos(x,1,z-1));
+            int roof=cells.keySet().stream().filter(at->at.getX()==x&&at.getZ()==z)
+                    .mapToInt(BlockPos::getY).max().orElse(5);
+            for(int y=2;y<=roof+1;y++) put(x,y,z,Blocks.STONE_BRICKS);
+            for(int side:new int[]{x-1,x+1}) {
+                pier(side,z,2,p.trim); put(side,3,z,Blocks.STONE_BRICK_SLAB);
+            }
+        }
+        void regionalCraft() {
+            if(s.role().equals("BANK")) {
+                framedFront(4,2); framedFront(12,2);
+                // A defined public room, teller rail and archive remain distinct and usable.
+                for(int x:new int[]{3,13}) pier(x,10,4,p.log);
+                for(int x=3;x<=13;x++) if(x!=8) put(x,2,10,
+                        s.style()==BiomeDialect.DESERT ? Blocks.SANDSTONE_SLAB : p.slab);
+                for(int x:new int[]{4,12}) {
+                    put(x,3,10,Blocks.LANTERN); // on the counter's full-height end post below
+                    put(x,2,10,p.log);
+                }
+                switch(s.style()) {
+                    case DESERT -> {
+                        for(int x:new int[]{2,6,10,14}) {
+                            pier(x,2,5,Blocks.CUT_SANDSTONE); put(x,4,2,Blocks.CHISELED_SANDSTONE);
+                            put(x,7,2,Blocks.CUT_SANDSTONE); put(x,7,16,Blocks.CUT_SANDSTONE);
+                        }
+                        for(int x=0;x<=16;x++) put(x,5,2,Blocks.CHISELED_SANDSTONE);
+                        for(int x:new int[]{4,12}) put(x,4,0,Blocks.SANDSTONE_STAIRS.defaultBlockState()
+                                .setValue(StairBlock.HALF,Half.TOP).setValue(StairBlock.FACING,x==4?Direction.WEST:Direction.EAST));
+                        recordsAlcove(1,5,8,Blocks.CUT_SANDSTONE);
+                        for(int x=11;x<=15;x++) {
+                            put(x,1,7,Blocks.CUT_SANDSTONE); put(x,2,7,Blocks.SANDSTONE_SLAB);
+                        }
+                        put(14,2,7,Blocks.POTTED_CACTUS);
+                        for(int x:new int[]{1,15}) for(int z=3;z<=15;z++) put(x,0,z,Blocks.CUT_SANDSTONE);
+                    }
+                    case SAVANNA -> {
+                        // Vanilla's gray bark structure with restrained terracotta upper panels.
+                        for(int x:new int[]{2,6,10,14}) pier(x,2,5,Blocks.ACACIA_LOG);
+                        for(int x=1;x<16;x++) if(x!=6&&x!=8&&x!=10) put(x,5,2,Blocks.TERRACOTTA);
+                        for(int x=2;x<=5;x++) put(x,1,0,Blocks.ACACIA_FENCE);
+                        for(int x=11;x<=14;x++) put(x,1,0,Blocks.ACACIA_FENCE);
+                        for(int x:new int[]{1,15}) for(int y=2;y<=4;y++) put(x,y,1,Blocks.ACACIA_FENCE);
+                        recordsAlcove(1,5,8,Blocks.ACACIA_LOG);
+                        for(int x=11;x<=15;x++) put(x,1,7,Blocks.BARREL);
+                        put(11,2,7,Blocks.POTTED_ACACIA_SAPLING);
+                        put(15,2,7,Blocks.POTTED_DEAD_BUSH);
+                        for(int x=2;x<=14;x++) if(x<7||x>9) put(x,0,8,Blocks.TERRACOTTA);
+                    }
+                    case TAIGA -> {
+                        stoneFront(); shutters(4,2); shutters(12,2);
+                        stove(2,7); recordsAlcove(11,15,7,Blocks.SPRUCE_LOG);
+                        for(int x=1;x<=15;x++) put(x,5,2,Blocks.SPRUCE_LOG.defaultBlockState()
+                                .setValue(BlockStateProperties.AXIS,Direction.Axis.X));
+                        for(int x:new int[]{1,15}) for(int z=3;z<=15;z++) put(x,0,z,Blocks.MOSSY_COBBLESTONE);
+                    }
+                    case SNOWY -> {
+                        // Sheltered wind porch and a warm reading/stove side, not a Taiga recolor.
+                        for(int x:new int[]{4,12}) for(int z=0;z<=1;z++) pier(x,z,2,Blocks.COBBLESTONE);
+                        for(int x:new int[]{4,12}) put(x,3,0,Blocks.SNOW);
+                        for(int x:new int[]{2,6,10,14}) pier(x,2,5,Blocks.STRIPPED_SPRUCE_LOG);
+                        recordsAlcove(1,5,8,Blocks.STRIPPED_SPRUCE_LOG); stove(14,7);
+                        for(int x=1;x<=15;x++) if(x!=6&&x!=8&&x!=10) put(x,5,2,Blocks.SPRUCE_PLANKS);
+                        for(int x:new int[]{0,16}) for(int z=3;z<=15;z++) {
+                            BlockState at=cells.get(new BlockPos(x,3,z));
+                            if(at!=null&&!at.is(Blocks.GLASS_PANE)) put(x,3,z,Blocks.WOOL.white());
+                        }
+                        for(int z=4;z<=8;z+=2) for(int x:new int[]{7,9}) {
+                            BlockState at=cells.get(new BlockPos(x,1,z));
+                            if(at!=null&&at.getBlock() instanceof CarpetBlock) put(x,1,z,Blocks.CARPET.white());
+                        }
+                    }
+                    default -> throw new IllegalStateException("Plains must use its untouched native copy");
+                }
+            } else if(s.role().equals("HOUSE")) {
+                int front=s.style()==BiomeDialect.DESERT?0:s.style()==BiomeDialect.SAVANNA?3:2;
+                framedFront(s.style()==BiomeDialect.DESERT?2:3,front);
+                if(s.style()!=BiomeDialect.DESERT) framedFront(9,front);
+                switch(s.style()) {
+                    case DESERT -> {
+                        for(int x:new int[]{0,9}) for(int z=2;z<=10;z+=4) put(x,4,z,Blocks.CHISELED_SANDSTONE);
+                        for(int x:new int[]{2,7}) put(x,6,0,Blocks.CUT_SANDSTONE);
+                        put(1,1,3,Blocks.BOOKSHELF); put(1,2,3,Blocks.POTTED_DEAD_BUSH);
+                    }
+                    case SAVANNA -> {
+                        for(int x:new int[]{0,12}) for(int z=4;z<=11;z++) put(x,4,z,Blocks.TERRACOTTA);
+                        for(int x=1;x<=4;x++) put(x,1,0,Blocks.ACACIA_FENCE);
+                        for(int x=8;x<=11;x++) put(x,1,0,Blocks.ACACIA_FENCE);
+                        put(10,1,6,Blocks.BOOKSHELF); put(10,2,6,Blocks.POTTED_ACACIA_SAPLING);
+                    }
+                    case TAIGA -> {
+                        shutters(3,front); shutters(9,front);
+                        for(int x=2;x<=10;x++) if(x!=6) put(x,1,front,Blocks.MOSSY_COBBLESTONE);
+                        put(2,1,5,Blocks.BOOKSHELF); put(2,2,5,Blocks.LANTERN);
+                    }
+                    case SNOWY -> {
+                        for(int x:new int[]{0,12}) for(int z=3;z<=11;z++) {
+                            BlockState at=cells.get(new BlockPos(x,3,z));
+                            if(at!=null&&!at.is(Blocks.GLASS_PANE)) put(x,3,z,Blocks.WOOL.white());
+                        }
+                        put(1,2,6,Blocks.STONE_BRICKS); put(1,3,6,Blocks.STONE_BRICK_SLAB);
+                        put(10,1,6,Blocks.BOOKSHELF); put(10,2,6,Blocks.POTTED_FERN);
+                    }
+                    default -> throw new IllegalStateException("Plains must use its untouched native copy");
+                }
+            } else if(s.role().equals("INN")) {
+                for(int x:new int[]{1,6,14,19}) pier(x,8,3,Blocks.CUT_SANDSTONE);
+                for(int x=1;x<20;x++) put(x,4,8,Blocks.CHISELED_SANDSTONE);
+                recordsAlcove(6,8,7,Blocks.CUT_SANDSTONE);
+                for(int x:new int[]{1,19}) put(x,6,0,Blocks.CUT_SANDSTONE);
+            } else if(s.role().equals("SMITHY")) {
+                for(int z=1;z<=13;z+=4) put(7,4,z,Blocks.CHISELED_SANDSTONE);
+                put(3,1,12,Blocks.BARREL); put(3,2,12,Blocks.STONE_PRESSURE_PLATE);
+                put(11,1,3,Blocks.BARREL); put(11,2,3,Blocks.FLOWER_POT);
+            }
+        }
+        void stoneFront() {
+            for(int x=1;x<16;x++) for(int y=1;y<=3;y++) {
+                BlockState at=cells.get(new BlockPos(x,y,2));
+                if(at!=null&&at.is(p.wall)) put(x,y,2,Blocks.MOSSY_COBBLESTONE);
+            }
+        }
+        void shutters(int center,int z) {
+            for(int x:new int[]{center-2,center+2}) for(int y=2;y<=3;y++)
+                put(x,y,z-1,Blocks.SPRUCE_TRAPDOOR.defaultBlockState()
+                        .setValue(TrapDoorBlock.OPEN,true).setValue(TrapDoorBlock.FACING,Direction.NORTH));
+        }
         Plan finish() {
             return new Plan(s,Map.copyOf(cells),Set.copyOf(access),entrance,
                     cells.keySet().stream().mapToInt(BlockPos::getY).max().orElse(0)+1);
@@ -428,6 +582,7 @@ public final class BiomeArchitecturePreview {
     }
 
     public static void validate(Plan p) {
+        validateFurnitureSupport(p);
         Set<BlockPos> reach=reachable(p);
         if(!reach.containsAll(p.access())) {
             Set<BlockPos> missing=new HashSet<>(p.access()); missing.removeAll(reach);
@@ -448,6 +603,29 @@ public final class BiomeArchitecturePreview {
                 new Voxel(p.sample().width(),p.height()+1,p.sample().depth())),
                 reach.stream().map(pos->new Voxel(pos.getX(),pos.getY(),pos.getZ())).collect(java.util.stream.Collectors.toSet()),
                 dampening,lights)).requireSpawnSafe();
+    }
+    static void validateFurnitureSupport(Plan p) {
+        // Native survival alone admits slabs hovering in mid-air. Check these interior fixtures
+        // separately from deliberately spanning roof beams, arches and porch canopies.
+        if(p.sample().style()==BiomeDialect.PLAINS) return;
+        p.cells().forEach((pos,state)->{
+            boolean pot=state.getBlock() instanceof FlowerPotBlock;
+            boolean lowSlab=state.getBlock() instanceof SlabBlock&&pos.getY()>0&&pos.getY()<=3;
+            boolean tableTop=state.getBlock() instanceof BasePressurePlateBlock&&pos.getY()>0&&pos.getY()<=3;
+            if(!pot&&!lowSlab&&!tableTop) return;
+            BlockState below=p.cells().get(pos.below());
+            boolean meetsTop=below!=null&&below.isFaceSturdy(EmptyBlockGetter.INSTANCE,pos.below(),Direction.UP);
+            // Fence trestles have a one-block visible post, despite their taller collision fence.
+            if(tableTop&&below!=null&&below.getBlock() instanceof FenceBlock) meetsTop=true;
+            boolean grounded=meetsTop;
+            for(BlockPos foot=pos.below();grounded&&foot.getY()>=0;foot=foot.below()) {
+                BlockState bearing=p.cells().get(foot);
+                boolean leg=tableTop&&foot.equals(pos.below())&&bearing!=null&&bearing.getBlock() instanceof FenceBlock;
+                grounded=bearing!=null&&(leg||bearing.isFaceSturdy(EmptyBlockGetter.INSTANCE,foot,Direction.UP));
+            }
+            if(!grounded||(lowSlab&&state.getValue(SlabBlock.TYPE)==SlabType.TOP))
+                throw new IllegalStateException(p.sample().id()+" unsupported interior fixture at "+pos+": "+state);
+        });
     }
     private static Set<BlockPos> reachable(Plan p) {
         Set<BlockPos> reach=new HashSet<>(); ArrayDeque<BlockPos> queue=new ArrayDeque<>();

@@ -1,5 +1,10 @@
 # Biome architecture preview — revision 2
 
+Historical review checkpoint. See [revision 3](BIOME_ARCHITECTURE_PREVIEW_REVISION_3.md) for
+the latest regional detailing and corrections to the half-block furniture gaps found here.
+Its captured world requires revision-two code (`df1a770`); current code intentionally refuses
+that stale layout signature instead of replacing any placed work.
+
 Branch: `codex/biome-architecture-preview`. **Main and normal village generation are unchanged.**
 This is another small review checkpoint, not permission to roll the designs into gameplay.
 
