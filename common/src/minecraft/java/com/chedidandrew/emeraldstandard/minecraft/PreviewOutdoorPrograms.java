@@ -13,6 +13,7 @@ import net.minecraft.world.level.block.state.properties.*;
  * These are real blueprint attachments, not entities or a random scatter over existing rooms.
  * Production adoption must reserve the complete site and survey its terrain before selection. */
 final class PreviewOutdoorPrograms {
+    static final int GROUND_Y=-1;
     enum Feature { FLOWERS, HERBS, VEGETABLES, ORCHARD, HEDGE, PATIO, PERGOLA, WASH,
         WELL, POND, FOUNTAIN, CISTERN, FIREWOOD, LOGPILE, STUMPS, CAMP, TENT, CART,
         CRATES, HAY, PEN, HIVE, FORGE, STONECUT, TEXTILES, DRYING, FISHING, NOTICE }
@@ -20,6 +21,13 @@ final class PreviewOutdoorPrograms {
             List<Feature> features, int minX, int maxX, int minZ, int maxZ) { }
     record PlanIdentity(String id, Map<BlockPos,BlockState> building) { }
     private static final Map<String,Site> CACHE=new HashMap<>();
+    static Site lowerToGrade(Site draft) {
+        Map<BlockPos,BlockState> lowered=new LinkedHashMap<>();
+        draft.cells().forEach((at,state)->lowered.put(at.below(),state));
+        Set<BlockPos> routes=new HashSet<>();draft.routes().forEach(at->routes.add(at.below()));
+        return new Site(draft.identity(),Map.copyOf(lowered),Set.copyOf(routes),draft.features(),
+                draft.minX(),draft.maxX(),draft.minZ(),draft.maxZ());
+    }
     static Site site(BiomeArchitecturePreview.Plan p) {
         Site old=CACHE.get(p.sample().id());
         if(old!=null&&old.identity().building().equals(p.cells())) return old;
@@ -84,8 +92,10 @@ final class PreviewOutdoorPrograms {
             for(int z=-1;z<d+3+7*rows;z+=7) { lamp(-6,z);lamp(w+5,z); }
             for(int x=-3;x<w+3;x+=7) {lamp(x,-4);lamp(x,d+3+7*rows);}
             int maxZ=cells.keySet().stream().mapToInt(BlockPos::getZ).max().orElse(d);
-            return new Site(new PlanIdentity(p.sample().id(),p.cells()),Map.copyOf(cells),Set.copyOf(routes),
-                    List.copyOf(features),-6,w+5,-4,maxZ);
+            // Move the entire site, including buried pond bases and walking coordinates.
+            // The building's immutable cells and floor elevation are not part of this shift.
+            return lowerToGrade(new Site(new PlanIdentity(p.sample().id(),p.cells()),Map.copyOf(cells),Set.copyOf(routes),
+                    List.copyOf(features),-6,w+5,-4,maxZ));
         }
         void put(int x,int y,int z,Block block){put(x,y,z,block.defaultBlockState());}
         void put(int x,int y,int z,BlockState state) {
@@ -258,14 +268,17 @@ final class PreviewOutdoorPrograms {
         for(var e:s.cells().entrySet()) {
             BlockPos at=e.getKey();
             if(all.putIfAbsent(at,e.getValue())!=null)throw new IllegalStateException("Outdoor overlap "+at);
-            if(at.getX()<s.minX()||at.getX()>s.maxX()||at.getZ()<s.minZ()||at.getZ()>s.maxZ()||at.getY() < -1||at.getY()>5)
+            if(at.getX()<s.minX()||at.getX()>s.maxX()||at.getZ()<s.minZ()||at.getZ()>s.maxZ()||at.getY() < GROUND_Y-1||at.getY()>GROUND_Y+5)
                 throw new IllegalStateException("Unreserved outdoor cell "+at);
             if(at.getX()>=0&&at.getX()<p.sample().width()&&at.getZ()>=0&&at.getZ()<p.sample().depth())
                 throw new IllegalStateException("Outdoor addition inside protected building bounds "+at);
         }
-        for(BlockPos at:s.routes()) if(!PreviewDoorwayAudit.clear(all,at))throw new IllegalStateException("Blocked yard path "+at);
+        for(BlockPos at:s.routes()) {
+            if(at.getY()!=GROUND_Y+1)throw new IllegalStateException("Raised yard path "+at);
+            if(!PreviewDoorwayAudit.clear(all,at))throw new IllegalStateException("Blocked yard path "+at);
+        }
         // Every garden/work tile joins the same continuous ring; no isolated fenced destination.
-        if(!yardReachable(all,new BlockPos(-2,1,-2)).containsAll(s.routes()))
+        if(!yardReachable(all,new BlockPos(-2,GROUND_Y+1,-2)).containsAll(s.routes()))
             throw new IllegalStateException("Disconnected outdoor circulation "+p.sample().id());
         for(var e:s.cells().entrySet()) {
             BlockPos at=e.getKey();BlockState state=e.getValue(),below=all.get(at.below());
@@ -288,7 +301,7 @@ final class PreviewOutdoorPrograms {
                     ||state.is(Blocks.ACACIA_LOG)||state.is(Blocks.ACACIA_PLANKS)))throw new IllegalStateException("Non-desert outdoor palette");
         }
         PreviewDoorwayAudit.validate(new BiomeArchitecturePreview.Plan(p.sample(),Map.copyOf(all),p.access(),p.entrance(),p.height()));
-        PreviewSupportAudit.validate(all,p.sample().id());
+        PreviewSupportAudit.validate(p,all);
     }
     private static boolean full(BlockState state,BlockPos at) {
         return state!=null&&state.isFaceSturdy(EmptyBlockGetter.INSTANCE,at,Direction.UP);

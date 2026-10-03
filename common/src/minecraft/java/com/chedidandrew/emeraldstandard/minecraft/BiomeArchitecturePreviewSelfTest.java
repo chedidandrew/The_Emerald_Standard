@@ -21,6 +21,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyDoorwayRejections();
         verifyFloorBearingRejection();
         verifySupportRejections();
+        verifyOutdoorGrade();
         if (BiomeArchitecturePreview.samples().size()!=13) throw new AssertionError("Preview scope changed");
         for(var sample:BiomeArchitecturePreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);
@@ -66,6 +67,43 @@ public final class BiomeArchitecturePreviewSelfTest {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
         }
+    }
+    private static void verifyOutdoorGrade() {
+        var sample=BiomeArchitecturePreview.samples().getFirst();
+        var p=BiomeArchitecturePreview.plan(sample);
+        var identity=new PreviewOutdoorPrograms.PlanIdentity(sample.id(),p.cells());
+        var cells=new java.util.HashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+        for(int y=-1;y<=5;y++) cells.put(new net.minecraft.core.BlockPos(-5,y,y+2),Blocks.STONE.defaultBlockState());
+        var route=new net.minecraft.core.BlockPos(-2,1,-2);
+        var draft=new PreviewOutdoorPrograms.Site(identity,java.util.Map.copyOf(cells),java.util.Set.of(route),
+                java.util.List.of(PreviewOutdoorPrograms.Feature.POND),-6,20,-4,25);
+        var lowered=PreviewOutdoorPrograms.lowerToGrade(draft);
+        if(lowered.cells().size()!=draft.cells().size()||!lowered.identity().equals(identity)
+                ||!lowered.features().equals(draft.features())||lowered.minX()!=draft.minX()||lowered.maxX()!=draft.maxX()
+                ||lowered.minZ()!=draft.minZ()||lowered.maxZ()!=draft.maxZ()
+                ||!lowered.routes().equals(java.util.Set.of(route.below())))
+            throw new AssertionError("Outdoor lowering changed identity, footprint, features or routes");
+        draft.cells().forEach((at,state)-> {
+            if(!state.equals(lowered.cells().get(at.below())))throw new AssertionError("Incomplete one-block outdoor offset");
+        });
+        for(var design:BiomeArchitectureCatalogPreview.samples()) {
+            var plan=BiomeArchitecturePreview.plan(design);var site=PreviewOutdoorPrograms.site(plan);
+            if(site.routes().stream().anyMatch(at->at.getY()!=0)
+                    ||!site.cells().containsKey(new net.minecraft.core.BlockPos(-6,-1,-3))
+                    ||site.cells().containsKey(new net.minecraft.core.BlockPos(-6,0,-3)))
+                throw new AssertionError("Raised outdoor surface retained: "+design.id());
+            var placed=new java.util.HashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+            plan.blocks(net.minecraft.core.BlockPos.ZERO).forEach(block->placed.put(block.position(),block.state()));
+            plan.cells().forEach((at,state)-> {
+                if(!state.equals(placed.get(at)))throw new AssertionError("Building moved during yard lowering: "+design.id());
+            });
+        }
+        var unsupported=new java.util.HashMap<>(p.cells());
+        var aboveGrade=new net.minecraft.core.BlockPos(-6,0,-3);
+        unsupported.put(aboveGrade,Blocks.STONE.defaultBlockState());
+        try { PreviewSupportAudit.validate(p,unsupported);throw new AssertionError("Above-grade outdoor prop treated as ground"); }
+        catch(IllegalStateException expected) { }
+        System.out.println("PASS outdoor grade: exact one-block cells/routes transform, 375 flush sites, original building cells retained and unsupported y=0 props rejected");
     }
     private static void verifySupportRejections() {
         var cells=new java.util.HashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();

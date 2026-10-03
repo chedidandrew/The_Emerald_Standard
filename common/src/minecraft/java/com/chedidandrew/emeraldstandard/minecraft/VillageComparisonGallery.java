@@ -142,7 +142,7 @@ public final class VillageComparisonGallery {
                 || !Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)
                 || Boolean.getBoolean(ENABLE_PROPERTY + ".capture")) return;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 76");
+            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), "emerald comparison visit 204");
             player.sendSystemMessage(Component.literal("Full architecture review: 52 designs + Bank + 22 compact designs per style. "
                     + "Plains 1–75; Desert 76–150; Savanna 151–225; Taiga 226–300; Snowy 301–375. "
                     + "Use /emerald comparison visit <number>, or add back for the rear elevation. Every building has a sign. Review only; main unchanged."));

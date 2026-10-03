@@ -23,9 +23,13 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String compact=Files.readString(root.resolve(path+"PreviewCompactBuildings.java"));
         String outdoors=Files.readString(root.resolve(path+"PreviewOutdoorPrograms.java"));
         String support=Files.readString(root.resolve(path+"PreviewSupportAudit.java"));
-        require(outdoors.contains("PreviewSupportAudit.validate(all,p.sample().id())")
+        require(outdoors.contains("PreviewSupportAudit.validate(p,all)")
                 &&support.contains(".getShape(EmptyBlockGetter.INSTANCE")&&support.contains("Floating review geometry")
                 &&support.contains("at.getY()<=0"),"All review sites reject disconnected native-shape geometry before placement");
+        require(outdoors.contains("GROUND_Y=-1")&&outdoors.contains("lowerToGrade(new Site")
+                &&outdoors.contains("routes.add(at.below())")&&outdoors.contains("Raised yard path")
+                &&support.contains("at.getY()<=PreviewOutdoorPrograms.GROUND_Y"),
+                "Complete outdoor layouts and route coordinates lower to native grade without grounding props as soil");
         require(preview.contains("PreviewOutdoorPrograms.blocks(this,origin)")
                 &&outdoors.contains("Outdoor addition inside protected building bounds")
                 &&outdoors.contains("Uncontained water")&&outdoors.contains("Disconnected outdoor circulation")

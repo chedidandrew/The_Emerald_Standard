@@ -20,6 +20,15 @@ final class PreviewSupportAudit {
         return List.copyOf(result);
     }
     static Set<BlockPos> floating(Map<BlockPos,BlockState> cells) {
+        return floating(cells,at->at.getY()<=0);
+    }
+    static Set<BlockPos> floating(BiomeArchitecturePreview.Plan p,Map<BlockPos,BlockState> cells) {
+        // Outdoor props at y=0 are now above ground, not automatically grounded roots.
+        // Original building foundations keep their authored y=0 elevation.
+        return floating(cells,at->at.getY()<=PreviewOutdoorPrograms.GROUND_Y
+                ||at.getY()<=0&&p.cells().containsKey(at));
+    }
+    private static Set<BlockPos> floating(Map<BlockPos,BlockState> cells,java.util.function.Predicate<BlockPos> root) {
         Map<BlockPos,List<AABB>> shapes=new HashMap<>();
         cells.forEach((at,state)-> {
             var boxes=new ArrayList<>(connectedState(cells,at,state).getShape(EmptyBlockGetter.INSTANCE,at).toAabbs());
@@ -40,7 +49,7 @@ final class PreviewSupportAudit {
         });
         Set<BlockPos> grounded=new HashSet<>();
         ArrayDeque<BlockPos> queue=new ArrayDeque<>();
-        shapes.keySet().stream().filter(at->at.getY()<=0).forEach(at->{grounded.add(at);queue.add(at);});
+        shapes.keySet().stream().filter(root).forEach(at->{grounded.add(at);queue.add(at);});
         while(!queue.isEmpty()) {
             BlockPos at=queue.removeFirst();
             for(BlockPos step:STEPS) {
@@ -85,7 +94,12 @@ final class PreviewSupportAudit {
         return false;
     }
     static void validate(Map<BlockPos,BlockState> cells,String id) {
-        var disconnected=floating(cells);
+        requireGrounded(cells,id,floating(cells));
+    }
+    static void validate(BiomeArchitecturePreview.Plan p,Map<BlockPos,BlockState> cells) {
+        requireGrounded(cells,p.sample().id(),floating(p,cells));
+    }
+    private static void requireGrounded(Map<BlockPos,BlockState> cells,String id,Set<BlockPos> disconnected) {
         if(!disconnected.isEmpty()) {
             var at=disconnected.stream().min(Comparator.comparingInt((BlockPos p)->p.getY())
                     .thenComparingInt(BlockPos::getX).thenComparingInt(BlockPos::getZ)).orElseThrow();
@@ -97,7 +111,7 @@ final class PreviewSupportAudit {
         for(var sample:samples) {
             var p=BiomeArchitecturePreview.plan(sample);
             Map<BlockPos,BlockState> all=new HashMap<>(p.cells());all.putAll(PreviewOutdoorPrograms.site(p).cells());
-            var floating=floating(all);total+=floating.size();
+            var floating=floating(p,all);total+=floating.size();
             floating.forEach(at->counts.merge(all.get(at).toString(),1,Integer::sum));
             if(!floating.isEmpty()) {
                 System.out.println("FLOATING "+sample.id()+" "+floating.size()+" cells");

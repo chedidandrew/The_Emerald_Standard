@@ -170,3 +170,45 @@ construction-safety and terrain reader guidance and compact terrain-page routing
 against unchanged production behavior. No new recipe, live generation feature or
 world-repair promise is introduced. Those explanations remain accurate; the
 review-only check is documented here rather than advertised as a released change.
+
+## Outdoor ground-level refinement
+
+All 375 review landscapes move down exactly one block as complete sidecars.
+Their soil and paving now replace the gallery's surrounding ground layer at
+local Y=-1 instead of adding a raised rectangular platform at Y=0. Gardens,
+fences, lamps, tents, work areas, carts, trees and other outdoor modules move
+with their supports; pond and cistern bases, retained water and planting move
+together too. Horizontal footprints, block states and feature selections are
+unchanged. Original building cells, foundations, porches, doors and interiors
+retain their authored elevation; this is not a whole-building translation.
+
+Outdoor route coordinates and validation bounds follow the same offset. The
+shape-contact audit now distinguishes original building foundations from
+outdoor props at Y=0: those props require an actual connected bearing instead
+of being accepted as ground themselves. Independent doorway, route headroom,
+water containment and native block-survival checks remain enabled.
+
+Native regression coverage verifies the exact one-block transform, unchanged
+site identity and bounds, flush perimeter ground and unchanged original
+building cells across every catalog design. An unsupported Y=0 outdoor prop
+is rejected. Fabric admission/assemble and the filtered NeoForge loader test
+pass; both the 375-design catalog and 13 earlier prototypes retain zero
+disconnected shape cells. This exhaustive result is automated admission,
+not a manual inspection of every elevation or a hillside-placement guarantee.
+
+The common regression suite also passes. Fresh profile
+`build/biome-preview-catalog-r10-06` completed all 375 comparison pairs (750
+actual structures), retaining identifying signs and native survival gates.
+Its signature is `d53c79885a20212b`, content revision 17, schema 1. An actual
+Savanna #204 exterior frame was inspected: its outdoor surface is flush and
+the former rectangular dirt ledge is gone. The optional five-view capture
+batch did not complete because that design's interior camera pose intersects
+a solid block; it is not presented as a completed capture batch. Interactive
+review is reopened without capture at Savanna #204's front entrance.
+
+Handbook accuracy review: checked chapter routing, building-catalog,
+construction-safety and terrain reader guidance and compact terrain routing.
+This remains an opted-in architecture-review catalog, not released village
+generation, a new recipe or automatic repair of existing worlds. Those
+explanations remain accurate without unrelated edits. Existing review worlds
+are preserved and `main` remains untouched pending user approval.
