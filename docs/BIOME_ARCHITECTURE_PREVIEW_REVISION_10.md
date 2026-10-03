@@ -484,7 +484,9 @@ common regression suite and filtered NeoForge loader test pass. Production's
 Fresh compact labeled profile `build/biome-preview-catalog-r10-14` placed all
 375 pairs / 750 actual structures, signature `78d50c40ab7be7dd`, content revision
 17 and comparison schema 1. Its actual-world settled survival check passed all
-493 rungs. Fifteen Desert #118 / Savanna #193 / Taiga #268 captures completed;
+493 rungs, and the saved/reopened world passed the same all-rung survival check.
+Interactive review is left open in daylight with signs and visit/back commands.
+Fifteen Desert #118 / Savanna #193 / Taiga #268 captures completed;
 selected actual interior views were inspected. The all-rung claim comes from
 native/live block checks, not visually inspecting every ladder. Earlier worlds
 are preserved, not automatically repaired. Main remains unchanged.
