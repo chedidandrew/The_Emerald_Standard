@@ -64,9 +64,9 @@ public final class VillageComparisonGallery {
     public static final int COMPARISON_SCHEMA = 1;
     private static final Logger LOGGER = LoggerFactory.getLogger("the_emerald_standard_comparison");
     private static final int COLUMNS = 8;
-    private static final int HALF_PITCH = 56;
+    private static final int HALF_PITCH = Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY) ? 80 : 56;
     private static final int PAIR_PITCH = HALF_PITCH * 2;
-    private static final int ROW_PITCH = 96;
+    private static final int ROW_PITCH = Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY) ? 128 : 96;
     private static final int DISTRICT_PITCH = COLUMNS * PAIR_PITCH + 128;
     private static final int FOUNDATION_DEPTH = 6;
     private static final Map<MinecraftServer, BuildState> STATES = new WeakHashMap<>();
@@ -555,6 +555,17 @@ public final class VillageComparisonGallery {
                     level.getBlockState(block.position()),
                     level.getBlockState(block.position()).canSurvive(level, block.position()));
         }
+        if(pair.preview!=null) {
+            // Native survival for every new outdoor cell, including crops/lily pads absent from
+            // the historical attachment whitelist. Do not assume an abstract support is enough.
+            for(var cell:PreviewOutdoorPrograms.site(pair.preview).cells().entrySet()) {
+                BlockPos at=modOrigin.offset(cell.getKey());BlockState actual=level.getBlockState(at);
+                if(!actual.canSurvive(level,at))throw new IllegalStateException("Outdoor cell cannot survive: "+at+" "+actual);
+                if(cell.getValue().getBlock() instanceof net.minecraft.world.level.block.BushBlock
+                        &&!actual.is(cell.getValue().getBlock()))
+                    throw new IllegalStateException("Outdoor planting vanished: "+at);
+            }
+        }
         placeLabel(level, new BlockPos(e.plotX() + 8, e.surfaceY(), e.plotZ() + 4),
                 "#" + e.index() + " " + e.dialect(), "MOD: " + e.role(), e.modTemplate(), "Use /emerald");
         if (pair.preview != null && Boolean.getBoolean(BiomeArchitecturePreview.CATALOG_PROPERTY)) {
@@ -861,7 +872,7 @@ public final class VillageComparisonGallery {
     private static ViewPose rearPose(ComparisonEntry e) {
         ViewPose front=pose(e.index(),"mod-rear",e.modX()+e.modWidth()/2.0,e.surfaceY(),0,
                 e.modWidth()+10,e.modHeight());
-        double standoff=-front.z();
+        double standoff=-front.z()+(Boolean.getBoolean(BiomeArchitecturePreview.PROPERTY)?20:0);
         return new ViewPose(e.index(),"mod-rear",front.x(),front.y(),e.modZ()+e.modDepth()+standoff,
                 180,18,70);
     }

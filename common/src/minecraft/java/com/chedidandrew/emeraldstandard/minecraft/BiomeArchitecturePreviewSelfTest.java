@@ -50,6 +50,8 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyFullCatalog();
         verifyFacadeRejections();
         PreviewFacadePrograms.report(BiomeArchitectureCatalogPreview.samples());
+        PreviewOutdoorPrograms.report(BiomeArchitectureCatalogPreview.samples());
+        verifyOutdoorRejections();
         PreviewDoorwayAudit.report();
         if(VillageArchitecture.activeBlueprints().size()!=52
                 ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
@@ -81,6 +83,31 @@ public final class BiomeArchitecturePreviewSelfTest {
         changed=new java.util.HashMap<>(plan.cells());changed.put(gap,Blocks.STONE.defaultBlockState());
         expectFacadeFailure(plan,changed,"unscoped interior air filled");
         System.out.println("PASS facade negatives: interior edits, unsealed walls, unscoped additions and missing lantern bearings rejected");
+    }
+    private static void verifyOutdoorRejections() {
+        var p=BiomeArchitecturePreview.plan(PreviewCompactBuildings.samples(VillageArchitecture.BiomeDialect.PLAINS).getFirst());
+        var s=PreviewOutdoorPrograms.site(p);
+        if(!s.equals(PreviewOutdoorPrograms.site(p)))throw new AssertionError("Nondeterministic yard");
+        var changed=new java.util.HashMap<>(s.cells());
+        changed.put(s.routes().iterator().next(),Blocks.STONE.defaultBlockState());
+        expectOutdoorFailure(p,s,changed,"blocked route");
+        changed=new java.util.HashMap<>(s.cells());changed.put(p.entrance(),Blocks.STONE.defaultBlockState());
+        expectOutdoorFailure(p,s,changed,"door overlap");
+        var lamp=s.cells().entrySet().stream().filter(e->e.getValue().is(Blocks.LANTERN)).map(java.util.Map.Entry::getKey).findFirst().orElseThrow();
+        changed=new java.util.HashMap<>(s.cells());changed.remove(lamp.below());
+        expectOutdoorFailure(p,s,changed,"floating lantern");
+        changed=new java.util.HashMap<>(s.cells());changed.put(new net.minecraft.core.BlockPos(-6,1,-3),Blocks.WATER.defaultBlockState());
+        expectOutdoorFailure(p,s,changed,"uncontained water");
+        changed=new java.util.HashMap<>(s.cells());changed.put(lamp.below(),Blocks.DIRT_PATH.defaultBlockState());
+        expectOutdoorFailure(p,s,changed,"unstable dirt-path footing under a prop");
+        System.out.println("PASS outdoor negatives: doorway overlap, route blocking, floating lanterns, leaking water and unstable path footings rejected");
+    }
+    private static void expectOutdoorFailure(BiomeArchitecturePreview.Plan p,PreviewOutdoorPrograms.Site s,
+            java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> cells,String reason) {
+        try { PreviewOutdoorPrograms.validate(p,new PreviewOutdoorPrograms.Site(s.identity(),java.util.Map.copyOf(cells),s.routes(),
+                s.features(),s.minX(),s.maxX(),s.minZ(),s.maxZ())); }
+        catch(IllegalStateException expected){return;}
+        throw new AssertionError("Invalid outdoor plan admitted: "+reason);
     }
     private static void expectFacadeFailure(BiomeArchitecturePreview.Plan p,
             java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> cells,String reason) {

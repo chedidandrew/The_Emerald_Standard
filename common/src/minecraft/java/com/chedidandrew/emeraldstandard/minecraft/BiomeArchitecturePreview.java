@@ -16,7 +16,7 @@ public final class BiomeArchitecturePreview {
     public static final String PROPERTY = "the_emerald_standard.biomeArchitecturePreview";
     public static final String WORLD = "TES_Biome_Architecture_Preview";
     public static final String CATALOG_PROPERTY = PROPERTY + ".fullCatalog";
-    public static final int REVISION = 9;
+    public static final int REVISION = 10;
     public record Sample(BiomeDialect style, String role, String id, int width, int depth) { }
     public record Plan(Sample sample, Map<BlockPos, BlockState> cells, Set<BlockPos> access,
             BlockPos entrance, int height) {
@@ -30,10 +30,7 @@ public final class BiomeArchitecturePreview {
                             .thenComparingInt(BlockPos::getX)).orElseThrow();
         }
         public List<StructureGalleryBlock> blocks(BlockPos origin) {
-            return cells.entrySet().stream().sorted(Map.Entry.comparingByKey(
-                    Comparator.comparingInt((BlockPos pos) -> pos.getY()).thenComparingInt(BlockPos::getZ)
-                            .thenComparingInt(BlockPos::getX)))
-                    .map(e -> new StructureGalleryBlock(origin.offset(e.getKey()), e.getValue())).toList();
+            return PreviewOutdoorPrograms.blocks(this,origin);
         }
     }
     public static List<Sample> samples() {
