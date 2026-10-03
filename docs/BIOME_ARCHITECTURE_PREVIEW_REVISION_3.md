@@ -87,7 +87,8 @@ records source PNG/export JPEG checksums, actual camera coordinates and FOV for 
 
 Validation: the final Fabric build passed all 13 preview admissions and production structure,
 attachment and migration gates. The filtered NeoForge loader test passed with no failures.
-The 108-entry common regression suite and launcher/exporter syntax checks passed. The live
+The common regression suite (105 Java entrypoints, plus loader/version and wrapper checks)
+and launcher/exporter syntax checks passed. The live
 Fabric client placed all 13 pairs, validated final fragile attachments and camera clearance,
 and completed all 65 frames. Native source hashes and every exported JPEG hash were verified.
 Visual review of the exterior, Bank/home interior and Desert service-building sheets found
