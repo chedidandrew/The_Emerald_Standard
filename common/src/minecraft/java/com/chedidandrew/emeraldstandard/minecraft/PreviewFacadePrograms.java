@@ -8,7 +8,7 @@ import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
-/** Review-only 360-degree elevations. Only exposed wall skins and outside air may change. */
+/** Review-only elevations and doorway jambs. Only scoped wall skins and outside air may change. */
 final class PreviewFacadePrograms {
     record Audit(Map<BlockPos,BlockState> before, Set<BlockPos> skin, Set<BlockPos> added,
             Map<Direction,Integer> faces) { }
@@ -55,6 +55,7 @@ final class PreviewFacadePrograms {
             count+=upperElevation(source,cells,face,composition,palette,skin);
             faces.put(face,count);
         }
+        skin.addAll(PreviewDoorwayGlazing.frame(source.sample(),cells));
         Plan result=new Plan(source.sample(),Map.copyOf(cells),source.access(),source.entrance(),source.height());
         AUDITS.put(source.sample().id(),new Audit(source.cells(),Set.copyOf(skin),Set.copyOf(added),Map.copyOf(faces)));
         validate(result);
@@ -307,6 +308,7 @@ final class PreviewFacadePrograms {
         for(BlockPos at:p.cells().keySet()) if(!audit.before().containsKey(at)&&!audit.added().contains(at))
             throw new IllegalStateException("Unscoped exterior addition: "+at);
         PreviewDoorwayAudit.validate(p);
+        PreviewDoorwayGlazing.validate(p);
     }
     static void report(List<Sample> samples) {
         for(var style:com.chedidandrew.emeraldstandard.core.VillageArchitecture.BiomeDialect.values()) {

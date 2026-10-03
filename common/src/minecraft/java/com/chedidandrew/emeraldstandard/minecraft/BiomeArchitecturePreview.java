@@ -607,6 +607,7 @@ public final class BiomeArchitecturePreview {
     public static void validate(Plan p) {
         PreviewRoomLayout.validate(p);
         PreviewDoorwayAudit.validate(p);
+        PreviewDoorwayGlazing.validate(p);
         PreviewSeatingAudit.validate(p.cells(),PreviewSeatingAudit.lowStairs(p.cells()));
         validateFurnitureSupport(p);
         Set<BlockPos> reach=reachable(p);

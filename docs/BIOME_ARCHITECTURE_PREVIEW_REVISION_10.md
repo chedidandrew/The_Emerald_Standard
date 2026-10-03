@@ -260,3 +260,41 @@ routing and compact/terrain guidance against unchanged production behavior.
 These are opt-in review geometry and gallery navigation refinements, not a
 released generation mode, recipe or automatic repair of existing saves; no
 unrelated handbook text is changed to advertise unfinished production adoption.
+
+## Doorway glazing refinement
+
+The final facade pass now replaces only existing glass-pane cells immediately
+beside a door with solid, biome-matched jambs. Plains uses oak logs, Desert uses
+cut sandstone, Savanna uses acacia logs, and Taiga/Snowy use spruce logs. An
+affected jamb also finishes its existing pane cap up to the lintel height.
+Existing opaque sills, lintels, neighbouring doors, fixtures, air and the rest
+of the glazing remain unchanged. This avoids pretending that Minecraft's thin
+door has a full face for pane attachment; ordinary native connection updates
+still join the remaining panes to real frames after placement.
+
+All final preview routes use the correction: early samples, legacy Plains,
+full catalog, compact designs and aliased Banks. Final admission rejects any
+pane left beside either door half. Native fixtures cover five palettes, four
+door directions, both hinges, ground/upper floors, tinted panes, double doors,
+iron bars, unchanged surrounding cells and idempotence. Existing open-door,
+reachable-room, furniture, roof, lighting and native-shape support checks remain
+active. The 375-design census found 12 affected designs and 46 pane-to-jamb
+edits, with zero remaining unframed joins, zero disconnected shape cells and
+858 doors with zero blocked sides. Production's frozen 52 revision-11 designs
+and version-12 Bank remain unchanged.
+
+Fabric native admission/assemble, the common regression suite and filtered
+NeoForge loader test pass. Fresh profile `build/biome-preview-catalog-r10-08`
+completed 375 pairs / 750 actual structures; signature `9df95e027dff37a9`,
+content revision 17, comparison schema 1. The ten actual Minecraft views of
+Taiga #229 and #270 completed; their exterior views and #229's doorway from
+inside were inspected for clean pane termination against the new spruce jambs.
+Interactive review starts at the corrected Taiga #229 in daylight, with labels
+and `/emerald comparison visit <number>` navigation retained. Earlier worlds
+are preserved, and this work stays on the unmerged architecture review branch.
+
+Handbook accuracy review: checked building-catalog, construction-safety and
+terrain explanations, long-form chapter routing and compact handbook routing.
+This is isolated review geometry, not production adoption, a new recipe or an
+automatic repair of existing villages. No unrelated handbook prose was changed
+to advertise this unfinished production rollout.

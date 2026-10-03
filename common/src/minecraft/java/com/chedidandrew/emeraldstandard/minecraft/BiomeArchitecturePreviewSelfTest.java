@@ -19,6 +19,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         verifyChairGeometry();
         verifyRoofJoinRejections();
         verifyDoorwayRejections();
+        verifyDoorwayGlazing();
         verifyFloorBearingRejection();
         verifySupportRejections();
         verifyOutdoorGrade();
@@ -60,6 +61,7 @@ public final class BiomeArchitecturePreviewSelfTest {
         PreviewSupportAudit.report(BiomeArchitectureCatalogPreview.samples());
         verifyOutdoorRejections();
         PreviewDoorwayAudit.report();
+        PreviewDoorwayGlazing.report(BiomeArchitectureCatalogPreview.samples());
         if(VillageArchitecture.activeBlueprints().size()!=52
                 ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
                 ||VillageBankManager.galleryBankStructureVersion()!=12)
@@ -297,6 +299,65 @@ public final class BiomeArchitecturePreviewSelfTest {
             catch(IllegalStateException expected) { }
         }
         System.out.println("PASS native chair-back geometry and negative admission in all four directions");
+    }
+    private static void verifyDoorwayGlazing() {
+        for(var style:VillageArchitecture.BiomeDialect.values())
+            for(var facing:net.minecraft.core.Direction.Plane.HORIZONTAL)
+                for(var hinge:net.minecraft.world.level.block.state.properties.DoorHingeSide.values())
+                    for(int floor:new int[]{0,4}) {
+                        var sample=new BiomeArchitecturePreview.Sample(style,"HOUSE","glazing_test",9,9);
+                        var cells=new java.util.LinkedHashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
+                        for(int x=0;x<9;x++) for(int z=0;z<9;z++)
+                            cells.put(new net.minecraft.core.BlockPos(x,floor,z),Blocks.COBBLESTONE.defaultBlockState());
+                        var at=new net.minecraft.core.BlockPos(4,floor+1,4);
+                        var lower=Blocks.SPRUCE_DOOR.defaultBlockState().setValue(net.minecraft.world.level.block.DoorBlock.FACING,facing)
+                                .setValue(net.minecraft.world.level.block.DoorBlock.HINGE,hinge);
+                        cells.put(at,lower);
+                        cells.put(at.above(),lower.setValue(net.minecraft.world.level.block.DoorBlock.HALF,
+                                net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER));
+                        var changed=new java.util.HashSet<net.minecraft.core.BlockPos>();
+                        for(var side:java.util.List.of(facing.getClockWise(),facing.getCounterClockWise())) {
+                            var jamb=at.relative(side);
+                            for(int y=0;y<=2;y++) {
+                                cells.put(jamb.above(y),(y==1?Blocks.STAINED_GLASS_PANE.green():Blocks.GLASS_PANE).defaultBlockState());
+                                changed.add(jamb.above(y));
+                            }
+                            cells.put(jamb.relative(side),Blocks.GLASS_PANE.defaultBlockState());
+                        }
+                        // A real lintel, fixtures and full glass must not become part of the repair.
+                        cells.put(at.above(2),Blocks.COBBLESTONE.defaultBlockState());
+                        cells.put(at.relative(facing,3),Blocks.GLASS.defaultBlockState());
+                        var before=java.util.Map.copyOf(cells);
+                        var unframed=new BiomeArchitecturePreview.Plan(sample,before,java.util.Set.of(),at,floor+5);
+                        try { PreviewDoorwayGlazing.validate(unframed);throw new AssertionError("Unframed pane/door accepted"); }
+                        catch(IllegalStateException expected) {
+                            if(!expected.getMessage().contains("Unframed doorway glazing")) throw expected;
+                        }
+                        if(!PreviewDoorwayGlazing.frame(sample,cells).equals(changed)||cells.size()!=before.size())
+                            throw new AssertionError("Jamb repair changed scope or footprint");
+                        for(var entry:before.entrySet()) {
+                            var expected=changed.contains(entry.getKey())?PreviewDoorwayGlazing.jamb(sample).defaultBlockState():entry.getValue();
+                            if(!expected.equals(cells.get(entry.getKey()))) throw new AssertionError("Unscoped glazing repair");
+                        }
+                        var plan=new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),java.util.Set.of(),at,floor+5);
+                        PreviewDoorwayGlazing.validate(plan);
+                        PreviewDoorwayAudit.validate(plan);
+                        if(!PreviewDoorwayGlazing.frame(sample,cells).isEmpty()) throw new AssertionError("Non-idempotent jamb repair");
+                        // Double doors keep both halves, hinges and clear approaches. Iron bars stay bars.
+                        var partner=at.relative(facing.getClockWise());
+                        cells.put(partner,lower);cells.put(partner.above(),cells.get(at.above()));
+                        cells.put(partner.above(2),Blocks.IRON_BARS.defaultBlockState());
+                        var doubleBefore=java.util.Map.copyOf(cells);
+                        var doubleChanges=PreviewDoorwayGlazing.frame(sample,cells);
+                        if(!doubleChanges.equals(java.util.Set.of(partner.relative(facing.getClockWise()))))
+                            throw new AssertionError("Double-door outer glazing scope changed");
+                        for(var entry:doubleBefore.entrySet())
+                            if(!doubleChanges.contains(entry.getKey())&&!entry.getValue().equals(cells.get(entry.getKey())))
+                                throw new AssertionError("Glazing repair changed a double door or bars");
+                        var doublePlan=new BiomeArchitecturePreview.Plan(sample,java.util.Map.copyOf(cells),java.util.Set.of(),at,floor+5);
+                        PreviewDoorwayGlazing.validate(doublePlan);PreviewDoorwayAudit.validate(doublePlan);
+                    }
+        System.out.println("PASS doorway glazing: five palettes, four directions, both hinges and upper floors; scoped frames, clear approaches, idempotence, double doors and bars retained");
     }
     private static void verifyDoorwayRejections() {
         var sample=new BiomeArchitecturePreview.Sample(VillageArchitecture.BiomeDialect.TAIGA,"HOUSE","doorway_test",9,5);
