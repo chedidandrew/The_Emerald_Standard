@@ -11,7 +11,7 @@ final class AuthoredEntranceCleanup {
 
     static void removeOptionalApron(Builder stage, Metadata metadata) {
         if (stage.templateRevision < 11
-                || stage.templateRevision > AuthoredVillageStructures.LATEST_TEMPLATE_REVISION
+                || stage.templateRevision > AuthoredVillageStructures.LEGACY_TEMPLATE_REVISION
                 || metadata.templateRevision != stage.templateRevision) return;
         int center = metadata.width / 2;
         // Only optional dressing owns these cells. Base porch/threshold cells are blocked in

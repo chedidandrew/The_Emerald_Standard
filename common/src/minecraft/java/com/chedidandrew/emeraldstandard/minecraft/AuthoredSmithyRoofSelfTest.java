@@ -14,7 +14,7 @@ final class AuthoredSmithyRoofSelfTest {
     private AuthoredSmithyRoofSelfTest() { }
 
     static void run() {
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var old = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(), 6,
                         VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,
@@ -54,7 +54,7 @@ final class AuthoredSmithyRoofSelfTest {
     }
 
     private static void verifyLowProfileEaves() {
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var old = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(), 8,
                         VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,

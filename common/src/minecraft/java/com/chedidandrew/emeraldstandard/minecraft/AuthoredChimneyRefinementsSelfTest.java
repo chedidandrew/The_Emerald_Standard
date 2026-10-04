@@ -53,7 +53,7 @@ final class AuthoredChimneyRefinementsSelfTest {
         require(reservedBefore.equals(reserved.values()), "Reserved column partially changed");
         Set<String> changed = new HashSet<>();
         int pots = 0;
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var old = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(), 4,
                         VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,
@@ -119,7 +119,7 @@ final class AuthoredChimneyRefinementsSelfTest {
     private static void verifyRevisionEight() {
         Set<String> changed = new HashSet<>();
         int pots = 0;
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var old = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(), 7,
                         VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,

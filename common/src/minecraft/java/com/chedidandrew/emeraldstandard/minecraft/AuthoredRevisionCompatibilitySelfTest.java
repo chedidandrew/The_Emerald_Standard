@@ -16,7 +16,7 @@ final class AuthoredRevisionCompatibilitySelfTest {
 
     private static void verify(int revision, String expected) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var plan = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(),
                         revision, VillageArchitecture.PALETTE_BALANCED,

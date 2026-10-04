@@ -216,7 +216,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V9 = 9;")
                         && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V10 = 10;")
                         && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V11 = 11;")
-                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 12;"),
+                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 13;"),
                 "Village Bank structure-version constants drifted from the v2-v9 contract");
 
         String attempt = methodBody(source, "private static BankBuildAttempt attemptBankBuild(");
@@ -243,7 +243,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && integrity.contains("? legacyBankPlanV7(origin, palette)"),
                 "Existing v7 Banks must retain their frozen plan");
         require(integrity.contains("structureVersion >= BANK_STRUCTURE_VERSION")
-                        && integrity.contains("? bankPlan(origin, palette)")
+                        && integrity.contains("? approvedBankPlan(origin,palette,structureVersion)")
                         && integrity.contains(
                                 "structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V6")
                         && integrity.contains("? legacyBankPlanV6(origin, palette)")
@@ -312,7 +312,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && integrity.contains("? legacyBankPlanV10(origin, palette)"),
                 "v10 must remain frozen under the v11 bench correction");
         require(methodBody(source, "private static List<BankPlacement> bankPlan(")
-                        .strip().equals("return legacyBankPlanV10(origin, legacyPalette);")
+                        .contains("return legacyBankPlanV10(origin, legacyPalette);")
                         && integrity.contains("structureVersion >= PREVIOUS_BANK_STRUCTURE_VERSION_V11")
                         && integrity.contains("? legacyBankPlanV11(origin, palette)"),
                 "New Banks restore the original terrace while existing v11 integrity stays frozen");

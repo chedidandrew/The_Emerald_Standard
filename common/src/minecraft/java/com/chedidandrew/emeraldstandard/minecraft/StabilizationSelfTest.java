@@ -24,11 +24,11 @@ final class StabilizationSelfTest {
                 for (String palette : new String[]{"balanced", "timber_forward", "masonry_forward"}) {
                     long start = System.nanoTime();
                     var blueprint = AuthoredVillageStructures.plan(VillageProsperityEngine.ProjectType.COTTAGE,
-                            "cottage_hearth_01", AuthoredVillageStructures.LATEST_TEMPLATE_REVISION,
+                            "cottage_hearth_01", AuthoredVillageStructures.LEGACY_TEMPLATE_REVISION,
                             palette, "restrained", VillageArchitecture.Character.RUSTIC, dialect);
                     geometryNanos += System.nanoTime() - start;
                     start = System.nanoTime();
-                    var direct = AuthoredVillageStructures.planMaterials(AuthoredVillageStructures.LATEST_TEMPLATE_REVISION,
+                    var direct = AuthoredVillageStructures.planMaterials(AuthoredVillageStructures.LEGACY_TEMPLATE_REVISION,
                             palette, VillageArchitecture.Character.RUSTIC, dialect);
                     materialNanos += System.nanoTime() - start;
                     if (!blueprint.materials().equals(direct)) throw new IllegalStateException("Road palette changed: " + dialect + "/" + palette);

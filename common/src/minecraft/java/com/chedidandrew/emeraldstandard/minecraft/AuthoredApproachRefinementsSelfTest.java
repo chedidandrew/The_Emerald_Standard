@@ -110,8 +110,8 @@ final class AuthoredApproachRefinementsSelfTest {
         int finished = 0;
         List<String> skipped = new ArrayList<>();
         for (VillageProsperityEngine.ProjectType type : VillageProsperityEngine.ProjectType.values()) {
-            for (VillageArchitecture.BlueprintDescriptor descriptor : VillageArchitecture.blueprints(type)) {
-                if (descriptor.templateRevision() != AuthoredVillageStructures.LATEST_TEMPLATE_REVISION) {
+            for (VillageArchitecture.BlueprintDescriptor descriptor : VillageArchitecture.legacyBlueprints().stream().filter(d->d.type()==type).toList()) {
+                if (descriptor.templateRevision() != AuthoredVillageStructures.LEGACY_TEMPLATE_REVISION) {
                     continue;
                 }
                 var blueprint = AuthoredVillageStructures.plan(type, descriptor.templateId(), descriptor.templateRevision(),

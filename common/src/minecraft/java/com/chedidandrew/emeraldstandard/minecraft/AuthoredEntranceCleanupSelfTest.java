@@ -45,7 +45,7 @@ final class AuthoredEntranceCleanupSelfTest {
             }
         }
         int plans = 0, removed = 0;
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var old = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(),
                         10, VillageArchitecture.PALETTE_BALANCED,

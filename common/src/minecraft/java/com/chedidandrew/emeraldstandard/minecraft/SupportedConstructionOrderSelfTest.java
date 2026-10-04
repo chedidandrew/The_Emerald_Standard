@@ -35,7 +35,7 @@ final class SupportedConstructionOrderSelfTest {
         require(preserved.indices().indexOf(0)<preserved.indices().indexOf(2),
                 "legacy disconnected fallback cannot reverse replacements at the same coordinate");
         int catalogs=0,oldFloating=0,newFloating=0; var samples=new ArrayList<String>();
-        for(var descriptor:VillageArchitecture.activeBlueprints()) for(var dialect:VillageArchitecture.BiomeDialect.values()) {
+        for(var descriptor:VillageArchitecture.legacyBlueprints()) for(var dialect:VillageArchitecture.BiomeDialect.values()) {
             var plan=AuthoredVillageStructures.plan(descriptor.type(),descriptor.templateId(),descriptor.templateRevision(),
                     VillageArchitecture.PALETTE_BALANCED,VillageArchitecture.DRESSING_PROSPEROUS,
                     VillageArchitecture.Character.RUSTIC,dialect,42L);

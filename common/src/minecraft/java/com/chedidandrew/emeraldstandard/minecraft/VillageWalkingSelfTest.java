@@ -51,7 +51,10 @@ final class VillageWalkingSelfTest {
                 return;
             }
         }
-        throw new IllegalStateException("Villager did not physically reach " + label + ": " + walker.position() + " -> " + goal);
+        StringBuilder nearby=new StringBuilder();
+        for(BlockPos at:BlockPos.betweenClosed(walker.blockPosition().offset(-1,0,-1),walker.blockPosition().offset(1,1,1)))
+            if(!level.getBlockState(at).isAir()) nearby.append("\n").append(at.toShortString()).append(": ").append(level.getBlockState(at));
+        throw new IllegalStateException("Villager did not physically reach " + label + ": " + walker.position() + " -> " + goal+nearby);
         } finally {
             walker.getBrain().stopAll(level, walker);
             walker.getNavigation().stop();
@@ -62,6 +65,9 @@ final class VillageWalkingSelfTest {
     }
 
     static void building(ServerLevel level, BlockPos min, BlockPos max, String label) {
+        building(level,min,max,label,null);
+    }
+    static void building(ServerLevel level, BlockPos min, BlockPos max, String label,BlockPos primaryDoor) {
         List<BlockPos> doors = new ArrayList<>(), beds = new ArrayList<>(), jobs = new ArrayList<>();
         for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
             var state = level.getBlockState(pos);
@@ -70,14 +76,23 @@ final class VillageWalkingSelfTest {
             if (state.getBlock() instanceof BedBlock) beds.add(pos.immutable());
             if (state.is(Blocks.CRAFTING_TABLE) || state.is(Blocks.SMITHING_TABLE)
                     || state.is(Blocks.LECTERN) || state.is(Blocks.FLETCHING_TABLE)
+                    ||primaryDoor!=null&&(state.is(Blocks.BARREL)||state.is(Blocks.SMOKER)||state.is(Blocks.FURNACE)
+                            ||state.is(Blocks.BLAST_FURNACE)||state.is(Blocks.BREWING_STAND)||state.is(Blocks.LOOM)
+                            ||state.is(Blocks.CARTOGRAPHY_TABLE)||state.is(Blocks.STONECUTTER)||state.is(Blocks.GRINDSTONE))
                     || BankerProfessionSupport.isBankWorkstation(state)) jobs.add(pos.immutable());
         }
         if (doors.isEmpty()) throw new IllegalStateException(label + " missing testable doorway");
-        BlockPos door = doors.getFirst(), start = null, across = null;
+        BlockPos door = primaryDoor==null?doors.getFirst():primaryDoor, start = null, across = null;
+        if(!doors.contains(door)) throw new IllegalStateException(label+" missing primary door "+door);
         Direction facing = level.getBlockState(door).getValue(DoorBlock.FACING);
         for (Direction direction : new Direction[]{facing, facing.getOpposite()}) {
             BlockPos inside = door.relative(direction.getOpposite());
             if (!feet(level, inside)) continue;
+            // A target immediately on the doorstep can finish native navigation while the
+            // entity is still straddling that node. Require a deeper clear indoor cell when
+            // checking the new explicit primary entrances, so it must cross the whole door.
+            if(primaryDoor!=null&&feet(level,inside.relative(direction.getOpposite())))
+                inside=inside.relative(direction.getOpposite());
             for (int dy = -2; dy <= 1; dy++) {
                 BlockPos candidate = door.relative(direction, 3).above(dy);
                 if (feet(level, candidate)) { start = candidate; across = inside; break; }
@@ -92,10 +107,22 @@ final class VillageWalkingSelfTest {
             // Navigate through the door to air, not to the closed door block (which target
             // normalization can incorrectly project upward). The villager must open it itself.
             walk(level, walker, across, label + " through doorway");
-            if (!beds.isEmpty()) visit(level, walker, beds.getFirst(), label + " bed");
-            if (!jobs.isEmpty()) visit(level, walker, jobs.getFirst(), label + " workstation");
+            if (!beds.isEmpty()) visit(level, walker, primaryDoor==null?beds.getFirst():accessibleObject(level,walker,beds,label+" bed"), label + " bed");
+            if (!jobs.isEmpty()) visit(level, walker, primaryDoor==null?jobs.getFirst():accessibleObject(level,walker,jobs,label+" workstation"), label + " workstation");
             walk(level, walker, start, label + " return to street");
         } finally { walker.discard(); }
+    }
+
+    private static BlockPos accessibleObject(ServerLevel level,Villager walker,List<BlockPos> objects,String label) {
+        // Multistorey homes also contain player-accessible loft furniture reached by ladders.
+        // Native villager navigation does not climb those; prove an actual reachable bed/job,
+        // rather than requiring whichever upper-floor object happens to sort first by X.
+        for(var object:objects.stream().sorted(Comparator.comparingDouble(walker.blockPosition()::distSqr)).toList())
+            for(Direction d:Direction.Plane.HORIZONTAL) {
+                var beside=object.relative(d);var path=feet(level,beside)?walker.getNavigation().createPath(beside,0):null;
+                if(path!=null&&path.canReach()) return object;
+            }
+        throw new IllegalStateException("No villager-accessible "+label+" among "+objects.size()+" objects");
     }
 
     private static void visit(ServerLevel level, Villager walker, BlockPos object, String label) {

@@ -21,8 +21,9 @@ public final class TrailGroundWiringRegressionTest {
         String placement = methodBody(java, "private static boolean mayApplyPlacement");
         require(placement.contains("isPaveableTrailGround(current)"),
                 "Trail placement is not wired to the narrow paving predicate");
-        require(!placement.contains("isNaturalProjectGround(current)"),
-                "Trail placement still uses the broader foundation/site predicate");
+        require(placement.contains("placement.constructionPhase == 7 && placement.dy < 0")
+                        && placement.indexOf("isNaturalProjectGround(current)") < placement.indexOf("if (placement.isTrail())"),
+                "Natural substrate replacement must be confined to below-grade approved geometry, never public trails");
 
         String paveable = methodBody(java, "static boolean isPaveableTrailGround");
         for (String intended : List.of(

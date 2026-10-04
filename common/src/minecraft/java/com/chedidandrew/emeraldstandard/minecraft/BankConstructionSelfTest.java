@@ -20,10 +20,15 @@ final class BankConstructionSelfTest {
         try {
             var dir = Files.createTempDirectory("tes-progressive-bank-");
             var economy = new EconomyService(); economy.start(dir, 774, 0);
-            for (int x = -4; x <= 17; x++) for (int z = -8; z <= 15; z++) {
-                BlockPos ground = origin.offset(x, -1, z);
-                level.getChunk(ground); // Isolated fixture setup only.
-                set(level, before, ground, Blocks.GRASS_BLOCK.defaultBlockState());
+            var nativeBank=ApprovedBankStructures.plan(VillageProsperityManager.biomeDialect(level,origin),15);
+            for (int x = Math.min(-4,nativeBank.minX()-3); x <= Math.max(17,nativeBank.maxX()+3); x++)
+                for (int z = Math.min(-8,nativeBank.minZ()-10); z <= Math.max(15,nativeBank.maxZ()+3); z++) {
+                // The reviewed Bank reserves its whole yard and below-grade foundations,
+                // rather than the old 13x11 shell on a one-block floating test platform.
+                for(int y=-6;y<0;y++) {
+                    BlockPos ground=origin.offset(x,y,z);level.getChunk(ground);
+                    set(level,before,ground,(y==-1?Blocks.GRASS_BLOCK:Blocks.DIRT).defaultBlockState());
+                }
                 // Back-right bank wing cuts into a four-block rise; the north entrance stays level.
                 if (x >= 9 && z >= 3) for (int y = 0; y <= 3; y++)
                     set(level, before, origin.offset(x, y, z), Blocks.DIRT.defaultBlockState());
@@ -69,7 +74,7 @@ final class BankConstructionSelfTest {
             require(plan.equals(economy.pendingBankConstructionsSnapshot().get(777L)), "partial Bank resumes frozen plan");
             require(BankStyleLedger.get(level).style(origin.asLong()).id().equals(plan.style()),"style restored from saved plan");
 
-            BlockPos second = origin.offset(17, 1, 0);
+            BlockPos second = origin.offset(nativeBank.maxX()+5, 1, 0);
             set(level, before, second, Blocks.AIR.defaultBlockState());
             set(level, before, second.above(), Blocks.AIR.defaultBlockState());
             var other = new BankConstruction(second.asLong(), second.asLong(), null, 8, List.of(
@@ -117,7 +122,8 @@ final class BankConstructionSelfTest {
             require(!economy.pendingBankConstructionsSnapshot().containsKey(777L)
                     && economy.hasGeneratedBankRegion(777), "full Bank completes without unsupported-cell deadlock");
             require(pulses > 100, "Bank was visibly progressive, not a bulk spawn");
-            VillageWalkingSelfTest.building(level, origin.offset(-5, -3, -5), origin.offset(16, 20, 20), "Bank");
+            VillageWalkingSelfTest.building(level, origin.offset(nativeBank.minX(), -3, nativeBank.minZ()),
+                    origin.offset(nativeBank.maxX(),20,nativeBank.maxZ()),"Bank",origin.offset(nativeBank.entrance()));
             var untouched = (net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity)
                     level.getBlockEntity(playerStoragePos);
             require(untouched != null && untouched.getLootTable() == null && untouched.isEmpty(),

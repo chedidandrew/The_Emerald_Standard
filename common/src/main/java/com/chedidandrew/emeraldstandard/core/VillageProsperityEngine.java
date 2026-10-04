@@ -525,7 +525,9 @@ public final class VillageProsperityEngine {
                 desired,
                 character,
                 village.developmentTier,
-                existingBlueprints);
+                existingBlueprints,
+                village.architectureDialect.isBlank()?VillageArchitecture.BiomeDialect.PLAINS
+                        :VillageArchitecture.BiomeDialect.fromId(village.architectureDialect));
         project.designSchema = VillageArchitecture.BLUEPRINT_SCHEMA;
         project.designSeed = selection.seed();
         project.designTemplateId = selection.templateId();
@@ -1336,7 +1338,8 @@ public final class VillageProsperityEngine {
                     || !project.economicComplete) {
                 continue;
             }
-            capacity += Math.max(0, project.housingGain());
+            capacity += Math.max(0, project.designTemplateRevision==ApprovedArchitectureCatalog.REVISION
+                    ?project.actualHousingBeds():project.housingGain());
         }
         return capacity;
     }
@@ -1378,7 +1381,9 @@ public final class VillageProsperityEngine {
             }
             int bedsPerSite = project.vanillaPlan != null ? project.vanillaPlan.beds()
                     : VillageArchitecture.isManagedStructureSchema(project.designSchema)
-                    ? Math.max(1, project.housingGain() / 2)
+                    ? ApprovedArchitectureCatalog.entry(project.designTemplateId)!=null
+                            ? ApprovedArchitectureCatalog.entry(project.designTemplateId).beds()
+                            : Math.max(1, project.housingGain() / 2)
                     : project.housingGain();
             authoredBeds += (long) bedsPerSite * authoredSites;
         }

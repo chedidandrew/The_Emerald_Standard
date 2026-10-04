@@ -52,7 +52,7 @@ final class BiomeArchitectureCatalogPreview {
     private static Plan build(Sample s) {
         Builder b=new Builder(new Sample(s.style(),s.role(),s.id(),s.width()-6,s.depth()-6));
         String id=masterId(s);
-        var descriptor=VillageArchitecture.activeBlueprints().stream().filter(d->d.templateId().equals(id))
+        var descriptor=VillageArchitecture.legacyBlueprints().stream().filter(d->d.templateId().equals(id))
                 .findFirst().orElseThrow();
         if(!descriptor.type().name().equals(s.role())) throw new IllegalArgumentException("Catalog role mismatch");
         int variant=Integer.parseInt(id.substring(id.lastIndexOf('_')+1));

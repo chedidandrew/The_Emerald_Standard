@@ -105,7 +105,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
     }
 
     private static void verifyAllActiveMastersUseRoleDoodads(String source) {
-        require(Pattern.compile("LATEST_TEMPLATE_REVISION\\s*=\\s*11\\s*;")
+        require(Pattern.compile("LEGACY_TEMPLATE_REVISION\\s*=\\s*11\\s*;")
                         .matcher(source)
                         .find(),
                 "The active authored gold masters are not revision 11");
@@ -334,7 +334,7 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
         String descriptorValidation = methodBody(
                 authored,
                 "private static CatalogValidationResult validateCatalogDescriptor(");
-        require(catalog.contains("descriptor.templateRevision() == LATEST_TEMPLATE_REVISION"),
+        require(catalog.contains("descriptor.templateRevision() == LEGACY_TEMPLATE_REVISION"),
                 "Catalog validation no longer filters to the active revision");
         require(descriptorValidation.contains("Blueprint blueprint = plan(")
                         && descriptorValidation.contains(

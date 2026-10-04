@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.state.properties.Half;
 final class AuthoredStairRefinementsSelfTest {
     static void run() {
         int checked = 0, corrected = 0;
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var old = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(), 9,
                         VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,

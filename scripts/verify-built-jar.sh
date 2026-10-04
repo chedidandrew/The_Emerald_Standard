@@ -8,7 +8,7 @@ fi
 
 LOADER="$1"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB_DIR="$ROOT/$LOADER/build/libs"
+LIB_DIR="${TES_JAR_VERIFY_DIR:-$ROOT/$LOADER/build/libs}"
 VERSION="$(grep '^mod_version=' "$ROOT/$LOADER/gradle.properties" | cut -d= -f2-)"
 
 if [[ -n "${PYTHON:-}" ]]; then
@@ -42,6 +42,12 @@ if [[ ${#jars[@]} -ne 2 || ! -f "$jar_file" || ! -f "$sources_file" ]]; then
 fi
 
 required=(
+    'com/chedidandrew/emeraldstandard/core/ApprovedArchitectureCatalog.class'
+    'com/chedidandrew/emeraldstandard/minecraft/ApprovedVillageStructures.class'
+    'com/chedidandrew/emeraldstandard/minecraft/ApprovedBankStructures.class'
+    'com/chedidandrew/emeraldstandard/minecraft/NativeStructureSupport.class'
+    'com/chedidandrew/emeraldstandard/minecraft/NativeDoorwayClearance.class'
+    'data/the_emerald_standard/architecture/v12/catalog.tsv'
     'com/chedidandrew/emeraldstandard/core/VillageBridgeFunding.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageBridgeLedger.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageBridgeSurvey.class'

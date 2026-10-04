@@ -179,7 +179,7 @@ public final class StructureGalleryWiringRegressionTest {
                         .contains("blueprintProjectTemplate("),
                 "Gallery project bridge bypasses the production Blueprint V2 template");
         String bankBridge = methodBody(banks, "galleryBankBlueprint(");
-        require(bankBridge.contains("bankPlan("),
+        require(bankBridge.contains("legacyBankPlanV10("),
                 "Gallery Bank bridge bypasses the production Bank plan");
     }
 

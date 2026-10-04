@@ -95,7 +95,7 @@ public final class AuthoredVillageStructureRoleReadabilityWiringRegressionTest {
     private static void verifyEveryActivePlanRunsAdmission(String source) {
         String plan = methodBody(source, "static Blueprint plan(");
         Pattern activeGate = Pattern.compile(
-                "if\\s*\\(\\s*templateRevision\\s*==\\s*LATEST_TEMPLATE_REVISION\\s*\\)"
+                "if\\s*\\(\\s*templateRevision\\s*==\\s*LEGACY_TEMPLATE_REVISION\\s*\\)"
                         + "\\s*\\{(?s:.*?)validateDetailDensity\\s*\\(\\s*blueprint\\s*\\)"
                         + "(?s:.*?)validateRoleReadability\\s*\\(\\s*blueprint\\s*\\)");
         require(activeGate.matcher(plan).find(),

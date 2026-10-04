@@ -18,7 +18,11 @@ final class BankWalkwaysSelfTest {
         UUID id = economy.villageIdForBankRegion(777);
         var village = economy.developmentVillageSnapshot(id).village();
         BlockPos center = BlockPos.of(village.centerPos);
-        var bank = new BankWalkways.Bank(777, economy.generatedBankAnchor(777));
+        int version=economy.generatedBankStructureVersion(777);
+        var style=BankStyleLedger.get(level).style(origin.asLong());
+        var approved=version>=13?ApprovedBankStructures.plan(style,version):null;
+        var bank = new BankWalkways.Bank(777, economy.generatedBankAnchor(777),version,style);
+        BlockState entranceFloor=level.getBlockState(bank.start());
         var player = new ServerPlayer(level.getServer(), level,
                 new GameProfile(UUID.randomUUID(), "BankPathFixture"), ClientInformation.createDefault());
         List<Long> banks = List.copyOf(economy.generatedBankAnchorsSnapshot().values());
@@ -38,9 +42,12 @@ final class BankWalkwaysSelfTest {
             player.setPos(center.getX() + .5, center.getY() + 20, center.getZ() + .5);
             // Keep the real Bank intact. Provide flat supported land around it and a real road
             // near its original village, on the far side of the building from the front door.
-            for (int x = -24; x <= 72; x++) for (int z = -30; z <= 108; z++) {
+            int minX=approved==null?-4:approved.minX()-3, maxX=approved==null?17:approved.maxX()+3;
+            int minZ=approved==null?-8:approved.minZ()-1, maxZ=approved==null?15:approved.maxZ()+3;
+            for (int x = Math.min(-24,minX-10); x <= Math.max(72,center.getX()-origin.getX()+10); x++)
+                for (int z = Math.min(-30,minZ-10); z <= Math.max(108,center.getZ()-origin.getZ()+10); z++) {
                 BlockPos column = origin.offset(x, 0, z); level.getChunk(column);
-                if (x >= -4 && x <= 17 && z >= -8 && z <= 15) {
+                if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) {
                     for (int y = -2; y <= 6; y++) before.putIfAbsent(column.above(y), level.getBlockState(column.above(y)));
                     if (level.getBlockState(column.below(2)).isAir() && level.getBlockState(column.below()).is(Blocks.GRASS_BLOCK))
                         set(level, before, column.below(2), Blocks.STONE.defaultBlockState());
@@ -51,21 +58,22 @@ final class BankWalkwaysSelfTest {
             }
             BlockPos road = new BlockPos(center.getX(), origin.getY() - 1, center.getZ());
             for (int x = -8; x <= 8; x++) set(level, before, road.east(x), Blocks.DIRT_PATH.defaultBlockState());
-            BlockPos obstacle = origin.offset(6, 0, -9);
+            BlockPos obstacle = approved==null?origin.offset(6,0,-9):bank.start().north(4).above();
             for (int y = 0; y < 3; y++) set(level, before, obstacle.above(y), Blocks.OAK_LOG.defaultBlockState());
             var request = BankWalkways.request(level, village, bank, List.of(), banks);
-            require(request.streetGoal() && request.start().equals(origin.offset(6, 0, -2)), "path starts at real front stair");
+            require(request.streetGoal() && request.start().equals(bank.start()), "path starts at authored entrance-yard exit");
             require(!request.banks().contains(bank.anchor()), "own broad buffer would block the entrance");
-            require(WalkwayLighting.excluded(origin.offset(2, 0, -3), request.lots(), request.banks()),
+            require(WalkwayLighting.excluded(approved==null?origin.offset(2,0,-3):origin.offset(approved.minX(),0,approved.maxZ()), request.lots(), request.banks()),
                     "benches and forecourt remain excluded");
-            require(!WalkwayLighting.excluded(origin.offset(6, -1, -5), request.lots(), request.banks()),
+            require(!WalkwayLighting.excluded(bank.start().north(3), request.lots(), request.banks()),
                     "entrance has a continuous paving corridor");
             var desert = village.copy(); desert.architectureDialect = VillageArchitecture.BiomeDialect.DESERT.id();
-            require(BankWalkways.request(level, desert, bank, List.of(), banks).desert(), "village dialect determines path palette");
+            require(BankWalkways.request(level, desert, bank, List.of(), banks).desert()==(approved==null||style==VillageArchitecture.BiomeDialect.DESERT),
+                    "approved Bank retains its saved palette; legacy Bank follows village");
             for(var dialect:VillageArchitecture.BiomeDialect.values()) {
                 var themed=village.copy(); themed.architectureDialect=dialect.id();
                 require(BankWalkways.request(level,themed,bank,List.of(),banks).style().equals(
-                        WalkwayStyle.forDialect(dialect.id())),"Bank road must use saved village family: "+dialect);
+                        WalkwayStyle.forDialect(approved==null?dialect.id():style.id())),"Bank road must use saved family: "+dialect);
             }
 
             boolean reloaded = false;
@@ -98,7 +106,12 @@ final class BankWalkwaysSelfTest {
                         && Math.abs(a.getY() - b.getY()) <= 1, "continuous route around Bank");
             }
             require(level.getBlockState(obstacle).is(Blocks.OAK_LOG), "tree shortcut was not cleared");
-            require(level.getBlockState(bank.start()).getBlock() instanceof StairBlock, "entrance stair preserved");
+            require(level.getBlockState(bank.start()).equals(entranceFloor)
+                    ||(approved!=null&&VillageProsperityManager.isNaturalProjectGround(entranceFloor)
+                    &&WalkwayConnections.road(level,bank.start(),level.getBlockState(bank.start()))),
+                    "authored entrance footing preserved or natural yard exit paved");
+            require(VillageBankManager.isManagedBankOperational(level,economy,777),
+                    "safe paved yard exit must not disable the Bank: "+VillageBankManager.bankOperationProblem(level,economy,777L));
             for (int pulse = 0; pulse < 1600 && !WalkwayLightingLedger.get(level).done(bank.job(id)); pulse++) {
                 int n = VillageProsperityManager.materializeOneWalkwayLamp(
                         level, economy, village, List.of(), banks, 160000 + pulse * 20L, 2);

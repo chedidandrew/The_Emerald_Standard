@@ -89,7 +89,9 @@ public final class BankerIntegrationSelfTest {
         checks.add(new AwaitFixture(() -> CreativeContentSelfTest.ready(level) && NaturalVillageIdentitySelfTest.ready(level)));
         boolean subset = System.getProperties().stringPropertyNames().stream().anyMatch(key ->
                 key.startsWith("the_emerald_standard.") && key.endsWith("SmokeOnly") && Boolean.getBoolean(key));
-        if (subset) checks.add(() -> run(level));
+        if(Boolean.getBoolean("the_emerald_standard.approvedArchitectureSmokeOnly"))
+            checks.addAll(ApprovedArchitectureRuntimeSelfTest.checks(level));
+        else if (subset) checks.add(() -> run(level));
         else checks.addAll(fullChecks(level));
         SEQUENCES.put(level.getServer(), new Sequence(checks));
     }

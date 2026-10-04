@@ -131,7 +131,7 @@ public final class HandbookResourceRegressionTest {
                                 .contains("sectionPage(\"vanilla_buildings\",64"),
                 "Both handbook forms and imported building labels must describe the vanilla scope");
         check(benchGuide.contains("front terrace are decorative benches")
-                        && benchGuide.contains("raised backs toward the front path")
+                        && benchGuide.contains("seating arranged around their actual forecourts")
                         && benchGuide.contains("Banks already planned keep their saved arrangement")
                         && benchGuide.contains("Terraces face the")
                         && benchGuide.contains("Existing completed Banks keep their original blocks")
@@ -430,7 +430,7 @@ public final class HandbookResourceRegressionTest {
             int minimum = chapter.group(1).contains("\"recipe_desk\"") ? 150 : 180;
             check(words >= minimum, "A reader chapter is still only a brief summary");
         }
-        check(chapterCount == 16 && sections.size() == 70, "Long-form chapter coverage changed");
+        check(chapterCount == 16 && sections.size() == 71, "Long-form chapter coverage changed");
         check(entries.get(prefix+"planning_building.body").contains("64 planned operations")
                 && entries.get(prefix+"planning_building.body").contains("not a hard upper bound")
                 && entries.get(prefix+"districts.body").contains("five deterministic candidate centers")
@@ -458,7 +458,7 @@ public final class HandbookResourceRegressionTest {
         check(entries.get(prefix + "village.body").contains("18 / 16")
                         && entries.get(prefix + "town_outputs.body").contains("F / M / T"),
                 "Town's housing and output examples must remain explained");
-        System.out.println("PASS 16 long-form handbook chapters, 70 sections and all seven funding purposes");
+        System.out.println("PASS 16 long-form handbook chapters, 71 sections and all seven funding purposes");
     }
 
     private static void requireResolvableHandbookSprites(String handbookSource) {

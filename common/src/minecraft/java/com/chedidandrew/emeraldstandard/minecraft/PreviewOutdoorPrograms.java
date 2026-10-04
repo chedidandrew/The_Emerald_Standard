@@ -35,6 +35,7 @@ final class PreviewOutdoorPrograms {
     }
     static List<StructureGalleryBlock> blocks(BiomeArchitecturePreview.Plan p,BlockPos origin) {
         var cells=new HashMap<>(p.cells()); cells.putAll(site(p).cells());
+        NativeDoorwayClearance.setBackRugs(cells);
         return cells.entrySet().stream().sorted(Map.Entry.comparingByKey(Comparator
                 // Install every bearing before ladders; a valid final map alone cannot stop
                 // neighbor updates popping a rung while its later wall block is still air.

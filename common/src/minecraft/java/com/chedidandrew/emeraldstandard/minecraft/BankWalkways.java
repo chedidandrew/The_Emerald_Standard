@@ -12,9 +12,16 @@ import net.minecraft.world.level.block.state.properties.Half;
 final class BankWalkways {
     // Ordinary project IDs are positive. The origin disambiguates replacements/legacy Banks.
     static final long PROJECT = Long.MIN_VALUE;
-    record Bank(long key, long anchor) {
+    record Bank(long key, long anchor,int version,VillageArchitecture.BiomeDialect style) {
+        Bank(long key,long anchor) {this(key,anchor,12,null);}
         BlockPos origin() { return BlockPos.of(anchor).offset(-6, -1, -9); }
-        BlockPos start() { return origin().offset(6, 0, -2); }
+        BlockPos start() {
+            if(version>=13) {
+                var p=ApprovedBankStructures.plan(style,version);
+                return origin().offset(p.walkwayExit()).below();
+            }
+            return origin().offset(6, 0, -2);
+        }
         String job(UUID village) { return WalkwayConnectionLedger.key(village, PROJECT, anchor); }
     }
 
@@ -27,7 +34,10 @@ final class BankWalkways {
             if (pending.containsKey(key) || economy.isFallbackBankRegion(key)
                     || economy.generatedBankStructureVersion(key) < 3
                     || !village.villageId.equals(economy.canonicalVillageId(economy.villageIdForBankRegion(key)))) return;
-            Bank bank = new Bank(key, anchor);
+            int version=economy.generatedBankStructureVersion(key);
+            var saved=BankStyleLedger.get(level).style(BlockPos.of(anchor).offset(-6,-1,-9).asLong());
+            if(version>=13&&saved==null) return;
+            Bank bank = new Bank(key, anchor,version,saved);
             if (!VillageBankManager.bankWorkActive(level, economy, village.villageId, bank.start(),
                     EmeraldConfig.current().villageDevelopmentRadius())) return;
             // No palette lookup, heightmap query, or block access in an unloaded chunk.
@@ -35,7 +45,10 @@ final class BankWalkways {
             if (!level.hasChunk(start.getX() >> 4, start.getZ() >> 4)
                     || !level.hasChunk(bank.origin().getX() >> 4, bank.origin().getZ() >> 4)) return;
             var stair = level.getBlockState(start);
-            if (stair.getBlock() instanceof StairBlock && stair.getValue(StairBlock.FACING) == Direction.SOUTH
+            if(version>=13) {
+                if(!stair.getCollisionShape(level,start).isEmpty()&&level.getBlockState(start.above()).isAir()
+                        &&level.getBlockState(start.above(2)).isAir()) result.add(bank);
+            } else if (stair.getBlock() instanceof StairBlock && stair.getValue(StairBlock.FACING) == Direction.SOUTH
                     && stair.getValue(StairBlock.HALF) == Half.BOTTOM) result.add(bank);
         });
         result.sort(Comparator.comparingLong(Bank::key).thenComparingLong(Bank::anchor));
@@ -56,6 +69,22 @@ final class BankWalkways {
                 : VillageProsperityManager.projectEntrance(BlockPos.of(branch.originPos), branch).below();
         BlockPos origin = bank.origin();
         List<EconomyService.VillageProjectLot> exclusions = new ArrayList<>(lots);
+        if(bank.version()>=13) {
+            var p=ApprovedBankStructures.plan(bank.style(),bank.version());
+            int entry=p.walkwayExit().getX();
+            exclusions.removeIf(l->BlockPos.of(l.boundsMinPos()).getX()==origin.getX()+p.minX()
+                    &&BlockPos.of(l.boundsMaxPos()).getX()==origin.getX()+p.maxX()
+                    &&BlockPos.of(l.boundsMaxPos()).getZ()==origin.getZ()+p.maxZ());
+            exclusions.add(lot(origin,p.minX(),p.minZ()+2,p.maxX(),p.maxZ()));
+            if(entry-3>=p.minX()) exclusions.add(lot(origin,p.minX(),p.minZ(),entry-3,p.minZ()+1));
+            if(entry+3<=p.maxX()) exclusions.add(lot(origin,entry+3,p.minZ(),p.maxX(),p.minZ()+1));
+            Set<Long> court=new HashSet<>();
+            for(int x=p.minX();x<=p.maxX();x++) for(int z=p.minZ();z<=p.maxZ();z++)
+                court.add(WalkwayConnections.column(origin.offset(x,0,z)));
+            return new WalkwayConnections.Request(village.villageId,PROJECT,bank.anchor(),bank.start(),destination,
+                    branch==null,court,List.copyOf(exclusions),banks.stream().filter(a->a!=bank.anchor()).toList(),
+                    bank.style()==VillageArchitecture.BiomeDialect.DESERT,WalkwayStyle.forDialect(bank.style().id()));
+        }
         // Replace only THIS Bank's coarse 20-block buffer with its actual lot. Leave a narrow
         // doorway corridor for new paving. The shared lot guard adds a one-block margin;
         // existing clear steps can be traversed but neither furniture nor stairs are replaced.
@@ -75,6 +104,7 @@ final class BankWalkways {
     }
 
     private static VillageArchitecture.BiomeDialect dialect(ServerLevel level, EconomyState.VillageRecord village, Bank bank) {
+        if(bank.version()>=13) return bank.style();
         // A Bank can finish before the first expansion project establishes a saved dialect.
         return village.architectureDialect.isBlank() ? VillageProsperityManager.biomeDialect(level, BlockPos.of(village.centerPos))
                 : VillageArchitecture.BiomeDialect.fromId(village.architectureDialect);

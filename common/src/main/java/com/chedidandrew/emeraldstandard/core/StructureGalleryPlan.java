@@ -193,11 +193,11 @@ public final class StructureGalleryPlan {
 
     private static List<VillageArchitecture.BlueprintDescriptor> buildGoldMasters() {
         List<VillageArchitecture.BlueprintDescriptor> descriptors =
-                new ArrayList<>(VillageArchitecture.activeBlueprints().size());
+                new ArrayList<>(VillageArchitecture.legacyBlueprints().size());
         for (VillageProsperityEngine.ProjectType type : PROJECT_ORDER) {
-            descriptors.addAll(VillageArchitecture.blueprints(type));
+            descriptors.addAll(VillageArchitecture.legacyBlueprints().stream().filter(d->d.type()==type).toList());
         }
-        if (descriptors.size() != VillageArchitecture.activeBlueprints().size()) {
+        if (descriptors.size() != VillageArchitecture.legacyBlueprints().size()) {
             throw new IllegalStateException(
                     "Blueprint V2 gallery omitted an active gold master");
         }

@@ -240,7 +240,7 @@ public final class VillageArchitecture {
                     .toList());
 
     /** Clean original thresholds, without a raised decorative approach apron. */
-    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG = validateActiveCatalog(
+    private static final List<BlueprintDescriptor> REVISION_ELEVEN_BLUEPRINT_CATALOG = validateActiveCatalog(
             REVISION_TEN_BLUEPRINT_CATALOG.stream()
                     .map(previous -> new BlueprintDescriptor(
                             previous.type(), previous.templateId(), 11,
@@ -279,6 +279,12 @@ public final class VillageArchitecture {
                     BlueprintScale.MEDIUM),
             blueprint(ProjectType.EXCHANGE_HALL, "exchange_hall_01", 1, 15, 11, 12, true,
                     BlueprintScale.LARGE));
+
+    private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors());
+
+    /** Frozen pre-adoption masters for saved plans and historical review comparisons. */
+    public static List<BlueprintDescriptor> legacyBlueprints() { return REVISION_ELEVEN_BLUEPRINT_CATALOG; }
 
     private VillageArchitecture() {
     }
@@ -577,11 +583,18 @@ public final class VillageArchitecture {
             Character character,
             int developmentTier,
             List<ExistingBlueprint> existingBlueprints) {
+        return chooseBlueprint(villageId,projectId,type,character,developmentTier,existingBlueprints,BiomeDialect.PLAINS);
+    }
+
+    public static BlueprintSelection chooseBlueprint(
+            UUID villageId,long projectId,ProjectType type,Character character,int developmentTier,
+            List<ExistingBlueprint> existingBlueprints,BiomeDialect dialect) {
         if (type == null || character == null) {
             throw new IllegalArgumentException("Project type and village character are required");
         }
         int tier = normalizedDevelopmentTier(developmentTier);
-        List<BlueprintDescriptor> candidates = blueprints(type, tier);
+        List<BlueprintDescriptor> candidates = blueprints(type, tier).stream()
+                .filter(d->ApprovedArchitectureCatalog.matchesDialect(d.templateId(),dialect)).toList();
         if (candidates.isEmpty()) {
             throw new IllegalArgumentException(
                     "No authored blueprint for " + type + " at development tier " + tier);
@@ -677,6 +690,7 @@ public final class VillageArchitecture {
         int tier = normalizedDevelopmentTier(developmentTier);
         return blueprints(type).stream()
                 .filter(descriptor -> descriptor.scale.isAvailableAt(tier))
+                .filter(descriptor -> ApprovedArchitectureCatalog.available(descriptor.templateId(),tier))
                 .toList();
     }
 
@@ -686,7 +700,7 @@ public final class VillageArchitecture {
     }
 
     public static BlueprintDescriptor blueprint(String templateId, int templateRevision) {
-        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_TEN_BLUEPRINT_CATALOG, REVISION_NINE_BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
+        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_ELEVEN_BLUEPRINT_CATALOG, REVISION_TEN_BLUEPRINT_CATALOG, REVISION_NINE_BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
                         REVISION_SEVEN_BLUEPRINT_CATALOG, REVISION_SIX_BLUEPRINT_CATALOG,
                         REVISION_FIVE_BLUEPRINT_CATALOG, REVISION_FOUR_BLUEPRINT_CATALOG,
                         REVISION_THREE_BLUEPRINT_CATALOG, REVISION_TWO_BLUEPRINT_CATALOG,

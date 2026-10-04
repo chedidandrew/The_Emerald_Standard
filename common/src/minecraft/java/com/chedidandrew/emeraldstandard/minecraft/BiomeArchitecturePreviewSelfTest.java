@@ -100,11 +100,11 @@ public final class BiomeArchitecturePreviewSelfTest {
         System.out.println("CEILING CENSUS: 375 designs; "+dividerColumns+" closed divider columns; "+upperLevels
                 +" accessible upper levels; zero usable floor areas below three-block structural headroom");
         System.out.println("CIRCULATION CENSUS: 375 designs; zero long one-block enclosed corridors; zero unguarded indoor upper-floor drops; roofed walking areas have block-light >=7 without skylight");
-        if(VillageArchitecture.activeBlueprints().size()!=52
-                ||VillageArchitecture.activeBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
+        if(VillageArchitecture.legacyBlueprints().size()!=52
+                ||VillageArchitecture.legacyBlueprints().stream().anyMatch(b->b.templateRevision()!=11)
                 ||VillageBankManager.galleryBankStructureVersion()!=12)
             throw new AssertionError("Preview altered the production catalog");
-        System.out.println("PASS production catalog unchanged; 52 revision-11 designs and version-12 Bank");
+        System.out.println("PASS legacy review source unchanged; 52 revision-11 designs and version-12 Bank");
         } finally {
             if(galleryBefore==null) System.clearProperty(StructureGallery.ENABLE_PROPERTY);
             else System.setProperty(StructureGallery.ENABLE_PROPERTY,galleryBefore);
@@ -290,7 +290,9 @@ public final class BiomeArchitecturePreviewSelfTest {
                 throw new AssertionError("Raised outdoor surface retained: "+design.id());
             var placed=new java.util.HashMap<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState>();
             plan.blocks(net.minecraft.core.BlockPos.ZERO).forEach(block->placed.put(block.position(),block.state()));
-            plan.cells().forEach((at,state)-> {
+            var accessibleBuilding=new java.util.HashMap<>(plan.cells());
+            NativeDoorwayClearance.setBackRugs(accessibleBuilding);
+            accessibleBuilding.forEach((at,state)-> {
                 if(!state.equals(placed.get(at)))throw new AssertionError("Building moved during yard lowering: "+design.id());
             });
         }

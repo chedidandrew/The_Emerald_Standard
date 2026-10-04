@@ -786,7 +786,7 @@ public final class StructureGallery {
                 continue;
             }
             boolean structuralPhase = switch (cell.phase()) {
-                case FOUNDATION, FRAME, SHELL, ROOF, OPENING -> true;
+                case FOUNDATION, FRAME, SHELL, ROOF, OPENING, APPROVED_STRUCTURE -> true;
                 case FIXTURE, DECOR -> false;
             };
             boolean coreCell = structuralPhase

@@ -11,6 +11,7 @@ mapfile -t MAIN_SOURCES < <(find "$ROOT/common/src/main/java" -name '*.java' -pr
 mapfile -t TEST_SOURCES < <(find "$ROOT/common/src/test/java" -name '*.java' -print | sort)
 
 javac --release 21 -d "$BUILD" "${MAIN_SOURCES[@]}"
+cp -R "$ROOT/common/src/main/resources/." "$BUILD/"
 javac --release 21 -cp "$BUILD" -d "$BUILD" \
     "$ROOT/common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/EmeraldConfig.java"
 javac --release 21 -cp "$BUILD" -d "$BUILD" "${TEST_SOURCES[@]}"

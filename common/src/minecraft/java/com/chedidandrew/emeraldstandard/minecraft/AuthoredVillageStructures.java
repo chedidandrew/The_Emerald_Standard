@@ -74,7 +74,8 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 11;
+    static final int LATEST_TEMPLATE_REVISION = 12;
+    static final int LEGACY_TEMPLATE_REVISION = 11;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
     private static final Map<String, Object> LIGHTING_COMPOSITION_LOCKS =
@@ -94,6 +95,7 @@ final class AuthoredVillageStructures {
             VillageArchitecture.Character character,
             VillageArchitecture.BiomeDialect dialect,
             long doodadSeed) {
+        if(templateRevision==12) return ApprovedVillageStructures.plan(type,templateId,paletteId,dressingId,character);
         if (templateRevision < 1 || templateRevision > LATEST_TEMPLATE_REVISION) {
             throw new IllegalArgumentException(
                     "Unknown Blueprint V2 revision " + templateRevision + " for " + templateId);
@@ -292,7 +294,7 @@ final class AuthoredVillageStructures {
                 materials,
                 metadata.freeze());
         validate(blueprint);
-        if (templateRevision == LATEST_TEMPLATE_REVISION) {
+        if (templateRevision == LEGACY_TEMPLATE_REVISION) {
             validateDetailDensity(blueprint);
             validatePresentation(blueprint);
             validateRoleReadability(blueprint);
@@ -11429,6 +11431,7 @@ final class AuthoredVillageStructures {
     }
 
     static void validateCatalog() {
+        ApprovedArchitectureSelfTest.validateProductionCatalog();
         validateCatalogResults(activeCatalogDescriptors().parallelStream()
                 .map(AuthoredVillageStructures::validateCatalogDescriptor).toList());
     }
@@ -11437,6 +11440,8 @@ final class AuthoredVillageStructures {
     static List<Runnable> catalogValidationSteps() {
         List<CatalogValidationResult> results = new ArrayList<>();
         List<Runnable> steps = new ArrayList<>();
+        for(var entry:com.chedidandrew.emeraldstandard.core.ApprovedArchitectureCatalog.entries())
+            steps.add(() -> ApprovedVillageStructures.data(entry.id()));
         for (var descriptor : activeCatalogDescriptors()) {
             steps.add(() -> results.add(validateCatalogDescriptor(descriptor)));
         }
@@ -11449,8 +11454,8 @@ final class AuthoredVillageStructures {
         for (VillageProsperityEngine.ProjectType type
                 : VillageProsperityEngine.ProjectType.values()) {
             for (VillageArchitecture.BlueprintDescriptor descriptor
-                    : VillageArchitecture.blueprints(type)) {
-                if (descriptor.templateRevision() == LATEST_TEMPLATE_REVISION) {
+                    : VillageArchitecture.legacyBlueprints().stream().filter(d->d.type()==type).toList()) {
+                if (descriptor.templateRevision() == LEGACY_TEMPLATE_REVISION) {
                     activeDescriptors.add(descriptor);
                 }
             }
@@ -11552,7 +11557,7 @@ final class AuthoredVillageStructures {
         Set<Voxel> structuralCells = new HashSet<>();
         for (Cell cell : blueprint.base) {
             boolean structural = switch (cell.phase) {
-                case FOUNDATION, FRAME, SHELL, ROOF, OPENING -> true;
+                case FOUNDATION, FRAME, SHELL, ROOF, OPENING, APPROVED_STRUCTURE -> true;
                 case FIXTURE, DECOR -> false;
             };
             if (structural) {
@@ -12963,7 +12968,8 @@ final class AuthoredVillageStructures {
         ROOF,
         OPENING,
         FIXTURE,
-        DECOR
+        DECOR,
+        APPROVED_STRUCTURE
     }
 
     enum Porch {

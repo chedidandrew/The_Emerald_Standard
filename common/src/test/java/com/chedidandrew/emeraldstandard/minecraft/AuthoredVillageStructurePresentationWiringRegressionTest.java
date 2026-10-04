@@ -32,7 +32,7 @@ public final class AuthoredVillageStructurePresentationWiringRegressionTest {
         require(source.contains("WholeBuildingPresentationValidator"),
                 "Authored catalog no longer imports the loader-neutral presentation gate");
         String plan = methodBody(source, "static Blueprint plan(");
-        String revisionHeader = "if (templateRevision == LATEST_TEMPLATE_REVISION)";
+        String revisionHeader = "if (templateRevision == LEGACY_TEMPLATE_REVISION)";
         int densityCall = plan.indexOf("validateDetailDensity(blueprint)");
         require(densityCall >= 0,
                 "Active authored plan no longer runs detail-density admission");

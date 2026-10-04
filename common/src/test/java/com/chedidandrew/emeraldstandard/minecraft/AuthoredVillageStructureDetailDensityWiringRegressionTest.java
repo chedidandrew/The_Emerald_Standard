@@ -34,7 +34,7 @@ public final class AuthoredVillageStructureDetailDensityWiringRegressionTest {
         int detailValidation = plan.indexOf("validateDetailDensity(blueprint)");
         require(ordinaryValidation >= 0 && detailValidation > ordinaryValidation,
                 "Active authored plans do not run detail admission after structural validation");
-        require(plan.contains("templateRevision == LATEST_TEMPLATE_REVISION"),
+        require(plan.contains("templateRevision == LEGACY_TEMPLATE_REVISION"),
                 "Detail admission is not scoped to active revision-2 masters");
 
         String gate = methodBody(source, "private static void validateDetailDensity(");

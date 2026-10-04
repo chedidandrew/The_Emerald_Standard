@@ -16,7 +16,7 @@ final class AuthoredCeilingClearanceSelfTest {
 
     static void run() {
         Set<String> changed = new java.util.TreeSet<>();
-        for (var descriptor : VillageArchitecture.activeBlueprints()) {
+        for (var descriptor : VillageArchitecture.legacyBlueprints()) {
             for (var dialect : VillageArchitecture.BiomeDialect.values()) {
                 var old = AuthoredVillageStructures.plan(descriptor.type(), descriptor.templateId(), 5,
                         VillageArchitecture.PALETTE_BALANCED, VillageArchitecture.DRESSING_PROSPEROUS,

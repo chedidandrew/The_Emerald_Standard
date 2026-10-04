@@ -17,10 +17,14 @@ final class SupportedConstructionOrder {
     static int phase(Cell cell) {
         var s=cell.state(); int y=cell.pos().getY();
         if (s.isAir()) return 0;
-        if (cell.phase() == 7) return 7; // Imported fluids wait until their containing structure is installed.
+        if (cell.phase() == 7 && !s.getFluidState().isEmpty()) return 7; // Fluids follow their container.
         if (s.getLightEmission()>0 || s.is(Blocks.IRON_CHAIN)) return 6;
         if (s.hasBlockEntity() || s.is(BlockTags.BEDS) || s.getBlock() instanceof FlowerPotBlock) return 5;
         if (y<=0) return 0;
+        if (cell.phase()==7) {
+            if(s.getBlock() instanceof DoorBlock||s.getBlock() instanceof LadderBlock) return 4;
+            return y>=4?3:2; // Frozen approved shape-contact geometry, not a legacy recipe.
+        }
         if (cell.phase()>=0 && cell.phase()!=8) return cell.phase()==0 ? 1 : cell.phase(); // Upper floors are not ground foundations.
         if (s.is(BlockTags.LOGS)) return 1;
         if (s.is(BlockTags.DOORS) || s.getBlock() instanceof StainedGlassPaneBlock
@@ -43,7 +47,8 @@ final class SupportedConstructionOrder {
         for(Direction d:Direction.values()) neighbors.add(cell.pos().relative(d));
         // Sloping stair/slab roof courses meet along an edge rather than sharing a voxel face.
         // Do not extend this allowance to floating floors, beams or arbitrary diagonal blocks.
-        if(phase(cell)==3 && (cell.state().getBlock() instanceof StairBlock || cell.state().getBlock() instanceof SlabBlock))
+        if(phase(cell)==3 && (cell.state().getBlock() instanceof StairBlock || cell.state().getBlock() instanceof SlabBlock)
+                ||cell.phase()==7&&cell.state().getFluidState().isEmpty())
             for(Direction d:Direction.Plane.HORIZONTAL) for(int dy:new int[]{-1,1}) neighbors.add(cell.pos().relative(d).above(dy));
         return neighbors;
     }
@@ -100,6 +105,8 @@ final class SupportedConstructionOrder {
     }
     private static BlockPos attachment(Cell c) {
         var s=c.state(); var p=c.pos();
+        if(c.phase()==7&&s.getBlock() instanceof LadderBlock)
+            return p.relative(s.getValue(LadderBlock.FACING).getOpposite());
         if (s.is(Blocks.IRON_CHAIN)) return p.above();
         // Marker 8 identifies the new frozen vanilla schema. Never reorder older TES prefixes.
         if (c.phase()==8 && s.getBlock() instanceof WallBannerBlock)

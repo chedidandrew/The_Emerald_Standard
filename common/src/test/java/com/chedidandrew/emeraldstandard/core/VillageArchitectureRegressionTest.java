@@ -49,7 +49,7 @@ public final class VillageArchitectureRegressionTest {
         for (VillageProsperityEngine.ProjectType type
                 : VillageProsperityEngine.ProjectType.values()) {
             List<VillageArchitecture.BlueprintDescriptor> descriptors =
-                    VillageArchitecture.blueprints(type);
+                    VillageArchitecture.legacyBlueprints().stream().filter(b->b.type()==type).toList();
             require(!descriptors.isEmpty(), "Blueprint catalog omitted " + type);
             for (VillageArchitecture.BlueprintDescriptor descriptor : descriptors) {
                 catalogSize++;
@@ -68,7 +68,7 @@ public final class VillageArchitectureRegressionTest {
         require(catalogSize == 52,
                 "Active gold-master blueprint catalog is not the frozen 52-entry set");
 
-        for (var active : VillageArchitecture.activeBlueprints()) {
+        for (var active : VillageArchitecture.legacyBlueprints()) {
             var frozen = VillageArchitecture.requireBlueprint(active.templateId(), 4);
             require(frozen.width() == active.width() && frozen.depth() == active.depth()
                             && frozen.height() == active.height()
@@ -235,7 +235,7 @@ public final class VillageArchitectureRegressionTest {
                         && descriptor.height() == height
                         && descriptor.scale() == scale
                         && descriptor.mirrorable() == mirrorable
-                        && VillageArchitecture.blueprints(type).contains(descriptor),
+                        && VillageArchitecture.legacyBlueprints().contains(descriptor),
                 templateId + "@11 lost its active role, scale, envelope, or mirror contract");
         require(VillageArchitecture.blueprint(templateId, 10) != null
                         && !VillageArchitecture.activeBlueprints().contains(

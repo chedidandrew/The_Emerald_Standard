@@ -17,7 +17,7 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
             "common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/"
                     + "AuthoredVillageStructures.java";
     private static final Pattern ACTIVE_REVISION = Pattern.compile(
-            "LATEST_TEMPLATE_REVISION\\s*=\\s*11\\s*;");
+            "LEGACY_TEMPLATE_REVISION\\s*=\\s*11\\s*;");
     private static final Pattern SNAPSHOT_COLLECTION = Pattern.compile(
             "List\\s*<\\s*(?:WholeBuildingDistinctivenessValidator\\s*\\.\\s*)?"
                     + "StructuralSnapshot\\s*>\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*"
@@ -61,7 +61,7 @@ public final class AuthoredVillageStructureDistinctivenessWiringRegressionTest {
         require(ACTIVE_REVISION.matcher(source).find(),
                 "The active authored gold masters are not revision 11");
         require(catalog.contains(
-                        "descriptor.templateRevision() == LATEST_TEMPLATE_REVISION")
+                        "descriptor.templateRevision() == LEGACY_TEMPLATE_REVISION")
                         && catalog.contains("activeDescriptors.add(descriptor)"),
                 "Only active-revision descriptors may enter the distinctiveness snapshot set");
         require(descriptorValidation.contains(

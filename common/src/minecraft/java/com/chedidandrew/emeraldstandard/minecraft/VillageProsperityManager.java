@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -708,6 +709,7 @@ public final class VillageProsperityManager {
                         : economy.villageProjectLotExclusions(dimensionKey));
         List<Long> managedBankLots = new ArrayList<>();
         if ("minecraft:overworld".equals(dimensionKey)) {
+            excludedProjectLots.addAll(VillageBankManager.approvedBankLots(level,economy));
             managedBankLots.addAll(economy.generatedBankAnchorsSnapshot().values());
             managedBankLots.addAll(VillageBankManager.pendingBankAnchors(economy));
             economy.retiredBankAnchorsSnapshot().values().forEach(managedBankLots::addAll);
@@ -2886,6 +2888,11 @@ public final class VillageProsperityManager {
     }
 
     private static boolean mayApplyPlacement(BlockState current, Placement placement) {
+        // Approved yards are authored at natural grade, not on an extra raised soil pad.
+        // Only their below-origin cells may replace natural substrate. The caller still
+        // checks land protection, block entities, fluids and the reserved-site survey.
+        if (placement.constructionPhase == 7 && placement.dy < 0
+                && isNaturalProjectGround(current)) return true;
         if (placement.isTrail()) {
             return VillageMaterializationPolicy.mayApplyTrailSurface(
                     placement.isTrailCenterSurfaceRetrofit(),
@@ -3527,6 +3534,8 @@ public final class VillageProsperityManager {
             ServerLevel level, BlockPos origin, EconomyState.VillageRecord village,
             EconomyState.VillageProject project, List<Placement> placements) {
         StructureSize size = rotatedSize(projectSize(project), project.designRotation);
+        var survey = new VillageSitePreparation.Survey(level);
+        var belowGrade = new ArrayList<com.chedidandrew.emeraldstandard.core.SitePreparationPlan.Cell>();
         Set<BlockPos> volume = new HashSet<>();
         for (int x = -1; x <= 2 * (size.width / 2) + 1; x++)
             for (int z = -2; z <= 2 * (size.depth / 2) + 1; z++)
@@ -3539,11 +3548,25 @@ public final class VillageProsperityManager {
         for (Placement p : placements) {
             if (p.isCosmetic() || p.isTrail()) continue;
             BlockPos pos = placementTarget(level, origin, p);
-            if (!placementSatisfied(level, origin, pos, level.getBlockState(pos), p)) volume.add(pos);
+            BlockState current = level.getBlockState(pos);
+            if (!placementSatisfied(level, origin, pos, current, p)) {
+                if (p.constructionPhase == 7 && p.dy < 0 && isNaturalProjectGround(current)) {
+                    if(p.dy < -8 || !survey.loaded(pos) || !survey.naturalSurroundings(pos)
+                            || !level.getFluidState(pos).isEmpty() || current.hasBlockEntity()
+                            || !VillageDevelopmentProtection.mayPlace(level,village.villageId,project.projectId,
+                                    pos,current,Blocks.AIR.defaultBlockState())) return null;
+                    belowGrade.add(new com.chedidandrew.emeraldstandard.core.SitePreparationPlan.Cell(
+                            pos.asLong(),BlockStateParser.serialize(current)));
+                } else volume.add(pos);
+            }
         }
-        var preparation = new VillageSitePreparation.Survey(level).freeze(
+        var preparation = survey.freeze(
                 volume, excavationFloor(origin, project), village.villageId, project.projectId);
         if (preparation == null) return null;
+        if(!belowGrade.isEmpty()) {
+            belowGrade.addAll(preparation.cells());
+            preparation=new com.chedidandrew.emeraldstandard.core.SitePreparationPlan(belowGrade);
+        }
         Set<BlockPos> occupied = placements.stream().filter(p -> !p.isTrail())
                 .map(p -> origin.offset(p.dx, p.dy, p.dz)).collect(java.util.stream.Collectors.toSet());
         List<BlockPos> route = isManagedProject(project) ? managedProjectTrail(origin, village, project).stream()
@@ -5253,6 +5276,14 @@ public final class VillageProsperityManager {
     static BlockPos projectEntrance(
             BlockPos origin, EconomyState.VillageProject project) {
         StructureSize structure = projectSize(project);
+        if(project.designTemplateRevision==12&&com.chedidandrew.emeraldstandard.core.ApprovedArchitectureCatalog.entry(project.designTemplateId)!=null) {
+            var data=ApprovedVillageStructures.data(project.designTemplateId);
+            // Connect at the north parcel edge; the reviewed yard already connects it to the door.
+            var exit=data.walkwayExit();
+            int x=project.designMirrored?structure.width-1-exit.getX():exit.getX();
+            BlockPos entry=rotateRelative(x,exit.getY(),exit.getZ(),structure,project.designRotation);
+            return origin.offset(entry);
+        }
         BlockPos offset = rotateRelative(
                 structure.width / 2,
                 0,

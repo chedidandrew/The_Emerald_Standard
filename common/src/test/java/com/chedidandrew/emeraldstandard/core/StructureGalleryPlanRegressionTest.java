@@ -9,7 +9,7 @@ import java.util.Set;
 
 /** Regression coverage for the deterministic loader-neutral Blueprint V2 gallery layout. */
 public final class StructureGalleryPlanRegressionTest {
-    private static final int DESCRIPTOR_COUNT = VillageArchitecture.activeBlueprints().size();
+    private static final int DESCRIPTOR_COUNT = VillageArchitecture.legacyBlueprints().size();
     private static final int DIALECT_COUNT = 5;
     private static final int GOLD_MASTER_COUNT = DESCRIPTOR_COUNT * DIALECT_COUNT;
     private static final int CONTROLLED_COUNT = 11;

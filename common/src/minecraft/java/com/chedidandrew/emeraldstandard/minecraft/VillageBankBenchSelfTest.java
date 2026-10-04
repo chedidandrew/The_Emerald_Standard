@@ -24,7 +24,7 @@ final class VillageBankBenchSelfTest {
             Object palette = method("paletteFor", BiomeDialect.class).invoke(null, dialect);
             Map<BlockPos, BlockState> original = plan("legacyBankPlanV10", BlockPos.ZERO, palette);
             Map<BlockPos, BlockState> before = plan("legacyBankPlanV11", BlockPos.ZERO, palette);
-            Map<BlockPos, BlockState> current = plan("bankPlan", BlockPos.ZERO, palette);
+            Map<BlockPos, BlockState> current = plan("legacyBankPlanV12", BlockPos.ZERO, palette);
             require(original.equals(current), "Restored plan differs from the original terrace composition");
             require(List.copyOf(before.keySet()).equals(List.copyOf(current.keySet())),
                     "Bench correction changed footprint or placement order: " + dialect);
@@ -63,7 +63,7 @@ final class VillageBankBenchSelfTest {
 
             // Production plans use absolute positions. Do not accidentally target world y=1/z=-4.
             BlockPos origin = new BlockPos(-213, 74, 387);
-            Map<BlockPos, BlockState> translated = plan("bankPlan", origin, palette);
+            Map<BlockPos, BlockState> translated = plan("legacyBankPlanV12", origin, palette);
             for (var entry : current.entrySet()) {
                 require(entry.getValue().equals(translated.get(entry.getKey().offset(origin))),
                         "Bench placement is not translation invariant");

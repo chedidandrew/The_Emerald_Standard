@@ -281,7 +281,7 @@ public final class AuthoredVillageStructureLightingWiringRegressionTest {
         require(dialects.contains("validateBankDialectPaletteContract(false);")
                         && dialectMatrix.contains("VillageArchitecture.BiomeDialect.values()")
                         && dialectMatrix.contains("validateCurrentBankBlueprint(")
-                        && exact.contains("bankPlan(origin, palette)")
+                        && exact.contains("legacyBankPlanV10(origin, palette)")
                         && exact.contains("validateBankInteriorLighting(authored, snapshotId)")
                         && dialectMatrix.contains("dialect.id()"),
                 "One or more standalone Bank dialects can bypass exact no-skylight validation");

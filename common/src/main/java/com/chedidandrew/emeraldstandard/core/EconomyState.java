@@ -683,7 +683,17 @@ public static final int FORMAT_VERSION = 43;
 public String designPlanHash = "";
         /** Immutable resolved vanilla cells; null for all existing TES schemas. */
         public VanillaConstructionPlan vanillaPlan;
-        public int housingGain() { return vanillaPlan == null ? type.housingGain() : vanillaPlan.beds(); }
+        public int housingGain() {
+            if(vanillaPlan!=null) return vanillaPlan.beds();
+            return type.housingGain();
+        }
+        /** Physical bed count; simulated project scoring retains its existing economic weights. */
+        public int actualHousingBeds() {
+            if(vanillaPlan!=null) return vanillaPlan.beds();
+            var approved=designTemplateRevision==ApprovedArchitectureCatalog.REVISION
+                    ?ApprovedArchitectureCatalog.entry(designTemplateId):null;
+            return approved==null?Math.max(0,housingGain()/2):approved.beds();
+        }
         /** Old projects are never retroactively cleared. New reservations opt in explicitly. */
         public boolean sitePreparationComplete = true;
         public int sitePreparationCursor;

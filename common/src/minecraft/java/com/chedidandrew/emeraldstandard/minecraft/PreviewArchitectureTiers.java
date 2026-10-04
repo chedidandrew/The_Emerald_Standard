@@ -13,7 +13,7 @@ final class PreviewArchitectureTiers {
     static Size size(Sample s) {
         int area=PreviewCompactBuildings.isCompact(s) ? PreviewCompactBuildings.spec(s).width()*PreviewCompactBuildings.spec(s).depth()
                 :s.role().equals("BANK")?s.width()*s.depth()
-                :VillageArchitecture.activeBlueprints().stream()
+                :VillageArchitecture.legacyBlueprints().stream()
                     .filter(d->d.templateId().equals(BiomeArchitectureCatalogPreview.masterId(s)))
                     .mapToInt(d->d.width()*d.depth()).findFirst().orElseThrow();
         return area<=49?Size.TINY:area<=121?Size.SMALL:area<=225?Size.MEDIUM
