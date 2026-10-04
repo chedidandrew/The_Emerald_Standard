@@ -74,7 +74,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
  * loader can provide the same immutable cells without changing project persistence.</p>
  */
 final class AuthoredVillageStructures {
-    static final int LATEST_TEMPLATE_REVISION = 12;
+    static final int LATEST_TEMPLATE_REVISION = 13;
     static final int LEGACY_TEMPLATE_REVISION = 11;
     private static final Map<String, List<Cell>> LIGHTING_COMPOSITION_CACHE =
             new ConcurrentHashMap<>();
@@ -95,7 +95,7 @@ final class AuthoredVillageStructures {
             VillageArchitecture.Character character,
             VillageArchitecture.BiomeDialect dialect,
             long doodadSeed) {
-        if(templateRevision==12) return ApprovedVillageStructures.plan(type,templateId,paletteId,dressingId,character);
+        if(templateRevision==12||templateRevision==13) return ApprovedVillageStructures.plan(type,templateId,templateRevision,paletteId,dressingId,character);
         if (templateRevision < 1 || templateRevision > LATEST_TEMPLATE_REVISION) {
             throw new IllegalArgumentException(
                     "Unknown Blueprint V2 revision " + templateRevision + " for " + templateId);

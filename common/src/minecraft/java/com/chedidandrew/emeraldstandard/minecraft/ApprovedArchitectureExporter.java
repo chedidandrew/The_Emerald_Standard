@@ -23,7 +23,7 @@ public final class ApprovedArchitectureExporter {
         System.setProperty(StructureGallery.ENABLE_PROPERTY,"true");
         Path directory=Path.of(args[0]); Files.createDirectories(directory);
         List<String> manifest=new ArrayList<>();
-        manifest.add("# Frozen approved architecture revision 12: id role dialect width depth height minimumTier beds sha256");
+        manifest.add("# Frozen approved architecture revision 13: id role dialect width depth height minimumTier beds sha256");
         int doorstepRugs=0;
         for(var sample:BiomeArchitectureCatalogPreview.samples()) {
             var plan=BiomeArchitecturePreview.plan(sample);

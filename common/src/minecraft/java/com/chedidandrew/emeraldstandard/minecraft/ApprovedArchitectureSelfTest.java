@@ -16,14 +16,19 @@ public final class ApprovedArchitectureSelfTest {
         SharedConstants.tryDetectVersion(); Bootstrap.bootStrap();
         var desk=AuthoredVillageStructuresSelfTest.class.getDeclaredMethod("registerExactDeskFixture");
         desk.setAccessible(true);desk.invoke(null);
-        validateProductionCatalog();
+        validateProductionCatalog(12);
+        validateProductionCatalog(13);
+        validateRidgeOnlyRevision();
         if(args.length>0&&args[0].equals("review")) compareApprovedReview();
         System.out.println("PASS approved production architecture: 375 frozen assets, native support, doors, ladders, beds and stage safety");
     }
     static void validateProductionCatalog() {
+        validateProductionCatalog(ApprovedArchitectureCatalog.REVISION);
+    }
+    private static void validateProductionCatalog(int revision) {
         int ordinary=0,banks=0;
         for(var entry:ApprovedArchitectureCatalog.entries()) {
-            var data=ApprovedVillageStructures.data(entry.id());
+            var data=ApprovedVillageStructures.data(entry.id(),revision);
             Map<BlockPos,BlockState> cells=new HashMap<>();
             for(var stage:List.of(data.base(),data.first(),data.second())) {
                 for(var cell:stage) cells.put(new BlockPos(cell.x(),cell.y(),cell.z()),cell.state());
@@ -52,7 +57,7 @@ public final class ApprovedArchitectureSelfTest {
             require(!cells.containsKey(exit)&&!cells.containsKey(exit.above()),"Blocked yard connection "+entry.id());
             if(entry.role().equals("BANK")) {
                 banks++;
-                int version=entry.id().endsWith("bank_kiosk")?14:entry.id().endsWith("savings_branch")?15:13;
+                int version=(entry.id().endsWith("bank_kiosk")?14:entry.id().endsWith("savings_branch")?15:13)+(revision==13?3:0);
                 var bank=ApprovedBankStructures.plan(VillageArchitecture.BiomeDialect.fromId(entry.dialect()),version);
                 require(BankerProfessionSupport.isExchangeDesk(bank.cells().get(new BlockPos(6,1,8))),"Bank anchor moved");
                 require(bank.cells().get(bank.entrance()).getBlock() instanceof DoorBlock,"Bank primary door misidentified");
@@ -63,9 +68,9 @@ public final class ApprovedArchitectureSelfTest {
                         "Unsupported Bank sequence "+entry.id());
             } else {
                 ordinary++;
-                var descriptor=VillageArchitecture.requireBlueprint(entry.id(),12);
+                var descriptor=VillageArchitecture.requireBlueprint(entry.id(),revision);
                 require(descriptor.width()==entry.width()&&descriptor.depth()==entry.depth(),"Unreserved yard "+entry.id());
-                var plan=AuthoredVillageStructures.plan(descriptor.type(),entry.id(),12,VillageArchitecture.PALETTE_BALANCED,
+                var plan=AuthoredVillageStructures.plan(descriptor.type(),entry.id(),revision,VillageArchitecture.PALETTE_BALANCED,
                         VillageArchitecture.DRESSING_PROSPEROUS,VillageArchitecture.Character.MERCANTILE,
                         VillageArchitecture.BiomeDialect.fromId(entry.dialect()));
                 require(plan.base().equals(data.base()),"Production adapter changed geometry");
@@ -78,11 +83,47 @@ public final class ApprovedArchitectureSelfTest {
                 var order=SupportedConstructionOrder.sequence(placements,boundaries);
                 require(order.disconnected().isEmpty(),"Unsupported production build sequence "+entry.id()+": "+order.disconnected().stream().map(placements::get).toList());
                 var project=new EconomyState.VillageProject();
-                project.type=descriptor.type();project.designTemplateId=entry.id();project.designTemplateRevision=12;
+                project.type=descriptor.type();project.designTemplateId=entry.id();project.designTemplateRevision=revision;
                 require(project.actualHousingBeds()==beds,"Compact residence capacity does not match actual beds");
             }
         }
         require(ordinary==360&&banks==15,"Release catalog coverage "+ordinary+" / "+banks);
+    }
+    private static void validateRidgeOnlyRevision() {
+        int changed=0,logs=0,unchangedNonTaiga=0;
+        for(var entry:ApprovedArchitectureCatalog.entries()) {
+            var old=ApprovedVillageStructures.data(entry.id(),12);
+            var current=ApprovedVillageStructures.data(entry.id(),13);
+            var before=old.cells();var after=current.cells();
+            require(before.keySet().equals(after.keySet()),"Ridge fix moved blocks "+entry.id());
+            require(old.entrance().equals(current.entrance())&&old.access().equals(current.access())
+                    &&old.air().equals(current.air()),"Ridge fix changed circulation "+entry.id());
+            int local=0;
+            for(var cell:after.entrySet()) {
+                var at=cell.getKey();var a=before.get(at);var b=cell.getValue();
+                if(a.equals(b)) continue;
+                require(entry.dialect().equals("taiga")&&at.getY()>=4&&a.is(Blocks.SPRUCE_LOG)
+                        &&a.getValue(RotatedPillarBlock.AXIS)==Direction.Axis.Z
+                        &&b.equals(a.setValue(RotatedPillarBlock.AXIS,Direction.Axis.X)),
+                        "Unrelated geometry changed "+entry.id()+" "+at+" "+a+" -> "+b);
+                // Rotation/mirror preserve a longitudinal ridge and expose bark on its sides.
+                for(var rotation:Rotation.values()) for(var mirror:Mirror.values()) {
+                    var transformed=b.mirror(mirror).rotate(rotation);
+                    var axis=rotation==Rotation.CLOCKWISE_90||rotation==Rotation.COUNTERCLOCKWISE_90
+                            ?Direction.Axis.Z:Direction.Axis.X;
+                    require(transformed.getValue(RotatedPillarBlock.AXIS)==axis,"Ridge axis lost in transform");
+                }
+                local++;
+            }
+            if(local>0) changed++;
+            if(!entry.dialect().equals("taiga")) {
+                require(old.identity().sha256().equals(entry.sha256()),"Other biome asset changed");unchangedNonTaiga++;
+            }
+            logs+=local;
+        }
+        require(changed>0&&logs>0&&unchangedNonTaiga==300,"Missing narrow ridge coverage");
+        System.out.println("PASS ridge-only revision: "+logs+" log axes in "+changed
+                +" Taiga designs; 300 other-biome assets byte-identical; archived v12 and transforms retained");
     }
     private static void compareApprovedReview() {
         System.setProperty(StructureGallery.ENABLE_PROPERTY,"true");

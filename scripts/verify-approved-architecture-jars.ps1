@@ -31,7 +31,8 @@ try {
     $identity=Read-JarText 'tes-build.properties'
     if(($identity -notmatch "(?m)^version=$([regex]::Escape($version))\r?$") -or
             ($identity -notmatch "(?m)^sourceSha256=$sourceHash\r?$")) {throw 'Packaged build does not match current canonical source inputs'}
-    $prefix='data/the_emerald_standard/architecture/v12/'
+    foreach($revision in @(12,13)) {
+    $prefix="data/the_emerald_standard/architecture/v$revision/"
     $rows=(Read-JarText ($prefix+'catalog.tsv')) -split '\r?\n' | Where-Object {$_ -and -not $_.StartsWith('#')}
     if($rows.Count -ne 375){throw "Incomplete catalog: $($rows.Count)"}
     $packaged=@($zip.Entries | Where-Object {$_.FullName.StartsWith($prefix) -and $_.FullName.EndsWith('.bin.gz')})
@@ -51,10 +52,11 @@ try {
         if($fields[1] -eq 'BANK'){$banks++}else{$ordinary++}
     }
     if($ordinary -ne 360 -or $banks -ne 15){throw 'Ordinary/Bank coverage mismatch'}
+    }
     foreach($class in @('core/ApprovedArchitectureCatalog','minecraft/ApprovedVillageStructures','minecraft/ApprovedBankStructures','minecraft/NativeStructureSupport','minecraft/NativeDoorwayClearance')) {
         if($null -eq $zip.GetEntry('com/chedidandrew/emeraldstandard/'+$class+'.class')){throw "Missing production adapter $class"}
     }
-    "PASS $Loader ${version}: current source identity, 375 exact native SHA-256 assets (360 buildings / 15 Banks), production adapters"
+    "PASS $Loader ${version}: current source identity, 750 exact native SHA-256 assets (375 each for archived v12 and current v13), production adapters"
     "sourceSha256=$sourceHash"
     "jarSha256=$((Get-FileHash -LiteralPath $jarPath -Algorithm SHA256).Hash.ToLowerInvariant())"
 } finally {$zip.Dispose()}

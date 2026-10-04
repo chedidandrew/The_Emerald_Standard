@@ -15,11 +15,11 @@ import net.minecraft.world.level.EmptyBlockGetter;
 
 /** Frozen release geometry, not a procedural generator. Loaded only after block registration. */
 final class ApprovedVillageStructures {
-    record Data(ApprovedArchitectureCatalog.Entry identity, BlockPos entrance,Set<BlockPos> access,
+    record Data(int revision,ApprovedArchitectureCatalog.Entry identity, BlockPos entrance,Set<BlockPos> access,
             Set<BlockPos> air,List<AuthoredVillageStructures.Cell> base,
             List<AuthoredVillageStructures.Cell> first,List<AuthoredVillageStructures.Cell> second) {
         Map<BlockPos,BlockState> cells() {
-            return CELL_CACHE.computeIfAbsent(identity.id(),ignored->collectCells());
+            return CELL_CACHE.computeIfAbsent(revision+":"+identity.id(),ignored->collectCells());
         }
         private Map<BlockPos,BlockState> collectCells() {
             Map<BlockPos,BlockState> result=new LinkedHashMap<>();
@@ -28,7 +28,7 @@ final class ApprovedVillageStructures {
             return Collections.unmodifiableMap(result);
         }
         BlockPos walkwayExit() {
-            return EXIT_CACHE.computeIfAbsent(identity.id(),ignored->findWalkwayExit());
+            return EXIT_CACHE.computeIfAbsent(revision+":"+identity.id(),ignored->findWalkwayExit());
         }
         BlockPos door() {
             // Review entrance metadata is the first indoor standing cell, not the door itself.
@@ -54,11 +54,12 @@ final class ApprovedVillageStructures {
     private static final Map<String,Data> CACHE=new ConcurrentHashMap<>();
     private static final Map<String,Map<BlockPos,BlockState>> CELL_CACHE=new ConcurrentHashMap<>();
     private static final Map<String,BlockPos> EXIT_CACHE=new ConcurrentHashMap<>();
-    static Data data(String id) { return CACHE.computeIfAbsent(id,ApprovedVillageStructures::load); }
-    private static Data load(String id) {
-        var entry=ApprovedArchitectureCatalog.entry(id);
+    static Data data(String id) { return data(id,ApprovedArchitectureCatalog.REVISION); }
+    static Data data(String id,int revision) { return CACHE.computeIfAbsent(revision+":"+id,ignored->load(id,revision)); }
+    private static Data load(String id,int revision) {
+        var entry=ApprovedArchitectureCatalog.entry(id,revision);
         if(entry==null) throw new IllegalArgumentException("Unknown approved building "+id);
-        try(var resource=ApprovedVillageStructures.class.getResourceAsStream(ApprovedArchitectureCatalog.RESOURCE+id+".bin.gz")) {
+        try(var resource=ApprovedVillageStructures.class.getResourceAsStream(ApprovedArchitectureCatalog.resource(revision)+id+".bin.gz")) {
             if(resource==null) throw new IOException("Missing frozen building "+id);
             byte[] bytes;
             try(var gzip=new GZIPInputStream(resource)) { bytes=gzip.readNBytes(4_000_001); }
@@ -81,7 +82,7 @@ final class ApprovedVillageStructures {
                     stages.get(stage).add(new AuthoredVillageStructures.Cell(at.getX(),at.getY(),at.getZ(),state,phase(at,state)));
                 }
                 if(in.available()!=0||air.stream().anyMatch(occupied::contains)) throw new IOException("Invalid circulation manifest");
-                return new Data(entry,entrance,access,air,List.copyOf(stages.get(0)),List.copyOf(stages.get(1)),List.copyOf(stages.get(2)));
+                return new Data(revision,entry,entrance,access,air,List.copyOf(stages.get(0)),List.copyOf(stages.get(1)),List.copyOf(stages.get(2)));
             }
         } catch(Exception e) { throw new IllegalStateException("Cannot admit approved architecture "+id,e); }
     }
@@ -96,9 +97,9 @@ final class ApprovedVillageStructures {
         Set<BlockPos> result=new HashSet<>(); for(int index=0;index<count;index++) if(!result.add(position(in))) throw new IOException("Duplicate coordinate");
         return Set.copyOf(result);
     }
-    static AuthoredVillageStructures.Blueprint plan(VillageProsperityEngine.ProjectType type,String id,String palette,String dressing,
+    static AuthoredVillageStructures.Blueprint plan(VillageProsperityEngine.ProjectType type,String id,int revision,String palette,String dressing,
             VillageArchitecture.Character character) {
-        Data data=data(id); var e=data.identity;
+        Data data=data(id,revision); var e=data.identity;
         if(!e.role().equals(type.name())) throw new IllegalArgumentException("Approved building role mismatch");
         if(!palette.equals(VillageArchitecture.PALETTE_BALANCED)||!dressing.equals(VillageArchitecture.DRESSING_PROSPEROUS))
             throw new IllegalArgumentException("Unsupported approved building palette/dressing");
@@ -108,6 +109,6 @@ final class ApprovedVillageStructures {
                 materials.dialect()==VillageArchitecture.BiomeDialect.TAIGA?Blocks.COBBLESTONE:materials.foundation(),
                 materials.floor(),materials.wall(),materials.timber(),materials.roofStairs(),materials.roofSlab(),materials.fence(),materials.accent(),
                 materials.dialect()==VillageArchitecture.BiomeDialect.DESERT?Blocks.JUNGLE_DOOR:materials.door(),materials.entryStairs(),materials.chimney());
-        return new AuthoredVillageStructures.Blueprint(id,12,palette,dressing,e.width(),e.depth(),e.height(),data.base,data.first,data.second,materials,metadata);
+        return new AuthoredVillageStructures.Blueprint(id,revision,palette,dressing,e.width(),e.depth(),e.height(),data.base,data.first,data.second,materials,metadata);
     }
 }

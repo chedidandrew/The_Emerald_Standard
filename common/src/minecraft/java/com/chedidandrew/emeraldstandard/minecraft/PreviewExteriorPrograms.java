@@ -168,7 +168,10 @@ final class PreviewExteriorPrograms {
             int rise=Math.min(z-z0,z1-z)/(snow?2:1);
             PreviewTaigaCraft.course(b,Direction.Axis.X,z,x0,x1,y+rise,z0,z1);
             for(int x=x0;x<=x1;x++) {
-                b.put(x,y+rise,z,snow?b.p.roof().defaultBlockState():z==zm?b.p.roofSlab().defaultBlockState()
+                // This ridge runs along X: bark belongs on its long sides, not repeated end grain.
+                b.put(x,y+rise,z,b.s.style()==BiomeDialect.TAIGA&&z==zm
+                        ?Blocks.SPRUCE_LOG.defaultBlockState().setValue(RotatedPillarBlock.AXIS,Direction.Axis.X)
+                        :snow?b.p.roof().defaultBlockState():z==zm?b.p.roofSlab().defaultBlockState()
                         :b.p.roofStairs().defaultBlockState().setValue(StairBlock.FACING,z<zm?Direction.SOUTH:Direction.NORTH));
                 if(snow) b.put(x,y+rise+1,z,Blocks.SNOW);
                 if(x==x0||x==x1) for(int yy=y;yy<y+rise;yy++) b.put(x,yy,z,b.p.wall());

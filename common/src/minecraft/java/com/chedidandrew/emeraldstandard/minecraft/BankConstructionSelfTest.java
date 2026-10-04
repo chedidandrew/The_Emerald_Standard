@@ -20,7 +20,7 @@ final class BankConstructionSelfTest {
         try {
             var dir = Files.createTempDirectory("tes-progressive-bank-");
             var economy = new EconomyService(); economy.start(dir, 774, 0);
-            var nativeBank=ApprovedBankStructures.plan(VillageProsperityManager.biomeDialect(level,origin),15);
+            var nativeBank=ApprovedBankStructures.plan(VillageProsperityManager.biomeDialect(level,origin),18);
             for (int x = Math.min(-4,nativeBank.minX()-3); x <= Math.max(17,nativeBank.maxX()+3); x++)
                 for (int z = Math.min(-8,nativeBank.minZ()-10); z <= Math.max(15,nativeBank.maxZ()+3); z++) {
                 // The reviewed Bank reserves its whole yard and below-grade foundations,

@@ -5276,8 +5276,8 @@ public final class VillageProsperityManager {
     static BlockPos projectEntrance(
             BlockPos origin, EconomyState.VillageProject project) {
         StructureSize structure = projectSize(project);
-        if(project.designTemplateRevision==12&&com.chedidandrew.emeraldstandard.core.ApprovedArchitectureCatalog.entry(project.designTemplateId)!=null) {
-            var data=ApprovedVillageStructures.data(project.designTemplateId);
+        if(com.chedidandrew.emeraldstandard.core.ApprovedArchitectureCatalog.entry(project.designTemplateId,project.designTemplateRevision)!=null) {
+            var data=ApprovedVillageStructures.data(project.designTemplateId,project.designTemplateRevision);
             // Connect at the north parcel edge; the reviewed yard already connects it to the door.
             var exit=data.walkwayExit();
             int x=project.designMirrored?structure.width-1-exit.getX():exit.getX();

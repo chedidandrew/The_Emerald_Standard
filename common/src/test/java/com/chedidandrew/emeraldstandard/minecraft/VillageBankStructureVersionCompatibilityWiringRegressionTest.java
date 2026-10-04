@@ -216,7 +216,7 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                         && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V9 = 9;")
                         && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V10 = 10;")
                         && source.contains("private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V11 = 11;")
-                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 13;"),
+                        && source.contains("private static final int BANK_STRUCTURE_VERSION = 16;"),
                 "Village Bank structure-version constants drifted from the v2-v9 contract");
 
         String attempt = methodBody(source, "private static BankBuildAttempt attemptBankBuild(");

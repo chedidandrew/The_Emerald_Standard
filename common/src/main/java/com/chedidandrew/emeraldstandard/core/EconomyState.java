@@ -690,8 +690,7 @@ public String designPlanHash = "";
         /** Physical bed count; simulated project scoring retains its existing economic weights. */
         public int actualHousingBeds() {
             if(vanillaPlan!=null) return vanillaPlan.beds();
-            var approved=designTemplateRevision==ApprovedArchitectureCatalog.REVISION
-                    ?ApprovedArchitectureCatalog.entry(designTemplateId):null;
+            var approved=ApprovedArchitectureCatalog.entry(designTemplateId,designTemplateRevision);
             return approved==null?Math.max(0,housingGain()/2):approved.beds();
         }
         /** Old projects are never retroactively cleared. New reservations opt in explicitly. */

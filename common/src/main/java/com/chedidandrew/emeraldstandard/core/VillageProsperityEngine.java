@@ -1338,7 +1338,7 @@ public final class VillageProsperityEngine {
                     || !project.economicComplete) {
                 continue;
             }
-            capacity += Math.max(0, project.designTemplateRevision==ApprovedArchitectureCatalog.REVISION
+            capacity += Math.max(0, ApprovedArchitectureCatalog.entry(project.designTemplateId,project.designTemplateRevision)!=null
                     ?project.actualHousingBeds():project.housingGain());
         }
         return capacity;

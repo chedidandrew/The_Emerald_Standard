@@ -16,14 +16,19 @@ final class ApprovedArchitectureRuntimeSelfTest {
     static List<Runnable> checks(ServerLevel level) {
         var checks=new ArrayList<Runnable>();
         for(var style:VillageArchitecture.BiomeDialect.values()) {
-            checks.add(()->ordinary(level,style));
-            checks.add(()->bank(level,style));
+            checks.add(()->ordinary(level,style,ApprovedArchitectureCatalog.REVISION));
+            checks.add(()->bank(level,style,16+style.ordinal()%3));
+        }
+        checks.add(()->ordinary(level,VillageArchitecture.BiomeDialect.TAIGA,12));
+        for(int version=13;version<=15;version++) {
+            final int savedVersion=version;
+            checks.add(()->bank(level,VillageArchitecture.BiomeDialect.TAIGA,savedVersion));
         }
         checks.add(()->ConstructionFinishSelfTest.verify(level));
         checks.add(()->ConstructionSupportRecoverySelfTest.verify(level));
         return List.copyOf(checks);
     }
-    private static void ordinary(ServerLevel level,VillageArchitecture.BiomeDialect style) {
+    private static void ordinary(ServerLevel level,VillageArchitecture.BiomeDialect style,int revision) {
         Map<BlockPos,BlockState> before=new LinkedHashMap<>();ServerPlayer observer=null;
         BlockPos origin=new BlockPos(1808+style.ordinal()*96,level.getMaxY()-64,1808);
         try {
@@ -34,11 +39,11 @@ final class ApprovedArchitectureRuntimeSelfTest {
             v.treasury=1000;v.prosperity=v.safety=100;
             var p=new EconomyState.VillageProject();p.projectId=1;
             p.type=style==VillageArchitecture.BiomeDialect.TAIGA?VillageProsperityEngine.ProjectType.INN:VillageProsperityEngine.ProjectType.COTTAGE;
-            p.designSchema="blueprint_v2";p.designTemplateRevision=12;
+            p.designSchema="blueprint_v2";p.designTemplateRevision=revision;
             p.designTemplateId="biome_"+style.id()+(p.type==VillageProsperityEngine.ProjectType.INN?"_inn_coachhouse_02":"_cottage_hearth_01");
             p.designPaletteId="balanced";p.designDressingId="prosperous";p.designSeed=1234;
             p.designStage=2;p.designRotation=style.ordinal()%4;p.designMirrored=style.ordinal()%2==1;
-            p.designSignature=VillageArchitecture.blueprintSignature(p.type,p.designTemplateId,12,p.designPaletteId,p.designDressingId,p.designMirrored);
+            p.designSignature=VillageArchitecture.blueprintSignature(p.type,p.designTemplateId,p.designTemplateRevision,p.designPaletteId,p.designDressingId,p.designMirrored);
             p.originPos=origin.asLong();p.economicComplete=true;p.economicProgress=1;
             p.sitePreparationComplete=true;p.constructionStarted=true;
             p.entranceApproachComplete=true;p.entranceApproachVersion=EconomyState.ENTRANCE_APPROACH_VERSION;
@@ -47,7 +52,7 @@ final class ApprovedArchitectureRuntimeSelfTest {
             p.trailTotalBlocks=((List<?>)invoke("managedProjectTrail",origin,v,p)).size();
             p.trailMaterializedBlocks=p.trailTotalBlocks;
             p.totalBlocks=canonical.size();p.constructionOrderCuts.addAll(List.of(0,p.totalBlocks));
-            var descriptor=VillageArchitecture.requireBlueprint(p.designTemplateId,12);
+            var descriptor=VillageArchitecture.requireBlueprint(p.designTemplateId,p.designTemplateRevision);
             int radius=Math.max(descriptor.width(),descriptor.depth());
             for(int x=-6;x<=radius+6;x++) for(int z=-6;z<=radius+6;z++)
                 for(int y=-6;y<0;y++) set(level,before,origin.offset(x,y,z),(y==-1?Blocks.GRASS_BLOCK:Blocks.DIRT).defaultBlockState());
@@ -95,19 +100,20 @@ final class ApprovedArchitectureRuntimeSelfTest {
                 BlockPos at=target(origin,c);
                 if(VillageProsperityManager.naturalSoilEquivalent(level.getBlockState(at),expected)) continue; // Native grass spreads or decays.
                 require(level.getBlockState(at).is(expected.getBlock()),"Missing approved block "+p.designTemplateId+" "+at+" expected "+expected+" actual "+level.getBlockState(at));
+                if(expected.is(Blocks.SPRUCE_LOG)) require(level.getBlockState(at).equals(expected),"Log axis changed during construction "+at);
                 if(expected.getBlock() instanceof LadderBlock) require(level.getBlockState(at).canSurvive(level,at),"Ladder lost its bearing");
             }
             var reload=new EconomyService();reload.start(directory,1234,0);
             require(reload.developmentVillageSnapshot(v.villageId).village().projects.getFirst().materializedComplete,"Handover not persisted");
-            var data=ApprovedVillageStructures.data(p.designTemplateId);var at=data.door();
+            var data=ApprovedVillageStructures.data(p.designTemplateId,p.designTemplateRevision);var at=data.door();
             int doorX=p.designMirrored?data.identity().width()-1-at.getX():at.getX();
             BlockPos primaryDoor=origin.offset((BlockPos)invoke("rotateRelative",doorX,at.getY(),at.getZ(),invoke("projectSize",p),p.designRotation));
             VillageWalkingSelfTest.building(level,BlockPos.of(p.boundsMinPos),BlockPos.of(p.boundsMaxPos),"approved "+style,primaryDoor);
-            System.out.println("PASS live approved "+p.designTemplateId+": "+canonical.size()+" operations, rotation/mirror, partial restart and durable handover");
+            System.out.println("PASS live approved "+p.designTemplateId+"@"+revision+": "+canonical.size()+" operations, rotation/mirror, partial restart and durable handover");
         } catch(Exception failure) {throw new IllegalStateException("Approved ordinary runtime "+style,failure);}
         finally {if(observer!=null){level.players().remove(observer);observer.discard();}before.forEach((at,s)->level.setBlock(at,s,18));ConstructionDiagnostics.reset();}
     }
-    private static void bank(ServerLevel level,VillageArchitecture.BiomeDialect style) {
+    private static void bank(ServerLevel level,VillageArchitecture.BiomeDialect style,int version) {
         Map<BlockPos,BlockState> before=new LinkedHashMap<>();ServerPlayer observer=null;
         BlockPos origin=new BlockPos(1808+style.ordinal()*96,level.getMaxY()-64,2000);long key=8800+style.ordinal();
         try {
@@ -118,7 +124,7 @@ final class ApprovedArchitectureRuntimeSelfTest {
             state.save(directory.resolve("the_emerald_standard.properties"));economy=new EconomyService();economy.start(directory,1234,0);economy.configureForcedVillageDevelopment(true);
             observer=new ServerPlayer(level.getServer(),level,new GameProfile(UUID.randomUUID(),"BankReleaseFixture"),ClientInformation.createDefault());
             observer.setPos(origin.getX()+80,origin.getY(),origin.getZ());level.players().add(observer);
-            int version=13+style.ordinal()%3;var nativePlan=ApprovedBankStructures.plan(style,version);
+            var nativePlan=ApprovedBankStructures.plan(style,version);
             for(int x=nativePlan.minX()-5;x<=nativePlan.maxX()+5;x++) for(int z=nativePlan.minZ()-10;z<=nativePlan.maxZ()+5;z++)
                 for(int y=-6;y<0;y++) set(level,before,origin.offset(x,y,z),(y==-1?Blocks.GRASS_BLOCK:Blocks.DIRT).defaultBlockState());
             var prepare=VillageBankManager.class.getDeclaredMethod("prepareApprovedBank",ServerLevel.class,EconomyService.class,BlockPos.class,UUID.class,long.class,int.class);prepare.setAccessible(true);

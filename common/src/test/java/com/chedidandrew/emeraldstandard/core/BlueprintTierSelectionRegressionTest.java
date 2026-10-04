@@ -8,6 +8,17 @@ public final class BlueprintTierSelectionRegressionTest {
         require(ApprovedArchitectureCatalog.entries().size()==375,"Missing approved release sites");
         require(VillageArchitecture.activeBlueprints().size()==360,"Missing ordinary release buildings");
         require(VillageArchitecture.legacyBlueprints().size()==52,"Legacy catalog changed");
+        for(var entry:ApprovedArchitectureCatalog.entries()) {
+            var saved=ApprovedArchitectureCatalog.entry(entry.id(),12);
+            require(saved!=null&&saved.beds()==entry.beds(),"Beta-58 bed capacity changed");
+            if(!entry.role().equals("BANK")) {
+                var old=VillageArchitecture.requireBlueprint(entry.id(),12);
+                require(old.width()==entry.width()&&old.depth()==entry.depth(),"Beta-58 parcel changed");
+                var project=new EconomyState.VillageProject();project.designTemplateId=entry.id();
+                project.designTemplateRevision=12;project.type=old.type();
+                require(project.actualHousingBeds()==saved.beds(),"Beta-58 saved housing changed");
+            }
+        }
         for(var legacy:VillageArchitecture.legacyBlueprints()) {
             require(VillageArchitecture.requireBlueprint(legacy.templateId(),11).equals(legacy),"Legacy revision lost");
             require(VillageArchitecture.requireBlueprint(legacy.templateId(),2).type()==legacy.type(),"Older save lost");
@@ -26,7 +37,7 @@ public final class BlueprintTierSelectionRegressionTest {
                         var entry=ApprovedArchitectureCatalog.entry(selection.templateId());
                         require(entry!=null&&entry.dialect().equals(style.id()),"Cross-biome selection");
                         require(entry.minimumTier()<=Math.max(1,tier),"Tier gate bypassed");
-                        require(selection.templateRevision()==12,"New project selected old revision");
+                        require(selection.templateRevision()==ApprovedArchitectureCatalog.REVISION,"New project selected old revision");
                         require(selection.equals(VillageArchitecture.chooseBlueprint(village,sample+1,type,
                                 VillageArchitecture.Character.RUSTIC,tier,history,style)),"Selection rerolled");
                         require(selection.descriptor().width()==entry.width()
@@ -40,7 +51,7 @@ public final class BlueprintTierSelectionRegressionTest {
                                 selection.mirrored(),selection.signature()));
                         if(history.size()>8) history.removeFirst();
                         var project=new EconomyState.VillageProject();project.type=type;
-                        project.designTemplateId=entry.id();project.designTemplateRevision=12;
+                        project.designTemplateId=entry.id();project.designTemplateRevision=ApprovedArchitectureCatalog.REVISION;
                         require(project.actualHousingBeds()==entry.beds(),"Physical bed capacity invented");
                         require(project.housingGain()==type.housingGain(),"Economic progression changed");
                     }

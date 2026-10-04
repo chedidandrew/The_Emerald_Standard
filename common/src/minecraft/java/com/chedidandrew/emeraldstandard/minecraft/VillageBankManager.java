@@ -88,7 +88,7 @@ public final class VillageBankManager {
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V10 = 10;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V11 = 11;
     private static final int PREVIOUS_BANK_STRUCTURE_VERSION_V12 = 12;
-    private static final int BANK_STRUCTURE_VERSION = 13;
+    private static final int BANK_STRUCTURE_VERSION = 16;
     private static final long FALLBACK_BANK_RETRY_INTERVAL_TICKS = 2_400L;
     private static final long BANK_UPGRADE_RETRY_INTERVAL_TICKS = 2_400L;
     private static final int BANKER_RECOVERY_SEARCH_RADIUS = 192;
@@ -701,7 +701,7 @@ public final class VillageBankManager {
         var palette = paletteFor(dialect);
         var snapshot=villageId==null?null:economy.developmentVillageSnapshot(villageId);
         int tier=snapshot==null?1:snapshot.village().developmentTier;
-        int version=requestedVersion>0?requestedVersion:tier>=3&&Math.floorMod(key,3)==0?13:Math.floorMod(key,2)==0?14:15;
+        int version=requestedVersion>0?requestedVersion:tier>=3&&Math.floorMod(key,3)==0?16:Math.floorMod(key,2)==0?17:18;
         var envelope=ApprovedBankStructures.plan(dialect,version);
         var reservedLots=new ArrayList<>(economy.villageProjectLotExclusions("minecraft:overworld"));
         reservedLots.addAll(approvedBankLots(level,economy));
@@ -783,7 +783,7 @@ public final class VillageBankManager {
         var result=new ArrayList<EconomyService.VillageProjectLot>();
         economy.generatedBankAnchorsSnapshot().forEach((key,anchor)->{
             int version=economy.generatedBankStructureVersion(key);
-            if(version<13||version>15) return;
+            if(version<13||version>18) return;
             BlockPos origin=BlockPos.of(anchor).offset(-6,-1,-9);
             var style=BankStyleLedger.get(level).style(origin.asLong());
             if(style==null) return;
@@ -2715,7 +2715,7 @@ public final class VillageBankManager {
         var bells=new HashMap<>(generatedBankBellRegions(economy));
         economy.generatedBankAnchorsSnapshot().forEach((key,anchor)->{
             int version=economy.generatedBankStructureVersion(key);
-            if(version<13||version>15||economy.isFallbackBankRegion(key)) return;
+            if(version<13||version>18||economy.isFallbackBankRegion(key)) return;
             var anchors=new ArrayList<Long>(economy.retiredBankAnchors(key));anchors.add(anchor);
             for(long savedAnchor:anchors) {
                 BlockPos origin=BlockPos.of(savedAnchor).offset(-6,-1,-9);

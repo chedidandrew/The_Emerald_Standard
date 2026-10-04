@@ -5,7 +5,7 @@ import java.util.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
-/** Versions 13/14/15 freeze the civic Bank, kiosk and savings branch respectively. */
+/** Versions 13-15 retain beta-58; versions 16-18 use the corrected roof ridges. */
 final class ApprovedBankStructures {
     private static final Map<String,Plan> CACHE=new java.util.concurrent.ConcurrentHashMap<>();
     record Plan(Map<BlockPos,BlockState> cells,Set<BlockPos> air,BlockPos entrance,BlockPos walkwayExit,
@@ -14,9 +14,9 @@ final class ApprovedBankStructures {
         return CACHE.computeIfAbsent(style.id()+":"+version,ignored->load(style,version));
     }
     private static Plan load(BiomeDialect style,int version) {
-        String variant=switch(version) { case 13->"standalone_bank";case 14->"bank_kiosk";case 15->"savings_branch";
+        String variant=switch(version) { case 13,16->"standalone_bank";case 14,17->"bank_kiosk";case 15,18->"savings_branch";
             default->throw new IllegalArgumentException("Unknown approved Bank version "+version); };
-        var data=ApprovedVillageStructures.data("biome_"+style.id()+"_"+variant);
+        var data=ApprovedVillageStructures.data("biome_"+style.id()+"_"+variant,version>=16?13:12);
         var source=data.cells();
         BlockPos desk=source.entrySet().stream().filter(e->BankerProfessionSupport.isExchangeDesk(e.getValue()))
                 .map(Map.Entry::getKey).findFirst().orElseThrow();

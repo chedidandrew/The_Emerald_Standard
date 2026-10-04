@@ -282,6 +282,8 @@ public final class VillageArchitecture {
 
     private static final List<BlueprintDescriptor> BLUEPRINT_CATALOG =
             validateActiveCatalog(ApprovedArchitectureCatalog.descriptors());
+    private static final List<BlueprintDescriptor> REVISION_TWELVE_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(12));
 
     /** Frozen pre-adoption masters for saved plans and historical review comparisons. */
     public static List<BlueprintDescriptor> legacyBlueprints() { return REVISION_ELEVEN_BLUEPRINT_CATALOG; }
@@ -700,7 +702,7 @@ public final class VillageArchitecture {
     }
 
     public static BlueprintDescriptor blueprint(String templateId, int templateRevision) {
-        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_ELEVEN_BLUEPRINT_CATALOG, REVISION_TEN_BLUEPRINT_CATALOG, REVISION_NINE_BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
+        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_TWELVE_BLUEPRINT_CATALOG, REVISION_ELEVEN_BLUEPRINT_CATALOG, REVISION_TEN_BLUEPRINT_CATALOG, REVISION_NINE_BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
                         REVISION_SEVEN_BLUEPRINT_CATALOG, REVISION_SIX_BLUEPRINT_CATALOG,
                         REVISION_FIVE_BLUEPRINT_CATALOG, REVISION_FOUR_BLUEPRINT_CATALOG,
                         REVISION_THREE_BLUEPRINT_CATALOG, REVISION_TWO_BLUEPRINT_CATALOG,

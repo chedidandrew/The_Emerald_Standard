@@ -48,6 +48,7 @@ required=(
     'com/chedidandrew/emeraldstandard/minecraft/NativeStructureSupport.class'
     'com/chedidandrew/emeraldstandard/minecraft/NativeDoorwayClearance.class'
     'data/the_emerald_standard/architecture/v12/catalog.tsv'
+    'data/the_emerald_standard/architecture/v13/catalog.tsv'
     'com/chedidandrew/emeraldstandard/core/VillageBridgeFunding.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageBridgeLedger.class'
     'com/chedidandrew/emeraldstandard/minecraft/VillageBridgeSurvey.class'

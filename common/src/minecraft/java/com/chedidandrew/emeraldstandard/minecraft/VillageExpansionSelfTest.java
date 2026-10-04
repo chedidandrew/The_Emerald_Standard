@@ -382,8 +382,8 @@ final class VillageExpansionSelfTest {
                     && home.constructionOrderCuts.getLast()==home.totalBlocks,
                     "actual home uses a saved support-first schedule without changing total work");
             BlockPos primaryDoor=null;
-            if(home.designTemplateRevision==12) {
-                var data=ApprovedVillageStructures.data(home.designTemplateId);var at=data.door();
+            if(home.designTemplateRevision>=12) {
+                var data=ApprovedVillageStructures.data(home.designTemplateId,home.designTemplateRevision);var at=data.door();
                 int x=home.designMirrored?data.identity().width()-1-at.getX():at.getX();
                 primaryDoor=BlockPos.of(home.originPos).offset((BlockPos)invoke("rotateRelative",x,at.getY(),at.getZ(),
                         invoke("projectSize",home),home.designRotation));

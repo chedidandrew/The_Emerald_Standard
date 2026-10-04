@@ -68,7 +68,7 @@ tasks.register('exportApprovedArchitecture', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ApprovedArchitectureExporter'
     maxHeapSize = '3g'
-    args file('../common/src/main/resources/data/the_emerald_standard/architecture/v12').absolutePath
+    args file('../common/src/main/resources/data/the_emerald_standard/architecture/v13').absolutePath
 }
 
 tasks.register('verifyApprovedArchitecture', JavaExec) {

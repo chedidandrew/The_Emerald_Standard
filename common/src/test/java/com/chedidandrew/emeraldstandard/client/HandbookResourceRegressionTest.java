@@ -319,6 +319,9 @@ public final class HandbookResourceRegressionTest {
                 && language.contains("It is chosen once and saved") && language.contains("fore-and-aft")
                 && !language.contains("hard hat, vest and hammer model"),
                 "Both handbook forms describe native builder workwear and saved biome appearance");
+        check(language.contains("ridge logs running lengthwise so their long sides show bark")
+                &&language.contains("Taiga ridge: bark.")&&language.contains("Old plans stay."),
+                "Both handbook forms explain bark-facing Taiga ridges and unchanged saved plans");
         check(language.contains("Physical work follows a support-first sequence")
                 && language.contains("saved sequence") && language.contains("Supports before lamps.")
                 && language.contains("Each unfinished building has its own recovery attempts")
