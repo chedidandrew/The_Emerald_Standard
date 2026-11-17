@@ -54,7 +54,8 @@ final class VillageWalkingSelfTest {
         StringBuilder nearby=new StringBuilder();
         for(BlockPos at:BlockPos.betweenClosed(walker.blockPosition().offset(-1,0,-1),walker.blockPosition().offset(1,1,1)))
             if(!level.getBlockState(at).isAir()) nearby.append("\n").append(at.toShortString()).append(": ").append(level.getBlockState(at));
-        throw new IllegalStateException("Villager did not physically reach " + label + ": " + walker.position() + " -> " + goal+nearby);
+        throw new IllegalStateException("Villager did not physically reach " + label + ": " + walker.position() + " -> " + goal
+                +" profession="+walker.getVillagerData().profession()+" walk="+walker.getBrain().getMemory(MemoryModuleType.WALK_TARGET)+nearby);
         } finally {
             walker.getBrain().stopAll(level, walker);
             walker.getNavigation().stop();
@@ -68,10 +69,14 @@ final class VillageWalkingSelfTest {
         building(level,min,max,label,null);
     }
     static void building(ServerLevel level, BlockPos min, BlockPos max, String label,BlockPos primaryDoor) {
+        building(level,min,max,label,primaryDoor,null);
+    }
+    static void building(ServerLevel level, BlockPos min, BlockPos max, String label,BlockPos primaryDoor,BlockPos streetStart) {
         List<BlockPos> doors = new ArrayList<>(), beds = new ArrayList<>(), jobs = new ArrayList<>();
         for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
             var state = level.getBlockState(pos);
-            if (state.getBlock() instanceof DoorBlock && state.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER)
+            if (state.getBlock() instanceof FenceGateBlock
+                    ||state.getBlock() instanceof DoorBlock && state.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER)
                 doors.add(pos.immutable());
             if (state.getBlock() instanceof BedBlock) beds.add(pos.immutable());
             if (state.is(Blocks.CRAFTING_TABLE) || state.is(Blocks.SMITHING_TABLE)
@@ -85,7 +90,21 @@ final class VillageWalkingSelfTest {
         BlockPos door = primaryDoor==null?doors.getFirst():primaryDoor, start = null, across = null;
         if(!doors.contains(door)) throw new IllegalStateException(label+" missing primary door "+door);
         Direction facing = level.getBlockState(door).getValue(DoorBlock.FACING);
+        // Door FACING controls the opening, not which side is outdoors. Reviewed Banks
+        // declare their street exit; never start this fixture behind a service counter.
+        if(streetStart!=null) {
+            int dx=streetStart.getX()-door.getX(),dz=streetStart.getZ()-door.getZ();
+            if(dx==0&&dz==0||!feet(level,streetStart))
+                throw new IllegalStateException(label+" invalid declared street approach "+streetStart);
+            Direction outward=Math.abs(dz)>=Math.abs(dx)?(dz<0?Direction.NORTH:Direction.SOUTH)
+                    :(dx<0?Direction.WEST:Direction.EAST);
+            across=door.relative(outward.getOpposite());
+            if(!feet(level,across)) throw new IllegalStateException(label+" blocked indoor doorway cell "+across);
+            if(feet(level,across.relative(outward.getOpposite()))) across=across.relative(outward.getOpposite());
+            start=streetStart;
+        }
         for (Direction direction : new Direction[]{facing, facing.getOpposite()}) {
+            if(start!=null) break;
             BlockPos inside = door.relative(direction.getOpposite());
             if (!feet(level, inside)) continue;
             // A target immediately on the doorstep can finish native navigation while the
@@ -103,6 +122,14 @@ final class VillageWalkingSelfTest {
                 + " facing=" + facing + " inside=" + level.getBlockState(door.relative(facing.getOpposite()))
                 + " outside=" + level.getBlockState(door.relative(facing, 3)));
         Villager walker = walker(level, start);
+        if(primaryDoor!=null) {
+            // This is a visiting pathfinding fixture, not a worker choosing its own job.
+            // Keep native POI acquisition from replacing our explicit building-walk goal.
+            walker.setVillagerData(walker.getVillagerData().withProfession(
+                    net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.getOrThrow(
+                            net.minecraft.world.entity.npc.villager.VillagerProfession.NITWIT)));
+            walker.refreshBrain(level);
+        }
         try {
             // Navigate through the door to air, not to the closed door block (which target
             // normalization can incorrectly project upward). The villager must open it itself.
@@ -126,7 +153,11 @@ final class VillageWalkingSelfTest {
     }
 
     private static void visit(ServerLevel level, Villager walker, BlockPos object, String label) {
-        for (Direction direction : Direction.Plane.HORIZONTAL) {
+        // Prefer the side already approached by this visitor. Enum order can send a
+        // customer around a teller line into the intentionally separate staff alcove.
+        var directions=new ArrayList<Direction>();Direction.Plane.HORIZONTAL.forEach(directions::add);
+        directions.sort(Comparator.comparingDouble(d->walker.blockPosition().distSqr(object.relative(d))));
+        for (Direction direction : directions) {
             BlockPos beside = object.relative(direction);
             var path = feet(level, beside) ? walker.getNavigation().createPath(beside, 0) : null;
             if (path != null && path.canReach()) { walk(level, walker, beside, label); return; }

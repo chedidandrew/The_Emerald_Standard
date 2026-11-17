@@ -24,6 +24,12 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
         String outdoors=Files.readString(root.resolve(path+"PreviewOutdoorPrograms.java"));
         String support=Files.readString(root.resolve(path+"PreviewSupportAudit.java"));
         String taiga=Files.readString(root.resolve(path+"PreviewTaigaCraft.java"));
+        String snowy=Files.readString(root.resolve(path+"PreviewSnowyOverhang.java"));
+        require(preview.contains("PreviewSnowyOverhang.apply")&&snowy.contains("p.sample().style()!=BiomeDialect.SNOWY")
+                &&snowy.contains("p.cells().containsKey(next)")&&snowy.contains("!headroom(p,next)")
+                &&snowy.contains("wallBelow(p,roof,next)")&&snowy.contains("cap(p,added,at,next,state)")
+                &&snowy.contains("Direction.UP")&&snowy.contains("PreviewWindowLighting.brightenRooms"),
+                "Snowy eaves are authoring-only, single-ring, snow-supported and circulation-safe");
         String facade=Files.readString(root.resolve(path+"PreviewFacadePrograms.java"));
         String glazing=Files.readString(root.resolve(path+"PreviewDoorwayGlazing.java"));
         String ladders=Files.readString(root.resolve(path+"PreviewLadderSupport.java"));
@@ -152,6 +158,8 @@ public final class BiomeArchitecturePreviewWiringRegressionTest {
             require(!Files.readString(root.resolve(path+name)).contains("PreviewWindowLighting"),"Review window/light composition leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewLadderSupport"),"Review ladder support leaked into production");
             require(!Files.readString(root.resolve(path+name)).contains("PreviewInteriorFurnishings"),"Review furniture leaked into production");
+            require(!Files.readString(root.resolve(path+name)).contains("PreviewSnowyOverhang")
+                    &&!Files.readString(root.resolve(path+name)).contains("PreviewPlanTranslation"),"Snowy authoring helpers leaked into production");
         }
         require(init.contains("tesArchitecturePreview") && init.contains("TES_Biome_Architecture_Preview")
                 && init.contains("'1,2,3,4,5,6,7,8,9,10,11,12,13'"), "Preview launcher coverage");

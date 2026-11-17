@@ -10,7 +10,7 @@ public final class ForcedDevelopmentRegressionTest {
     }
     private static void check(boolean ok,String message) { if(!ok) throw new AssertionError(message); }
     public static void main(String[] args) throws Exception {
-        budgets(); scheduling(); wiring(args.length == 0 ? Path.of(".") : Path.of(args[0])); service(); lots(); arrivals();
+        budgets(); scheduling(); siteSearch(); wiring(args.length == 0 ? Path.of(".") : Path.of(args[0])); service(); lots(); arrivals();
         System.out.println("PASS forced development opt-in, economic bypass, persistence, rollback-safe indexing and global budgets");
     }
     private static void budgets() {
@@ -20,7 +20,8 @@ public final class ForcedDevelopmentRegressionTest {
         b.begin(server,1,102,false);
         check(b.claim(103)==64,"same-tick budget was reset");
         for(int i=0;i<10000;i++) check(b.claim(104)==0,"extra sites increase budget");
-        b.begin(server,2,0,false); check(b.claim(4_000_000)==0,"deadline ignored");
+        b.begin(server,2,0,false); check(b.hasTime(4_000_000),"healthy search window still only four ms");
+        check(b.claim(8_000_000)==0,"deadline ignored");
         b.begin(server,3,0,true); check(b.claim(1)==16 && b.claim(2)==0,"lag throttling");
         b.reset(); check(b.claim(0)==0,"reset retained allowance");
         b.begin(new Object(),3,0,false); check(b.claim(1)==64,"new server starved");
@@ -103,6 +104,21 @@ public final class ForcedDevelopmentRegressionTest {
         String runtime = Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageDevelopmentRuntime.java"));
         check(runtime.indexOf("configureForcedVillageDevelopment(forced)") < runtime.indexOf("runQueues("),
                 "first Bank tick may use stale debug mode");
+        String lamps=Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/WalkwayLighting.java"));
+        check(lamps.contains("forcedVillageDevelopment() ? 1 : 20")
+                        &&lamps.contains("instant?allowance:Math.min(2, allowance)")
+                        &&lamps.contains("instant?32:1")&&lamps.contains("ForcedDevelopmentRuntime::hasTime")
+                        &&lamps.contains("before.equals(ledger.jobs.getOrDefault(key,Job.fresh()))"),
+                "forced lamps must shed normal pacing without unlimited or spinning work");
+        String manager=Files.readString(root.resolve("common/src/minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java"));
+        check(manager.contains("FORCED_ROTATION.next(\"search-priority:\"+village.villageId,2)==0")
+                        &&manager.contains("forced ? searchFirst ? 0 : remainingBlockBudget")
+                        &&manager.contains("ForcedSiteSearchPolicy.candidates(economy.forcedVillageDevelopment())")
+                        &&manager.contains("ForcedSiteSearchPolicy.bankSetback(economy.forcedVillageDevelopment())")
+                        &&manager.contains("site_reservation_rejected"),"forced search priority/fairness and diagnostic transition not wired");
+        check(manager.contains("forced ? roadBudget - connectionWrites : Math.min(2, roadBudget - connectionWrites)")
+                        &&manager.contains("if (forced) remainingBlockBudget -= lampWrites;"),
+                "lamp bursts must consume remaining shared allowance, not a private instant budget");
     }
 
     private static void scheduling() {
@@ -128,14 +144,14 @@ public final class ForcedDevelopmentRegressionTest {
                     callbacks[0]++;
                     if (budget.claim(now[0]) > 0) {
                         projectVisits[rotation.next("projects", 4)]++;
-                        now[0] = 5_000_000; // Slow preflight/placement exhausts the shared deadline.
+                        now[0] = 9_000_000; // Slow preflight/placement exhausts the shared deadline.
                     }
                 };
                 Runnable banks = () -> {
                     callbacks[1]++;
                     if (currentTick % 2 == 0 && budget.claim(now[0]) > 0) {
                         bankVisits[rotation.next("banks", 3)]++;
-                        now[0] = 5_000_000;
+                        now[0] = 9_000_000;
                     }
                 };
                 ForcedDevelopmentWorkBudget.runQueues(true, tick, projects, banks);
@@ -155,6 +171,42 @@ public final class ForcedDevelopmentRegressionTest {
         ForcedDevelopmentWorkBudget.runQueues(true, 0, () -> granted[0] = fallback.claim(1), () -> { });
         check(granted[0] == 16, "empty Bank queue wasted the project grant");
         System.out.println("PASS real queue priority: reduced budget, exhausted deadline, multiple Banks/projects, normal mode and empty queue");
+    }
+
+    private static void siteSearch() throws Exception {
+        check(ForcedSiteSearchPolicy.candidates(true)==32 && ForcedSiteSearchPolicy.candidates(false)==1,"mode-specific candidate admission");
+        check(ForcedSiteSearchPolicy.lotPadding(true)==2 && ForcedSiteSearchPolicy.lotPadding(false)==4,"spacing preference not safety bypass");
+        check(!ForcedSiteSearchPolicy.bankSetback(true) && ForcedSiteSearchPolicy.bankSetback(false),"normal Bank setback unchanged");
+        var state=EconomyState.fresh(77,0,0);var id=new UUID(77,1);var v=state.village(id);
+        v.centerPos=pack(100,64,100);v.dimensionKey="minecraft:overworld";
+        for(int i=1;i<=3;i++) {
+            var p=new EconomyState.VillageProject();p.projectId=i;p.type=VillageProsperityEngine.ProjectType.COTTAGE;
+            p.economicComplete=true;p.economicProgress=1;v.projects.add(p);
+        }
+        v.projectSerial=3;
+        var p=v.projects.getFirst();
+        for(int n=0;n<100;n++) {
+            p.materializationFailures=n;
+            check(ForcedSiteSearchPolicy.frontierDepth(v,p,false)==ArchitectureSiteFit.searchDepth(v,p),"normal frontier changed");
+            check(ForcedSiteSearchPolicy.frontierDepth(v,p,true)==Math.min(32,2+n),"forced widening waits for unused decor sweeps");
+        }
+        check(ForcedSiteSearchPolicy.frontierDepth(v,p,true)<=32,"unbounded frontier");
+        Path dir=Files.createTempDirectory("tes-fast-lot-");
+        try {
+            state.save(dir.resolve("the_emerald_standard.properties"));var e=new EconomyService();e.startWithSeed(dir,77,0,0);
+            check(e.reserveVillageProjectSite(id,1,pack(100,64,100),pack(100,63,100),pack(110,74,110),100),"base lot");
+            check(!e.reserveVillageProjectSite(id,2,pack(113,64,100),pack(113,63,100),pack(123,74,110),100),"normal four-block buffer");
+            e.configureForcedVillageDevelopment(true);
+            check(e.reserveVillageProjectSite(id,2,pack(113,64,100),pack(113,63,100),pack(123,74,110),100),"forced tighter spacing failed atomic reservation");
+            check(!e.reserveVillageProjectSite(id,3,pack(110,64,100),pack(110,63,100),pack(120,74,110),100),"forced overlap admitted");
+            check(!e.reserveVillageProjectSite(id,3,pack(125,64,100),pack(125,63,100),pack(135,74,110),100),"two-block buffer waived");
+            check(!e.reserveVillageProjectSite(id,3,pack(110,85,100),pack(110,84,100),pack(120,95,110),100),"vertical overlap loophole");
+            e.configureForcedVillageDevelopment(false);
+            var reload=new EconomyService();reload.startWithSeed(dir,77,0,0);
+            check(!reload.forcedVillageDevelopment() && reload.villageSnapshot(id).village().projects.get(1).originPos==pack(113,64,100),"toggle/restart moved closer legal lot");
+            check(ProjectLotSafety.warnings(reload.villageSnapshot(id).village()).isEmpty(),"tighter lots physically overlap");
+        } finally {RegressionTestSupport.deleteTree(dir);}
+        System.out.println("PASS fast forced lots: candidate/frontier preferences, atomic spacing, overlap/vertical protection, toggle and restart");
     }
 
     private static void service() throws Exception {

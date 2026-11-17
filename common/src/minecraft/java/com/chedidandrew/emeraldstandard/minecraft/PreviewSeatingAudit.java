@@ -27,6 +27,7 @@ final class PreviewSeatingAudit {
         BlockState base=cells.get(position),top=cells.get(position.above());
         if(base==null) return false;
         if(base.is(Blocks.LECTERN)||base.is(Blocks.CARTOGRAPHY_TABLE)) return true;
+        if(base.is(Blocks.BARREL)&&top!=null&&(top.getBlock() instanceof LanternBlock||top.getBlock() instanceof FlowerPotBlock)) return true;
         return top!=null&&((top.getBlock() instanceof SlabBlock&&base.getBlock() instanceof FenceBlock)
                 ||(top.getBlock() instanceof BasePressurePlateBlock&&(base.getBlock() instanceof FenceBlock
                 ||base.isFaceSturdy(EmptyBlockGetter.INSTANCE,position,Direction.UP))));

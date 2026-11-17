@@ -28,6 +28,7 @@ final class EmeraldCommandHandlers {
         success(context, "/emerald open | market | commodities | portfolio | recover");
         success(context, "/emerald debug starts or stops a five-minute full diagnostic capture");
         success(context, "/emerald debug mark adds an optional moment marker");
+        success(context, "/tesstructure [x y z] identifies a saved building; /emerald structure is the admin alias");
         success(context, "/emerald config show|reload");
         success(context, "/emerald deposit <emeralds> | withdraw <emeralds>");
         success(context, "/emerald savings deposit|withdraw <emeralds>");

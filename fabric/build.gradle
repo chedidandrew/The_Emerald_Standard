@@ -63,12 +63,36 @@ tasks.register('verifyBiomeArchitecturePreview', JavaExec) {
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BiomeArchitecturePreviewSelfTest'
 }
 
+tasks.register('verifyBuildingUsability', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.BuildingUsabilitySelfTest'
+    maxHeapSize = '3g'
+    args 'strict'
+    if (project.hasProperty('usabilitySample')) args project.property('usabilitySample')
+}
+
+tasks.register('verifySnowyRoofOverhang', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.SnowyRoofOverhangSelfTest'
+    maxHeapSize = '3g'
+}
+
 tasks.register('exportApprovedArchitecture', JavaExec) {
     dependsOn classes
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ApprovedArchitectureExporter'
     maxHeapSize = '3g'
-    args file('../common/src/main/resources/data/the_emerald_standard/architecture/v13').absolutePath
+    args file('../common/src/main/resources/data/the_emerald_standard/architecture/v20').absolutePath
+}
+
+tasks.register('exportArchitectureFits', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.chedidandrew.emeraldstandard.minecraft.ApprovedArchitectureExporter'
+    maxHeapSize = '3g'
+    args file('../common/src/main/resources/data/the_emerald_standard/architecture/v20-fit').absolutePath, 'fits'
 }
 
 tasks.register('verifyApprovedArchitecture', JavaExec) {
@@ -107,6 +131,7 @@ tasks.register('verifyVanillaVillageBuildings', JavaExec) {
     mainClass = 'com.chedidandrew.emeraldstandard.minecraft.VanillaVillageBuildingsSelfTest'
 }
 tasks.named('check') {
+    dependsOn tasks.named('verifyBuildingUsability')
     dependsOn tasks.named('verifyApprovedArchitecture')
     dependsOn tasks.named('verifyBiomeArchitecturePreview')
     dependsOn tasks.named('verifyVanillaVillageBuildings')

@@ -137,7 +137,7 @@ public final class CompactVillageGrowthRegressionTest {
     private static void wiring()throws Exception {
         String root="common/src/";
         String manager=Files.readString(Path.of(root+"minecraft/java/com/chedidandrew/emeraldstandard/minecraft/VillageProsperityManager.java"));
-        check(manager.contains("PROJECT_SITE_CANDIDATES_PER_PULSE = 1")&&manager.contains("beginVillageProjectSiteSearch")
+        check(manager.contains("ForcedSiteSearchPolicy.candidates(economy.forcedVillageDevelopment())")&&manager.contains("beginVillageProjectSiteSearch")
                 &&manager.contains("offsets = new java.util.AbstractList<>")&&manager.contains("skipped < 128"),"bounded production search not wired");
         String screen=Files.readString(Path.of(root+"client/java/com/chedidandrew/emeraldstandard/client/EmeraldSettingsScreen.java"));
         check(screen.contains("return \"Forced instant development\"")&&!screen.contains("DEBUG:"),"setting label");

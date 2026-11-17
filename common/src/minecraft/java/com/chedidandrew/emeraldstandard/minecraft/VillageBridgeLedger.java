@@ -21,7 +21,7 @@ final class VillageBridgeLedger extends SavedData {
                 Codec.intRange(0,5).fieldOf("phase").forGetter(Piece::phase)).apply(i, Piece::new));
     }
     record Plan(String id, String village, long project, long start, long end, String style,
-            int waterLength, int waterY, long low, long high, List<Long> route, List<Piece> pieces) {
+            int waterLength, int waterY, long low, long high, List<Long> route, List<Piece> pieces,boolean requiresDestination) {
         static final Codec<Plan> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.fieldOf("id").forGetter(Plan::id),
                 Codec.STRING.fieldOf("village").forGetter(Plan::village),
@@ -29,12 +29,18 @@ final class VillageBridgeLedger extends SavedData {
                 Codec.LONG.fieldOf("start").forGetter(Plan::start),
                 Codec.LONG.fieldOf("end").forGetter(Plan::end),
                 Codec.STRING.fieldOf("style").forGetter(Plan::style),
-                Codec.intRange(2,64).fieldOf("water_length").forGetter(Plan::waterLength),
+                Codec.intRange(2,128).fieldOf("water_length").forGetter(Plan::waterLength),
                 Codec.INT.fieldOf("water_y").forGetter(Plan::waterY),
                 Codec.LONG.fieldOf("low").forGetter(Plan::low),
                 Codec.LONG.fieldOf("high").forGetter(Plan::high),
-                Codec.LONG.listOf(2,80).fieldOf("route").forGetter(Plan::route),
-                Piece.CODEC.listOf(1,MAX_PIECES).fieldOf("pieces").forGetter(Plan::pieces)).apply(i,Plan::new));
+                Codec.LONG.listOf(2,140).fieldOf("route").forGetter(Plan::route),
+                Piece.CODEC.listOf(1,MAX_PIECES).fieldOf("pieces").forGetter(Plan::pieces),
+                Codec.BOOL.optionalFieldOf("requires_destination",false).forGetter(Plan::requiresDestination)).apply(i,Plan::new));
+        Plan(String id,String village,long project,long start,long end,String style,int waterLength,int waterY,
+                long low,long high,List<Long> route,List<Piece> pieces) {
+            this(id,village,project,start,end,style,waterLength,waterY,low,high,route,pieces,false);
+        }
+        Plan destinationBound() {return new Plan(id,village,project,start,end,style,waterLength,waterY,low,high,route,pieces,true);}
         Plan { route=List.copyOf(route); pieces=List.copyOf(pieces); }
         UUID owner() { return UUID.fromString(village); }
         int operations() { return (int)pieces.stream().filter(p -> !p.before.equals(p.after)).count(); }
@@ -90,10 +96,17 @@ final class VillageBridgeLedger extends SavedData {
         if(!jobs.containsKey(job.plan.id))index(job.plan);
         jobs.put(job.plan.id,job);setDirty();
     }
+    /** Roll back only an unspent, unwritten provisional reservation; never undo construction. */
+    boolean removeUnfunded(String id) {
+        Job job=jobs.get(id);
+        if(job==null||job.funded()||job.cursor()!=0||job.state().equals("funding"))return false;
+        jobs.remove(id);chunks.clear();ends.clear();pieces.clear();jobs.values().forEach(j->index(j.plan()));
+        setDirty();return true;
+    }
     private void index(Plan p) {
         BlockPos a=BlockPos.of(p.low),b=BlockPos.of(p.high);
         if(a.getX()>b.getX()||a.getY()>b.getY()||a.getZ()>b.getZ()
-                ||(long)(b.getX()-a.getX()+1)*(b.getZ()-a.getZ()+1)>640)
+                ||(long)(b.getX()-a.getX()+1)*(b.getZ()-a.getZ()+1)>1024)
             throw new IllegalArgumentException("Oversized bridge reservation");
         for(int x=a.getX()>>4;x<=b.getX()>>4;x++)for(int z=a.getZ()>>4;z<=b.getZ()>>4;z++)
             chunks.computeIfAbsent(chunk(x,z),k->new LinkedHashSet<>()).add(p.id);

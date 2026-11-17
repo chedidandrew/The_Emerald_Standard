@@ -68,6 +68,10 @@ final class PreviewDoorwayAudit {
     static Map<BlockPos,BlockState> baseline(BiomeArchitecturePreview.Plan plan) {
         return BASELINES.getOrDefault(plan.sample().id(),plan.cells());
     }
+    static void translate(BiomeArchitecturePreview.Plan source,int dx,int dz) {
+        BASELINES.put(source.sample().id(),PreviewPlanTranslation.cells(baseline(source),dx,dz));
+        EDITS.computeIfPresent(source.sample().id(),(id,edits)->PreviewPlanTranslation.positions(edits,dx,dz));
+    }
     static int edits(BiomeArchitecturePreview.Plan plan) { return EDITS.getOrDefault(plan.sample().id(),Set.of()).size(); }
     private static void connector(Map<BlockPos,BlockState> cells,Set<BlockPos> allowed,int x,int z0,int z1) {
         for(int z=z0;z<=z1;z++) {

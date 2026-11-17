@@ -19,7 +19,7 @@ final class VillageBridgeSelfTest {
     }
     private static void verifyChecked(ServerLevel level) throws Exception {
         var defaults=EmeraldConfig.parse(new Properties()).bridgeSettings();
-        require(defaults.enabled()&&defaults.length()==48&&defaults.depth()==12&&defaults.concurrent()==2,"bridge defaults");
+        require(defaults.enabled()&&defaults.length()==96&&defaults.depth()==12&&defaults.concurrent()==2,"bridge defaults");
         for(String key:List.of(EmeraldConfig.BRIDGE_LENGTH,EmeraldConfig.BRIDGE_DEPTH,EmeraldConfig.BRIDGE_JOBS)) {
             Properties invalid=new Properties();invalid.setProperty(key,"999");
             try {EmeraldConfig.parse(invalid);throw new IllegalStateException("unbounded bridge setting "+key);}

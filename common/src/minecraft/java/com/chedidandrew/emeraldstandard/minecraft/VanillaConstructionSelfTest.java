@@ -49,7 +49,7 @@ final class VanillaConstructionSelfTest {
                 catch(Exception e) { throw new IllegalStateException("Raised imported construction "+style+" rotation "+turn,e); }
             }
         }
-        System.out.println("PASS vanilla construction: selected catalog fixtures, native survival, bed access, empty containers and saved progress");
+        System.out.println("PASS vanilla construction: selected catalog fixtures, native survival, bed access, one-shot storage loot and saved progress");
     }
 
     private static void verifyOne(ServerLevel level,String name,int rotation) throws Exception {
@@ -174,8 +174,18 @@ final class VanillaConstructionSelfTest {
             for(var cell:canonical) {
                 BlockPos at = origin.offset((int)field(cell,"dx"),(int)field(cell,"dy"),(int)field(cell,"dz"));
                 require(level.getBlockState(at).canSurvive(level,at),name+" has an unsupported block "+level.getBlockState(at)+" below="+level.getBlockState(at.below())+" above="+level.getBlockState(at.above())+" at "+at.toShortString());
-                if (level.getBlockEntity(at) instanceof net.minecraft.world.Container container)
-                    require(container.isEmpty(),name+" imported free container contents");
+                if (VillageProsperityManager.isManagedConnectionBlock(level.getBlockState(at)))
+                    require(Block.updateFromNeighbourShapes(level.getBlockState(at),level,at).equals(level.getBlockState(at)),
+                            name+" handed over stale fence/wall/window connections at "+at.toShortString());
+                if (level.getBlockEntity(at) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity
+                        ||level.getBlockEntity(at) instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity) {
+                    var storage=(net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity)level.getBlockEntity(at);
+                    require(VillageStructureLoot.table(project).equals(storage.getLootTable()),name+" storage lacks its one-shot profession supplies");
+                    storage.getItem(0);
+                    require(!storage.isEmpty()&&storage.getLootTable()==null,name+" rolled empty storage");
+                    storage.clearContent();
+                    require(storage.isEmpty()&&storage.getLootTable()==null,name+" emptied storage regained loot");
+                }
             }
             // These fixtures synchronously reuse non-ticking chunks; discard navigation
             // cache entries left by the previous fixture before testing the new building.

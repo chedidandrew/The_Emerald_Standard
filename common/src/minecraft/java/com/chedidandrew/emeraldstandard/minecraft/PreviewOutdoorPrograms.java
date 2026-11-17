@@ -95,6 +95,15 @@ final class PreviewOutdoorPrograms {
             // Night-time circulation lighting: carried lanterns on low stone plinths.
             for(int z=-1;z<d+3+7*rows;z+=7) { lamp(-6,z);lamp(w+5,z); }
             for(int x=-3;x<w+3;x+=7) {lamp(x,-4);lamp(x,d+3+7*rows);}
+            // The doorway stands alone: no raised snow/cobblestone strip or front props.
+            // One flush natural footing is retained for the required public approach.
+            // Side/rear landscapes remain optional complete features, not cropped fragments.
+            cells.keySet().removeIf(at->at.getZ()<0);
+            routes.removeIf(at->at.getZ()<0);
+            for(int x=-2;x<=w+1;x++) {
+                put(x,0,-1,style==BiomeDialect.DESERT?Blocks.SAND:Blocks.GRASS_BLOCK);
+                routes.add(new BlockPos(x,1,-1));
+            }
             int maxZ=cells.keySet().stream().mapToInt(BlockPos::getZ).max().orElse(d);
             // Move the entire site, including buried pond bases and walking coordinates.
             // The building's immutable cells and floor elevation are not part of this shift.
@@ -282,7 +291,7 @@ final class PreviewOutdoorPrograms {
             if(!PreviewDoorwayAudit.clear(all,at))throw new IllegalStateException("Blocked yard path "+at);
         }
         // Every garden/work tile joins the same continuous ring; no isolated fenced destination.
-        if(!yardReachable(all,new BlockPos(-2,GROUND_Y+1,-2)).containsAll(s.routes()))
+        if(!yardReachable(all,new BlockPos(-2,GROUND_Y+1,-1)).containsAll(s.routes()))
             throw new IllegalStateException("Disconnected outdoor circulation "+p.sample().id());
         for(var e:s.cells().entrySet()) {
             BlockPos at=e.getKey();BlockState state=e.getValue(),below=all.get(at.below());

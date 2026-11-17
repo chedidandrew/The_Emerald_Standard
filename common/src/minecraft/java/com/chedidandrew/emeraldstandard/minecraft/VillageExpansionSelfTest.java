@@ -72,6 +72,7 @@ final class VillageExpansionSelfTest {
             System.out.println("PASS VillageExpansionSelfTest: torches, storage, workstations, craters, tree remnants, claims");
             verifyRoughTerrain(level);
             VillageTerrainFinishingSelfTest.verify(level);
+            VillageTerrainGroundingSelfTest.verify(level);
             VillageConstructionActivitySelfTest.verify(level);
             verifyFirstDistrict(level,false);
             verifyFirstDistrict(level,true);
@@ -127,9 +128,10 @@ final class VillageExpansionSelfTest {
             require(safe(level, floor), "tall spruce, horizontal branch and natural bushes do not reject a lot");
             var survey = new VillageSitePreparation.Survey(level);
             var frozen = survey.freeze(List.of(trunk), floor.getY() + 1, null, 9);
-            require(frozen != null && frozen.cells().size() == 26
-                    && frozen.cells().stream().anyMatch(c -> c.position() == branch.asLong()),
-                    "connected tree outside the small footprint is frozen, avoiding floating branches");
+            require(frozen != null && frozen.cells().size() == 27
+                    && frozen.cells().stream().anyMatch(c -> c.position() == branch.asLong())
+                    && frozen.cells().stream().anyMatch(c -> c.position() == branch.above().asLong()),
+                    "connected tree and owned canopy outside the small footprint are frozen, avoiding floating branches");
             require(VillageSitePreparation.matchesRemoval(Blocks.SPRUCE_LEAVES.defaultBlockState()
                             .setValue(LeavesBlock.DISTANCE, 7), "minecraft:spruce_leaves[distance=1,persistent=false,waterlogged=false]"),
                     "leaf-distance changes must not stall frozen removal");
@@ -350,7 +352,9 @@ final class VillageExpansionSelfTest {
                 }
                 var repairProbe=economy.villageSnapshot(childId).village();
                 var repairHome=repairProbe.projects.getFirst();
-                if(!damageRepaired && repairHome.materializedBlocks>30 && !repairHome.materializedComplete) {
+                // Keep the two probes independent: a repair rewind must not be mistaken for
+                // occupied-cell progress while the instant-development batch is paused.
+                if(occupancyChecked && !damageRepaired && repairHome.materializedBlocks>30 && !repairHome.materializedComplete) {
                     List<?> repairTemplate=(List<?>)invoke("projectTemplate",level,origin,repairProbe,repairHome);
                     repairTemplate=(List<?>)invoke("constructionTemplate",repairTemplate,repairHome);
                     for(int ri=0;ri<Math.min(repairTemplate.size(),repairHome.materializedBlocks);ri++) {
@@ -475,6 +479,36 @@ final class VillageExpansionSelfTest {
         var accepted = SiteSearchDiagnostics.last(draft.villageId+"/"+project.projectId);
         require(accepted != null && accepted.reason() == SiteSearchDiagnostics.Reason.AVAILABLE,
                 "actual candidate acceptance reaches session diagnostics");
+        if(Boolean.getBoolean("the_emerald_standard.fastLotSmokeOnly")) {
+            boolean wasForced=economy.forcedVillageDevelopment();
+            long originalBank=draft.bankAnchorPos;
+            try {
+                draft.bankAnchorPos=new BlockPos(accepted.x(),accepted.y(),accepted.z()).asLong();
+                economy.configureForcedVillageDevelopment(false);project.siteSearchCursor=offsets.size()-1;
+                SiteSurveyRejections.reset();
+                var normal=invoke("findProjectOrigin",level,economy,draft,project,List.of(),List.of());
+                require(accessor(normal,"availability")!=VillageMaterializationPolicy.SiteAvailability.AVAILABLE
+                        && SiteSearchDiagnostics.last(draft.villageId+"/"+project.projectId).reason()==SiteSearchDiagnostics.Reason.BANK_SPACING,
+                        "ordinary mode retains blanket Bank setback");
+                economy.configureForcedVillageDevelopment(true);project.siteSearchCursor=offsets.size()-1;
+                ForcedDevelopmentRuntime.reset();ForcedDevelopmentRuntime.claim(level.getServer());SiteSurveyRejections.reset();
+                long begin=System.nanoTime();
+                var fast=invoke("findProjectOrigin",level,economy,draft,project,List.of(),List.of());
+                require(accessor(fast,"availability")==VillageMaterializationPolicy.SiteAvailability.AVAILABLE,
+                        "forced mode cannot use safe lot rejected only for Bank setback");
+                System.out.println("PASS forced lot admitted without ornamental Bank setback; native search ms="+(System.nanoTime()-begin)/1_000_000.0);
+                project.siteSearchCursor=offsets.size()-1;
+                var reserved=invoke("findProjectOrigin",level,economy,draft,project,List.of(),List.of(draft.bankAnchorPos));
+                require(accessor(reserved,"availability")!=VillageMaterializationPolicy.SiteAvailability.AVAILABLE,
+                        "forced relaxation overwrites actual Bank lot");
+                project.siteSearchCursor=offsets.size()-1;
+                try(var guard=VillageDevelopmentProtection.register(context->false)) {
+                    SiteSurveyRejections.reset();
+                    require(accessor(invoke("findProjectOrigin",level,economy,draft,project,List.of(),List.of()),"availability")
+                            !=VillageMaterializationPolicy.SiteAvailability.AVAILABLE,"forced search bypassed claim guard");
+                }
+            } finally {draft.bankAnchorPos=originalBank;economy.configureForcedVillageDevelopment(wasForced);SiteSurveyRejections.reset();}
+        }
         project.siteSearchCursor = offsets.size()-1;
         try (var veto = VillageDevelopmentProtection.register(context -> false)) {
             var result = invoke("findProjectOrigin",level,economy,draft,project,List.of(),List.of());

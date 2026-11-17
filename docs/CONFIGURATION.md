@@ -21,6 +21,10 @@ that local reader preference and cannot write server/world settings.
 
 | Key | Default | Accepted values | Effect |
 | --- | ---: | --- | --- |
+| `village_prosperity.bridges_enabled` | `true` | `true`, `false` | Allow loaded-only public crossings. Off pauses new and unfinished bridges; intact completed crossings remain usable. |
+| `village_prosperity.bridge_max_water_length` | `96` | `2`–`128` | Maximum continuous water span, excluding six approach rows per shore. Existing worlds retain their saved limit, commonly 48. |
+| `village_prosperity.bridge_max_foundation_depth` | `12` | `2`–`24` | Maximum search for natural pier footing. Deep lakes without suitable footing remain unsuitable. |
+| `village_prosperity.bridge_concurrent_jobs` | `2` | `1`–`4` | Active bridge crews per dimension. Additional spans queue without payment; all share bounded work allowances. |
 | `news.public_player_reports` | `true` | `true`, `false` | Publish player/local reports. Off stops new local reporting and hides retained local articles from public readers, without deleting the private archive. |
 | `news.anonymous_players` | `false` | `true`, `false` | Remove player names before articles reach clients. Cannot erase previously seen information. |
 | `news.approximate_locations` | `true` | `true`, `false` | Withhold exact district coordinates; report only a local village. |
@@ -102,10 +106,15 @@ world-local configuration—including the former `96` default—until an operato
 ## Mode combinations
 
 Forced instant development overrides ordinary construction pacing and project input gates.
-It can inspect up to eight candidate centers per work turn, stopping between candidates when
-the shared 4 ms construction window is exhausted (1 ms under lag). Searches retry in 1-5
-seconds at 20 TPS and, after exhausting nearer candidates, consider up to four connected
-parcel rings. Negative survey results have bounded temporary caches invalidated by local
+It can inspect up to 32 candidate centers per work turn, stopping between candidates when
+the shared 8 ms construction window is exhausted (1 ms under lag). Half the actual village
+visits with a due unplaced project defer optional road/finishing work to give search first use
+of that window; the other visits retain those queues. Unplaced searches retry in 2–20 ticks
+(0.1–1 second at 20 TPS); reserved-site recovery keeps its separate 1–5-second backoff.
+The frontier starts at two parcels and widens after each failed sweep, up to 32 parcels.
+Forced-mode lot buffers are two blocks instead of four, including frozen earthworks. The
+blanket 18-block Bank setback is omitted, but actual Bank and project lots still veto overlap.
+Negative survey results have bounded temporary caches invalidated by local
 block writes, chunk reloads or expiry. World protections still decide every accepted site.
 No chunks are force-loaded, and one native survey operation can exceed the cooperative window.
 

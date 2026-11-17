@@ -479,6 +479,9 @@ final class EconomyPersistence {
             properties.setProperty(
                     projectPrefix + "design.plan_hash",
                     project.designPlanHash);
+            properties.setProperty(projectPrefix + "design_outdoor_level",Integer.toString(project.designOutdoorLevel));
+            properties.setProperty(projectPrefix + "bridge_first_dependencies",project.bridgeFirstDependencies);
+            properties.setProperty(projectPrefix + "outdoor_terrain_offsets",OutdoorTerrainOffsets.encode(project.outdoorTerrainOffsets));
             properties.setProperty(projectPrefix + "site_preparation_complete", Boolean.toString(project.sitePreparationComplete));
             properties.setProperty(projectPrefix + "site_preparation_cursor", Integer.toString(project.sitePreparationCursor));
             properties.setProperty(projectPrefix + "construction_started", Boolean.toString(project.constructionStarted));
@@ -1499,6 +1502,9 @@ final class EconomyPersistence {
                     project.designPlanHash = value;
                 }
             }
+            case "design_outdoor_level" -> project.designOutdoorLevel = Integer.parseInt(value);
+            case "bridge_first_dependencies" -> project.bridgeFirstDependencies = value;
+            case "outdoor_terrain_offsets" -> project.outdoorTerrainOffsets.putAll(OutdoorTerrainOffsets.decode(value));
             case "trail.anchor_set" -> project.trailAnchorSet = Boolean.parseBoolean(value);
             case "trail.anchor" -> project.trailAnchorPos = Long.parseLong(value);
             case "trail.blocks" -> project.trailMaterializedBlocks = Integer.parseInt(value);

@@ -6,7 +6,7 @@ public final class VillageBridgeFunding {
     private VillageBridgeFunding() {}
     public record Cost(double materials, double treasury) {}
     public static Cost cost(int waterLength, int operations) {
-        if (waterLength < 2 || waterLength > 64 || operations < 1 || operations > 8192)
+        if (waterLength < 2 || waterLength > 128 || operations < 1 || operations > 8192)
             throw new IllegalArgumentException("Invalid bridge size");
         return new Cost(Math.ceil(operations / 16.0), 4 + Math.ceil(waterLength / 4.0));
     }

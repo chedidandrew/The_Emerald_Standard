@@ -10,7 +10,8 @@ import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 final class NativeDoorwayClearance {
     static int setBackRugs(Map<BlockPos,BlockState> cells) {
         int removed=0;
-        var doors=cells.entrySet().stream().filter(e->e.getValue().getBlock() instanceof DoorBlock
+        var doors=cells.entrySet().stream().filter(e->e.getValue().getBlock() instanceof FenceGateBlock
+                ||e.getValue().getBlock() instanceof DoorBlock
                 &&e.getValue().getValue(DoorBlock.HALF)==DoubleBlockHalf.LOWER).toList();
         for(var door:doors) {
             var facing=door.getValue().getValue(DoorBlock.FACING);

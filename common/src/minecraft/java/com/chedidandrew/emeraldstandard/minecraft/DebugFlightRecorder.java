@@ -1,6 +1,7 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.EconomyEngine;
+import com.chedidandrew.emeraldstandard.core.ApprovedArchitectureCatalog;
 import com.chedidandrew.emeraldstandard.core.EconomyService;
 import com.chedidandrew.emeraldstandard.core.EconomyState;
 import com.chedidandrew.emeraldstandard.core.VillageArchitecture;
@@ -861,7 +862,13 @@ public final class DebugFlightRecorder {
         return Map.of("reason","Dimension unavailable");
     }
 
+    private static Map<String,Object> pendingCellReport(MinecraftServer server,EconomyState.VillageRecord village,EconomyState.VillageProject project) {
+        for(var level:server.getAllLevels())if(level.dimension().identifier().toString().equals(village.dimensionKey))
+            return VillageProsperityManager.constructionInspection(level,village,project);
+        return Map.of("status","dimension_unavailable");
+    }
     private static Map<String, Object> villageFields(EconomyState.VillageRecord village, long gameTick, MinecraftServer server) {
+        boolean forced = EmeraldConfig.current().forcedVillageDevelopment();
         if (village == null) {
             return fields("present", false);
         }
@@ -923,6 +930,9 @@ public final class DebugFlightRecorder {
                                 "character",village.architectureCharacter,"dialect",village.architectureDialect,
                                 "orderCuts",List.copyOf(p.constructionOrderCuts)),
                         "originPacked", p.originPos, "complete", p.materializedComplete,
+                        "bounds", fields("minimum",positionMap(BlockPos.of(p.boundsMinPos)),"maximum",positionMap(BlockPos.of(p.boundsMaxPos))),
+                        "terrainPreparation", fields("cursor",p.sitePreparationCursor,"complete",p.sitePreparationComplete,
+                                "cells",p.sitePreparationPlan==null?0:p.sitePreparationPlan.cells().size()),
                         "vanillaTerrain", fields("cursor",p.vanillaTerrainCursor,"complete",p.vanillaTerrainComplete,
                                 "cells",p.vanillaTerrainPlan==null?0:p.vanillaTerrainPlan.cells().size(),"failure",p.vanillaTerrainFailure),
                         "manualRepairRequired", p.manualRepairRequired, "abstractOnly", p.abstractOnly,
@@ -932,11 +942,25 @@ public final class DebugFlightRecorder {
                         "siteSearchCursor", p.siteSearchCursor,
                         "siteSearchCandidates", village.organicTerritory
                                 ? com.chedidandrew.emeraldstandard.core.VillageSiteCandidates.order(village,
-                                        EmeraldConfig.current().forcedVillageDevelopment()
-                                                ? 1 + Math.min(3, p.materializationFailures) : 1).size()
+                                        com.chedidandrew.emeraldstandard.core.ForcedSiteSearchPolicy.frontierDepth(village,p,forced)).size()
                                 : VillageNeighborhoodPlan.offsets(p.materializationFailures,village.villageId).size(),
                         "siteSearchSawUnloaded", p.siteSearchSawUnloadedCandidate,
                         "failedSweepsOrMaterializations", p.materializationFailures,
+                        "approvedOutdoorFit",p.designOutdoorLevel,
+                        "searchOutdoorFit",p.originPos==0&&p.designPlanHash.isEmpty()&&ApprovedArchitectureCatalog.supportsFits(p.designTemplateRevision)
+                            ?com.chedidandrew.emeraldstandard.core.ArchitectureSiteFit.searchLevel(village,p):p.designOutdoorLevel,
+                        "rareOutdoorDecoration",com.chedidandrew.emeraldstandard.core.ArchitectureSiteFit.decorated(village,p),
+                        "pendingCellInspection",pendingCellReport(server,village,p),
+                        "bridgeFirstDependencies",p.bridgeFirstDependencies,
+                        "outdoorTerrainColumns",p.outdoorTerrainOffsets.size(),
+                        "outdoorTerrainOffsets",p.outdoorTerrainOffsets.entrySet().stream().map(e->fields(
+                                "canonicalColumn",positionMap(BlockPos.of(e.getKey())),"heightShift",e.getValue())).toList(),
+                        "searchFrontierParcels",com.chedidandrew.emeraldstandard.core.ForcedSiteSearchPolicy.frontierDepth(village,p,forced),
+                        "searchPolicy",fields("forced",forced,"candidateCentersPerVisit",
+                                com.chedidandrew.emeraldstandard.core.ForcedSiteSearchPolicy.candidates(forced),
+                                "lotPaddingBlocks",com.chedidandrew.emeraldstandard.core.ForcedSiteSearchPolicy.lotPadding(forced),
+                                "blanketBankSetback",com.chedidandrew.emeraldstandard.core.ForcedSiteSearchPolicy.bankSetback(forced),
+                                "note","Search preferences only; native protection, terrain, reservations and crossings remain authoritative"),
                         "retryAfterGameTick", p.retryAfterGameTick,
                         "retryRemainingTicks", com.chedidandrew.emeraldstandard.core.ProjectSiteRetry.remaining(gameTick,p.retryAfterGameTick),
                         "walkwayConnection", walkwayConnectionReport(server,village,p),
@@ -1451,6 +1475,18 @@ public final class DebugFlightRecorder {
                     json(latestVillage == null
                             ? fields("present", false)
                             : villageFields(latestVillage.village(), server.overworld().getGameTime(), server)) + "\n");
+            writeText(sessionDirectory.resolve("bank-construction-snapshot.json"),
+                    json(fields("scope", "Pending Banks; saved intent plus bounded observations, not a new world scan",
+                            "totalPending", economy.pendingBankConstructionsSnapshot().size(),
+                            "limit", 256,
+                            "banks", economy.pendingBankConstructionsSnapshot().entrySet().stream()
+                                    .sorted(Map.Entry.comparingByKey()).limit(256)
+                                    .map(entry -> fields("key", entry.getKey(), "villageId", entry.getValue().villageId(),
+                                            "origin", positionMap(BlockPos.of(entry.getValue().origin())),
+                                            "version", entry.getValue().version(), "style", entry.getValue().style(),
+                                            "plannedCells", entry.getValue().cells().size(),
+                                            "observedWork", ConstructionDiagnostics.report("bank:" + entry.getKey(),
+                                                    server.overworld().getGameTime()))).toList())) + "\n");
             double averageMs = sampleCount == 0
                     ? 0.0
                     : sampleTotalNanos / 1_000_000.0 / sampleCount;
@@ -1528,6 +1564,8 @@ public final class DebugFlightRecorder {
                     ? null
                     : state.villages.get(watchedVillageId);
             if (village != null) {
+                var overlaps = com.chedidandrew.emeraldstandard.core.ProjectLotSafety.warnings(village);
+                if (!overlaps.isEmpty()) { valid = false; warnings.addAll(overlaps); }
                 if (village.population <= 0
                         && (village.agricultureOutput > 1.0e-9
                                 || village.miningOutput > 1.0e-9

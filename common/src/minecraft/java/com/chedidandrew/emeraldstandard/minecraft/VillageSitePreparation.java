@@ -41,6 +41,22 @@ final class VillageSitePreparation {
 
     static boolean matchesRemoval(BlockState current, String before) {
         if (BlockStateParser.serialize(current).equals(before)) return true;
+        // Only an approved vegetation removal may adopt different modded regrowth. Caller
+        // still checks recorded player placements/claims/contents before changing this cell.
+        if(VegetationCompatibility.moddedPlant(current)) {
+            try {
+                var previous=BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(before.split("\\[",2)[0]));
+                if(previous!=null&&vegetation(previous.defaultBlockState()))return true;
+            } catch(IllegalArgumentException invalid) { return false; }
+        }
+        // A cleared vine/weed can be replaced by natural snow or another soft plant before
+        // replay. This is still the approved vegetation cell, not new soil/wall authority.
+        if (VegetationCompatibility.groundCover(current) || VegetationCompatibility.shrub(current)) {
+            try {
+                var previous=BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(before.split("\\[",2)[0]));
+                if(previous!=null && VegetationCompatibility.plant(previous.defaultBlockState())) return true;
+            } catch(IllegalArgumentException invalid) { return false; }
+        }
         // Leaf distance, berry age and other natural growth can change while a slow job is active.
         // Persistent landscaping leaves, different block types, storage and player walls never qualify.
         String id = BuiltInRegistries.BLOCK.getKey(current.getBlock()).toString();
@@ -70,6 +86,9 @@ final class VillageSitePreparation {
         boolean clearable(BlockPos pos) {
             if (!loaded(pos)) return false;
             BlockState state = level.getBlockState(pos);
+            // Most surveyed cells are stone/soil or air, not vegetation. Reject cheaply before
+            // consulting land/protection indexes; this grants no new clearing permission.
+            if (!vegetation(state) && !naturalLog(state)) return false;
             if (VegetationCompatibility.forbidden(state)
                     || DevelopmentLandProtection.recordedPlacement(level,pos,state)
                     || DevelopmentLandProtection.excludes(level,pos,pos)) return false;
@@ -159,7 +178,8 @@ final class VillageSitePreparation {
                     || pos.getY() >= floorY + TerrainFoundationPlan.MAX_TERRAIN_CUT) return false;
             BlockState state = level.getBlockState(pos);
             if (!dryNaturalGround(state) || !state.getFluidState().isEmpty()
-                    || state.hasBlockEntity() || !naturalSurroundings(pos)) return false;
+                    || state.hasBlockEntity() || DevelopmentLandProtection.recordedPlacement(level,pos,state)
+                    || DevelopmentLandProtection.excludes(level,pos,pos) || !naturalSurroundings(pos)) return false;
             for (Direction face : Direction.values())
                 if (!loaded(pos.relative(face)) || !level.getFluidState(pos.relative(face)).isEmpty()) return false;
             // Do not excavate suspended stone floors/bridges or tunnel below a natural cavity.
@@ -177,14 +197,26 @@ final class VillageSitePreparation {
         /** Includes connected natural branch/trunk remnants, so the roof does not leave floating wood. */
         SitePreparationPlan freeze(Collection<BlockPos> volume, int floorY, UUID villageId, long projectId) {
             Set<BlockPos> removals = new LinkedHashSet<>();
+            Set<BlockPos> affectedLogs = new LinkedHashSet<>();
             for (BlockPos pos : volume) {
                 if (!loaded(pos)) return null;
                 BlockState state = level.getBlockState(pos);
                 if (state.isAir()) continue;
                 if (!clearable(pos) && !excavatable(pos, floorY)) return null;
                 removals.add(pos.immutable());
-                if (naturalLog(state)) removals.addAll(tree(pos));
+                if (naturalLog(state)) affectedLogs.addAll(tree(pos));
+                else if(naturalLeaves(state)) for(var trunk:AffectedTreeCanopy.nearbyLogs(level,this,pos)) {
+                    var complete=tree(trunk);
+                    if(complete.isEmpty())return null;
+                    affectedLogs.addAll(complete);
+                }
                 if (removals.size() > SitePreparationPlan.MAX_CELLS) return null;
+            }
+            if(!affectedLogs.isEmpty()) {
+                var crown=AffectedTreeCanopy.owned(level,this,affectedLogs);
+                if(crown==null)return null;
+                removals.addAll(crown);
+                if(removals.size()>SitePreparationPlan.MAX_CELLS)return null;
             }
             List<SitePreparationPlan.Cell> cells = new ArrayList<>();
             // Top down: no falling soil, severed branches or leftover upper trunks during preparation.

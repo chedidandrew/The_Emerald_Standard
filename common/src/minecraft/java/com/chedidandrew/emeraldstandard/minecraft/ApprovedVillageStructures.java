@@ -32,7 +32,8 @@ final class ApprovedVillageStructures {
         }
         BlockPos door() {
             // Review entrance metadata is the first indoor standing cell, not the door itself.
-            return cells().entrySet().stream().filter(e->e.getValue().getBlock() instanceof DoorBlock
+            return cells().entrySet().stream().filter(e->e.getValue().getBlock() instanceof FenceGateBlock
+                    ||e.getValue().getBlock() instanceof DoorBlock
                     &&e.getValue().getValue(DoorBlock.HALF)==net.minecraft.world.level.block.state.properties.DoubleBlockHalf.LOWER)
                     .map(Map.Entry::getKey).min(Comparator.<BlockPos>comparingDouble(entrance::distSqr)
                             .thenComparingLong(BlockPos::asLong)).orElseThrow();
@@ -56,10 +57,19 @@ final class ApprovedVillageStructures {
     private static final Map<String,BlockPos> EXIT_CACHE=new ConcurrentHashMap<>();
     static Data data(String id) { return data(id,ApprovedArchitectureCatalog.REVISION); }
     static Data data(String id,int revision) { return CACHE.computeIfAbsent(revision+":"+id,ignored->load(id,revision)); }
+    static Data data(String id,int revision,int outdoorLevel) {
+        if(outdoorLevel==0) return data(id,revision);
+        var entry=ApprovedArchitectureCatalog.fittedEntry(id,revision,outdoorLevel);
+        return CACHE.computeIfAbsent(revision+":"+entry.id(),ignored->load(entry,revision,ApprovedArchitectureCatalog.fitResource(revision)));
+    }
     private static Data load(String id,int revision) {
         var entry=ApprovedArchitectureCatalog.entry(id,revision);
         if(entry==null) throw new IllegalArgumentException("Unknown approved building "+id);
-        try(var resource=ApprovedVillageStructures.class.getResourceAsStream(ApprovedArchitectureCatalog.resource(revision)+id+".bin.gz")) {
+        return load(entry,revision,ApprovedArchitectureCatalog.resource(revision));
+    }
+    private static Data load(ApprovedArchitectureCatalog.Entry entry,int revision,String directory) {
+        String id=entry.id();
+        try(var resource=ApprovedVillageStructures.class.getResourceAsStream(directory+id+".bin.gz")) {
             if(resource==null) throw new IOException("Missing frozen building "+id);
             byte[] bytes;
             try(var gzip=new GZIPInputStream(resource)) { bytes=gzip.readNBytes(4_000_001); }
@@ -99,14 +109,19 @@ final class ApprovedVillageStructures {
     }
     static AuthoredVillageStructures.Blueprint plan(VillageProsperityEngine.ProjectType type,String id,int revision,String palette,String dressing,
             VillageArchitecture.Character character) {
-        Data data=data(id,revision); var e=data.identity;
+        return plan(type,id,revision,palette,dressing,character,0);
+    }
+    static AuthoredVillageStructures.Blueprint plan(VillageProsperityEngine.ProjectType type,String id,int revision,String palette,String dressing,
+            VillageArchitecture.Character character,int outdoorLevel) {
+        Data data=data(id,revision,outdoorLevel); var e=data.identity;
         if(!e.role().equals(type.name())) throw new IllegalArgumentException("Approved building role mismatch");
         if(!palette.equals(VillageArchitecture.PALETTE_BALANCED)||!dressing.equals(VillageArchitecture.DRESSING_PROSPEROUS))
             throw new IllegalArgumentException("Unsupported approved building palette/dressing");
         var metadata=new AuthoredVillageStructures.FrozenMetadata(type,true,data.entrance,data.access,data.air,Set.of(),List.of());
         var materials=AuthoredVillageStructures.planMaterials(11,palette,character,VillageArchitecture.BiomeDialect.fromId(e.dialect()));
         materials=new AuthoredVillageStructures.Materials(materials.dialect(),
-                materials.dialect()==VillageArchitecture.BiomeDialect.TAIGA?Blocks.COBBLESTONE:materials.foundation(),
+                revision>=20?(materials.dialect()==VillageArchitecture.BiomeDialect.DESERT?Blocks.SANDSTONE:Blocks.DIRT)
+                    :materials.dialect()==VillageArchitecture.BiomeDialect.TAIGA?Blocks.COBBLESTONE:materials.foundation(),
                 materials.floor(),materials.wall(),materials.timber(),materials.roofStairs(),materials.roofSlab(),materials.fence(),materials.accent(),
                 materials.dialect()==VillageArchitecture.BiomeDialect.DESERT?Blocks.JUNGLE_DOOR:materials.door(),materials.entryStairs(),materials.chimney());
         return new AuthoredVillageStructures.Blueprint(id,revision,palette,dressing,e.width(),e.depth(),e.height(),data.base,data.first,data.second,materials,metadata);

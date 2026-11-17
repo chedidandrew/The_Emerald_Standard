@@ -60,14 +60,15 @@ public final class AuthoredVillageStructureCosmeticLifecycleRegressionTest {
     private static void verifyOptionalConstruction(String source) {
         String construction = methodBody(source,
                 "private static MaterializationBudget materializeDevelopment(");
-        require(construction.contains("if (placement.isCosmetic())")
+        require(source.contains("return isCosmetic() || isDecorativeFlora();")
+                        && construction.contains("if (placement.isBestEffort())")
                         && construction.contains("index++"),
                 "An unloaded cosmetic can block or retry construction");
         require(construction.contains(
-                        "placement.isCosmetic() && project.manualRepairRequired"),
+                        "placement.isBestEffort() && project.manualRepairRequired"),
                 "A structural integrity rewind can regenerate destroyed cosmetics");
         require(occurrences(construction,
-                        "placement.isTrail() || placement.isCosmetic()") >= 2,
+                        "placement.isTrail() || placement.isBestEffort()") >= 2,
                 "Protected, occupied, or failed cosmetics no longer become permanent safe gaps");
         require(construction.contains("cosmeticPlacementSupported(level, origin, target, placement)"),
                 "Cosmetics can be written without their bounded support check");
@@ -81,9 +82,9 @@ public final class AuthoredVillageStructureCosmeticLifecycleRegressionTest {
     private static void verifyNonAuthoritativeAudits(String source) {
         String audit = methodBody(source,
                 "private static void reconcileOneMaterializedProject(");
-        require(audit.contains("if (placement.isTrail() || placement.isCosmetic())"),
+        require(audit.contains("if (placement.isTrail() || placement.isBestEffort())"),
                 "Integrity audits no longer ignore missing cosmetics");
-        require(audit.contains("if (placement.isCosmetic())")
+        require(audit.contains("if (placement.isBestEffort())")
                         && audit.contains("firstRequiredAddition")
                         && audit.contains("!placement.isCosmetic()"),
                 "Cosmetic-only suffixes can re-enter the guarded repair queue");

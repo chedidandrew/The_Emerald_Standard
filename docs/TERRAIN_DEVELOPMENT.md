@@ -1,7 +1,22 @@
 # Terrain-aware village development
 
-This unreleased beta.5 change applies to **new** construction sites. It does not reshape
-completed structures, change saved architecture recipes, or bulk-edit existing worlds.
+## Current behavior — beta.77
+
+Delayed route surveys do not hold exclusive lot reservations. Every destination is rechecked against current lot metadata before commit, and the synchronized durable service refuses overlapping active or retired lots. Existing conflicting unfinished projects retire their old envelope and search elsewhere without deleting any old blocks; completed buildings take precedence, then the earlier project. Normal replacement needs resources for the consumed fraction, while forced mode waives those inputs. Completed-completed collisions are reported, never destructively repaired.
+
+Preparation reports a separate actual-cell cursor, including partial batches and the exact loaded/blocked position. This count is a hint: every replay still checks actual blocks and can correct the hint after an edit or crash. Natural grass/dirt transitions do not obstruct preparation. A clear dry path/gravel/coarse-dirt surface can satisfy optional paving read-only; different structural materials, inventories, fluids, claims and missing footing are not waived. Occupied work cells never gain write permission through a timeout.
+
+New approved biome buildings use a stable approximately 10% outdoor-ensemble choice; most start with the core-only fit. Essential farms, services and public streets/lamps are not rare. Decorated candidates try the full design and smaller outdoor fits before core-only fallback, while core candidates widen the frontier on each failed sweep. Existing frozen reservations retain their selected geometry.
+
+Optional exterior ground columns are measured from the actual loaded dry terrain, not a uniform parcel pad. Paths, planting and fences follow bounded stepped grades. Connected tents, carts, wells, wood piles and other rigid assemblies move together; unsuitable grades decline that decor fit. The main building remains rigid. Offsets are frozen with the plan/hash in format 45 and reused on restart, not recalculated from a world already under construction. Existing builds and immutable approved geometry resources are unchanged. This is bounded fitting (four-block offsets and one-block adjacent steps), not unrestricted cliff terraforming.
+
+Forced mode skips known occupied lot envelopes before native surveys and accepts the first fully safe orientation. It admits up to 32 candidate centers per visit within a shared eight-ms healthy-tick window (one ms under lag), alternates search-first visits with road/finishing visits, starts with two frontier parcels and widens after each failed sweep, capped at 32. Unplaced search retries take 2–20 ticks rather than 20–100. Optional lot buffers shrink from four blocks to two, including grading; the blanket 18-block Bank setback is omitted. Actual Bank/project lots, player records, protection, existing built blocks, storage, occupancy, loaded chunks, safe entrances and bounded foundations still veto work. Normal-mode preferences, rare decor frequency, frozen designs and bridge-first crossing safety remain. Searching and saving are cooperative bounded operations, not a promise that every lot is found within one tick. Debug differentiates surveyed candidate acceptance from an authoritative reservation rejection.
+
+Native rail slopes/curves satisfy their original rail intent when supported and fluid-safe; this fixes the captured mine entrance retry without waiving missing rails or foreign blocks. Organic cross-water expansion approves a destination and its crossing before construction; see [Village footbridges](VILLAGE_FOOTBRIDGES.md). Diagnostics distinguish dry-land shortage, crossing required, steep terrain, unloaded chunks, occupied/protected lots and exact cell failures.
+
+## Historical foundation and grading design
+
+The following describes the original beta.5–25 foundation/road design. Later behavior and bridge support above supersede its historical no-bridge and format/pacing descriptions. It applies to new sites, not bulk reshaping completed structures.
 
 ## Vegetation is site preparation
 
@@ -73,6 +88,11 @@ and consumes the same per-site maximum of one block operation every ten ticks as
 Vanilla neighbor updates, falling blocks and leaf decay are not extra authored placements.
 
 Road surfaces, support blocks and retaining courses follow bottom-up and use that same budget.
+Fresh exterior retaining courses use regular stone instead of polished andesite when the
+building's terrain palette would supply polished andesite (beta79). This substitution is
+confined to the outside lot border; it does not recolor authored building/interior cells,
+walkway backing or other retaining palettes. All placement guards still apply. Previously
+frozen receipts and completed walls keep their recorded material, with no live-world sweep.
 Each cell now saves both its original and final state; legacy format-22 removal payloads remain
 readable and do not acquire new terrain work. No authored architecture revision is changed.
 
@@ -105,3 +125,24 @@ the reliable option for older natural-material landscaping; no third-party claim
 
 These are repeatable server fixtures, not a visual review of every natural biome or a guarantee
 that every hillside has a suitable lot. Test on a copied survival world before publishing.
+
+## Raised entrance staircases (beta80)
+
+Fresh reviewed TES structures and Banks attach required access to their actual outside
+standing exit, including mirrored and rotated forms. Raised entrances descend straight
+in three-block-wide rows, with matching non-falling backing and a grounded bottom row.
+Road bends do not define the flight. Flat entrances receive no extra step or apron.
+Access is saved with terrain preparation before writes and cannot be waived into a
+disconnected staircase. Full-width obstructions reject the lot; player blocks, storage,
+claims, fluids and unloaded chunks retain their protections. Exact-vanilla imports keep
+their blueprint and receive only fresh exterior access. Older saved receipts stay frozen.
+## Bounded construction recovery sweeps (beta82)
+
+During a site's existing timed support/native-order fallback, builders recheck the earliest
+pending cell and resume a transient rotating scan of later approved work. The scan keeps the
+4,096-inspection cap, shared time deadline and block allowance. A separate scan hint cannot
+advance the saved completed prefix past a required pending cell. It survives eligible short
+episode expiry, but resets on real prefix progress, hard waits and inactivity (including the
+normal interval between expired episodes). Restart starts normally; immutable plans and
+handover verification are unchanged. Support-wait diagnostics include the recovery mode and
+next scan position. This addresses bounded-scan starvation, not genuinely unsafe obstructions.

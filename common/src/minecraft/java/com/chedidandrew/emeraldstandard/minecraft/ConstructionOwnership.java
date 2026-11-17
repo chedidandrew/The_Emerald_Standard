@@ -153,9 +153,11 @@ public final class ConstructionOwnership extends SavedData {
         if(!(world instanceof ServerLevel level)) return false;
         Cell c=get(level).cell(level,pos);
         return c!=null&&c.owned&&(c.block.equals(id(state))
-                // Vanilla turns a covered path into dirt. The supplied ground remains part of
-                // this unfinished site, including its no-drop rule; no new cell is enrolled.
-                || c.block.equals("minecraft:dirt_path")&&state.is(net.minecraft.world.level.block.Blocks.DIRT));
+                // Grass spreads onto supplied dirt and dies in shade; covered paths become dirt.
+                // Keep no-drop ownership at this exact supplied cell through both transitions.
+                // Reservations/unowned natural ground still receive no drop suppression.
+                || (c.block.equals("minecraft:dirt_path")||c.block.equals("minecraft:dirt")||c.block.equals("minecraft:grass_block"))
+                    &&(state.is(net.minecraft.world.level.block.Blocks.DIRT)||state.is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK)));
     }
     /** A supplied decorative path may settle into dirt without being missing construction. */
     static boolean settledPathGround(Level world,BlockPos pos,BlockState actual,BlockState expected) {

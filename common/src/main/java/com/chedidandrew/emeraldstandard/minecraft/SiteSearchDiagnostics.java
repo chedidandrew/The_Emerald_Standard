@@ -8,7 +8,8 @@ public final class SiteSearchDiagnostics {
         UNLOADED_FOOTPRINT, GROUND_OR_TERRAIN, TERRAIN_HEIGHT, BLOCKED_VOLUME,
         BANK_SPACING, ENTRANCE_UNLOADED, ENTRANCE_UNSAFE, TEMPLATE_UNLOADED,
         TEMPLATE_OBSTRUCTION, PROJECT_OVERLAP, RESERVED_SITE_OVERLAP, BANK_OVERLAP,
-        PROTECTED_AREA, PREPARATION_UNSAFE, CACHED_REJECTION, AVAILABLE
+        PROTECTED_AREA, PREPARATION_UNSAFE, CACHED_REJECTION, NOT_ENOUGH_DRY_LAND,
+        CROSSING_REQUIRED, AVAILABLE
     }
     public record Trial(long tick, int sweep, int candidate, int total, int rotation,
             int x, int y, int z, Reason reason, String detail) {}
@@ -42,6 +43,7 @@ public final class SiteSearchDiagnostics {
                 "note", "No candidate observed this session. Keep the district active during /emerald debug.");
         var result = new LinkedHashMap<String,Object>();
         result.put("observed", true); result.put("observedSweep", e.sweep);
+        result.put("status",status(job));
         var counts = new LinkedHashMap<String,Integer>();
         e.counts.forEach((key,value) -> counts.put(key.name(), value));
         result.put("orientationOutcomeCounts", counts);
@@ -53,5 +55,25 @@ public final class SiteSearchDiagnostics {
         }).toList());
         result.put("note", "Observed checks only; counts are orientations, not unique sites. Previous-session causes are unknown.");
         return result;
+    }
+    public static String status(String job) {
+        Evidence e=JOBS.get(job);
+        if(e==null)return "Awaiting a loaded lot survey";
+        Trial latest=e.recent.peekLast();
+        if(latest!=null&&latest.reason()==Reason.CROSSING_REQUIRED)return "Crossing required; surveying both shores and a viable destination";
+        if(latest!=null&&latest.reason()==Reason.AVAILABLE)return "Safe lot found";
+        Reason reason=e.counts.entrySet().stream().filter(entry->entry.getKey()!=Reason.AVAILABLE)
+                .max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(Reason.AVAILABLE);
+        return switch(reason) {
+            case UNLOADED_FOOTPRINT,ENTRANCE_UNLOADED,TEMPLATE_UNLOADED -> "Chunks not loaded";
+            case TERRAIN_HEIGHT -> "Terrain too steep for bounded foundations";
+            case NOT_ENOUGH_DRY_LAND -> "Not enough dry land for this building footprint";
+            case CROSSING_REQUIRED -> "Crossing required; surveying both shores and a viable destination";
+            case PROTECTED_AREA -> "Land protected or outside approved district ownership";
+            case PROJECT_OVERLAP,RESERVED_SITE_OVERLAP,BANK_OVERLAP,BANK_SPACING -> "Existing buildings or reserved lots occupy this footprint";
+            case ENTRANCE_UNSAFE -> "No safe supported entrance route";
+            case AVAILABLE -> "Safe lot found";
+            default -> "Required building cells obstructed; see exact candidate evidence";
+        };
     }
 }

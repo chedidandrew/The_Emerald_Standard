@@ -42,6 +42,11 @@ public final class ClientSmokeSupport {
                     Thread.sleep(200);
                 }
                 if (!ready) throw new IllegalStateException("Client resources/language never became ready");
+                if(Boolean.getBoolean("the_emerald_standard.clientShutdownOnly")) {
+                    ChatRefreshClientChecks.verify(minecraft);
+                    logger.info("The Emerald Standard integrated chat shutdown checks passed");
+                    onClient(minecraft,()->{minecraft.stop();return null;});return;
+                }
                 onClient(minecraft, () -> {
                     loaderConfigurationCheck.run();
                     // Probe the platform, not the mod UI: Minecraft initializes these standard
@@ -53,7 +58,19 @@ public final class ClientSmokeSupport {
                         org.lwjgl.glfw.GLFW.glfwDestroyCursor(cursor);
                     }
                     logger.info("The Emerald Standard standard cursor platform probe passed");
-                    verifyHandbookPagesFit(minecraft);
+                    if(Boolean.getBoolean("the_emerald_standard.clientBankersOnly"))verifyHandbookBankPageFit(minecraft);
+                    else if(Boolean.getBoolean("the_emerald_standard.clientArchitectureOnly"))verifyHandbookSectionPageFit(minecraft,"biome_architecture");
+                    else if(Boolean.getBoolean("the_emerald_standard.clientTerrainOnly")) {
+                        verifyHandbookSectionPageFit(minecraft,"terrain");
+                        verifyHandbookSectionPageFit(minecraft,"projects");
+                        verifyHandbookSectionPageFit(minecraft,"building_identity");
+                    }
+                    else if(Boolean.getBoolean("the_emerald_standard.clientBuildingIdentityOnly"))verifyHandbookSectionPageFit(minecraft,"building_identity");
+                    else if(Boolean.getBoolean("the_emerald_standard.clientConstructionOnly")) {
+                        verifyHandbookSectionPageFit(minecraft,"construction_safety");
+                        verifyHandbookSectionPageFit(minecraft,"construction_recovery");
+                    }
+                    else verifyHandbookPagesFit(minecraft);
                     if (!(BuiltInRegistries.ITEM.getValue(EmeraldHandbook.HANDBOOK_ID) instanceof HandbookReaderItem))
                         throw new IllegalStateException("Custom handbook item was not registered");
                     for (var chapter : HandbookChapters.ALL) for (String section : chapter.sections()) {
@@ -62,11 +79,42 @@ public final class ClientSmokeSupport {
                                 || HandbookChapters.body(section).getString().equals(key + ".body"))
                             throw new IllegalStateException("Missing handbook section: " + section);
                     }
-                    logger.info("Emerald Handbook page layout verified for {} pages", EmeraldHandbook.PAGE_COUNT);
+                    if(Boolean.getBoolean("the_emerald_standard.clientBankersOnly"))logger.info("Updated compact Bank styles page fits native book bounds");
+                    else if(Boolean.getBoolean("the_emerald_standard.clientTerrainOnly"))logger.info("Updated compact terrain page fits native book bounds");
+                    else if(Boolean.getBoolean("the_emerald_standard.clientBuildingIdentityOnly"))logger.info("Updated compact building identity page fits native book bounds");
+                    else if(Boolean.getBoolean("the_emerald_standard.clientConstructionOnly"))logger.info("Updated compact construction page fits native book bounds");
+                    else logger.info("Emerald Handbook page layout verified for {} pages", EmeraldHandbook.PAGE_COUNT);
                     minecraft.getWindow().setWindowed(1280, 800);
                     minecraft.gui.setScreen(new HandbookScreen(null));
                     return null;
                 });
+                if (Boolean.getBoolean("the_emerald_standard.clientBankersOnly")) {
+                    onClient(minecraft,()->{
+                        try {BankerAppearanceClientChecks.verify(minecraft);ReaderClientChecks.verify(minecraft);ReaderClientChecks.verifyLongForm(minecraft);}
+                        catch(Exception error){throw new IllegalStateException(error);}return null;
+                    });
+                    for(int view=0;view<3;view++) {
+                        final int angle=view;
+                        onClient(minecraft,()->{minecraft.getWindow().setWindowed(1280,1000);
+                            minecraft.options.guiScale().set(2);minecraft.resizeGui();
+                            minecraft.gui.setScreen(new BankerAppearanceClientChecks(angle));return null;});
+                        Thread.sleep(500);capture(minecraft,"banker-icon-outfit-"+view+".png");
+                    }
+                    logger.info("The Emerald Standard icon-matching Banker native renderer and handbook checks passed");
+                    onClient(minecraft,()->{minecraft.stop();return null;});return;
+                }
+                if (Boolean.getBoolean("the_emerald_standard.clientArchitectureOnly") || Boolean.getBoolean("the_emerald_standard.clientTerrainOnly") || Boolean.getBoolean("the_emerald_standard.clientConstructionOnly") || Boolean.getBoolean("the_emerald_standard.clientBuildingIdentityOnly")) {
+                    onClient(minecraft,()->{
+                        try {
+                            ReaderClientChecks.verify(minecraft);ReaderClientChecks.verifyLongForm(minecraft);
+                            if(Boolean.getBoolean("the_emerald_standard.clientTerrainOnly")||Boolean.getBoolean("the_emerald_standard.clientArchitectureOnly")||Boolean.getBoolean("the_emerald_standard.clientConstructionOnly"))
+                                ReaderPreferences.save(HandbookScreen.preferencesPath(),110); // Next targeted smoke process checks persistence.
+                        } catch(Exception error){throw new IllegalStateException(error);}
+                        return null;
+                    });
+                    logger.info("The Emerald Standard updated handbook native compact and long reader checks passed");
+                    onClient(minecraft,()->{minecraft.stop();return null;});return;
+                }
                 if (Boolean.getBoolean("the_emerald_standard.clientTooltipsOnly")) {
                     onClient(minecraft, () -> {
                         try { ReaderClientChecks.verify(minecraft); ReaderClientChecks.verifyLongForm(minecraft); }
@@ -554,6 +602,16 @@ public final class ClientSmokeSupport {
     }
 
     /** Retain real-font coverage for the vanilla/lectern fallback after resource readiness. */
+    private static void verifyHandbookBankPageFit(Minecraft minecraft) {
+        verifyHandbookSectionPageFit(minecraft,"bank_styles");
+    }
+    private static void verifyHandbookSectionPageFit(Minecraft minecraft,String section) {
+        String title=Component.translatable(HandbookChapters.PREFIX+section+".title").getString();
+        var pages=EmeraldHandbook.content().getPages(false).stream().filter(p->p.getString().startsWith(title)).toList();
+        if(pages.size()!=1||minecraft.font.split(pages.getFirst(),WRITTEN_BOOK_TEXT_WIDTH).size()>WRITTEN_BOOK_VISIBLE_LINES)
+            throw new IllegalStateException("Updated compact "+section+" page exceeds native book bounds: "
+                    +(pages.isEmpty()?"missing":minecraft.font.split(pages.getFirst(),WRITTEN_BOOK_TEXT_WIDTH).size()+" lines"));
+    }
     private static void verifyHandbookPagesFit(Minecraft minecraft) {
         var pages = EmeraldHandbook.content().getPages(false);
         StringBuilder overflow = new StringBuilder();

@@ -4,6 +4,11 @@ gradle.beforeProject { project ->
         if (compatibilityJar) {
             project.dependencies.add('runtimeOnly', project.files(compatibilityJar))
         }
+        def compatibilityDirectory = System.getenv('TES_TEST_VEGETATION_DIR')
+        if (compatibilityDirectory) {
+            if (!project.file(compatibilityDirectory).isDirectory()) throw new GradleException('Missing vegetation test dependency directory')
+            project.dependencies.add('runtimeOnly', project.fileTree(dir: compatibilityDirectory, include: '*.jar'))
+        }
         def targetPath = project.providers.gradleProperty('tesSmokeGameDir').get()
         project.extensions.getByName('loom').runs.named('server').configure {
             runDirectory = project.file(targetPath)

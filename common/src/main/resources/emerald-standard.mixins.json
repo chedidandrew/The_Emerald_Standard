@@ -3,6 +3,6 @@
   "package": "com.chedidandrew.emeraldstandard.minecraft.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": ["SurveyChunkRevisionMixin", "DebugServerTickMixin", "ConstructionDropsMixin", "ConstructionPistonMixin", "ConstructionHopperMixin", "ConstructionFallingBlockMixin", "ConstructionContainerMixin", "ConstructionContainerSlotsMixin", "ConstructionEndermanMixin", "PlayerBlockPlacementMixin", "PlayerNewsBreakMixin", "PlayerNewsContainerMixin", "MarketTimeCommandMixin", "VegetationReloadMixin"],
-  "client": ["BiomeSeedAccess", "ClientTerrainChunkMixin", "ClientTerrainTickMixin"],
+  "client": ["BiomeSeedAccess", "ClientTerrainChunkMixin", "ClientTerrainTickMixin", "ClientChatRefreshMixin"],
   "injectors": {"defaultRequire": 1}
 }

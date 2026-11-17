@@ -22,25 +22,45 @@ public final class ApprovedArchitectureExporter {
         registration.setAccessible(true); registration.invoke(null);
         System.setProperty(StructureGallery.ENABLE_PROPERTY,"true");
         Path directory=Path.of(args[0]); Files.createDirectories(directory);
+        boolean fits=args.length>1&&args[1].equals("fits");
         List<String> manifest=new ArrayList<>();
-        manifest.add("# Frozen approved architecture revision 13: id role dialect width depth height minimumTier beds sha256");
+        manifest.add("# Frozen approved architecture revision "+com.chedidandrew.emeraldstandard.core.ApprovedArchitectureCatalog.REVISION+": id role dialect width depth height minimumTier beds sha256");
         int doorstepRugs=0;
         for(var sample:BiomeArchitectureCatalogPreview.samples()) {
-            var plan=BiomeArchitecturePreview.plan(sample);
-            if(sample.style()==VillageArchitecture.BiomeDialect.PLAINS) PreviewFacadePrograms.validate(plan);
-            else BiomeArchitecturePreview.validate(plan);
+            var generated=BiomeArchitecturePreview.plan(sample);
+            if(sample.style()==VillageArchitecture.BiomeDialect.PLAINS) PreviewFacadePrograms.validate(generated);
+            else BiomeArchitecturePreview.validate(generated);
+            var plan=PreviewOutdoorLampOrientation.apply(PreviewBuildingUsability.apply(generated));
             var site=PreviewOutdoorPrograms.site(plan);
             Map<BlockPos,net.minecraft.world.level.block.state.BlockState> cells=new HashMap<>(plan.cells());
             cells.putAll(site.cells());
             doorstepRugs+=NativeDoorwayClearance.setBackRugs(cells);
+            Map<BlockPos,net.minecraft.world.level.block.state.BlockState> full=Map.copyOf(cells);
+            String originalId="biome_"+sample.style().id()+"_"+(sample.id().startsWith("compact_")
+                    ? sample.id().substring(("compact_"+sample.style().id()+"_").length())
+                    : BiomeArchitectureCatalogPreview.masterId(sample));
+            if(fits) {
+                int fx=full.keySet().stream().mapToInt(BlockPos::getX).min().orElseThrow();
+                int fz=full.keySet().stream().mapToInt(BlockPos::getZ).min().orElseThrow();
+                Map<BlockPos,net.minecraft.world.level.block.state.BlockState> normalized=new HashMap<>();
+                full.forEach((at,state)->normalized.put(at.offset(-fx,0,-fz),state));
+                if(!normalized.equals(ApprovedVillageStructures.data(originalId,com.chedidandrew.emeraldstandard.core.ApprovedArchitectureCatalog.REVISION).cells()))
+                    throw new IllegalStateException("Review differs from immutable source: "+originalId);
+            }
+            for(int fit=fits?1:0;fit<=(fits?3:0);fit++) {
+            cells=new HashMap<>(full);
+            final int level=fit;
+            // Never crop a feature. Rear courts occupy complete seven-block bays; side
+            // props occupy independent columns. Level three retains the exact building map.
+            if(fits) cells.keySet().removeIf(at->!keepOutdoor(sample.depth(),at,level)&&!plan.cells().containsKey(at)
+                    &&!(level==3&&at.getY()==-1&&at.getZ()==-1
+                        &&at.getX()==plan.entrance().getX()));
             int minX=cells.keySet().stream().mapToInt(BlockPos::getX).min().orElseThrow();
             int minZ=cells.keySet().stream().mapToInt(BlockPos::getZ).min().orElseThrow();
             int width=cells.keySet().stream().mapToInt(BlockPos::getX).max().orElseThrow()-minX+1;
             int depth=cells.keySet().stream().mapToInt(BlockPos::getZ).max().orElseThrow()-minZ+1;
             int height=cells.keySet().stream().mapToInt(BlockPos::getY).max().orElseThrow()+1;
-            String id="biome_"+sample.style().id()+"_"+(sample.id().startsWith("compact_")
-                    ? sample.id().substring(("compact_"+sample.style().id()+"_").length())
-                    : BiomeArchitectureCatalogPreview.masterId(sample));
+            String id=originalId+(fits?"_fit"+fit:"");
             var ordered=cells.entrySet().stream().sorted(Map.Entry.comparingByKey(Comparator
                     .comparingInt((BlockPos at)->at.getY()).thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX))).toList();
             // Only independent planting is postponed. Every bearing, room, light, bed and route
@@ -53,16 +73,24 @@ public final class ApprovedArchitectureExporter {
                 out.writeInt(0x5445530C); out.writeUTF(id); out.writeUTF(sample.role()); out.writeUTF(sample.style().id());
                 out.writeInt(width); out.writeInt(depth); out.writeInt(height);
                 writePos(out,plan.entrance().offset(-minX,0,-minZ));
-                var reachable=BiomeArchitecturePreview.reachable(plan);
+                var reachable=PreviewRoomLayout.usableReachable(plan.cells(),plan.entrance());
                 var access=plan.access().stream().filter(reachable::contains)
                         .sorted(Comparator.comparingLong(BlockPos::asLong)).toList();
                 out.writeInt(access.size()); for(var at:access) writePos(out,at.offset(-minX,0,-minZ));
                 var air=new HashSet<BlockPos>();
-                for(var at:BiomeArchitecturePreview.reachable(plan)) {
+                for(var at:reachable) {
                     if(!cells.containsKey(at)) air.add(at);
                     if(!cells.containsKey(at.above())) air.add(at.above());
                 }
-                for(var at:site.routes()) { if(!cells.containsKey(at)) air.add(at); if(!cells.containsKey(at.above())) air.add(at.above()); }
+                for(var at:site.routes()) {
+                    if(fits&&!keepOutdoor(sample.depth(),at,level)) continue;
+                    if(!cells.containsKey(at)) air.add(at); if(!cells.containsKey(at.above())) air.add(at.above());
+                }
+                if(level==3) for(var at:cells.keySet()) if(at.getY()==-1&&at.getZ()<0) {
+                    if(!cells.containsKey(at.above())) air.add(at.above());
+                    if(!cells.containsKey(at.above(2))) air.add(at.above(2));
+                }
+                if(fits) air.removeIf(at->at.getX()<minX||at.getX()>=minX+width||at.getZ()<minZ||at.getZ()>=minZ+depth);
                 var clear=air.stream().sorted(Comparator.comparingLong(BlockPos::asLong)).toList();
                 out.writeInt(clear.size()); for(var at:clear) writePos(out,at.offset(-minX,0,-minZ));
                 out.writeInt(ordered.size()); int stage=0;
@@ -78,10 +106,14 @@ public final class ApprovedArchitectureExporter {
             int beds=(int)cells.values().stream().filter(s->s.getBlock() instanceof BedBlock&&s.getValue(BedBlock.PART)==BedPart.HEAD).count();
             int tier=PreviewArchitectureTiers.size(sample).minimumTier;
             manifest.add(String.join("\t",id,sample.role(),sample.style().id(),""+width,""+depth,""+height,""+tier,""+beds,hash));
+            }
         }
         Files.write(directory.resolve("catalog.tsv"),manifest,StandardCharsets.UTF_8);
         System.out.println("Exported "+(manifest.size()-1)+" immutable approved buildings with full yards and SHA-256 identities.");
         System.out.println("Set back "+doorstepRugs+" doorway-adjacent rug tiles for native villager clearance; other cells unchanged.");
+    }
+    private static boolean keepOutdoor(int buildingDepth,BlockPos at,int level) {
+        return level==0||level==1&&at.getZ()<buildingDepth+10||level==2&&at.getZ()<buildingDepth;
     }
     private static void writePos(DataOutputStream out,BlockPos at) throws IOException {
         out.writeInt(at.getX()); out.writeInt(at.getY()); out.writeInt(at.getZ());

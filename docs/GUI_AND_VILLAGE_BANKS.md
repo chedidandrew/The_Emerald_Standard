@@ -12,6 +12,14 @@ The Emerald Standard is designed as a natural village service rather than a comm
 
 No command is required for ordinary banking, investing, lending, exchange, or Prosperity Fund gameplay.
 
+### Recognizing a Bank (beta 68)
+
+New kiosk, savings-branch and civic-hall Banks across all five village styles have a slim one-block masonry chimney shaft. Solid upright spruce trapdoors snug against its top conceal a lit Minecraft campfire and the hay bale immediately below it. The collar is only 1.375 blocks wide in native shape, rather than a three-block masonry tower. Its top stays open for rising signal smoke; the fire can be seen when looking down into the flue. Keep the trapdoors upright and avoid pouring water into the flue. The chimney is core building geometry, never optional yard decoration; all four outdoor-fit levels retain it. Snow directly under the single shaft is replaced, and a bottom-slab bearing is completed into a double slab only at that shaft. Doorways, roof shape outside that footprint, interiors, beds and walking routes stay unchanged. Revision 18 applies to new plans; earlier saved plans and completed Banks retain their original geometry.
+
+Bankers match the mod icon: black sunglasses, a charcoal suit, white shirt/cuffs and an emerald tie. The native profession layer hides biome hats but retains facial skin, nose, model, AI and access checks. Folded forearms are fully clothed to keep biome-colored sleeves from showing through. Existing Bankers receive the new texture on restart/resource reload; zombie Bankers have a weathered version mapped to their longer native arms, with bare native hands. This is not a new entity, job-site, spawn rule, trading system or permissions change.
+
+New Banks use immutable revision 15 (full versions 22–24; fit versions 128–130, 144–146 and 160–162). Historical full/fitted Banks keep their saved geometry and are not retrofitted or rebuilt. All non-Bank architecture remains byte-identical to revision 14. Smoke and clothing are recognition cues, not proof of operational verification.
+
 ## Starter Handbook
 
 With `onboarding.join_hint_enabled=true`, the server gives each player one Starter Handbook in each world and sends the existing discovery message. The book is inserted into inventory without opening the book screen. The per-world onboarding marker is written only after the inventory accepts the item; if no slot can accept it, the handbook is not dropped and delivery is retried on that player's next join.

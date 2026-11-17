@@ -13,7 +13,7 @@ final class VillageBridges {
     record Context(EconomyService economy, UUID village, AuthoredVillageStructures.Materials materials,
             boolean masonry, int maxLength, int maxDepth, int concurrent) {
         Context {
-            if(maxLength<2||maxLength>64||maxDepth<2||maxDepth>24||concurrent<1||concurrent>4)
+            if(maxLength<2||maxLength>128||maxDepth<2||maxDepth>24||concurrent<1||concurrent>4)
                 throw new IllegalArgumentException("Invalid bridge limits");
         }
         boolean mayOwn(BlockPos p) { return economy!=null&&economy.mayBridgeParcel(village,p.asLong()); }
@@ -82,6 +82,13 @@ final class VillageBridges {
         var ledger=get(level);Job j=ledger.jobs.get(id);
         if(j==null||j.done()||j.altered()||budget<=0||c==null)return 0;
         Plan p=j.plan();
+        if(p.requiresDestination()&&!j.funded()) {
+            var snapshot=c.economy().developmentVillageSnapshot(p.owner());
+            boolean reserved=snapshot!=null&&snapshot.village().projects.stream().anyMatch(project ->
+                    project.projectId==p.project()&&project.originPos!=0L
+                    &&Arrays.asList(project.bridgeFirstDependencies.split(",")).contains(id));
+            if(!reserved) {ledger.put(j.status("destination_pending","Approved destination lot is not durably reserved; no spending or block placement"));return 0;}
+        }
         // A shared crossing retains its original claim identity even when another road helps it.
         r=new WalkwayConnections.Request(r.village(),p.project(),r.origin(),r.start(),r.destination(),
                 r.streetGoal(),r.oldColumns(),r.lots(),r.banks(),r.desert());

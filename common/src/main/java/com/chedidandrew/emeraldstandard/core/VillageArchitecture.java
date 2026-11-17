@@ -284,8 +284,22 @@ public final class VillageArchitecture {
             validateActiveCatalog(ApprovedArchitectureCatalog.descriptors());
     private static final List<BlueprintDescriptor> REVISION_TWELVE_BLUEPRINT_CATALOG =
             validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(12));
+    private static final List<BlueprintDescriptor> REVISION_THIRTEEN_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(13));
+    private static final List<BlueprintDescriptor> REVISION_FOURTEEN_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(14));
+    private static final List<BlueprintDescriptor> REVISION_FIFTEEN_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(15));
+    private static final List<BlueprintDescriptor> REVISION_SIXTEEN_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(16));
 
     /** Frozen pre-adoption masters for saved plans and historical review comparisons. */
+    private static final List<BlueprintDescriptor> REVISION_SEVENTEEN_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(17));
+    private static final List<BlueprintDescriptor> REVISION_EIGHTEEN_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(18));
+    private static final List<BlueprintDescriptor> REVISION_NINETEEN_BLUEPRINT_CATALOG =
+            validateActiveCatalog(ApprovedArchitectureCatalog.descriptors(19));
     public static List<BlueprintDescriptor> legacyBlueprints() { return REVISION_ELEVEN_BLUEPRINT_CATALOG; }
 
     private VillageArchitecture() {
@@ -702,7 +716,7 @@ public final class VillageArchitecture {
     }
 
     public static BlueprintDescriptor blueprint(String templateId, int templateRevision) {
-        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_TWELVE_BLUEPRINT_CATALOG, REVISION_ELEVEN_BLUEPRINT_CATALOG, REVISION_TEN_BLUEPRINT_CATALOG, REVISION_NINE_BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
+        return java.util.stream.Stream.of(BLUEPRINT_CATALOG, REVISION_NINETEEN_BLUEPRINT_CATALOG, REVISION_EIGHTEEN_BLUEPRINT_CATALOG, REVISION_SEVENTEEN_BLUEPRINT_CATALOG, REVISION_SIXTEEN_BLUEPRINT_CATALOG, REVISION_FIFTEEN_BLUEPRINT_CATALOG, REVISION_FOURTEEN_BLUEPRINT_CATALOG, REVISION_THIRTEEN_BLUEPRINT_CATALOG, REVISION_TWELVE_BLUEPRINT_CATALOG, REVISION_ELEVEN_BLUEPRINT_CATALOG, REVISION_TEN_BLUEPRINT_CATALOG, REVISION_NINE_BLUEPRINT_CATALOG, REVISION_EIGHT_BLUEPRINT_CATALOG,
                         REVISION_SEVEN_BLUEPRINT_CATALOG, REVISION_SIX_BLUEPRINT_CATALOG,
                         REVISION_FIVE_BLUEPRINT_CATALOG, REVISION_FOUR_BLUEPRINT_CATALOG,
                         REVISION_THREE_BLUEPRINT_CATALOG, REVISION_TWO_BLUEPRINT_CATALOG,

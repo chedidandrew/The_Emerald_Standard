@@ -45,6 +45,7 @@ final class ConstructionDiagnostics {
                     && nowNanos - progress <= 5_000_000_000L;
             boolean waiting = phase.startsWith("waiting_") || phase.equals("blocked")
                     || phase.equals("protected") || phase.equals("retry_in_place")
+                    || phase.equals("terrain_wait") || phase.equals("site_unavailable") || phase.equals("template_unavailable")
                     || phase.equals("economic_work") || phase.equals("manual_repair");
             boolean bank = entry.getKey().startsWith("bank:");
             if (workingPhase || progressed) { if (bank) workingBanks++; else workingProjects++; }

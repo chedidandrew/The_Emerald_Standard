@@ -103,6 +103,9 @@ public final class HandbookResourceRegressionTest {
         Path root = args.length == 0 ? Path.of(".") : Path.of(args[0]);
         String benchGuide = Files.readString(root.resolve(
                 "common/src/main/resources/assets/the_emerald_standard/lang/en_us.json"));
+        check(benchGuide.contains("selected fit is saved")&&benchGuide.contains("32 parcels (512 blocks)")
+                &&benchGuide.contains("Builders walking away is not proof")&&benchGuide.contains("then a smaller rear court")
+                &&benchGuide.contains("Mine soil: stable."),"Outdoor fits, search limits and actual handover need both handbook forms");
         check(benchGuide.contains("The district-center tooltip shows its full name once")
                         && benchGuide.contains("Hover: name once,") && benchGuide.contains("then residents."),
                 "Guided and compact map help must explain the nonduplicated district hover details");
@@ -122,7 +125,11 @@ public final class HandbookResourceRegressionTest {
                         && !benchGuide.contains("shared 0.8 E daily limit"),
                 "Both handbook forms must explain the 240-E monthly default and saved-value policy");
         check(benchGuide.contains("matching vanilla homes") && benchGuide.contains("actual bed count")
-                        && benchGuide.contains("imported containers remain empty")
+                        && benchGuide.contains("Fresh imported chests and barrels receive modest profession-appropriate supplies")
+                        && benchGuide.contains("One-shot supplies.")
+                        && benchGuide.contains("Native crop ages and porch steps are preserved")
+                        && benchGuide.contains("Existing completed or emptied storage is never refilled")
+                        && !benchGuide.contains("imported containers remain empty")
                         && benchGuide.contains("overhaul mods is not included")
                         && benchGuide.contains("No free settlers.")
                         && benchGuide.contains("village.vanilla.tannery")
@@ -198,6 +205,18 @@ public final class HandbookResourceRegressionTest {
         requireSupportedTranslationFormats(language);
         requireHandbookLocalization(language);
         requireLongFormReader(root, language);
+        check(language.contains("New: roof smoke.")&&language.contains("green ties, shades.")
+                &&language.contains("Every new kiosk, savings branch and civic Bank")
+                &&language.contains("A concealed hay bale beneath the fire produces signal smoke")
+                &&language.contains("one-block masonry shaft")&&language.contains("solid upright spruce trapdoors")
+                &&language.contains("Slim, hidden fires.")&&language.contains("no lid above the smoke")
+                &&language.contains("reducing optional outdoor decoration does not remove it")
+                &&language.contains("does not add a chimney to an older building"),
+                "Both handbook forms explain Bank smoke markers, all designs/fits and frozen older plans");
+        check(language.contains("black sunglasses, a charcoal suit, a white shirt and cuffs, and an emerald tie")
+                &&language.contains("Existing Bankers receive the new profession artwork")
+                &&language.contains("Native villager skin, movement and Bank permissions stay unchanged"),
+                "Handbook explains the icon-matching outfit, reload behavior and unchanged native gameplay");
         check(language.contains("Browse / compare") && language.contains("server checks again")
                 && language.contains("actual purpose, sources of payment") && language.contains("source fingerprint"),
                 "Decision support and build identity must remain documented");
@@ -224,18 +243,18 @@ public final class HandbookResourceRegressionTest {
                 "VILX basket, migration and non-guaranteed targets must be explained in both handbooks");
         requireCreativeCatalog(root,language);
         requireNewspaperAppearance(root,language);
-        check(language.contains("Clean doorsteps.") && language.contains("Old plans stay.")
+        check(language.contains("Old blocks stay.") && language.contains("Old plans stay.")
                         && language.contains("without an extra raised dirt-path apron")
                         && language.contains("supported access stairs are added where surveyed slopes require them")
                         && language.contains("does not automatically remove older aprons or player alterations"),
-                "Both handbook forms explain clean entrances, required hillside access and frozen old plans");
+                "Detailed entrances and hillside access, plus compact frozen-block guidance, remain documented");
         check(language.contains("Fitted foundations.") && language.contains("Joined entrances.")
                 && language.contains("never skipped merely because work takes time")
                 && language.contains("Completed repairs do not regenerate player alterations"),
                 "Both handbook forms explain imported foundations, access and protected one-time repairs");
         check(language.contains("guide.the_emerald_standard.handbook.district_map.body")
                 && language.contains("Checkered cells mean unknown or still-loading map data")
-                && language.contains("There are no marker pages") && language.contains("Wide view: groups.")
+                && language.contains("There are no marker pages")
                 && language.contains("Summary labels count the building sites in the viewed area")
                 && language.contains("saved locally") && language.contains("not total return or a forecast")
                 && language.contains("Sneak + block:"), "map and desk instructions stay documented");
@@ -319,6 +338,12 @@ public final class HandbookResourceRegressionTest {
                 && language.contains("It is chosen once and saved") && language.contains("fore-and-aft")
                 && !language.contains("hard hat, vest and hammer model"),
                 "Both handbook forms describe native builder workwear and saved biome appearance");
+        check(language.contains("new plans extend flush roof edges one block beyond the walls")
+                &&language.contains("Oak/snow eaves: +1."),"Both handbook forms explain Plains eaves");
+        check(language.contains("New snowy TES roofs also project their flush courses one block beyond the walls")
+                &&language.contains("carrying existing snow caps onto the new eaves")
+                &&language.contains("Exact vanilla imports are unchanged.")
+                &&language.contains("Oak/snow eaves: +1."),"Both handbook forms explain snowy eaves and vanilla preservation");
         check(language.contains("ridge logs running lengthwise so their long sides show bark")
                 &&language.contains("Taiga ridge: bark.")&&language.contains("Old plans stay."),
                 "Both handbook forms explain bark-facing Taiga ridges and unchanged saved plans");
@@ -378,7 +403,8 @@ public final class HandbookResourceRegressionTest {
                 && manager.contains("project.trailMaterializedComplete")
                 && manager.contains("BankWalkways.candidates(level, economy, village)")
                 && manager.contains("BankWalkways.materials(level, village, work.bank())")
-                && language.contains("Banks get paths."), "Completed project and Bank path lighting must be wired");
+                && language.contains("Completed Banks and other buildings also receive a separate walkway connection"),
+                "Completed project and Bank path lighting must be wired and explained in the full reader");
         check(language.contains("Optional yard decorations are different from required structure")
                 && language.contains("Each site retries.") && language.contains("expected nearby support"),
                 "Both handbook forms must explain optional support recovery and diagnostics");
@@ -433,7 +459,33 @@ public final class HandbookResourceRegressionTest {
             int minimum = chapter.group(1).contains("\"recipe_desk\"") ? 150 : 180;
             check(words >= minimum, "A reader chapter is still only a brief summary");
         }
-        check(chapterCount == 16 && sections.size() == 71, "Long-form chapter coverage changed");
+        check(chapterCount == 16 && sections.size() == 74, "Long-form chapter coverage changed");
+        check(sections.contains("terrain_grounding")&&entries.get(prefix+"terrain_grounding.body").contains("continuous soil backing")
+                &&entries.get(prefix+"terrain_grounding.body").contains("one block")
+                &&entries.get(prefix+"terrain_grounding.body").contains("Existing saved construction plans")
+                &&entries.get("book.the_emerald_standard.handbook.terrain.body").contains("Fill under yards."),
+                "Grounded hillside yards, limits and historical preservation need both handbook forms");
+        check(entries.get(prefix+"terrain.body").contains("straight three-block-wide staircase")
+                &&entries.get(prefix+"terrain.body").contains("grounded bottom landing")
+                &&entries.get(prefix+"terrain.body").contains("completed older staircases keep their original geometry")
+                &&entries.get("book.the_emerald_standard.handbook.terrain.body").contains("Wide entry stairs."),
+                "Raised entrance staircase guidance must match saved-plan and safety behavior");
+        check(entries.get(prefix+"terrain.body").contains("regular stone")
+                &&entries.get(prefix+"terrain.body").contains("Already-frozen construction receipts")
+                &&entries.get("book.the_emerald_standard.handbook.terrain.body").contains("Stone walls."),
+                "Exterior stone retaining walls and frozen-plan limits need both handbook forms");
+        check(sections.contains("building_identity")&&entries.get(prefix+"building_identity.body").contains("/tesstructure")
+                &&entries.get(prefix+"building_identity.body").contains("Existing saved buildings keep"),"Read-only identification and frozen-plan limits missing");
+        check(entries.get(prefix+"building_identity.body").contains("always point")
+                &&entries.get(prefix+"building_identity.body").contains("does not change lamps generated along walkways")
+                &&entries.get("book.the_emerald_standard.handbook.building_identity.body").contains("Yard lamps face out"),"Outward structure lamp scope missing from both handbook forms");
+        var finish=entries.get(prefix+"building_identity.body");
+        var compactFinish=entries.get("book.the_emerald_standard.handbook.building_identity.body");
+        check(finish.contains("matching wooden fence gates")&&finish.contains("Enclosed rooms retain")
+                &&finish.contains("one-to-four-layer snow")&&finish.contains("one flush natural entrance footing")
+                &&finish.contains("untouched neighboring tree")&&finish.contains("Saved older clearing receipts")
+                &&compactFinish.contains("Open sides: gates.")&&compactFinish.contains("Clear cut trees."),
+                "Natural entrances, gates, roof drifts and bounded affected-tree cleanup need both handbook forms");
         check(entries.get(prefix+"planning_building.body").contains("64 planned operations")
                 && entries.get(prefix+"planning_building.body").contains("not a hard upper bound")
                 && entries.get(prefix+"districts.body").contains("five deterministic candidate centers")
@@ -444,10 +496,21 @@ public final class HandbookResourceRegressionTest {
                 && entries.get(prefix+"bridges.body").contains("queue without payment")
                 && entries.get(prefix+"bridges.body").contains("Completed bridges are yours to modify"),
                 "Bridge scope, queue funding and preservation must be explained");
+        check(sections.contains("construction_recovery")
+                &&entries.get(prefix+"construction_recovery.body").contains("bounded rotating recovery sweep")
+                &&entries.get(prefix+"construction_recovery.body").contains("earliest required unfinished cell")
+                &&entries.get(prefix+"construction_recovery.body").contains("never waived")
+                &&entries.get("book.the_emerald_standard.handbook.construction_recovery.body").contains("Sweep later work"),
+                "Both handbook forms explain bounded recovery without skipped required work or waived safety");
         check(entries.get(prefix+"construction_safety.body").contains("no normal block loot")
                 && entries.get(prefix+"construction_safety.body").contains("finishing pass")
                 && entries.get(prefix+"construction_safety.body").contains("Manual Repair"),
                 "Construction ownership, automatic repair and legacy limits must be explained");
+        check(entries.get(prefix+"construction_safety.body").contains("24 blocks away and six blocks above or below")
+                &&entries.get(prefix+"construction_safety.body").contains("Ridden groups and leashed creatures")
+                &&entries.get(prefix+"construction_safety.body").contains("without killing the mob")
+                &&entries.get("book.the_emerald_standard.handbook.construction_safety.body").contains("Mobs: safe move"),
+                "Bounded safe relocation and no killing/player bypass must be documented in both forms");
         check(!entries.get(prefix + "first_steps.body").matches("(?s).*\\b1[. ] Find.*"),
                 "Getting started must guide the player, not restore the old numbered list");
         for (String purpose : new String[] {"general", "food", "housing", "security",
@@ -461,7 +524,7 @@ public final class HandbookResourceRegressionTest {
         check(entries.get(prefix + "village.body").contains("18 / 16")
                         && entries.get(prefix + "town_outputs.body").contains("F / M / T"),
                 "Town's housing and output examples must remain explained");
-        System.out.println("PASS 16 long-form handbook chapters, 71 sections and all seven funding purposes");
+        System.out.println("PASS 16 long-form handbook chapters, 73 sections and all seven funding purposes");
     }
 
     private static void requireResolvableHandbookSprites(String handbookSource) {
@@ -586,6 +649,9 @@ public final class HandbookResourceRegressionTest {
             }
         }
         if(path.getFileName().toString().equals("en_us.json")) {
+            check(json.contains("Plants: optional.") && json.contains("living decoration, not structural requirements")
+                    && json.contains("approved vegetation-removal cell can clear natural snow"),
+                    "Both handbook forms must explain decorative flora and protected natural regrowth");
             check(json.contains("Villager Commodity Index")&&json.contains("weights drift")
                     &&json.contains("each Details column scrolls independently")
                     &&json.contains("masthead, lead story")&&json.contains("Contents: jump."),
@@ -596,7 +662,7 @@ public final class HandbookResourceRegressionTest {
                     && json.contains("Existing buildings stay where they are") && json.contains("Old builds stay.")
                     && json.contains("optional accelerated play") && json.contains("Instant: Banks and"),
                     "Compact growth and optional acceleration must be explained in both handbook forms");
-            check(json.contains("Faster surveying.") && json.contains("Retry: 1-5s.")
+            check(json.contains("Lots: up to 32.") && json.contains("Lot retry: 0.1-1s.")
                     && json.contains("safe homes") && json.contains("up to eight candidate centers"),
                     "Both handbook forms must explain accelerated surveys, retries and safe arrivals");
         }

@@ -122,6 +122,11 @@ final class BankConstructionSelfTest {
             require(!economy.pendingBankConstructionsSnapshot().containsKey(777L)
                     && economy.hasGeneratedBankRegion(777), "full Bank completes without unsupported-cell deadlock");
             require(pulses > 100, "Bank was visibly progressive, not a bulk spawn");
+            for(var cell:plan.cells()) {
+                BlockPos at=BlockPos.of(cell.position()); BlockState actual=level.getBlockState(at);
+                if(VillageProsperityManager.isManagedConnectionBlock(actual))
+                    require(Block.updateFromNeighbourShapes(actual,level,at).equals(actual),"Bank handed over stale connections at "+at);
+            }
             VillageWalkingSelfTest.building(level, origin.offset(nativeBank.minX(), -3, nativeBank.minZ()),
                     origin.offset(nativeBank.maxX(),20,nativeBank.maxZ()),"Bank",origin.offset(nativeBank.entrance()));
             var untouched = (net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity)

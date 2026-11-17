@@ -6,7 +6,7 @@ import java.util.*;
 
 /** Release manifest for immutable, approved native structures. No Minecraft or review dependency. */
 public final class ApprovedArchitectureCatalog {
-    public static final int REVISION=13;
+    public static final int REVISION=20;
     public static final String RESOURCE=resource(REVISION);
     public static String resource(int revision) {
         if(revision<12||revision>REVISION) throw new IllegalArgumentException("Unknown approved revision "+revision);
@@ -24,11 +24,26 @@ public final class ApprovedArchitectureCatalog {
                     List.of(VillageArchitecture.PALETTE_BALANCED),List.of(VillageArchitecture.DRESSING_PROSPEROUS));
         }
     }
-    private static final Map<Integer,Map<String,Entry>> RELEASES=Map.of(12,load(12),13,load(13));
+    private static final Map<Integer,Map<String,Entry>> RELEASES=Map.of(12,load(12),13,load(13),14,load(14),15,load(15),16,load(16),17,load(17),18,load(18),19,load(19),20,load(20));
     private static final Map<String,Entry> ENTRIES=RELEASES.get(REVISION);
-    private static Map<String,Entry> load(int revision) {
+    public static final String FIT_RESOURCE = fitResource(REVISION);
+    public static boolean supportsFits(int revision) { return revision>=13&&revision<=REVISION; }
+    public static String fitResource(int revision) {
+        if(!supportsFits(revision)) throw new IllegalArgumentException("Unsupported outdoor fit revision");
+        return "/data/the_emerald_standard/architecture/v"+revision+"-fit/";
+    }
+    private static final Map<Integer,Map<String,Entry>> FITS=new java.util.concurrent.ConcurrentHashMap<>();
+    public static Entry fittedEntry(String id,int revision,int level) {
+        if(level==0) return entry(id,revision);
+        if(!supportsFits(revision)||level<1||level>3) throw new IllegalArgumentException("Unsupported outdoor fit");
+        var result=FITS.computeIfAbsent(revision,r->load(fitResource(r),1125)).get(id+"_fit"+level);
+        if(result==null) throw new IllegalArgumentException("Missing outdoor fit "+id);
+        return result;
+    }
+    private static Map<String,Entry> load(int revision) { return load(resource(revision),375); }
+    private static Map<String,Entry> load(String resource,int expectedCount) {
         var result=new LinkedHashMap<String,Entry>();
-        try(var stream=ApprovedArchitectureCatalog.class.getResourceAsStream(resource(revision)+"catalog.tsv")) {
+        try(var stream=ApprovedArchitectureCatalog.class.getResourceAsStream(resource+"catalog.tsv")) {
             if(stream==null) throw new IllegalStateException("Missing approved architecture release manifest");
             try(var reader=new BufferedReader(new InputStreamReader(stream,StandardCharsets.UTF_8))) {
                 for(String line;(line=reader.readLine())!=null;) {
@@ -42,7 +57,7 @@ public final class ApprovedArchitectureCatalog {
                 }
             }
         } catch(IOException e) { throw new IllegalStateException("Cannot read architecture manifest",e); }
-        if(result.size()!=375) throw new IllegalStateException("Incomplete approved architecture release");
+        if(result.size()!=expectedCount) throw new IllegalStateException("Incomplete approved architecture release");
         return Collections.unmodifiableMap(result);
     }
     public static Entry entry(String id) { return ENTRIES.get(id); }

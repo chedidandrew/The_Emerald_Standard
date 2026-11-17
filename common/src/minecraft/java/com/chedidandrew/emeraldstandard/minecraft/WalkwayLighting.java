@@ -24,11 +24,11 @@ final class WalkwayLighting {
         return List.copyOf(result);
     }
 
-    /** One candidate or two writes per second per dimension, regardless of city/project count. */
+    /** Normal pacing stays global; forced mode drops only the artificial one-second hold. */
     static boolean due(ServerLevel level, long tick) {
         var ledger = get(level);
         return ledger.lastWorkTick == Long.MIN_VALUE || tick < ledger.lastWorkTick
-                || tick - ledger.lastWorkTick >= 20;
+                || tick - ledger.lastWorkTick >= (EmeraldConfig.current().forcedVillageDevelopment() ? 1 : 20);
     }
     static boolean acquire(ServerLevel level, long tick) {
         if (!due(level, tick)) return false;
@@ -46,6 +46,31 @@ final class WalkwayLighting {
     static int advance(ServerLevel level, UUID village, long project, String key,
             List<BlockPos> route, AuthoredVillageStructures.Materials materials,
             List<EconomyService.VillageProjectLot> lots, List<Long> banks, int allowance) {
+        return advanceBatch(level,village,project,key,route,materials,lots,banks,allowance,
+                EmeraldConfig.current().forcedVillageDevelopment(),ForcedDevelopmentRuntime::hasTime);
+    }
+
+    /** One tiny support-first assembly may finish after its preflight; subsequent work yields. */
+    static int advanceBatch(ServerLevel level, UUID village, long project, String key,
+            List<BlockPos> route, AuthoredVillageStructures.Materials materials,
+            List<EconomyService.VillageProjectLot> lots, List<Long> banks, int allowance,
+            boolean instant, java.util.function.BooleanSupplier hasTime) {
+        int written=0;
+        var ledger=get(level);
+        for(int pass=0;pass<(instant?32:1)&&written<allowance;pass++) {
+            if(pass>0&&!hasTime.getAsBoolean()) break;
+            Job before=ledger.jobs.getOrDefault(key,Job.fresh());
+            if(before.done()) break;
+            written+=advanceOne(level,village,project,key,route,materials,lots,banks,
+                    allowance-written,instant);
+            if(before.equals(ledger.jobs.getOrDefault(key,Job.fresh()))) break; // unloaded/occupied: no spinning
+        }
+        return written;
+    }
+
+    private static int advanceOne(ServerLevel level, UUID village, long project, String key,
+            List<BlockPos> route, AuthoredVillageStructures.Materials materials,
+            List<EconomyService.VillageProjectLot> lots, List<Long> banks, int allowance, boolean instant) {
         if (allowance <= 0) return 0;
         var ledger = get(level);
         Job job = ledger.jobs.getOrDefault(key, Job.fresh());
@@ -81,12 +106,13 @@ final class WalkwayLighting {
                 // Save both reservation and exact before/after states before the first block.
                 ledger.reserve(foot);
                 ledger.record(key, new Job(job.station(), search.pieces(), 0, false));
+                if(instant) return placePending(level,village,project,key,ledger.jobs.get(key),lots,banks,allowance);
                 return 0;
             }
             if (!wait) ledger.record(key, job.next());
             return 0;
         }
-        return placePending(level, village, project, key, job, lots, banks, Math.min(2, allowance));
+        return placePending(level, village, project, key, job, lots, banks, instant?allowance:Math.min(2, allowance));
     }
 
     static Direction tangent(List<BlockPos> route, int index) {

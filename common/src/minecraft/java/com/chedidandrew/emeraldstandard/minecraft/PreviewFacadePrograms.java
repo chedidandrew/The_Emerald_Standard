@@ -74,6 +74,17 @@ final class PreviewFacadePrograms {
     }
     static void alias(Plan source,String id) { AUDITS.put(id,AUDITS.get(source.sample().id())); }
     static Audit audit(Plan p) { return AUDITS.get(p.sample().id()); }
+    static void translate(Plan p,int dx,int dz) {
+        var a=audit(p);if(a==null)return;
+        var f=a.furnishings();
+        AUDITS.put(p.sample().id(),new Audit(PreviewPlanTranslation.cells(a.before(),dx,dz),
+                PreviewPlanTranslation.positions(a.skin(),dx,dz),PreviewPlanTranslation.positions(a.added(),dx,dz),
+                PreviewPlanTranslation.positions(a.removed(),dx,dz),PreviewPlanTranslation.positions(a.jambs(),dx,dz),
+                PreviewPlanTranslation.positions(a.windows(),dx,dz),PreviewPlanTranslation.positions(a.ladderBearings(),dx,dz),
+                new PreviewInteriorFurnishings.Edits(PreviewPlanTranslation.cells(f.additions(),dx,dz),
+                    PreviewPlanTranslation.positions(f.approaches(),dx,dz),f.rooms()),a.faces()));
+        LANES.computeIfPresent(p.sample().id(),(id,lanes)->PreviewPlanTranslation.positions(lanes,dx,dz));
+    }
 
     private static Composition composition(Sample s,Direction face) {
         String id=s.id();
@@ -301,6 +312,7 @@ final class PreviewFacadePrograms {
         if(audit==null) throw new IllegalStateException("Missing facade audit: "+p.sample().id());
         for(var entry:audit.before().entrySet()) {
             if(!audit.skin().contains(entry.getKey())&&!audit.removed().contains(entry.getKey())
+                    &&!PreviewBankChimney.bearingEdit(p,entry.getKey(),entry.getValue())
                     &&!Objects.equals(entry.getValue(),p.cells().get(entry.getKey())))
                 throw new IllegalStateException("Facade changed protected interior/roof: "+entry.getKey());
         }
@@ -326,7 +338,10 @@ final class PreviewFacadePrograms {
                     throw new IllegalStateException("Floating facade lantern: "+at);
             }
         }
-        for(BlockPos at:p.cells().keySet()) if(!audit.before().containsKey(at)&&!audit.added().contains(at))
+        for(BlockPos at:p.cells().keySet()) if(!audit.before().containsKey(at)&&!audit.added().contains(at)
+                &&!p.cells().get(at).equals(PreviewPlainsOverhang.additions(p).get(at))
+                &&!p.cells().get(at).equals(PreviewSnowyOverhang.additions(p).get(at))
+                &&!p.cells().get(at).equals(PreviewBankChimney.additions(p).get(at)))
             throw new IllegalStateException("Unscoped exterior addition: "+at);
         PreviewDoorwayAudit.validate(p);
         PreviewLadderSupport.validate(p.sample().id(),p.cells());

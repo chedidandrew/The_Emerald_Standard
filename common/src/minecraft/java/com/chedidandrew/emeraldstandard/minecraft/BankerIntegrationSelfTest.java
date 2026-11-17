@@ -127,6 +127,88 @@ public final class BankerIntegrationSelfTest {
     }
 
     public static void run(ServerLevel level) {
+        if (Boolean.getBoolean("the_emerald_standard.entranceStaircaseSmokeOnly")) {
+            try { EntranceStaircaseSelfTest.verify(level);VillageTerrainFinishingSelfTest.verify(level);VillageTerrainGroundingSelfTest.verify(level); }
+            catch(Exception e) {throw new IllegalStateException(e);}
+            VanillaTerrainWorkSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.naturalBuildingSmokeOnly")) {
+            VegetationCompatibilitySelfTest.verify(level);
+            try {VillageTerrainGroundingSelfTest.verify(level);VillageTerrainFinishingSelfTest.verify(level);}
+            catch(Exception e){throw new IllegalStateException(e);}
+            NaturalBuildingFinishSelfTest.verify();
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.fastLotSmokeOnly")) {
+            VillageExpansionSelfTest.verify(level);
+            BridgeFirstExpansionSelfTest.verify(level);
+            VegetationCompatibilitySelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.vegetationSmokeOnly")) {
+            VegetationCompatibilitySelfTest.verify(level); return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.terrainGroundingSmokeOnly")) {
+            try { VillageTerrainGroundingSelfTest.verify(level); VillageTerrainFinishingSelfTest.verify(level);EntranceStaircaseSelfTest.verify(level); }
+            catch(Exception e) { throw new IllegalStateException(e); }
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.coveredPathSmokeOnly")) {
+            CoveredPathConstructionSelfTest.verify(level);
+            ConstructionTerrainCompletionSelfTest.verify(level);
+            SmithyConstructionSelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.decorativeFloraSmokeOnly")) {
+            try { DecorativeFloraConstructionSelfTest.verify(level); ConstructionStallSelfTest.verify(level); }
+            catch(Exception e) { throw new IllegalStateException(e); }
+            ConstructionSafetySelfTest.verify(level);return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.constructionStallSmokeOnly")) {
+            try { ConstructionStallSelfTest.verify(level); VillageTerrainFinishingSelfTest.verify(level); }
+            catch(Exception e) { throw new IllegalStateException(e); }
+            ConstructionEntityClearanceSelfTest.verify(level);
+            BridgeFirstExpansionSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.bridgeFirstSmokeOnly")) {
+            BridgeFirstExpansionSelfTest.verify(level);return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.terrainDevelopmentSmokeOnly")) {
+            try { TerrainDevelopmentSelfTest.verify(level); }
+            catch(Exception e) { throw new IllegalStateException(e); }
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.walkwayLightingSmokeOnly")) {
+            WalkwayLightingSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.constructionConnectionsSmokeOnly")) {
+            HitchingRailFinishingSelfTest.verify(level);
+            ConstructionConnectionsSelfTest.verify(level);
+            VanillaConstructionSelfTest.verify(level);
+            BankConstructionSelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.terrainCompletionSmokeOnly")) {
+            ConstructionTerrainCompletionSelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            ConstructionOwnershipSelfTest.verify(level);
+            DebugPerformanceSelfTest.verify(level);
+            return;
+        }
+        if (Boolean.getBoolean("the_emerald_standard.recoverySweepSmokeOnly")) {
+            TimedConstructionRecoverySelfTest.verify(level,false);
+            TimedConstructionRecoverySelfTest.verify(level,true);
+            TimedConstructionRecoverySelfTest.verify(level,false,false);
+            TimedConstructionRecoverySelfTest.verify(level,true,false);
+            ConstructionSupportRecoverySelfTest.verify(level);
+            ConstructionSafetySelfTest.verify(level);
+            return;
+        }
         if (Boolean.getBoolean("the_emerald_standard.timedRecoverySmokeOnly")) {
             TimedConstructionRecoverySelfTest.verify(level,false);
             TimedConstructionRecoverySelfTest.verify(level,true);
@@ -149,6 +231,7 @@ public final class BankerIntegrationSelfTest {
             return;
         }
         if (Boolean.getBoolean("the_emerald_standard.vanillaConstructionSmokeOnly")) {
+            VillageStructureLootSelfTest.verify(level);
             VanillaTerrainWorkSelfTest.verify(level);
             VanillaConstructionSelfTest.verify(level);
             return;
@@ -218,6 +301,7 @@ public final class BankerIntegrationSelfTest {
                 () -> StabilizationSelfTest.verifyCore(level),
                 () -> DebugPerformanceSelfTest.verify(level),
                 () -> NaturalVillageIdentitySelfTest.run(level),
+                () -> StructureIdentifySelfTest.verify(level),
                 () -> BankActivationRadiusSelfTest.verify(level),
                 () -> ConstructionFinishSelfTest.verify(level),
                 () -> SmithyConstructionSelfTest.verify(level),
@@ -235,14 +319,21 @@ public final class BankerIntegrationSelfTest {
                 () -> VillagePopulationSelfTest.verify(level),
                 () -> NewspaperItemSelfTest.verify(level),
                 () -> BankConstructionSelfTest.verify(level),
+                () -> ConstructionTerrainCompletionSelfTest.verify(level),
+                () -> CoveredPathConstructionSelfTest.verify(level),
+                () -> {try {ConstructionStallSelfTest.verify(level);} catch(Exception e) {throw new IllegalStateException(e);}},
                 () -> ForcedDevelopmentSchedulingSelfTest.verify(level),
                 () -> ConstructionPacingSelfTest.verify(),
                 () -> ConstructionSafetySelfTest.verify(level),
+                () -> ConstructionConnectionsSelfTest.verify(level),
+                () -> HitchingRailFinishingSelfTest.verify(level),
                 () -> ConstructionOwnershipSelfTest.verify(level),
                 () -> WalkwayLightingSelfTest.verify(level),
                 () -> WalkwayConnectionsSelfTest.verify(level),
                 () -> WalkwayEntranceSelfTest.verify(level),
                 () -> VillageBridgeSelfTest.verify(level),
+                () -> BridgeFirstExpansionSelfTest.verify(level),
+                () -> {try {TerrainDevelopmentSelfTest.verify(level);} catch(Exception e) {throw new IllegalStateException(e);}},
                 () -> CreativeContentSelfTest.verify(level),
                 () -> DistrictMapInteractionSelfTest.verify(level),
                 () -> NewsRuntime.verifyForSmoke(level),

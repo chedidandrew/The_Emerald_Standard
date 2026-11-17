@@ -58,7 +58,25 @@ final class VanillaTerrainWork {
             int floorY=!doors.isEmpty()&&doors.getFirst().getY()==origin.getY()-1
                     ? origin.getY()-1 : origin.getY();
             List<BlockPos> landing=List.of();
+            // Native porch stairs already bridge the raised indoor floor. First join them
+            // at street grade; starting at the indoor floor invents a block-high plinth
+            // and another stair outside an otherwise complete vanilla doorstep.
+            int streetFloor=origin.getY()-1;
             for(BlockPos door:doors) {
+                var candidate=landing(authored,first.relative(inward).atY(streetFloor),door,level);
+                if(nativeGradeLanding(candidate,authored,streetFloor)
+                        || (!candidate.isEmpty()&&candidate.getLast().equals(door)&&door.getY()<=streetFloor+1)) {
+                    // Several native desert houses have a one-block doorstep rather than
+                    // an authored stair. Keep that native rise, not a new exterior plinth.
+                    landing=candidate;floorY=streetFloor;break;
+                }
+            }
+            if(doors.isEmpty()) {
+                var candidate=landing(authored,first.relative(inward).atY(streetFloor),null,level);
+                if(nativeGradeLanding(candidate,authored,streetFloor)) { landing=candidate;floorY=streetFloor; }
+            }
+            for(BlockPos door:doors) {
+                if(!landing.isEmpty()) break;
                 landing=landing(authored,first.relative(inward).atY(floorY),door,level);
                 if(!landing.isEmpty())break;
             }
@@ -77,6 +95,14 @@ final class VanillaTerrainWork {
                 // Preserve those details, including doors and animal-pen gates.
                 if(!authored.containsKey(p.above())||authored.get(p.above()).isAir())work.clear(p.above());
                 if(!authored.containsKey(p.above(2))||authored.get(p.above(2)).isAir())work.clear(p.above(2));
+            }
+            if (!retrofit) {
+                // Exact native architecture stays untouched; widen only NEW exterior access.
+                var access = EntranceStaircase.survey(level, new SitePreparationPlan(work.cells()),
+                        first.relative(inward).atY(floorY + 1), inward.getOpposite(), authored,
+                        stair, village, project);
+                if (access == null) throw new Unsafe("No protected-safe three-wide exterior entrance descent");
+                return new Survey(access.receipt(), "", false);
             }
             // Floor blocks are at origin Y, hence their WALKING height is origin Y + 1.
             // Start the first stair at floor Y, not Y-1 (the old generic approach assumption).
@@ -100,6 +126,13 @@ final class VanillaTerrainWork {
             return new Survey(new SitePreparationPlan(work.cells()), "", false);
         } catch (Unloaded e) { return new Survey(null,"Waiting for loaded foundation/access columns",true); }
         catch (Unsafe e) { return new Survey(null,e.getMessage(),false); }
+    }
+
+    private static boolean nativeGradeLanding(List<BlockPos> route,Map<BlockPos,BlockState> authored,int streetY) {
+        if(route.isEmpty()) return false;
+        if(route.getLast().getY()<=streetY) return true;
+        return route.stream().map(authored::get).filter(Objects::nonNull)
+                .anyMatch(s->s.getBlock() instanceof StairBlock||s.getBlock() instanceof SlabBlock);
     }
 
     /** Short deterministic landing route: jigsaw markers need not line up with a real door. */
@@ -126,7 +159,11 @@ final class VanillaTerrainWork {
                 if(n.getX()<minX||n.getX()>maxX||n.getZ()<minZ||n.getZ()>maxZ)continue;
                 var next=authored.getOrDefault(n,Blocks.AIR.defaultBlockState());
                 double rise=n.getY()+surface(level,n,next)-p.getY()-surface(level,p,floor);
-                if(Math.abs(rise)>1.001)continue;
+                // A native path is 1/16 below a full block. A bottom stair exposes
+                // a lower tread even though its bounding box reaches one block high.
+                // Do not reject that normal path-to-stair join as a >1-block cliff.
+                boolean tread=floor.getBlock() instanceof StairBlock||next.getBlock() instanceof StairBlock;
+                if(Math.abs(rise)>(tread?1.125:1.001))continue;
                 if(n.distManhattan(start)<=24&&Math.abs(n.getY()-start.getY())<=DROP&&!parent.containsKey(n)) {
                     parent.put(n,p);todo.add(n);
                 }

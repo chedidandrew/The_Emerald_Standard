@@ -199,7 +199,7 @@ boolean guardVillagersEnabled, int guardSafetyPerGuard, int guardMaximumSafetyBo
 bounded(properties, GUARDS_CAP_KEY, 12, 0, 30),
                 bool(properties,"news.public_player_reports",true), bool(properties,"news.anonymous_players",false),
                 bool(properties,"news.approximate_locations",true), bool(properties,"news.explicit_property_only",false),
-                new BridgeSettings(bool(properties,BRIDGES_ENABLED,true),bounded(properties,BRIDGE_LENGTH,48,2,64),
+                new BridgeSettings(bool(properties,BRIDGES_ENABLED,true),bounded(properties,BRIDGE_LENGTH,96,2,128),
                         bounded(properties,BRIDGE_DEPTH,12,2,24),bounded(properties,BRIDGE_JOBS,2,1,4)));
     }
 
@@ -389,7 +389,7 @@ Map<String, String> values = new LinkedHashMap<>();
                 DEFAULT_VILLAGE_DEVELOPMENT_RADIUS, 2, 600,
                 true, true, true, true, true, true, 400, 20, DEFAULT_FUND_MONTHLY_ALLOWANCE,
                 true, 2, 12, true, false, true, false,
-                new BridgeSettings(true,48,12,2));
+                new BridgeSettings(true,96,12,2));
     }
     private static void writeDefaults(Path path) throws IOException {
         Files.createDirectories(path.getParent());

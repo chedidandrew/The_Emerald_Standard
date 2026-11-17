@@ -76,17 +76,17 @@ public final class VillageTerritory {
         }
         Set<Long> held=visible(v,neighbors);
         if(held.isEmpty()) return null;
-        // At most 64 blocks beyond existing territory; never create a distant isolated outpost.
+        // Search may widen, but every accepted lot still needs a bounded connected ownership path.
         Map<Long,Long> previous=new HashMap<>();
         ArrayDeque<Long> queue=new ArrayDeque<>();
         for(long c:required) { queue.add(c); previous.put(c,c); }
         long meeting=0; boolean found=false;
-        for(int depth=0;depth<=4 && !queue.isEmpty() && !found;depth++) {
+        for(int depth=0;depth<=ArchitectureSiteFit.MAX_FRONTIER_DEPTH && !queue.isEmpty() && !found;depth++) {
             int count=queue.size();
             for(int i=0;i<count;i++) {
                 long c=queue.remove();
                 if(held.contains(c)) { meeting=c; found=true; break; }
-                if(depth==4) continue;
+                if(depth==ArchitectureSiteFit.MAX_FRONTIER_DEPTH) continue;
                 for(long n:neighbors(c)) if(!previous.containsKey(n)&&mayOwn(v,neighbors,n)) {
                     previous.put(n,c); queue.add(n);
                 }

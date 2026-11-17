@@ -33,6 +33,15 @@ public final class AuthoredVillageStructureDoodadWiringRegressionTest {
         String refinements = read(root, "AuthoredDoodadRefinements.java");
         String prosperity = read(root, "VillageProsperityManager.java");
         String gallery = read(root, "StructureGallery.java");
+        String hitchFinish=read(root,"HitchingRailFinishing.java");
+        require(prosperity.contains("finishHistoricalHitchingRail(level,origin,village,project,placements)")
+                        &&prosperity.contains("finishHistoricalHitchingRail(level,origin,village,project,expected.subList(0,priorTemplateSize))")
+                        &&prosperity.contains("for(var extension:HitchingRailFinishing.extensions(historical))")
+                        &&hitchFinish.contains("DevelopmentLandProtection.recordedPlacement")
+                        &&hitchFinish.contains("ConstructionOwnership.reserved")
+                        &&hitchFinish.contains("VillageConstructionOccupancy.mayChange")
+                        &&hitchFinish.contains("ledger.done.add(key);ledger.setDirty();"),
+                "Historical hitch caps need guarded handover/audit/gallery wiring and persistent no-regeneration receipts");
 
         verifyAllActiveMastersUseRoleDoodads(authored);
         verifyDoodadsUsePersistedStages(authored);

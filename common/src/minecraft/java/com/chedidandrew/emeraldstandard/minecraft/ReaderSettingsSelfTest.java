@@ -40,8 +40,13 @@ public final class ReaderSettingsSelfTest {
             original.applyTo(new EconomyService());
             check(original.values().size() == 39, "incomplete settings snapshot");
             check(!original.vanillaOnlyVillageBuildings(), "vanilla-only expansion must be opt-in");
-            check(original.bridgeSettings().equals(new EmeraldConfig.BridgeSettings(true,48,12,2)),
+            check(original.bridgeSettings().equals(new EmeraldConfig.BridgeSettings(true,96,12,2)),
                     "bridge defaults or settings snapshot drift");
+            Properties savedBridge = new Properties();
+            savedBridge.setProperty(EmeraldConfig.BRIDGE_LENGTH,"48");
+            check(EmeraldConfig.parse(savedBridge).bridgeSettings().length()==48,"old world bridge limit must remain unchanged");
+            savedBridge.setProperty(EmeraldConfig.BRIDGE_LENGTH,"128");
+            check(EmeraldConfig.parse(savedBridge).bridgeSettings().length()==128,"128-block river limit must be admitted");
             check(original.newsPolicy().approximate()&&!original.newsPolicy().anonymous()
                     &&original.newsPolicy().publicPlayers()&&!original.newsExplicitPropertyOnly(),"news privacy defaults");
             check(!original.forcedVillageDevelopment(), "debug development must be opt-in");

@@ -18,6 +18,11 @@ printf 'eula=true\n' > "$RUN_DIR/eula.txt"
 # Exhaustive opt-in checks yield between fixtures. Keep a bounded watchdog, and keep this
 # playerless disposable test world ticking; ordinary server settings are untouched.
 printf 'online-mode=false\nserver-port=0\nmax-tick-time=180000\npause-when-empty-seconds=0\n' > "$RUN_DIR/server.properties"
+if [[ -n "${TES_TEST_VEGETATION_CONFIG:-}" ]]; then
+    [[ -d "$TES_TEST_VEGETATION_CONFIG" ]] || { echo "Missing vegetation fixture configuration" >&2; exit 1; }
+    mkdir -p "$RUN_DIR/config"
+    cp -R -- "$TES_TEST_VEGETATION_CONFIG/." "$RUN_DIR/config/"
+fi
 if [[ -n "${TES_GUARD_COMPAT_JAR:-}" ]]; then
     [[ -f "$TES_GUARD_COMPAT_JAR" ]] || { echo "Missing Guard Villagers test JAR" >&2; exit 1; }
     mkdir -p "$RUN_DIR/mods"

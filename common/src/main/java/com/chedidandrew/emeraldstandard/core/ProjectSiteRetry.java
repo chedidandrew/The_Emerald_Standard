@@ -4,6 +4,7 @@ package com.chedidandrew.emeraldstandard.core;
 public final class ProjectSiteRetry {
     public static final long MAX_WAIT_TICKS = 600L;
     public static final long FORCED_MAX_WAIT_TICKS = 100L;
+    public static final long FORCED_SEARCH_MAX_WAIT_TICKS = 20L;
     private ProjectSiteRetry() {}
 
     public static boolean searching(EconomyState.VillageProject p) {
@@ -24,9 +25,20 @@ public final class ProjectSiteRetry {
         return add(Math.max(0L, now), delay);
     }
 
+    public static long forcedSearchDeadline(long now, int failures) {
+        long delay = Math.min(FORCED_SEARCH_MAX_WAIT_TICKS, 2L << Math.min(4, Math.max(0, failures - 1)));
+        return add(Math.max(0L, now), delay);
+    }
+
     public static long boundedDeadline(long now, long saved, boolean forced) {
         return Math.min(Math.max(0L, saved), add(Math.max(0L, now),
                 forced ? FORCED_MAX_WAIT_TICKS : MAX_WAIT_TICKS));
+    }
+
+    public static long boundedDeadline(long now, long saved, boolean forced, EconomyState.VillageProject project) {
+        return forced && searching(project)
+                ? Math.min(Math.max(0L, saved), add(Math.max(0L, now), FORCED_SEARCH_MAX_WAIT_TICKS))
+                : boundedDeadline(now,saved,forced);
     }
 
     /** Clamp once in saved state; never slide a deadline forward on each polling tick. */

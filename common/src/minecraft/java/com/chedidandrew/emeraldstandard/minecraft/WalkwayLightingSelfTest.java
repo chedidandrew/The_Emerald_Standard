@@ -90,6 +90,7 @@ final class WalkwayLightingSelfTest {
 
     static void verify(ServerLevel level) {
         geometry();
+        ForcedWalkwayLightingSelfTest.verify(level);
         BlockPos origin = new BlockPos(1248, level.getMaxY() - 24, 1248);
         UUID village = UUID.fromString("89928068-98ce-42ce-91de-98204e8e1991");
         Map<BlockPos, BlockState> before = new LinkedHashMap<>();

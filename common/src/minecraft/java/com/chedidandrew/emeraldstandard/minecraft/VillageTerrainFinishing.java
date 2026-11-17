@@ -19,6 +19,7 @@ final class VillageTerrainFinishing {
         BlockState expected;
         try { expected = state(level, after); }
         catch (IllegalArgumentException malformed) { return false; }
+        if (VillageProsperityManager.naturalSoilEquivalent(current, expected)) return true;
         if (!current.is(expected.getBlock()) || !current.getFluidState().isEmpty()) return false;
         if (current.getBlock() instanceof WallBlock) return true; // Neighbor connections are not edits.
         if (current.getBlock() instanceof LeavesBlock) return current.getValue(LeavesBlock.PERSISTENT)
@@ -32,9 +33,26 @@ final class VillageTerrainFinishing {
 
     static boolean unchanged(ServerLevel level, BlockState current, String before) {
         if (VillageSitePreparation.matchesRemoval(current, before)) return true;
+        try { if (VillageProsperityManager.naturalSoilEquivalent(current, state(level, before))) return true; }
+        catch (IllegalArgumentException malformed) { return false; }
         if (!current.isAir()) return false;
         try { return VillageSitePreparation.vegetation(state(level, before)); }
         catch (IllegalArgumentException malformed) { return false; }
+    }
+
+    /** Read-only reconciliation: an existing usable road need not be repaved to match optional trim. */
+    static boolean usableRoad(ServerLevel level, BlockPos pos, BlockState current, String after) {
+        BlockState expected;
+        try { expected = state(level, after); } catch (IllegalArgumentException malformed) { return false; }
+        return road(expected) && road(current) && current.getFluidState().isEmpty()
+                && !current.hasBlockEntity() && (current.is(Blocks.DIRT_PATH) || current.isFaceSturdy(level, pos, Direction.UP))
+                && level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()
+                && level.getFluidState(pos.above()).isEmpty()
+                && level.getBlockState(pos.above(2)).getCollisionShape(level, pos.above(2)).isEmpty()
+                && level.getFluidState(pos.above(2)).isEmpty();
+    }
+    private static boolean road(BlockState state) {
+        return state.is(Blocks.DIRT_PATH) || state.is(Blocks.GRAVEL) || state.is(Blocks.COARSE_DIRT);
     }
 
     static BlockState state(ServerLevel level, String serialized) {
@@ -54,6 +72,10 @@ final class VillageTerrainFinishing {
         for (var cell : base.cells()) cells.put(cell.position(), cell);
         // Stay in the already surveyed lot's outside border. Do not add a new reservation footprint.
         var survey = new VillageSitePreparation.Survey(level);
+        // The building palette also supplies road footing/interior finishes. Change only
+        // fresh outside retaining courses, never authored cells or frozen older receipts.
+        BlockState retaining = masonry.is(Blocks.POLISHED_ANDESITE)
+                ? Blocks.STONE.defaultBlockState() : masonry;
         for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
             if (x != minX && x != maxX && z != minZ && z != maxZ) continue;
             BlockPos column = origin.offset(x, 0, z);
@@ -65,10 +87,10 @@ final class VillageTerrainFinishing {
             for (int y = origin.getY(); y < surface; y++) {
                 BlockPos pos = new BlockPos(column.getX(), y, column.getZ());
                 if (occupied.contains(pos) || !survey.excavatable(pos, origin.getY())
-                        || !approve(level, pos, masonry, village, project)) {
+                        || !approve(level, pos, retaining, village, project)) {
                     safe = false; break;
                 }
-                wall.put(pos.asLong(), cell(level, pos, masonry));
+                wall.put(pos.asLong(), cell(level, pos, retaining));
             }
             if (safe) cells.putAll(wall); // Full courses seated on natural ground, top follows the hill.
         }

@@ -144,7 +144,8 @@ final class VanillaVillageBuildings {
                     throw new IOException("Required connected structure not supported");
                 value = state(data.getStringOr("final_state", "minecraft:air"));
             }
-            // No imported block-entity payload survives. Containers are empty; no loot refresh.
+            // No imported block-entity payload survives. Fresh storage receives balanced,
+            // role-specific one-shot loot at protected handover, never arbitrary source NBT.
             if (value.is(Blocks.STRUCTURE_VOID) || value.is(Blocks.STRUCTURE_BLOCK)) continue;
             blocks.put(at, value);
         }
@@ -184,14 +185,10 @@ final class VanillaVillageBuildings {
                     && !(above.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock))
                 value = Blocks.DIRT.defaultBlockState();
             if (value.isAir()) value = Blocks.AIR.defaultBlockState();
-            // Construction supplies new plants, not a free fully grown harvest. Preserve authored
-            // leaf decoration like player-placed leaves even when optional worldgen trees are absent.
+            // Preserve authored leaf decoration even when optional worldgen trees are absent.
+            // Crop ages stay exactly as authored: resetting them changes the blueprint's layers.
             if (value.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock)
                 value = value.setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true);
-            if (value.getBlock() instanceof net.minecraft.world.level.block.CropBlock)
-                for (var property : value.getProperties())
-                    if (property instanceof net.minecraft.world.level.block.state.properties.IntegerProperty age
-                            && age.getName().equals("age")) value = value.setValue(age, 0);
             // Keep below-grade air: cellars need their surveyed interior cleared as well.
             if (value.getBlock() instanceof net.minecraft.world.level.block.BedBlock
                     && value.getValue(net.minecraft.world.level.block.BedBlock.PART)

@@ -170,8 +170,10 @@ public final class EmeraldCommands {
             root.then(VillageComparisonGallery.command());
         }
         root.then(NoBuildCommands.command());
+        root.then(StructureIdentifyCommand.command("structure",economy));
         dispatcher.register(root);
         // The standalone command is available to survival players without opening admin commands.
         dispatcher.register(NoBuildCommands.command());
+        dispatcher.register(StructureIdentifyCommand.command("tesstructure",economy));
     }
 }

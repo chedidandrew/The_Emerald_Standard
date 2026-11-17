@@ -22,13 +22,20 @@ public final class VillageRuntimeStructureSafetyWiringRegressionTest {
         String receipt = Files.readString(Path.of(args[0]).resolve(nativeRoot + "ConstructionOwnership.java"));
         String support = Files.readString(Path.of(args[0]).resolve(nativeRoot + "SupportedConstructionOrder.java"));
         String debug = Files.readString(Path.of(args[0]).resolve(nativeRoot + "DebugFlightRecorder.java"));
-        require(source.contains("placement.isCosmetic()")
-                        && source.contains("ConstructionOwnership.settledPathGround(level,target,current,placement.state)")
+        require(source.replace("\r", "").contains("if (placement.isCosmetic()\n                && ConstructionOwnership.settledPathGround(level,target,current,placement.state))")
                         && support.contains("ConstructionOwnership.settledPathGround(level,world,actual,c.state())")
                         && receipt.contains("&&owned(world,pos,expected)")
                         && nativeTests.contains("SmithyConstructionSelfTest.verify(level)")
                         && debug.contains("frozenDesign") && debug.contains("orderCuts"),
                 "Saved Smithy path-settlement recovery, receipt gating and replay diagnostics must remain wired");
+        String nativeGround=methodBody(source,"private static List<Placement> nativeCoveredPathGround(");
+        require(nativeGround.contains("p.role==PlacementRole.STRUCTURE") && nativeGround.contains("p.constructionPhase==7")
+                        && nativeGround.contains("cover.isStructuralAuthority()") && nativeGround.contains("FenceGateBlock")
+                        && !nativeGround.contains("level.getBlockState")
+                        && source.contains("constructionState(p),p.constructionPhase")
+                        && nativeTests.contains("CoveredPathConstructionSelfTest.verify(level)")
+                        && source.contains("plannedCoveredPath=") && source.contains("constructionState="),
+                "Native covered paths must use immutable authored covers, stable support matching and debug/replay coverage");
         verifyAuthoritativeTerrainFootprint(source);
         verifyRuntimeSemanticAccess(source);
         verifyRequiredSafetyFixtures(source);

@@ -14,7 +14,8 @@ final class VanillaTerrainWorkSelfTest {
         Map<BlockPos,BlockState> saved=new LinkedHashMap<>();
         UUID village=UUID.fromString("fb078a5a-1bca-4788-beb8-76e280b192fb");
         try {
-            for(int x=-10;x<=10;x++)for(int z=-10;z<=10;z++)for(int y=-8;y<=5;y++) {
+            // Wider straight access can extend past the old narrow-route fixture's edge.
+            for(int x=-16;x<=16;x++)for(int z=-16;z<=16;z++)for(int y=-8;y<=5;y++) {
                 var p=origin.offset(x,y,z);level.getChunk(p);saved.put(p,level.getBlockState(p));
             }
             for(int turn=0;turn<4;turn++)for(int drop=1;drop<=4;drop++) {
@@ -77,9 +78,24 @@ final class VanillaTerrainWorkSelfTest {
                     var actual=(VanillaTerrainWork.Survey)ConstructionSupportRecoverySelfTest.invoke("vanillaTerrainSurvey",
                             level,origin,villageRecord,project,null,false);
                     check(actual.plan()!=null,style+" imported turn "+turn+": "+actual.failure());
+                    // Flat street grade already meets the native porch. Never add the TES
+                    // origin-height landing/plinth or another stair beyond the original steps.
+                    for(var p:saved.keySet()) level.setBlock(p,(p.getY()<origin.getY()?Blocks.DIRT:Blocks.AIR).defaultBlockState(),18);
+                    var flat=(VanillaTerrainWork.Survey)ConstructionSupportRecoverySelfTest.invoke("vanillaTerrainSurvey",
+                            level,origin,villageRecord,project,null,false);
+                    check(flat.plan()!=null,style+" flat imported turn "+turn+": "+flat.failure());
+                    var prefix=(List<?>)ConstructionSupportRecoverySelfTest.invoke("modularPrimaryTrailPrefix",origin,villageRecord,project,6);
+                    var first=prefix.getFirst();
+                    var start=origin.offset((int)ConstructionSupportRecoverySelfTest.field(first,"dx"),0,
+                            (int)ConstructionSupportRecoverySelfTest.field(first,"dz"));
+                    for(var c:flat.plan().cells()) {
+                        var at=BlockPos.of(c.position());
+                        if(at.getX()==start.getX()&&at.getZ()==start.getZ()&&at.getY()>=origin.getY())
+                            check(VillageTerrainFinishing.state(level,c.after()).isAir(),"extra elevated flat entrance "+style+" turn "+turn);
+                    }
                 }
             }
-            System.out.println("PASS imported terrain: 16 rotated slope/recessed-entry plans, 20 real five-style plans, no roof pillars, frozen reload and inventory protection");
+            System.out.println("PASS imported terrain: 16 rotated slope/recessed-entry plans, 20 raised + 20 flat real five-style plans, no extra flat entry step, no roof pillars, frozen reload and inventory protection");
         } catch(Exception e) { throw new IllegalStateException("Imported terrain fixture",e); }
         finally { for(var e:saved.entrySet())level.setBlock(e.getKey(),e.getValue(),18); }
     }

@@ -1,4 +1,6 @@
-# Village footbridges — beta.37
+# Village footbridges — beta.66
+
+Even short routes inspect water and unloaded chunks. Preview results are bound to their complete immutable request and bridge context; changing a destination, start, lot exclusions or bridge settings restarts the approval. After surveying, the destination's current lot exclusions are checked again before the atomic reservation. Two projects waiting on routes cannot both commit an overlapping destination.
 
 Walkways compare safe land detours with straight water crossings. A bridge is only approved as part of a route reaching a completed entrance or real village path, not an arbitrary opposite bank.
 
@@ -6,7 +8,13 @@ Walkways compare safe land detours with straight water crossings. A bridge is on
 
 Three walkable blocks lie between exterior rails, capped posts and the village's inward-facing street lamps. Frozen village materials determine timber decks and trestles, masonry corbels, or sandstone arches with matching timber. Repeating sections fit the actual water length. Six dry approach rows per shore provide solid foundations, stairs and landings; shore differences up to two blocks are supported without excavating cliffs.
 
-Default maximum water length is 48 blocks, excluding approaches. The navigation opening has two full air blocks above the water and up to five rows across the river; short creeks use the available width. Exterior piers and arch details stay out of that opening. No causeway is filled across the river.
+New-world default maximum water length is 96 blocks, excluding approaches, configurable up to 128. Existing worlds keep their saved limit, including earlier 48-block settings. The navigation opening has two full air blocks above the water and up to five rows across the river; short creeks use the available width. Exterior piers and arch details stay out of that opening. No causeway is filled across the river.
+
+## Bridge-first organic expansion
+
+New managed organic projects inspect a viable dry building lot first. Where water separates it from the existing connected district, they survey an onward route before committing either destination construction or bridge expenditure. A safe land detour is allowed. Crossing approaches must not overlap the future building. The exact crossing plans are checkpointed, then the destination lot and required bridge identifiers are committed together through the economy journal.
+
+A destination-bound crossing cannot spend or build without that durable destination reservation, even if another connector picks it up after a crash. Unspent provisional reservations can be discarded. Destination preparation and building wait until every dependency is verified complete and still walkable. Changed, missing or unloaded crossings keep that gate closed; completed bridges are never regenerated to erase player edits. This extends the same district, not a separate village charter. Existing projects are not retroactively held behind new dependencies.
 
 ## Funding and saved work
 
@@ -26,6 +34,6 @@ Reservations protect bridge footprints and navigation air from later mod develop
 
 ## Settings and limits
 
-World settings: enabled by default; water length 2–64 (default 48); pier depth 2–24 (default 12); active crews 1–4 (default 2). Saved designs are not reshaped when limits change. At most 512 saved bridge records exist per dimension. Existing route caps remain: 384-block endpoint Manhattan distance, 512 route cells and 8,192 search nodes. Ocean crossings, cramped islands and large suspension bridges are outside this first version.
+World settings: enabled by default; water length 2–128 (new-world default 96); pier depth 2–24 (default 12); active crews 1–4 (default 2). Saved designs are not reshaped when limits change. At most 512 saved bridge records exist per dimension. Existing route caps remain: 384-block endpoint Manhattan distance, 512 route cells and 8,192 search nodes. Long rivers can fit within those limits; oceans, cramped islands, deep lakes without pier footing and large suspension bridges remain outside the supported design.
 
 Both handbook formats explain bridge behavior. `/emerald debug` includes village totals, active/queued/completed/altered counts, styles, payment, work progress and wait reasons, plus shared bridges in each road report. The newspaper does not expose these implementation details. Existing vanilla blocks are reused; no new item or recipe is added.

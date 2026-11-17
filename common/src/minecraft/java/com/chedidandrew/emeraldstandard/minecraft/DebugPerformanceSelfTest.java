@@ -82,6 +82,9 @@ final class DebugPerformanceSelfTest {
             var report = (java.nio.file.Path) reportMethod.invoke(result);
             require(report != null && Files.isRegularFile(report), "Capture not packaged: " + result);
             try (ZipFile zip = new ZipFile(report.toFile())) {
+                var banks = JsonParser.parseString(new String(zip.getInputStream(zip.getEntry("bank-construction-snapshot.json"))
+                        .readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+                require(banks.has("totalPending") && banks.has("limit") && banks.has("banks"), "Pending Bank capture schema");
                 var json = JsonParser.parseString(new String(zip.getInputStream(zip.getEntry("performance-summary.json"))
                         .readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
                 require(json.getAsJsonObject("serverTicks").get("sampledTicks").getAsLong() == 1

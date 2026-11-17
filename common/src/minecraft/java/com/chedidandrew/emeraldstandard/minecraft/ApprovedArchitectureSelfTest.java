@@ -18,16 +18,65 @@ public final class ApprovedArchitectureSelfTest {
         desk.setAccessible(true);desk.invoke(null);
         validateProductionCatalog(12);
         validateProductionCatalog(13);
+        validateProductionCatalog(14);
+        validateProductionCatalog(15);
+        validateProductionCatalog(16);
+        validateProductionCatalog(17);
+        validateProductionCatalog(18);
+        validateProductionCatalog(19);
+        validateProductionCatalog(20);
         validateRidgeOnlyRevision();
+        validateOutdoorFits();
+        PlainsRoofOverhangSelfTest.verify();
+        SnowyRoofOverhangSelfTest.verify();
+        BankChimneySelfTest.verify();
+        NaturalBuildingFinishSelfTest.verify();
         if(args.length>0&&args[0].equals("review")) compareApprovedReview();
         System.out.println("PASS approved production architecture: 375 frozen assets, native support, doors, ladders, beds and stage safety");
+    }
+    static void validateOutdoorFits() {
+        validateOutdoorFits(13);validateOutdoorFits(14);validateOutdoorFits(15);validateOutdoorFits(16);validateOutdoorFits(17);validateOutdoorFits(18);validateOutdoorFits(19);validateOutdoorFits(20);
+    }
+    private static void validateOutdoorFits(int revision) {
+        int variants=0;
+        for(var entry:ApprovedArchitectureCatalog.entries()) {
+            var full=ApprovedVillageStructures.data(entry.id(),revision);
+            var core=ApprovedVillageStructures.data(entry.id(),revision,3);
+            Map<BlockPos,BlockState> previous=full.cells();
+            BlockPos previousEntrance=full.entrance();
+            for(int fit=1;fit<=3;fit++) {
+                var data=ApprovedVillageStructures.data(entry.id(),revision,fit);var cells=data.cells();
+                BlockPos offset=previousEntrance.subtract(data.entrance());
+                var previousCells=previous;
+                cells.forEach((at,state)->require(state.equals(previousCells.get(at.offset(offset))),"Fallback introduced/changed a cell "+entry.id()+" "+at));
+                BlockPos coreOffset=data.entrance().subtract(core.entrance());
+                core.cells().forEach((at,state)->require(state.equals(cells.get(at.offset(coreOffset))),"Fallback removed building geometry "+entry.id()+" "+at));
+                NativeStructureSupport.validate(cells,entry.id()+" fit "+fit);
+                require(cells.values().stream().filter(s->s.getBlock() instanceof BedBlock&&s.getValue(BedBlock.PART)==BedPart.HEAD).count()==entry.beds(),"Fallback changed beds");
+                require(data.air().stream().noneMatch(cells::containsKey),"Fallback blocked route");
+                var exit=data.walkwayExit();require(!cells.containsKey(exit)&&!cells.containsKey(exit.above()),"Fallback blocked exit");
+                require(data.identity().width()<=full.identity().width()&&data.identity().depth()<=full.identity().depth(),"Fallback increased envelope");
+                if(entry.role().equals("BANK")) {
+                    int source=entry.id().endsWith("bank_kiosk")?17:entry.id().endsWith("savings_branch")?18:16;
+                    int version=ApprovedBankStructures.versionForRevision(revision,source-16,fit);
+                    var bank=ApprovedBankStructures.plan(VillageArchitecture.BiomeDialect.fromId(entry.dialect()),version);
+                    require(BankerProfessionSupport.isExchangeDesk(bank.cells().get(new BlockPos(6,1,8))),"Fitted Bank anchor changed");
+                }
+                previous=cells;previousEntrance=data.entrance();variants++;
+            }
+        }
+        System.out.println("PASS "+variants+" frozen outdoor fits: exact nested subsets, intact building/beds/access/native support and Bank anchors");
     }
     static void validateProductionCatalog() {
         validateProductionCatalog(ApprovedArchitectureCatalog.REVISION);
     }
     private static void validateProductionCatalog(int revision) {
         int ordinary=0,banks=0;
-        for(var entry:ApprovedArchitectureCatalog.entries()) {
+        for(var current:ApprovedArchitectureCatalog.entries()) {
+            var entry=ApprovedArchitectureCatalog.entry(current.id(),revision);
+            require(AuthoredVillageStructures.planMaterials(revision,"balanced",
+                    VillageArchitecture.Character.RUSTIC,VillageArchitecture.BiomeDialect.fromId(entry.dialect()))!=null,
+                    "Frozen revision lost its runtime construction palette "+revision+" "+entry.id());
             var data=ApprovedVillageStructures.data(entry.id(),revision);
             Map<BlockPos,BlockState> cells=new HashMap<>();
             for(var stage:List.of(data.base(),data.first(),data.second())) {
@@ -57,7 +106,7 @@ public final class ApprovedArchitectureSelfTest {
             require(!cells.containsKey(exit)&&!cells.containsKey(exit.above()),"Blocked yard connection "+entry.id());
             if(entry.role().equals("BANK")) {
                 banks++;
-                int version=(entry.id().endsWith("bank_kiosk")?14:entry.id().endsWith("savings_branch")?15:13)+(revision==13?3:0);
+                int version=ApprovedBankStructures.versionForRevision(revision,entry.id().endsWith("bank_kiosk")?1:entry.id().endsWith("savings_branch")?2:0,0);
                 var bank=ApprovedBankStructures.plan(VillageArchitecture.BiomeDialect.fromId(entry.dialect()),version);
                 require(BankerProfessionSupport.isExchangeDesk(bank.cells().get(new BlockPos(6,1,8))),"Bank anchor moved");
                 require(bank.cells().get(bank.entrance()).getBlock() instanceof DoorBlock,"Bank primary door misidentified");
@@ -117,7 +166,7 @@ public final class ApprovedArchitectureSelfTest {
             }
             if(local>0) changed++;
             if(!entry.dialect().equals("taiga")) {
-                require(old.identity().sha256().equals(entry.sha256()),"Other biome asset changed");unchangedNonTaiga++;
+                require(old.identity().sha256().equals(current.identity().sha256()),"Other biome asset changed");unchangedNonTaiga++;
             }
             logs+=local;
         }
@@ -131,7 +180,7 @@ public final class ApprovedArchitectureSelfTest {
             String suffix=sample.id().startsWith("compact_")?sample.id().substring(("compact_"+sample.style().id()+"_").length())
                     :BiomeArchitectureCatalogPreview.masterId(sample);
             String id="biome_"+sample.style().id()+"_"+suffix;
-            var p=BiomeArchitecturePreview.plan(sample); var blocks=p.blocks(BlockPos.ZERO);
+            var p=PreviewOutdoorLampOrientation.apply(PreviewBuildingUsability.apply(BiomeArchitecturePreview.plan(sample))); var blocks=p.blocks(BlockPos.ZERO);
             int minX=blocks.stream().mapToInt(b->b.position().getX()).min().orElseThrow();
             int minZ=blocks.stream().mapToInt(b->b.position().getZ()).min().orElseThrow();
             Map<BlockPos,BlockState> expected=new HashMap<>();

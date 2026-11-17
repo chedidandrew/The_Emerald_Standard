@@ -1,5 +1,134 @@
 # Changelog
 
+## Unreleased: 0.4.0-beta.82
+
+- Add a bounded rotating suffix sweep to timed construction recovery, always checking the earliest pending cell first and never moving the saved prefix beyond it. Preserve scan continuity across eligible short recovery episodes, reset on real progress/hard waits/inactivity, and expose the recovery mode/next scan in waiting diagnostics. Frozen blueprints, mandatory completion inspection, claims, player blocks, inventories, occupants and loaded-only limits remain unchanged. Update both handbook forms; no items or recipes added.
+
+## 0.4.0-beta.81
+
+- Treat blueprint grass, ferns and nonproductive flowers as best-effort living decoration without changing frozen geometry, roles, order or hashes. Unsupported/dead flora no longer stalls construction or causes finish/audit repair loops; required floors, storage, crops, lighting and access retain authority. Approved vegetation removals may adopt natural soft-plant/snow regrowth, retaining protection checks. Move off-thread integrated-server chat-ability refreshes to the client thread without blocking shutdown or applying stale old-world callbacks. Both handbook forms updated; no recipes or items added.
+
+## 0.4.0-beta.80
+
+- New raised building entrances use the actual reviewed outside exit and a straight three-block-wide flight with matching solid backing and a grounded bottom landing. Freeze required access with terrain preparation rather than following a narrow bending road at an assumed height. New Banks and exact-vanilla copies use the same exterior-only approach; flat entrances gain no apron. Preserve saved older plans, architecture assets, player builds, storage, claims, fluids and loaded-only checks. Both handbook forms updated; no recipes or items added.
+
+## 0.4.0-beta.79
+
+- New exterior hillside retaining courses use regular stone instead of polished andesite when the building palette supplies polished andesite. Preserve building/interior geometry, other retaining palettes, walkway materials, protection checks and saved older receipts. Update both handbook forms; no items, recipes or architecture revision changes.
+
+## 0.4.0-beta.78
+
+- New revision-20 TES buildings omit the front snow/cobblestone apron and standalone surrounding yard; retain a flush natural entrance footing and essential access. Use natural foundation soil/sandstone and locally matched hillside earth caps instead of polished edging. Optional decorated side/rear courts remain.
+- Wooden entrances into open-sided TES compartments use the matching wood fence gate, generated open for villager access. Enclosed rooms and exact vanilla imports keep their doors. Exposed supported snowy roof courses gain deterministic one-to-four-layer drifts; chimneys and hatches remain clear.
+- New site-clearing receipts remove affected natural trunks, branches and associated canopies, including leaf-only collisions, supported snow caps and hanging vines, before completion. Preserve untouched neighboring trees/shared crowns, player landscaping, claims, storage and loaded-only limits. Do not expand old receipts or blindly remodel older finished buildings. No new items or recipes; both handbook forms updated.
+
+## 0.4.0-beta.77
+
+- Accelerated lot admission only with forced instant development: up to 32 candidates per visit within an eight-ms server-wide healthy-tick window (one ms under lag), alternating search-first visits with road/finishing visits, earlier frontier widening, 2–20-tick unplaced-search retries, two-block lot buffers instead of four and no blanket 18-block Bank setback. Keep frozen earthworks, protected/recorded player builds, existing built blocks, storage, claims, territory ownership, loaded-only checks, bounded terrain support and bridge-first destination safety. Normal development and already-frozen geometry remain unchanged. Report accepted-but-rejected reservations separately. No new recipe or architecture revision.
+
+## 0.4.0-beta.76
+
+- Lot surveys and builders recognize modded vegetation through native plant inheritance as well as plant tags, including mature colliding Wilder Wild tumbleweeds. Clear it inside approved work areas instead of rejecting the lot or stalling on regrowth. Different modded regrowth may replace an approved plant-removal cell, never approved soil or a wall. Preserve claims, player gardens, reservations, crops, stored contents, fluids and bounded natural-tree safety. No blanket mod-block overwrite, entity kill command, new recipe or architecture revision.
+
+## 0.4.0-beta.75
+
+- New snowy TES designs extend flush spruce roof courses one block beyond their walls, retaining stepped profiles and existing snow caps. Preserve balcony clearance, occupied cells, rooms, beds and the slim Bank smoke chimney. Freeze architecture revision 19 and all outdoor-fit forms with measured wider roof envelopes; retain historical plans and exact-vanilla imports unchanged. No new items or recipes.
+
+## 0.4.0-beta.74
+
+- Newly approved TES building and Bank lots freeze continuous soil backing beneath rigid yards/floors before building placement. Exposed downhill edges blend into short one-block earth terraces, with grass or local desert caps and non-falling backing. Include earthworks in reservations and collision checks; preserve routes, authored shaft air, natural cave roofs, fluids, storage, player placements, claims and loaded-only limits. Reject unsupported mandatory footing; unsafe optional skirts are omitted. Existing saved plans/buildings and exact vanilla imports are not rewritten. No new items, recipes or architecture revision.
+
+## 0.4.0-beta.73
+
+- New Bank chimneys use a one-block masonry shaft and snug upright spruce trapdoors concealing the campfire and signal hay. Leave the top open for native smoke. Freeze revision 18 and all outdoor-fit forms; retain older saved geometry and all earlier fixes. No new items or recipes.
+
+## 0.4.0-beta.72
+
+- Construction animal clearance adds a bounded loaded-only landing search up to 24 blocks away and six blocks above/below after nearby movement fails. Check complete footing, body clearance, world borders, reservations, fluids and hazards; clear stale navigation/motion on a safe move. Players, ridden groups and leashed mobs are never forcibly moved, and no wait grants permission to kill or build through an occupant.
+
+## 0.4.0-beta.71
+
+- Structure-decor street lamp arms always point away from the nearest building facade, even across a gap. Preserve clear access, native arm support, shared roof bearings and existing obstacles; reject inward/tangential orientations at release validation. Walkway-generated lamps, ceiling pendants and nondirectional plinth lights are unchanged.
+- Freeze revision 17 and reduced-yard forms, retaining every earlier approved revision and Bank mapping without rewriting saved buildings. Add wood/masonry/slim-arm/gap/obstacle/transform and complete catalog audits; update both handbook formats. No item or recipe changes.
+
+## Unreleased: 0.4.0-beta.70
+
+- Freeze revision 16 with independently audited usable upper-floor/attic routes, supported ladder landings, table-facing stair seats, intact correctly reversed bed pairs and wall-aware freestanding lamp arms. Retain earlier revisions and saved Bank versions without automatic rewrites of existing structures; vanilla-exact imports retain native geometry.
+- Add ordinary-player `/tesstructure [x y z]` and operator `/emerald structure [x y z]` saved-plan identification, including template/revision/fit/rotation/mirror/origin/progress/hash, Bank variant/version and every overlapping match. Click a report to copy it; never load chunks or modify plans/blocks.
+- Add both handbook forms and a compact identity page, plus independent native full/reduced-yard usability, furniture, lookup/read-only, transformed construction/restart and client handbook checks. No new item or recipe.
+
+## Unreleased: 0.4.0-beta.69
+
+- Resume the captured 735/1282 mine-adit construction stall in old and fresh projects. Required native-authored ground paths with an immutable required solid cover use Minecraft's stable dirt footing; preserve existing approved dirt/grass, safely supply missing footing, and keep exact authored hashes/cursors/cuts. Do not alter vanilla-exact templates or authorize foreign blocks, missing structure, claims, storage, fluids or unloaded chunks.
+- Inspect authored and stable construction states, the planned covered-path flag and actual overhead block in debug pending-cell reports. Reproduce the captured blueprint in fresh/resumed forced/ordinary native fixtures with restart and durable physical handover checks.
+- Update both handbook formats, correct outdated creature-timeout guidance, and retain all beta68 Bank identity/chimney and previous architecture/safety improvements. No recipe, architecture asset or save-format change.
+
+## Unreleased: 0.4.0-beta.68
+
+- Give every newly planned Bank design a concealed lit-campfire signal chimney with style-matched masonry, a hidden hay bale and an open flue. Keep the smoke marker in all reduced-yard/core-only fits; support the chimney on real roof geometry, closing only its local half-slab bearings and replacing only snow within its footprint.
+- Match Bankers to the mod icon with black sunglasses, a charcoal suit, white shirt/cuffs and an emerald tie. Hide biome hats without changing native skin, professions, AI, Bank access or villager movement; use correctly mapped, weathered zombie Banker artwork too. Existing Bankers update with the profession resources.
+- Freeze architecture revision 15 and its fits. Keep all earlier plans/resources unchanged, with separate new Bank versions and no automatic alteration of existing buildings. Ordinary TES and vanilla-exact structures retain their geometry. No new recipe or save-format change.
+- Update both handbook forms; cover every Bank style/design/fit, native construction/restart/smoke state, historical compatibility, texture UVs and actual client renderer resources.
+
+## Unreleased: 0.4.0-beta.67
+
+- Give newly approved TES plains buildings one-block projecting oak roof edges where the roof is flush with its wall. Retain existing projecting eaves, roof pitch/ridge height, interior/exterior cells and supported fixtures; preserve night-time lighting for newly shaded work tiles.
+- Freeze architecture revision 14 and all three reduced-yard fits with measured envelopes and native-state SHA-256 identities. Retain revision 12/13 assets and revision-13 fits unchanged for saved plans, including previous Bank versions. Vanilla-exact structures are not modified.
+- Update both handbook forms and add native catalog, transform, fit, compatibility and production-construction checks. No recipes or save-format change.
+
+## Unreleased: 0.4.0-beta.66
+
+- Recheck delayed bridge-first destinations against current reserved lots and reject conflicts atomically at both project and starter-district commit. Short creek routes are no longer exempt; cached previews are invalidated when destination, exclusions or bridge settings change.
+- Recover proven overlapping unfinished projects by retaining their old lot, preserving every existing block and moving the loser to a new safe site. Completed buildings win; two unfinished projects have a deterministic older-project winner. Normal-mode replacement accounts for consumed resources; forced mode waives inputs, not safety.
+- Resume terrain preparation across natural grass/dirt changes and preserve a clear existing dry road in place when optional paving requested a different road material. Required structure, foreign floors, storage, fluids and protected writes remain blocked.
+- Save actual partial preparation counts, report exact terrain blockers and loaded status, include saved lot bounds/preparation counts in debug captures, and warn about overlapping project records without making legacy saves unloadable.
+- Remove the occupied-cell timeout bypass: safe animal movement or an actually clear cell is required, regardless of time spent waiting. Update both handbook forms and regression/native fixtures. No geometry assets, recipes or save-format change.
+- Restrict settled-path acceptance to cosmetic yard ground, never required structural floors. Final fence/window shape finishing uses safe creature clearance and reports exact unloaded, protected or occupied connection cells.
+
+## Unreleased: 0.4.0-beta.65
+
+- Make optional yards on new approved biome buildings rare: roughly 10% attempt outdoor ensembles, while most start with the core building. Decorated projects retain progressive reduced/core fallback; required farms, services and public road lighting remain intact. Frozen reservations and completed buildings are not reshaped.
+- Speed loaded lot selection by skipping known reserved envelopes before native terrain surveys, returning the first safe orientation in forced mode, widening core-only searches sooner and recognizing natural exposed coal, iron and copper ore. Preserve bounded shared work and all protection checks.
+- Freeze optional exterior terrain-column offsets from actual dry ground. Flexible paths, fences and planting terrace; connected tents, wells, carts and other props move rigidly or are omitted through fallback. Include fit/offsets in both geometry caches and frozen plan hashes.
+- Fix the captured Cedarbury Mine Entrance 77% stall: native rail slope/curve changes are not authored-placement failures. Different blocks, fluid changes and missing supports remain failures.
+- Preflight a dry organic destination and safe connection before bridge-first expansion; reject crossing approaches overlapping its building. Checkpoint destination-bound bridge plans, atomically save lot/dependencies, forbid orphan spending after a crash, and hold destination construction until all required crossings are verified open. Increase new-world water-span default to 96 and supported maximum to 128; existing settings retain their values.
+- Expand debug evidence with rejection categories, coordinates, rare/fit choice, frontier depth, terrain offsets, bridge dependencies and up to eight actual/expected pending cells with native survival and obstruction detail. Preserve edits and report missing/changed/unloaded crossings.
+- Save format 45; test a backed-up world copy. Update both handbook forms, configuration and terrain/bridge/debug guidance. No recipes, approved geometry assets or normal-mode construction economics change.
+
+## Unreleased: 0.4.0-beta.64
+
+- Accelerate optional roadside lamps only while forced instant development is enabled: remove their one-second hold and two-write cap, finish safe support-first assemblies in the available shared allowance, and drain multiple route stations within bounded cooperative work. Ordinary and Bank routes use the same lighting queue.
+- Preserve normal development pacing, saved partial lamp receipts, spacing, protection, occupants, loaded-only checks and no-regeneration. Disabling forced mode immediately restores the normal timer and write cap.
+- Add live mode-switch, route-drain, budget/deadline and safety regressions. Update both handbook forms; no lamp geometry, recipes or loot changes.
+
+## Unreleased: 0.4.0-beta.63
+
+- Extend the two historical authored Inn hitching-rail timber caps one block over their metal hangers, matching the supported profile in the reference screenshot. Apply the paired additive finish at handover or nearby normal-mode completed-Inn inspection, without changing frozen blueprints, hashes, cursors, interiors or loot.
+- Persist one-shot finishing receipts: require intact matching rails, loaded chunks, clear collision space and protected-land approval; preserve obstructions/player edits and never regenerate harvested caps. Current approved designs, which do not use this older hitch motif, remain byte-identical.
+- Add native live coverage of all five biome palettes, both yard sides, four rotations and mirrors, as well as damage, protection, obstructions and persistent receipts. Review handbook/recipes; update relevant long and compact guidance without changing recipes.
+
+## Unreleased: 0.4.0-beta.62
+
+- Finish native fence, fence-gate, wall and colored-pane connections before protected building/Bank handover, including supplied outdoor decoration. Reuse Minecraft's actual neighbor rules rather than forcing rails through gaps or incompatible fences.
+- Settle stacked connectors from the top down so lower wall arms see the final shape above them; a single bottom-up pass was insufficient.
+- Refresh surviving connections during loaded completed-building/approved-Bank inspection and gallery creation. Preserve missing/replaced blocks, recorded player placements, waterlogging, gate controls, inventories, unloaded chunks and occupants.
+- Add live connection/protection/occupancy/handover regressions and inspect every imported vanilla fixture for settled neighbor shapes. Update both handbook forms; building geometry and recipes remain unchanged.
+
+## Unreleased: 0.4.0-beta.61
+
+- Audit all 166 eligible native Minecraft 26.2 structures against their original NBT: 1,153 layers and 83,682 cells, including interior air, furniture, exterior details and block-state orientations in all four rotations. Preserve native crop ages instead of resetting farm layers.
+- Give newly placed imported chests and barrels modest profession-appropriate one-shot supplies at protected construction handover. Keep unfinished storage locked, protect supplied inventories, and never refill completed/looted storage or grant loot during repairs.
+- Retain native porch steps and meet flat street grade without adding another raised entrance block or stair. Preserve terrain-aware access for genuine drops, shallow foundations and inventory/protection checks.
+- Update both in-game handbook forms and regression coverage. Existing frozen building/terrain plans and completed player-world blocks remain unchanged; authored TES designs are not remodeled.
+
+## Unreleased: 0.4.0-beta.60
+
+- Finish Banks when reviewed garden/foundation grass naturally decays to dirt, without replacing sound soil. Recognize builder-owned covered paths in both Banks and approved ordinary buildings.
+- Include bounded pending-Bank progress in debug captures and identify the first changed, unloaded or unsupported Bank cell. Preserve protection, contents, missing-floor and handover checks.
+- Try full new landscaped lots, then smaller rear courts, front/side decoration, and intact buildings with essential access. Freeze each selected fit before construction; existing reservations and completed builds keep their geometry.
+- Expand failed ordinary district searches outward one parcel per completed fit cycle, retrying full landscaping first; retain loaded-chunk, connected ownership, expansion approval, terrain, storage and player-build protections. Searches remain bounded per tick and by saved-world limits.
+- Explain that departing builders do not prove completion. Update both handbook forms; save format 44 records outdoor fits and prevents unsafe downgrades.
+
 ## Unreleased: 0.4.0-beta.57
 
 - Remove raised decorative entrance aprons from newly approved TES building designs, retaining original porches, lamps and terrain-aware access stairs. Saved older designs and existing world blocks remain unchanged.

@@ -1,6 +1,12 @@
 # One-command debug flight recorder
 
+Use `/tesstructure` while aiming at a TES building within 32 blocks, or `/tesstructure x y z`, to identify its saved template and revision before sending a screenshot. Ordinary players may use this read-only lookup; `/emerald structure` is the operator alias. Click the chat report to copy it. Projects include outdoor fit, rotation/mirror, origin, project number, progress and plan hash; Banks include their variant/version. Overlaps report every matching plan, including completed and stale construction. It does not load chunks, repair structures or infer naturally generated buildings from appearance. New revision-16 usability fixes do not automatically rewrite older saved geometry.
+
+For a covered-path construction wait, pending-cell inspection distinguishes the authored block from its stable `constructionState`, includes `plannedCoveredPath` and shows the actual block above. A required TES mine grate can make an authored dirt path physically impossible in Minecraft; only an immutable required blueprint cover selects stable dirt/grass footing. This does not waive a missing floor or foreign obstruction, and vanilla-exact plans are unchanged. Check the capture's version/source identity before comparing releases; installing a newer JAR does not require recreating an otherwise valid unfinished lot.
+
 The Emerald Standard includes an operator-only diagnostic recorder for reproducing market, banking, village, construction, and persistence issues without memorizing a command tree.
+
+Beta66 captures include each project's saved minimum/maximum lot bounds and separate terrain-preparation cursor, total and completion flag. Terrain waits identify position, frozen before/after states, actual state, inventory/fluid evidence, unchanged-state check and protection result. Validation flags overlapping active project footprints even when the economy's load-time invariants pass; old conflicting worlds remain loadable for non-destructive recovery. `overlap_relocated` records a retired old lot and replacement search; `waiting_overlap_recovery` means consumed-share resources or retirement capacity prevented recovery. `waiting_terrain_chunks` and `waiting_for_entities` are distinct from a physical `terrain_wait`. `waiting_terrain_save` means all terrain cells have reconciled but disabled saving or a failed save barrier prevents committing completion. Final connector waits identify the unloaded neighbor or exact connection position, actual/expected native shape, protection and occupancy. A 100% placement cursor can legitimately wait on these final checks; it is not a completion receipt.
 
 ## Normal testing flow
 
@@ -17,6 +23,12 @@ The same command starts a full five-minute capture when idle and stops the activ
 ```
 
 The default command is the only one a normal tester needs to remember.
+
+### Generation evidence (beta.65)
+
+Keep the affected district loaded during capture, then stop and attach the ZIP. Project data includes the frozen design, outdoor rarity/fit, actual terrain-column offsets, saved search cursor/frontier/retry, and bridge-first dependencies. Observed lot trials include coordinates, rotation and rejection histograms: not enough dry land, crossing required, terrain too steep, chunks not loaded, occupied/reserved lots, protected territory, entrance failure or template obstruction. The current crossing/safe-lot state takes precedence over older rejected candidates.
+
+Reserved unfinished projects expose up to eight next cells with actual and expected states, world position, role, phase, native survival, block entity, fluid and replacement detail. Required crossing reports include progress and missing/changed/unloaded gate reasons. These are read-only observations, not a command to repair player alterations or force-load chunks. Histograms count inspected orientations, not unique land parcels or every possible location. Before-capture/session causes remain unknown. Work counters distinguish metadata footprint skips from native survey/cache work, helping separate planner delay from block-placement delay. Beta77 reports the mode-specific frontier and candidate count plus `searchPolicy` (forced mode, lot buffer and blanket Bank setback). `site_reservation_rejected` means the survey passed but the synchronized final approval failed; its bounds and policy are recorded separately from `site_reserved`. It is not evidence of a built or claimed lot.
 
 A server has at most one active capture. The operator who starts it owns it: another operator cannot stop it, toggle it off, or add markers. The capture closes automatically if its owner disconnects.
 

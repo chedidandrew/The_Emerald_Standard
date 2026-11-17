@@ -220,8 +220,17 @@ public final class VillageBankStructureVersionCompatibilityWiringRegressionTest 
                 "Village Bank structure-version constants drifted from the v2-v9 contract");
 
         String attempt = methodBody(source, "private static BankBuildAttempt attemptBankBuild(");
-        require(attempt.contains("reserveProgressiveBank(") && !attempt.contains("= buildBank("),
-                "A new or replacement Bank must use progressive construction");
+        require(attempt.contains("prepareApprovedBank(level,economy,candidate,villageId,bankKey,0,fit)")
+                        && attempt.contains("economy.reserveBankConstruction(bankKey,plan)")
+                        && attempt.contains("for(int fit=0;fit<4;fit++) for (BlockPos candidate")
+                        && attempt.contains("pendingBankConstructionsSnapshot().containsKey(bankKey)")
+                        && !attempt.contains("= buildBank(") && !attempt.contains("setBlock("),
+                "A new or replacement Bank must survey full lots before reduced fits, freeze progressive work, and retain pending plans");
+        String reserve = methodBody(source, "static boolean reserveProgressiveBank(");
+        require(reserve.contains("prepareApprovedBank(level,economy,origin,villageId,key,0,fit)")
+                        && reserve.contains("economy.reserveBankConstruction(key,plan)")
+                        && reserve.contains("for(int fit=0;fit<4;fit++)") && !reserve.contains("setBlock("),
+                "Explicit Bank reservations must use the same surveyed progressive fit fallback");
 
         String build = methodBody(source, "private static BankBuildResult buildBank(");
         require(build.contains("terrainSupportedBankPlan(level, origin, palette)"),

@@ -16,6 +16,12 @@ final class PreviewRoomLayout {
     private static final Map<String,Layout> LAYOUTS=new HashMap<>();
     static Layout layout(Plan p) { return LAYOUTS.getOrDefault(p.sample().id(),new Layout(0,0,Set.of(),Set.of(),Set.of())); }
     static void alias(Plan p,String id) { LAYOUTS.put(id,layout(p)); }
+    static void translate(Plan p,int dx,int dz) {
+        var a=layout(p);
+        LAYOUTS.put(p.sample().id(),new Layout(a.partitions(),a.upperLevels(),
+                PreviewPlanTranslation.positions(a.floors(),dx,dz),PreviewPlanTranslation.positions(a.upperTargets(),dx,dz),
+                PreviewPlanTranslation.positions(a.dividerTops(),dx,dz)));
+    }
     static boolean floorBearing(Plan p,BlockPos at) {
         return layout(p).floors().contains(at)&&full(p.cells(),at);
     }
@@ -446,9 +452,14 @@ final class PreviewRoomLayout {
         }
     }
     private static void lightRooms(Plan p,Map<BlockPos,BlockState> cells) {
+        lightRooms(p,cells,reachable(cells,p.entrance()));
+    }
+    static void lightUsableRooms(Plan p,Map<BlockPos,BlockState> cells) {
+        lightRooms(p,cells,usableReachable(cells,p.entrance()));
+    }
+    private static void lightRooms(Plan p,Map<BlockPos,BlockState> cells,Set<BlockPos> routes) {
         // Real roof-attached pendants on a regular room grid, never a solid lamp pedestal
         // in a circulation route. Partitions and floor plates change light propagation.
-        Set<BlockPos> routes=reachable(cells,p.entrance());
         List<BlockPos> ordered=routes.stream().sorted(Comparator.comparingInt((BlockPos at)->at.getY())
                 .thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX)).toList();
         Set<BlockPos> fixtures=new HashSet<>();
@@ -473,15 +484,27 @@ final class PreviewRoomLayout {
         }
     }
     static Set<BlockPos> reachable(Map<BlockPos,BlockState> cells,BlockPos start) {
+        return reachable(cells,start,false);
+    }
+    static Set<BlockPos> usableReachable(Map<BlockPos,BlockState> cells,BlockPos start) {
+        return reachable(cells,start,true);
+    }
+    private static Set<BlockPos> reachable(Map<BlockPos,BlockState> cells,BlockPos start,boolean hatches) {
         Set<BlockPos> seen=new HashSet<>(); ArrayDeque<BlockPos> queue=new ArrayDeque<>(); queue.add(start);
         while(!queue.isEmpty()) {
             BlockPos at=queue.removeFirst();
-            if(!walkable(cells,at)||!seen.add(at)) continue;
+            if(!(hatches?usableWalkable(cells,at):walkable(cells,at))||!seen.add(at)) continue;
             for(Direction d:Direction.Plane.HORIZONTAL) {
                 queue.add(at.relative(d));
+                // Players can take a real one-block step/jump; the destination still needs
+                // solid support and native headroom. Never jump through a low ceiling.
+                if(hatches) {
+                    queue.add(at.relative(d).below());
+                    if(navigationClear(cells,at.above())) queue.add(at.relative(d).above());
+                }
             }
-            if(ladder(cells.get(at))) { queue.add(at.above()); queue.add(at.below()); }
-            else if(ladder(cells.get(at.below()))) queue.add(at.below());
+            if(hatches?climbing(cells,at):ladder(cells.get(at))) { queue.add(at.above()); queue.add(at.below()); }
+            else if(hatches?climbing(cells,at.below()):ladder(cells.get(at.below()))) queue.add(at.below());
         }
         return Set.copyOf(seen);
     }
@@ -489,6 +512,32 @@ final class PreviewRoomLayout {
         if(at.getY()>1&&!ladder(cells.get(at))&&!covered(cells,at)) return false;
         return (full(cells,at.below())||ladder(cells.get(at))||ladder(cells.get(at.below())))
                 &&PreviewDoorwayAudit.clear(cells,at);
+    }
+    private static boolean usableWalkable(Map<BlockPos,BlockState> cells,BlockPos at) {
+        if(at.getY()>1&&!climbing(cells,at)&&!covered(cells,at)) return false;
+        return (standingSupport(cells,at.below())||climbing(cells,at)||climbing(cells,at.below()))
+                &&navigationClear(cells,at);
+    }
+    static boolean standingSupport(Map<BlockPos,BlockState> cells,BlockPos at) {
+        var state=cells.get(at);
+        return full(cells,at)||state!=null&&(state.is(Blocks.DIRT_PATH)||state.is(Blocks.FARMLAND)
+                ||state.getBlock() instanceof StairBlock||state.getBlock() instanceof SlabBlock);
+    }
+    private static boolean climbing(Map<BlockPos,BlockState> cells,BlockPos at) {
+        if(ladder(cells.get(at))) return true;
+        var state=cells.get(at);
+        return state!=null&&state.getBlock() instanceof TrapDoorBlock&&!state.is(Blocks.IRON_TRAPDOOR)
+                &&ladder(cells.get(at.below()));
+    }
+    private static boolean navigationClear(Map<BlockPos,BlockState> cells,BlockPos at) {
+        if(PreviewDoorwayAudit.clear(cells,at)) return true;
+        // A player can open a wooden ladder hatch; iron/redstone-only hatches remain barriers.
+        Map<BlockPos,BlockState> draft=null;
+        for(BlockPos hatch:List.of(at,at.above())) if(climbing(cells,hatch)&&!ladder(cells.get(hatch))) {
+            if(draft==null) draft=new HashMap<>(cells);
+            draft.put(hatch,cells.get(hatch).setValue(TrapDoorBlock.OPEN,true));
+        }
+        return draft!=null&&PreviewDoorwayAudit.clear(draft,at);
     }
     private static boolean ladder(BlockState state) { return state!=null&&state.getBlock() instanceof LadderBlock; }
     private static boolean full(Map<BlockPos,BlockState> cells,BlockPos at) {

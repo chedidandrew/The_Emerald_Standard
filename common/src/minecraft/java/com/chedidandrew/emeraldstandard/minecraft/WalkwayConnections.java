@@ -14,6 +14,7 @@ final class WalkwayConnections {
     record Request(UUID village,long project,long origin,BlockPos start,BlockPos destination,
             boolean streetGoal,Set<Long> oldColumns,List<EconomyService.VillageProjectLot> lots,
             List<Long> banks,boolean desert,String style) {
+        Request { oldColumns=Set.copyOf(oldColumns); lots=List.copyOf(lots); banks=List.copyOf(banks); }
         Request(UUID village,long project,long origin,BlockPos start,BlockPos destination,
                 boolean streetGoal,Set<Long> oldColumns,List<EconomyService.VillageProjectLot> lots,
                 List<Long> banks,boolean desert) {
@@ -27,9 +28,49 @@ final class WalkwayConnections {
     private record Node(BlockPos pos,int cost,int score) {}
     private record Crossing(BlockPos from,int cost,VillageBridgeSurvey survey) {}
     private static final Map<ServerLevel,Map<String,Search>> SEARCHES=new WeakHashMap<>();
+    record Preview(boolean ready, boolean failed, String reason, List<VillageBridgeLedger.Plan> bridges) { }
+    private static final Map<ServerLevel,Map<String,Preview>> PREVIEWS=new WeakHashMap<>();
+    private record PreviewIdentity(Request request, VillageBridges.Context context) { }
+    private static final Map<ServerLevel,Map<String,PreviewIdentity>> PREVIEW_IDENTITIES=new WeakHashMap<>();
+    private static Map<String,Preview> previewResults(ServerLevel level) {
+        return PREVIEWS.computeIfAbsent(level,k->new LinkedHashMap<>() {
+            @Override protected boolean removeEldestEntry(Map.Entry<String,Preview> eldest) {return size()>32;}
+        });
+    }
+    /** Survey only: no bridge reservations, funding, paving or terrain writes. */
+    static Preview preview(ServerLevel level,Request request,long tick,VillageBridges.Context context) {
+        var results=previewResults(level);
+        var identities=PREVIEW_IDENTITIES.computeIfAbsent(level,k->new LinkedHashMap<>());
+        var identity=new PreviewIdentity(request,context);
+        if(!identity.equals(identities.get(request.key()))) {
+            forgetPreview(level,request);
+            var ledger=get(level); ledger.attempts.remove(request.key()); ledger.nextReview.remove(request.key());
+            // A failed preview's timer must not suppress a changed destination's fresh survey.
+            var job=ledger.job(request.key());
+            if(job.plan().isEmpty()&&!job.done()&&job.retry()!=0)
+                ledger.put(request.key(),new Job(List.of(),0,0,job.supplied(),false,0,"Route request changed"));
+            identities.put(request.key(),identity);
+        }
+        identities.keySet().removeIf(key->!key.equals(request.key())&&!results.containsKey(key)
+                &&!SEARCHES.getOrDefault(level,Map.of()).containsKey(key));
+        Preview result=results.get(request.key());
+        if(result!=null)return result;
+        advanceMeasured(level,request,tick,1,context,true);
+        result=results.get(request.key());
+        if(result!=null)return result;
+        var job=get(level).job(request.key());
+        return new Preview(false,job.retry()>tick,job.reason(),List.of());
+    }
+    static void forgetPreview(ServerLevel level,Request request) {
+        var previews=PREVIEWS.get(level);if(previews!=null)previews.remove(request.key());
+        var identities=PREVIEW_IDENTITIES.get(level);if(identities!=null)identities.remove(request.key());
+        var searches=SEARCHES.get(level);if(searches!=null)searches.remove(request.key());
+    }
     static void resourcesReloaded(net.minecraft.server.MinecraftServer server) {
         for(var level:server.getAllLevels()) {
             SEARCHES.remove(level);
+            PREVIEWS.remove(level);
+            PREVIEW_IDENTITIES.remove(level);
             var ledger=get(level);ledger.attempts.clear();ledger.nextReview.clear();ledger.setDirty();
         }
     }
@@ -105,6 +146,9 @@ final class WalkwayConnections {
         }
     }
     private static int advanceMeasured(ServerLevel level,Request r,long tick,int allowance,VillageBridges.Context bridges) {
+        return advanceMeasured(level,r,tick,allowance,bridges,false);
+    }
+    private static int advanceMeasured(ServerLevel level,Request r,long tick,int allowance,VillageBridges.Context bridges,boolean preview) {
         if(allowance<=0)return 0;
         var ledger=get(level); Job job=ledger.job(r.key());
         r=r.withStyle(ledger.freezeStyle(r.key(),r.style(),r.desert()));
@@ -116,12 +160,18 @@ final class WalkwayConnections {
             ledger.attempts.remove(r.key()); ledger.setDirty();
             DebugWork.count("walkway.deferredWorldChanged");
         }
-        if(!job.plan().isEmpty())return pave(level,r,job,tick,allowance,bridges);
+        if(!job.plan().isEmpty()) {
+            if(preview) {
+                previewResults(level).put(r.key(),
+                        new Preview(false,true,"Existing connection work cannot be reused as an unsurveyed destination approval",List.of()));
+                return 0;
+            }
+            return pave(level,r,job,tick,allowance,bridges);
+        }
         var searches=SEARCHES.computeIfAbsent(level,k->new LinkedHashMap<>());
         prune(level, tick);
         Search search=searches.get(r.key());
-        if(search!=null && (!search.request.destination().equals(r.destination())
-                || !search.request.start().equals(r.start()) || !Objects.equals(search.bridgeContext,bridges))) {
+        if(search!=null && (!search.request.equals(r) || !Objects.equals(search.bridgeContext,bridges))) {
             DebugWork.count("walkway.requestRestart");
             searches.remove(r.key()); search=null;
         }
@@ -172,7 +222,7 @@ final class WalkwayConnections {
             return 0;
         }
         if(search.route!=null) {
-            if(freeze(level,r,job,search,tick,bridges))searches.remove(r.key());
+            if(freeze(level,r,job,search,tick,bridges,preview))searches.remove(r.key());
             return 0;
         }
         if(!search.crossings.isEmpty()) {
@@ -397,7 +447,7 @@ final class WalkwayConnections {
         return new Step(p.asLong(),level.getBlockState(p),level.getBlockState(p.above()),level.getBlockState(p.above(2)));
     }
     /** Snapshot at most 32 cells/edges per pulse; never scan the entire route on a game tick. */
-    private static boolean freeze(ServerLevel level,Request r,Job job,Search search,long tick,VillageBridges.Context bridges) {
+    private static boolean freeze(ServerLevel level,Request r,Job job,Search search,long tick,VillageBridges.Context bridges,boolean preview) {
         List<BlockPos> route=search.route;
         long deadline=System.nanoTime()+2_000_000L;
         int total=route.size()+Math.max(0,route.size()-1);
@@ -436,6 +486,11 @@ final class WalkwayConnections {
             }
         }
         boolean finished=search.freezeCursor==total;
+        if(finished&&preview) {
+            previewResults(level).put(r.key(),
+                    new Preview(true,false,"Destination and entire connection surveyed",List.copyOf(new LinkedHashSet<>(search.bridgeAt.values()))));
+            return true;
+        }
         if(finished&&!search.bridgeAt.isEmpty()) {
             if(!VillageBridges.reserveAll(level,bridges,new LinkedHashSet<>(search.bridgeAt.values()))) {
                 get(level).put(r.key(),job.retry(tick,"Waiting for a shared crossing or available bridge land"));return true;

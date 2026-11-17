@@ -31,12 +31,13 @@ try {
     $identity=Read-JarText 'tes-build.properties'
     if(($identity -notmatch "(?m)^version=$([regex]::Escape($version))\r?$") -or
             ($identity -notmatch "(?m)^sourceSha256=$sourceHash\r?$")) {throw 'Packaged build does not match current canonical source inputs'}
-    foreach($revision in @(12,13)) {
+    foreach($revision in @('12','13','13-fit','14','14-fit','15','15-fit','16','16-fit','17','17-fit','18','18-fit','19','19-fit','20','20-fit')) {
+    $expectedCount=if($revision.EndsWith('-fit')){1125}else{375}
     $prefix="data/the_emerald_standard/architecture/v$revision/"
     $rows=(Read-JarText ($prefix+'catalog.tsv')) -split '\r?\n' | Where-Object {$_ -and -not $_.StartsWith('#')}
-    if($rows.Count -ne 375){throw "Incomplete catalog: $($rows.Count)"}
+    if($rows.Count -ne $expectedCount){throw "Incomplete catalog: $($rows.Count)"}
     $packaged=@($zip.Entries | Where-Object {$_.FullName.StartsWith($prefix) -and $_.FullName.EndsWith('.bin.gz')})
-    if($packaged.Count -ne 375){throw "Unexpected packaged asset count: $($packaged.Count)"}
+    if($packaged.Count -ne $expectedCount){throw "Unexpected packaged asset count: $($packaged.Count)"}
     $ordinary=0;$banks=0
     foreach($row in $rows) {
         $fields=$row -split "`t";if($fields.Count -ne 9){throw 'Malformed manifest'}
@@ -51,12 +52,12 @@ try {
         } finally {$gzip.Dispose();$memory.Dispose()}
         if($fields[1] -eq 'BANK'){$banks++}else{$ordinary++}
     }
-    if($ordinary -ne 360 -or $banks -ne 15){throw 'Ordinary/Bank coverage mismatch'}
+    if($ordinary -ne ($expectedCount/375*360) -or $banks -ne ($expectedCount/375*15)){throw 'Ordinary/Bank coverage mismatch'}
     }
     foreach($class in @('core/ApprovedArchitectureCatalog','minecraft/ApprovedVillageStructures','minecraft/ApprovedBankStructures','minecraft/NativeStructureSupport','minecraft/NativeDoorwayClearance')) {
         if($null -eq $zip.GetEntry('com/chedidandrew/emeraldstandard/'+$class+'.class')){throw "Missing production adapter $class"}
     }
-    "PASS $Loader ${version}: current source identity, 750 exact native SHA-256 assets (375 each for archived v12 and current v13), production adapters"
+    "PASS $Loader ${version}: current source identity, 12375 exact native SHA-256 assets (3375 full archived/current plus 9000 outdoor fits), production adapters"
     "sourceSha256=$sourceHash"
     "jarSha256=$((Get-FileHash -LiteralPath $jarPath -Algorithm SHA256).Hash.ToLowerInvariant())"
 } finally {$zip.Dispose()}

@@ -671,8 +671,9 @@ public final class VillageBankManager {
                 bankKey,
                 excludedPackedAnchors,
                 recoverySearch);
-        for (BlockPos candidate : plotSearch.candidates()) {
-            if (reserveProgressiveBank(level, economy, candidate, villageId, bankKey)) {
+        for(int fit=0;fit<4;fit++) for (BlockPos candidate : plotSearch.candidates()) {
+            var plan=prepareApprovedBank(level,economy,candidate,villageId,bankKey,0,fit);
+            if (plan!=null&&economy.reserveBankConstruction(bankKey,plan)) {
                 return new BankBuildAttempt(null, BankBuildResult.failed(), false, true);
             }
         }
@@ -690,23 +691,31 @@ public final class VillageBankManager {
 
     static boolean reserveProgressiveBank(ServerLevel level, EconomyService economy,
             BlockPos origin, UUID villageId, long key) {
-        var plan=prepareApprovedBank(level,economy,origin,villageId,key,0);
-        return plan!=null&&economy.reserveBankConstruction(key,plan);
+        for(int fit=0;fit<4;fit++) {
+            var plan=prepareApprovedBank(level,economy,origin,villageId,key,0,fit);
+            if(plan!=null&&economy.reserveBankConstruction(key,plan)) return true;
+        }
+        return false;
     }
 
     private static BankConstruction prepareApprovedBank(ServerLevel level, EconomyService economy,
             BlockPos origin, UUID villageId, long key, int requestedVersion) {
+        return prepareApprovedBank(level,economy,origin,villageId,key,requestedVersion,0);
+    }
+    private static BankConstruction prepareApprovedBank(ServerLevel level, EconomyService economy,
+            BlockPos origin, UUID villageId, long key, int requestedVersion,int outdoorLevel) {
         ensureBankTemplateValidated();
         var dialect = bankDialect(level,economy,villageId,origin);
         var palette = paletteFor(dialect);
         var snapshot=villageId==null?null:economy.developmentVillageSnapshot(villageId);
         int tier=snapshot==null?1:snapshot.village().developmentTier;
-        int version=requestedVersion>0?requestedVersion:tier>=3&&Math.floorMod(key,3)==0?16:Math.floorMod(key,2)==0?17:18;
+        int version=requestedVersion>0?requestedVersion:
+                ApprovedBankStructures.currentVersion(tier>=3&&Math.floorMod(key,3)==0?0:Math.floorMod(key,2)==0?1:2,outdoorLevel);
         var envelope=ApprovedBankStructures.plan(dialect,version);
         var reservedLots=new ArrayList<>(economy.villageProjectLotExclusions("minecraft:overworld"));
         reservedLots.addAll(approvedBankLots(level,economy));
-        BlockPos lotMin=origin.offset(envelope.minX()-2,0,envelope.minZ()-8);
-        BlockPos lotMax=origin.offset(envelope.maxX()+2,0,envelope.maxZ()+2);
+        BlockPos lotMin=origin.offset(envelope.minX()-VillageTerrainGrounding.BLEND_RADIUS,0,envelope.minZ()-8);
+        BlockPos lotMax=origin.offset(envelope.maxX()+VillageTerrainGrounding.BLEND_RADIUS,0,envelope.maxZ()+VillageTerrainGrounding.BLEND_RADIUS);
         for(var lot:reservedLots) {
             BlockPos min=BlockPos.of(lot.boundsMinPos()),max=BlockPos.of(lot.boundsMaxPos());
             if(lotMin.getX()<=max.getX()&&lotMax.getX()>=min.getX()
@@ -743,6 +752,19 @@ public final class VillageBankManager {
                 occupied, approach, arrival == null ? origin.getY() : arrival,
                 palette.foundation().defaultBlockState(),
                 palette.stairs().defaultBlockState(), villageId, key);
+        if(preparation==null) return null;
+        Map<BlockPos,BlockState> groundAuthored=new LinkedHashMap<>();
+        for(var cell:authored) groundAuthored.put(cell.position(),cell.state());
+        var access=EntranceStaircase.survey(level,preparation,origin.offset(envelope.walkwayExit()),Direction.NORTH,
+                groundAuthored,palette.stairs().defaultBlockState(),villageId,key);
+        if(access==null)return null;
+        occupied.addAll(access.occupied());
+        preparation=VillageTerrainGrounding.freeze(level,preparation,origin,groundAuthored,occupied,approach,villageId,key);
+        if(preparation==null) return null;
+        access=EntranceStaircase.survey(level,preparation,origin.offset(envelope.walkwayExit()),Direction.NORTH,
+                groundAuthored,palette.stairs().defaultBlockState(),villageId,key);
+        if(access==null)return null;
+        preparation=access.receipt();
         Map<BlockPos, BlockState> finalCells = new LinkedHashMap<>();
         for (var cell : preparation.cells()) finalCells.put(BlockPos.of(cell.position()),
                 VillageTerrainFinishing.state(level, cell.after()));
@@ -783,13 +805,13 @@ public final class VillageBankManager {
         var result=new ArrayList<EconomyService.VillageProjectLot>();
         economy.generatedBankAnchorsSnapshot().forEach((key,anchor)->{
             int version=economy.generatedBankStructureVersion(key);
-            if(version<13||version>18) return;
+            if(!ApprovedBankStructures.approvedVersion(version)) return;
             BlockPos origin=BlockPos.of(anchor).offset(-6,-1,-9);
             var style=BankStyleLedger.get(level).style(origin.asLong());
             if(style==null) return;
             var p=ApprovedBankStructures.plan(style,version);
-            result.add(new EconomyService.VillageProjectLot(origin.offset(p.minX(),-3,p.minZ()-8).asLong(),
-                    origin.offset(p.maxX(),p.height(),p.maxZ()).asLong()));
+            result.add(new EconomyService.VillageProjectLot(origin.offset(p.minX()-VillageTerrainGrounding.BLEND_RADIUS,-4,p.minZ()-8).asLong(),
+                    origin.offset(p.maxX()+VillageTerrainGrounding.BLEND_RADIUS,p.height(),p.maxZ()+VillageTerrainGrounding.BLEND_RADIUS).asLong()));
         });
         for(var plan:economy.pendingBankConstructionsSnapshot().values()) {
             if(plan.version()<13||plan.cells().isEmpty()) continue;
@@ -855,6 +877,7 @@ public final class VillageBankManager {
         boolean unfinished = false;
         boolean occupied = false;
         boolean supportWait = false, hardWait = false;
+        String firstWait = "";
         int matched = 0;
         var ordered=new ArrayList<>(parsed.order());
         var currentParsed=parsed;
@@ -864,11 +887,15 @@ public final class VillageBankManager {
         }));
         for (int i : ordered) {
             BankPlacement cell = parsed.after().get(i);
-            if (!isLoaded(level, cell.position())) { unfinished = true; hardWait = true; continue; }
+            if (!isLoaded(level, cell.position())) {
+                unfinished = true; hardWait = true;
+                if (firstWait.isEmpty()) firstWait = "Unloaded cell at " + cell.position().toShortString();
+                continue;
+            }
             BlockState current = level.getBlockState(cell.position());
             boolean storage = plan.cells().get(i).storage();
             boolean handled = plan.handledStorage().contains(cell.position().asLong());
-            if (isOwnedBankPlacement(current, cell.state())) {
+            if (bankConstructionCellMatches(level, cell.position(), current, cell.state())) {
                 // Adopted containers keep their contents and permanently close this loot opportunity.
                 if (storage && !handled && !economy.markBankStorageHandled(key,plan,cell.position().asLong())) {
                     unfinished = true; continue;
@@ -884,12 +911,28 @@ public final class VillageBankManager {
                     || current.hasBlockEntity()
                     || !level.getFluidState(cell.position()).isEmpty()
                     || !VillageDevelopmentProtection.mayPlace(level, plan.villageId(), key,
-                            cell.position(), current, cell.state())) { hardWait=true; continue; }
-            if (!ConstructionRecovery.survives(level,cell.position(),cell.state())) { supportWait=true; continue; }
+                            cell.position(), current, cell.state())) {
+                hardWait=true;
+                if (firstWait.isEmpty()) firstWait = "Changed/protected cell at " + cell.position().toShortString()
+                        + "; present " + BlockStateParser.serialize(current)
+                        + "; expected " + BlockStateParser.serialize(cell.state());
+                continue;
+            }
+            if (!ConstructionRecovery.survives(level,cell.position(),cell.state())) {
+                supportWait=true;
+                if (firstWait.isEmpty()) firstWait = "Native support unavailable at " + cell.position().toShortString()
+                        + "; expected " + BlockStateParser.serialize(cell.state());
+                continue;
+            }
             var supportCell=new SupportedConstructionOrder.Cell(cell.position().subtract(siteOrigin),cell.state(),plan.version()>=13?7:-1);
             if(!parsed.disconnected().contains(i)
                     && !SupportedConstructionOrder.supportedNow(level,siteOrigin,supportCell,parsed.supports())
-                    && !nativeOrder) { supportWait=true; continue; }
+                    && !nativeOrder) {
+                supportWait=true;
+                if (firstWait.isEmpty()) firstWait = "Construction support pending at " + cell.position().toShortString()
+                        + "; expected " + BlockStateParser.serialize(cell.state());
+                continue;
+            }
             if (!VillageConstructionOccupancy.mayBuild(level,cell.position(),current,cell.state())) {
                 occupied = true; continue;
             }
@@ -911,7 +954,12 @@ public final class VillageBankManager {
             recovery.observe(level.getGameTime(),0,supportWait&&!hardWait&&!occupied,false);
             ConstructionDiagnostics.record("bank:" + key, occupied ? "waiting_for_entities" : "retry_in_place", matched, parsed.after().size(),
                     level.getGameTime(), occupied ? "Living entity occupies a placement or its supporting floor; retry shortly"
-                            : "unloaded, protected, changed or not-yet-supported cells; preserving saved work");
+                            : firstWait.isEmpty() ? "Preserving saved work; retrying remaining cells" : firstWait);
+            return 0;
+        }
+        if (!normalizeBankConnections(level, parsed.after(), plan.villageId(), key)) {
+            ConstructionDiagnostics.record("bank:" + key, "waiting_for_connections", matched, parsed.after().size(),
+                    level.getGameTime(), "Fence/window connections await loaded, unprotected and unoccupied cells");
             return 0;
         }
         BlockPos anchor = BlockPos.of(plan.bankerAnchor());
@@ -2715,7 +2763,7 @@ public final class VillageBankManager {
         var bells=new HashMap<>(generatedBankBellRegions(economy));
         economy.generatedBankAnchorsSnapshot().forEach((key,anchor)->{
             int version=economy.generatedBankStructureVersion(key);
-            if(version<13||version>18||economy.isFallbackBankRegion(key)) return;
+            if(!ApprovedBankStructures.approvedVersion(version)||economy.isFallbackBankRegion(key)) return;
             var anchors=new ArrayList<Long>(economy.retiredBankAnchors(key));anchors.add(anchor);
             for(long savedAnchor:anchors) {
                 BlockPos origin=BlockPos.of(savedAnchor).offset(-6,-1,-9);
@@ -3005,7 +3053,7 @@ public final class VillageBankManager {
         return true;
     }
 
-    /** Maintains pane shapes and performs the guarded, one-time entrance upgrade for old Banks. */
+    /** Maintains surviving neighbor shapes; architecture and player edits remain frozen. */
     private static void maintainManagedBank(
             ServerLevel level,
             EconomyService economy,
@@ -3015,12 +3063,29 @@ public final class VillageBankManager {
             VillageBankPlacementPolicy.UpgradeAttemptGate upgradeGate) {
         BlockPos origin = bankerAnchor.offset(
                 -BANK_WIDTH / 2, -1, -(BANK_DEPTH - 2));
+        int structureVersion = economy.generatedBankStructureVersion(bankKey);
+        if (ApprovedBankStructures.approvedVersion(structureVersion)) {
+            var savedStyle = BankStyleLedger.get(level).style(origin.asLong());
+            if (savedStyle == null) return;
+            var plan = ApprovedBankStructures.plan(savedStyle, structureVersion);
+            BlockPos entry = origin.offset(plan.entrance());
+            if (!isLoaded(level, entry) || !isLoaded(level, entry.above())
+                    || !isLoaded(level, bankerAnchor.north())
+                    || !BankerProfessionSupport.isExchangeDesk(level.getBlockState(bankerAnchor.north()))
+                    || !(level.getBlockState(entry).getBlock() instanceof DoorBlock)
+                    || !(level.getBlockState(entry.above()).getBlock() instanceof DoorBlock)) return;
+            var connectors = plan.cells().entrySet().stream()
+                    .filter(e -> VillageProsperityManager.isManagedConnectionBlock(e.getValue()))
+                    .map(e -> new BankPlacement(origin.offset(e.getKey()), e.getValue())).toList();
+            normalizeBankConnections(level, connectors, villageId, bankKey);
+            LAST_BANK_UPGRADE_RETRY_TICK.remove(bankKey);
+            return;
+        }
         BankPalette palette = paletteFor(level, origin);
         if (!hasManagedBankSignature(level, origin, bankerAnchor, palette)) {
             return;
         }
 
-        int structureVersion = economy.generatedBankStructureVersion(bankKey);
         if(structureVersion>=13) { LAST_BANK_UPGRADE_RETRY_TICK.remove(bankKey); return; }
         normalizeManagedBankPanes(level, origin, villageId, bankKey);
         if (structureVersion >= LEGACY_BANK_STRUCTURE_VERSION) {
@@ -3402,6 +3467,20 @@ public final class VillageBankManager {
                 origin.offset(BANK_WIDTH / 2, 3, 0),
                 villageId,
                 bankKey);
+    }
+
+    /** Missing/replaced cells are not regenerated by connection maintenance. */
+    private static boolean normalizeBankConnections(ServerLevel level, List<BankPlacement> cells,
+                                                    UUID villageId, long bankKey) {
+        boolean ready = true;
+        for (BankPlacement cell : cells.stream().filter(c -> VillageProsperityManager.isManagedConnectionBlock(c.state()))
+                .sorted(Comparator.comparingInt((BankPlacement c) -> c.position().getY()).reversed()).toList()) {
+            if (!isLoaded(level, cell.position())) { ready = false; continue; }
+            if (!level.getBlockState(cell.position()).is(cell.state().getBlock())) continue;
+            if (!VillageProsperityManager.normalizeModularConnectionState(
+                    level, cell.position(), cell.state(), villageId, bankKey)) ready = false;
+        }
+        return ready;
     }
 
     /** Recomputes one surviving authored pane without recreating or replacing player blocks. */
@@ -5853,6 +5932,13 @@ public final class VillageBankManager {
 
     static boolean isOwnedBankPlacement(BlockState current, BlockState planned) {
         return current != null && planned != null && current.is(planned.getBlock());
+    }
+
+    /** Finishing, not rollback: normal soil changes do not invalidate a frozen Bank parcel. */
+    static boolean bankConstructionCellMatches(ServerLevel level, BlockPos pos, BlockState current, BlockState planned) {
+        return isOwnedBankPlacement(current, planned)
+                || VillageProsperityManager.naturalSoilEquivalent(current, planned)
+                || ConstructionOwnership.settledPathGround(level, pos, current, planned);
     }
 
     private static BankPalette paletteFor(ServerLevel level, BlockPos origin) {

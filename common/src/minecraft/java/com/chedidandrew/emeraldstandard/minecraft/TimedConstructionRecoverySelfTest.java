@@ -41,6 +41,9 @@ final class TimedConstructionRecoverySelfTest {
             require(ordered.size()==project.totalBlocks,"exact frozen operation count for "+project.designTemplateId);
             for(Object cell:ordered) {
                 BlockPos pos=target(origin,cell);
+                // Native connection handover reads adjacent columns too. Load them in the
+                // disposable harness; production must continue waiting for unloaded neighbors.
+                for(var side:net.minecraft.core.Direction.Plane.HORIZONTAL) level.getChunk(pos.relative(side));
                 for(int y=-5;y<0;y++) set(level,before,new BlockPos(pos.getX(),origin.getY()+y,pos.getZ()),Blocks.DIRT.defaultBlockState());
                 set(level,before,pos,Blocks.AIR.defaultBlockState());
             }

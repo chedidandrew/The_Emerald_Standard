@@ -15,7 +15,16 @@ import java.util.UUID;
 
 /** Persistent world economy and server-authoritative player accounts. */
 public final class EconomyState {
-public static final int FORMAT_VERSION = 43;
+public static final int FORMAT_VERSION = 45;
+    public static boolean validBridgeDependencies(String value) {
+        if(value==null||value.length()>148)return false;
+        if(value.isEmpty())return true;
+        String[] ids=value.split(",",-1);
+        if(ids.length>4||new java.util.HashSet<>(java.util.List.of(ids)).size()!=ids.length)return false;
+        try {for(String id:ids)if(!java.util.UUID.fromString(id).toString().equals(id))return false;}
+        catch(IllegalArgumentException invalid){return false;}
+        return true;
+    }
     /** Ten complete years of daily intervals, plus the opening endpoint. */
     public static final int HISTORY_DAYS = 3_651;
     public static final int MAX_PORTFOLIO_LEDGER_ENTRIES = 256;
@@ -681,6 +690,11 @@ public static final int FORMAT_VERSION = 43;
         /** Versioned canonical placement hash; blank until the physical plan is first frozen. */
         public int designPlanHashVersion;
 public String designPlanHash = "";
+        /** Frozen only by a new site reservation; existing approvals default to the full lot. */
+        public int designOutdoorLevel;
+        /** Crossings that must open before any destination building/terrain work. */
+        public String bridgeFirstDependencies = "";
+        public final Map<Long,Integer> outdoorTerrainOffsets = new java.util.TreeMap<>();
         /** Immutable resolved vanilla cells; null for all existing TES schemas. */
         public VanillaConstructionPlan vanillaPlan;
         public int housingGain() {
@@ -773,6 +787,9 @@ public String designPlanHash = "";
             copy.designDressingId = designDressingId;
             copy.designPlanHashVersion = designPlanHashVersion;
 copy.designPlanHash = designPlanHash;
+            copy.designOutdoorLevel = designOutdoorLevel;
+            copy.bridgeFirstDependencies = bridgeFirstDependencies;
+            copy.outdoorTerrainOffsets.putAll(outdoorTerrainOffsets);
             copy.vanillaPlan = vanillaPlan;
             copy.sitePreparationComplete = sitePreparationComplete;
             copy.sitePreparationCursor = sitePreparationCursor;
@@ -2665,6 +2682,14 @@ copy.architectureDialect = architectureDialect;
                                     || project.entranceApproachComplete))
                     || project.retryAfterGameTick < 0L
                     || project.materializationFailures < 0
+                    || project.designOutdoorLevel < 0 || project.designOutdoorLevel > 3
+                    || !validBridgeDependencies(project.bridgeFirstDependencies)
+                    || !OutdoorTerrainOffsets.valid(project.outdoorTerrainOffsets)
+                    || (!project.outdoorTerrainOffsets.isEmpty() && (!ApprovedArchitectureCatalog.supportsFits(project.designTemplateRevision)||project.designOutdoorLevel==3
+                            || !VillageArchitecture.BLUEPRINT_SCHEMA.equals(project.designSchema)))
+                    || (project.originPos == 0L && !project.bridgeFirstDependencies.isEmpty())
+                    || (project.designOutdoorLevel > 0 && (!VillageArchitecture.BLUEPRINT_SCHEMA.equals(project.designSchema)
+                            || !ApprovedArchitectureCatalog.supportsFits(project.designTemplateRevision)))
                     || project.siteSearchCursor < 0
                     || project.siteSearchCursor > MAX_PROJECT_SITE_SEARCH_CANDIDATES
                     || (project.siteSearchSawUnloadedCandidate

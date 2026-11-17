@@ -27,7 +27,7 @@ final class BiomeArchitectureCatalogPreview {
                     Plan plan=PlainsLegacyArchitecturePreview.catalog(role,id);
                     CACHE.put(plan.sample().id(),plan); result.add(plan.sample());
                 } else result.add(new Sample(style,role,"catalog_"+style.id()+"_"+id,
-                        descriptor.width()+6,descriptor.depth()+6));
+                        descriptor.width()+(style==BiomeDialect.SNOWY?8:6),descriptor.depth()+(style==BiomeDialect.SNOWY?8:6)));
             }
             var bank=BiomeArchitecturePreview.samples().stream()
                     .filter(s->s.style()==style&&s.role().equals("BANK")).findFirst().orElseThrow();
@@ -37,6 +37,9 @@ final class BiomeArchitectureCatalogPreview {
             PreviewDoorwayAudit.alias(source,sample.id());
             PreviewRoomLayout.alias(source,sample.id());
             PreviewFacadePrograms.alias(source,sample.id());
+            PreviewPlainsOverhang.alias(source,sample.id());
+            PreviewBankChimney.alias(source,sample.id());
+            PreviewSnowyOverhang.alias(source,sample);
             result.add(sample);
             result.addAll(PreviewCompactBuildings.samples(style));
         }
@@ -50,7 +53,10 @@ final class BiomeArchitectureCatalogPreview {
     static Set<BlockPos> roofJoins(Sample sample) { plan(sample); return ROOF_JOINS.getOrDefault(sample.id(),Set.of()); }
 
     private static Plan build(Sample s) {
-        Builder b=new Builder(new Sample(s.style(),s.role(),s.id(),s.width()-6,s.depth()-6));
+        Sample envelope=s;
+        if(s.style()==BiomeDialect.SNOWY)s=new Sample(s.style(),s.role(),s.id(),s.width()-2,s.depth()-2);
+        int margin=3;
+        Builder b=new Builder(new Sample(s.style(),s.role(),s.id(),s.width()-2*margin,s.depth()-2*margin));
         String id=masterId(s);
         var descriptor=VillageArchitecture.legacyBlueprints().stream().filter(d->d.templateId().equals(id))
                 .findFirst().orElseThrow();
@@ -110,12 +116,16 @@ final class BiomeArchitectureCatalogPreview {
                         e.getKey().below(),Direction.UP)));
         PreviewTaigaCraft.apply(b);
         Map<BlockPos,BlockState> translated=new LinkedHashMap<>();
-        b.cells.forEach((pos,state)->translated.put(pos.offset(3,0,3),state));
-        Set<BlockPos> access=new HashSet<>(); b.access.forEach(pos->access.add(pos.offset(3,0,3)));
-        Set<BlockPos> joins=new HashSet<>(); b.roofJoins.keySet().forEach(pos->joins.add(pos.offset(3,0,3)));
+        b.cells.forEach((pos,state)->translated.put(pos.offset(margin,0,margin),state));
+        Set<BlockPos> access=new HashSet<>(); b.access.forEach(pos->access.add(pos.offset(margin,0,margin)));
+        Set<BlockPos> joins=new HashSet<>(); b.roofJoins.keySet().forEach(pos->joins.add(pos.offset(margin,0,margin)));
         ROOF_JOINS.put(s.id(),Set.copyOf(joins));
-        Plan plan=PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(new Plan(s,Map.copyOf(translated),Set.copyOf(access),b.entrance.offset(3,0,3),b.finish().height())));
+        Plan plan=PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(new Plan(s,Map.copyOf(translated),Set.copyOf(access),b.entrance.offset(margin,0,margin),b.finish().height())));
         plan=PreviewFacadePrograms.apply(plan);
+        if(s.style()==BiomeDialect.SNOWY) {
+            plan=PreviewPlanTranslation.apply(plan,envelope,1,1);
+            ROOF_JOINS.put(s.id(),PreviewPlanTranslation.positions(joins,1,1));
+        }
         BiomeArchitecturePreview.validate(plan); return plan;
     }
     private static void roof(Builder b,int x0,int x1,int z0,int z1,int y) {

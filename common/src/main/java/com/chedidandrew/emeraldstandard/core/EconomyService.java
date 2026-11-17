@@ -1969,7 +1969,10 @@ public final class EconomyService {
     public synchronized boolean recordSitePreparation(UUID villageId, long projectId, int cursor, boolean complete) {
         return mutateVillage(villageId, complete, v -> {
             var p = findProject(v, projectId);
-            if (p == null || p.sitePreparationComplete || cursor < p.sitePreparationCursor || cursor > 1_000_000) return false;
+            if (p == null || p.sitePreparationComplete || cursor < 0 || cursor > 1_000_000
+                    || (p.sitePreparationPlan == null && cursor < p.sitePreparationCursor)
+                    || (p.sitePreparationPlan != null && cursor > p.sitePreparationPlan.cells().size())
+                    || (!complete && cursor == p.sitePreparationCursor)) return false;
             p.sitePreparationCursor = cursor;
             p.sitePreparationComplete = complete;
             return true;
@@ -1988,6 +1991,11 @@ public final class EconomyService {
                 || planned.projects.getFirst().originPos == 0L || planned.projects.getFirst().designPlanHash.isEmpty())
             return false;
         var expected = VillageExpansion.draft(root, planned.centerPos, state.seed, state.economicDay, true, forcedVillageDevelopment);
+        var starter = planned.projects.getFirst();
+        if (!orderedBounds(starter.boundsMinPos, starter.boundsMaxPos)
+                || villageProjectLotExclusions(planned.dimensionKey).stream().anyMatch(lot ->
+                        ProjectLotSafety.overlaps(starter.boundsMinPos,starter.boundsMaxPos,
+                                lot.boundsMinPos(),lot.boundsMaxPos(),4))) return false;
         if (expected.projects.size() != 1) return false;
         if (vanillaOnlyVillageBuildings && (planned.projects.getFirst().vanillaPlan == null
                 || !planned.projects.getFirst().vanillaPlan.hash().equals(expected.projects.getFirst().vanillaPlan.hash())))
@@ -3025,12 +3033,12 @@ public final class EconomyService {
     public synchronized boolean boundVillageProjectSiteRetries(UUID villageId, long currentGameTick) {
         var existing = state == null ? null : state.existingVillage(villageId);
         if (existing == null || existing.projects.stream().noneMatch(p -> ProjectSiteRetry.boundedInMode(p, forcedVillageDevelopment)
-                && p.retryAfterGameTick != ProjectSiteRetry.boundedDeadline(currentGameTick, p.retryAfterGameTick, forcedVillageDevelopment))) return false;
+                && p.retryAfterGameTick != ProjectSiteRetry.boundedDeadline(currentGameTick, p.retryAfterGameTick, forcedVillageDevelopment,p))) return false;
         return mutateVillage(villageId, false, village -> {
             boolean changed = false;
             for (var project : village.projects) {
                 if (!ProjectSiteRetry.boundedInMode(project, forcedVillageDevelopment)) continue;
-                long deadline = ProjectSiteRetry.boundedDeadline(currentGameTick, project.retryAfterGameTick, forcedVillageDevelopment);
+                long deadline = ProjectSiteRetry.boundedDeadline(currentGameTick, project.retryAfterGameTick, forcedVillageDevelopment,project);
                 if (deadline != project.retryAfterGameTick) {
                     project.retryAfterGameTick = deadline; changed = true;
                 }
@@ -3204,6 +3212,41 @@ public final class EconomyService {
             int totalBlocks, String architectureDialect, int designRotation, int designStage,
             long trailAnchorPos, int trailTotalBlocks, int entranceApproachStepCount,
             int entranceApproachTotalCells, String designPlanHash, SitePreparationPlan preparation) {
+        return reserveVillageProjectSite(villageId,projectId,originPos,boundsMinPos,boundsMaxPos,totalBlocks,
+                architectureDialect,designRotation,designStage,trailAnchorPos,trailTotalBlocks,
+                entranceApproachStepCount,entranceApproachTotalCells,designPlanHash,preparation,0);
+    }
+    public synchronized boolean reserveVillageProjectSite(
+            UUID villageId, long projectId, long originPos, long boundsMinPos, long boundsMaxPos,
+            int totalBlocks, String architectureDialect, int designRotation, int designStage,
+            long trailAnchorPos, int trailTotalBlocks, int entranceApproachStepCount,
+            int entranceApproachTotalCells, String designPlanHash, SitePreparationPlan preparation,int outdoorLevel) {
+        return reserveVillageProjectSite(villageId,projectId,originPos,boundsMinPos,boundsMaxPos,totalBlocks,
+                architectureDialect,designRotation,designStage,trailAnchorPos,trailTotalBlocks,
+                entranceApproachStepCount,entranceApproachTotalCells,designPlanHash,preparation,outdoorLevel,"");
+    }
+    public synchronized boolean reserveVillageProjectSite(
+            UUID villageId, long projectId, long originPos, long boundsMinPos, long boundsMaxPos,
+            int totalBlocks, String architectureDialect, int designRotation, int designStage,
+            long trailAnchorPos, int trailTotalBlocks, int entranceApproachStepCount,
+            int entranceApproachTotalCells, String designPlanHash, SitePreparationPlan preparation,int outdoorLevel,
+            String bridgeDependencies) {
+        return reserveVillageProjectSite(villageId,projectId,originPos,boundsMinPos,boundsMaxPos,totalBlocks,
+                architectureDialect,designRotation,designStage,trailAnchorPos,trailTotalBlocks,
+                entranceApproachStepCount,entranceApproachTotalCells,designPlanHash,preparation,outdoorLevel,
+                bridgeDependencies,java.util.Map.of());
+    }
+    public synchronized boolean reserveVillageProjectSite(
+            UUID villageId, long projectId, long originPos, long boundsMinPos, long boundsMaxPos,
+            int totalBlocks, String architectureDialect, int designRotation, int designStage,
+            long trailAnchorPos, int trailTotalBlocks, int entranceApproachStepCount,
+            int entranceApproachTotalCells, String designPlanHash, SitePreparationPlan preparation,int outdoorLevel,
+            String bridgeDependencies,java.util.Map<Long,Integer> terrainOffsets) {
+        if(!OutdoorTerrainOffsets.valid(terrainOffsets))return false;
+        terrainOffsets=java.util.Map.copyOf(terrainOffsets);
+        final var frozenOffsets=terrainOffsets;
+        if(!EconomyState.validBridgeDependencies(bridgeDependencies))return false;
+        if(outdoorLevel<0||outdoorLevel>3) return false;
         if (!validEntranceApproachPlan(
                 entranceApproachStepCount, entranceApproachTotalCells)) {
             return false;
@@ -3217,6 +3260,12 @@ public final class EconomyService {
                     || totalBlocks <= 0) {
                 return false;
             }
+            // A survey is not a reservation. Recheck against authoritative lots inside this
+            // synchronized durable mutation, including neighbors completed while a route waited.
+            if (!orderedBounds(boundsMinPos, boundsMaxPos)
+                    || villageProjectLotExclusions(village.dimensionKey).stream().anyMatch(lot ->
+                            ProjectLotSafety.overlaps(boundsMinPos, boundsMaxPos,
+                                    lot.boundsMinPos(), lot.boundsMaxPos(), ForcedSiteSearchPolicy.lotPadding(forcedVillageDevelopment)))) return false;
             var parcels = village.organicTerritory
                     ? VillageTerritory.plan(village, state.villages.values(), boundsMinPos, boundsMaxPos) : java.util.Set.<Long>of();
             if (parcels == null) return false;
@@ -3240,6 +3289,10 @@ public final class EconomyService {
                     || (village.expansionMode == VillageExpansion.Mode.APPROVAL && !village.expansionApproved))) return false;
             boolean blueprint = VillageArchitecture.BLUEPRINT_SCHEMA.equals(
                     project.designSchema);
+            if(!frozenOffsets.isEmpty()&&(!blueprint||!ApprovedArchitectureCatalog.supportsFits(project.designTemplateRevision)||outdoorLevel==3))return false;
+            if(!project.designPlanHash.isEmpty()&&!project.outdoorTerrainOffsets.equals(frozenOffsets))return false;
+            if(outdoorLevel>0 && (!blueprint||!ApprovedArchitectureCatalog.supportsFits(project.designTemplateRevision)
+                    || (!project.designPlanHash.isEmpty()&&project.designOutdoorLevel!=outdoorLevel))) return false;
             if (blueprint) {
                 if (project.designPlanHashVersion
                                 != VillageArchitecture.BLUEPRINT_PLAN_HASH_VERSION
@@ -3294,12 +3347,15 @@ public final class EconomyService {
             }
             if (blueprint) {
                 project.designPlanHash = designPlanHash;
+                project.designOutdoorLevel = outdoorLevel;
             }
             if(village.organicTerritory) {
                 village.territoryCells.addAll(parcels);
                 if(grows) { village.lastExpansionDay=state.economicDay;village.expansionApproved=false; }
             }
             project.originPos = originPos;
+            project.bridgeFirstDependencies = bridgeDependencies;
+            project.outdoorTerrainOffsets.clear();project.outdoorTerrainOffsets.putAll(frozenOffsets);
             project.sitePreparationComplete = false;
             project.sitePreparationCursor = 0;
             project.sitePreparationPlan = preparation;
@@ -3329,6 +3385,7 @@ public final class EconomyService {
                 return false;
             }
             project.originPos = 0L;
+            project.bridgeFirstDependencies = "";
             project.boundsMinPos = 0L;
             project.boundsMaxPos = 0L;
             project.sitePreparationPlan = null;
@@ -3450,7 +3507,9 @@ public final class EconomyService {
             long retryDelay = Math.min(
                     MAX_PROJECT_RETRY_TICKS, INITIAL_PROJECT_RETRY_TICKS << exponent);
             project.retryAfterGameTick = forcedVillageDevelopment
-                    ? ProjectSiteRetry.forcedDeadline(currentGameTick, project.materializationFailures)
+                    ? ProjectSiteRetry.searching(project)
+                        ? ProjectSiteRetry.forcedSearchDeadline(currentGameTick, project.materializationFailures)
+                        : ProjectSiteRetry.forcedDeadline(currentGameTick, project.materializationFailures)
                     : ProjectSiteRetry.searching(project)
                     ? ProjectSiteRetry.deadline(currentGameTick, project.materializationFailures)
                     : saturatingAdd(Math.max(Math.max(0L, currentGameTick), project.retryAfterGameTick), retryDelay);
@@ -3460,6 +3519,7 @@ public final class EconomyService {
                 project.sitePreparationCursor = 0;
                 project.sitePreparationComplete = true;
                 project.originPos = 0L;
+                project.bridgeFirstDependencies = "";
                 project.boundsMinPos = 0L;
                 project.boundsMaxPos = 0L;
                 project.totalBlocks = project.type.nominalBlocks();
@@ -4115,21 +4175,46 @@ public final class EconomyService {
             long currentGameTick,
             long auditedBoundsMinPos,
             long auditedBoundsMaxPos) {
+        return relocateVillageProject(villageId, projectId, currentGameTick,
+                auditedBoundsMinPos, auditedBoundsMaxPos, false);
+    }
+
+    /** Repairs only proven metadata collisions; never grants block-removal or old-site repair rights. */
+    public synchronized boolean recoverOverlappingVillageProject(UUID villageId, long projectId, long tick) {
+        var village = state == null ? null : state.existingVillage(villageId);
+        var project = village == null ? null : findProject(village, projectId);
+        if (project == null || village.projects.stream().noneMatch(other -> ProjectLotSafety.losesTo(project, other))) return false;
+        return relocateVillageProject(villageId, projectId, tick, project.boundsMinPos, project.boundsMaxPos, true);
+    }
+
+    private boolean relocateVillageProject(UUID villageId, long projectId, long currentGameTick,
+            long auditedBoundsMinPos, long auditedBoundsMaxPos, boolean collision) {
         if (!orderedBounds(auditedBoundsMinPos, auditedBoundsMaxPos)) {
             return false;
         }
         return mutateVillage(villageId, true, village -> {
             EconomyState.VillageProject project = findProject(village, projectId);
             if (project == null
-                    || !project.economicComplete
+                    || (!collision && !project.economicComplete)
                     || project.abstractOnly
                     || project.originPos == 0L
-                    || (!project.materializedComplete && !project.manualRepairRequired)
-                    || !positionWithinBounds(
+                    || (!collision && !project.materializedComplete && !project.manualRepairRequired)
+                    || (!collision && !positionWithinBounds(
                             project.originPos,
                             auditedBoundsMinPos,
-                            auditedBoundsMaxPos)) {
+                            auditedBoundsMaxPos))) {
                 return false;
+            }
+            if (collision) {
+                if (project.materializedComplete || village.projects.stream().noneMatch(other ->
+                        ProjectLotSafety.losesTo(project, other))) return false;
+                double used = !project.constructionStarted ? 0 : Math.min(1.0,
+                        Math.max(1, project.materializedBlocks) / (double)Math.max(1, project.totalBlocks));
+                double materials = forcedVillageDevelopment ? 0 : project.type.materialCost() * used;
+                double treasury = forcedVillageDevelopment ? 0 : project.type.treasuryCost() * used;
+                if (village.materialSupply < materials || village.treasury < treasury
+                        || project.retiredLots.size() >= EconomyState.MAX_RETIRED_PROJECT_LOTS) return false;
+                village.materialSupply -= materials; village.treasury -= treasury;
             }
             boolean alreadyRetired = project.retiredLots.stream().anyMatch(lot ->
                     lot.boundsMinPos == auditedBoundsMinPos
@@ -4144,12 +4229,15 @@ public final class EconomyService {
             }
             project.originPos = 0L;
             project.boundsMinPos = 0L;
+            project.bridgeFirstDependencies = "";
             project.boundsMaxPos = 0L;
             project.materializedBlocks = 0;
             project.constructionOrderCuts.clear();
             project.sitePreparationPlan = null;
             project.sitePreparationCursor = 0;
             project.sitePreparationComplete = true;
+            project.constructionStarted = false;
+            project.obstructionLoadedTicks = 0;
             project.totalBlocks = project.type.nominalBlocks();
             project.materializedComplete = false;
             project.blocked = false;

@@ -70,6 +70,7 @@ final class SupportedConstructionOrder {
         var actual=level.getBlockState(world);
         return expected.stream().anyMatch(c->!c.state().isAir() && (!structuralOnly || anchor(c))
                 && (actual.is(c.state().getBlock())
+                    || VillageProsperityManager.naturalSoilEquivalent(actual,c.state())
                     || ConstructionOwnership.settledPathGround(level,world,actual,c.state())));
     }
     static String waitReason(net.minecraft.server.level.ServerLevel level, BlockPos origin, Cell cell,

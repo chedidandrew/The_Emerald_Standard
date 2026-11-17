@@ -13,7 +13,7 @@ public final class BlueprintTierSelectionRegressionTest {
             require(saved!=null&&saved.beds()==entry.beds(),"Beta-58 bed capacity changed");
             if(!entry.role().equals("BANK")) {
                 var old=VillageArchitecture.requireBlueprint(entry.id(),12);
-                require(old.width()==entry.width()&&old.depth()==entry.depth(),"Beta-58 parcel changed");
+                require(old.width()==saved.width()&&old.depth()==saved.depth(),"Beta-58 parcel changed");
                 var project=new EconomyState.VillageProject();project.designTemplateId=entry.id();
                 project.designTemplateRevision=12;project.type=old.type();
                 require(project.actualHousingBeds()==saved.beds(),"Beta-58 saved housing changed");

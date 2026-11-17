@@ -33,7 +33,7 @@ public final class ForcedDevelopmentWorkBudget {
         this.server = server; this.tick = tick;
         remaining = lagging ? 16 : 128;
         sites = 2;
-        deadline = now + (lagging ? 1_000_000L : 4_000_000L);
+        deadline = now + (lagging ? 1_000_000L : 8_000_000L);
     }
     public int claim(long now) {
         if (sites <= 0 || !hasTime(now)) return 0;

@@ -1,6 +1,7 @@
 package com.chedidandrew.emeraldstandard.minecraft;
 
 import com.chedidandrew.emeraldstandard.core.VillageProsperityEngine.ProjectType;
+import com.chedidandrew.emeraldstandard.core.EconomyState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -14,6 +15,21 @@ import net.minecraft.world.level.storage.loot.LootTable;
 /** One-shot loot on newly placed storage only. Never call from audits, repair or existing-cell paths. */
 public final class VillageStructureLoot {
     private VillageStructureLoot() { }
+
+    /** Imported profession names, not the broader economic purpose, determine their supplies. */
+    public static ResourceKey<LootTable> table(EconomyState.VillageProject project) {
+        if(project.vanillaPlan==null) return table(project.type);
+        return key(switch(project.vanillaPlan.kind()) {
+            case HOUSE -> "residence";
+            case FARM -> "granary";
+            case ARMORER, TOOLSMITH, WEAPONSMITH, MASON -> "smithy";
+            case BUTCHER, FISHER -> "inn";
+            case CARTOGRAPHER, LIBRARY, TEMPLE -> "exchange_hall";
+            case FLETCHER -> "guard_post";
+            case SHEPHERD, TANNERY, STABLE, ANIMAL_PEN -> "warehouse";
+            case SQUARE -> "market";
+        });
+    }
 
     public static ResourceKey<LootTable> table(ProjectType type) {
         return key(switch (type) {

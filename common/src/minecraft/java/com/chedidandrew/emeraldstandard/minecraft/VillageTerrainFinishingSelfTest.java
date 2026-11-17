@@ -22,6 +22,23 @@ final class VillageTerrainFinishingSelfTest {
                                 ? Blocks.GRASS_BLOCK.defaultBlockState() : Blocks.AIR.defaultBlockState());
             }
             set(level, restore, origin.offset(1, 0, 0), Blocks.TORCH.defaultBlockState());
+            // Keep this deliberate foreign obstruction outside the graded route's safety buffer.
+            var roadCell=origin.offset(24,0,-5);
+            set(level,restore,roadCell,Blocks.COARSE_DIRT.defaultBlockState());
+            set(level,restore,roadCell.above(),Blocks.AIR.defaultBlockState());
+            require(VillageTerrainFinishing.usableRoad(level,roadCell,level.getBlockState(roadCell),"minecraft:gravel"),
+                    "captured coarse dirt/gravel conflict blocks terrain");
+            require(level.getBlockState(roadCell).is(Blocks.COARSE_DIRT),"read-only road reconciliation repaved");
+            require(!VillageTerrainFinishing.usableRoad(level,roadCell,Blocks.OAK_PLANKS.defaultBlockState(),"minecraft:gravel"),"foreign floor waived");
+            require(!VillageTerrainFinishing.usableRoad(level,roadCell,Blocks.COARSE_DIRT.defaultBlockState(),"minecraft:stone_bricks"),"required masonry waived");
+            require(VillageTerrainFinishing.unchanged(level,Blocks.DIRT.defaultBlockState(),"minecraft:grass_block[snowy=false]"),"natural soil change rejected");
+            require(VillageTerrainFinishing.satisfied(level,Blocks.DIRT.defaultBlockState(),"minecraft:grass_block[snowy=false]"),"settled soil rewinds prep");
+            set(level,restore,roadCell.above(),Blocks.OAK_PLANKS.defaultBlockState());
+            require(!VillageTerrainFinishing.usableRoad(level,roadCell,Blocks.COARSE_DIRT.defaultBlockState(),"minecraft:gravel"),"blocked road accepted");
+            set(level,restore,roadCell.above(),Blocks.AIR.defaultBlockState());
+            set(level,restore,roadCell.above(2),Blocks.OAK_PLANKS.defaultBlockState());
+            require(!VillageTerrainFinishing.usableRoad(level,roadCell,Blocks.COARSE_DIRT.defaultBlockState(),"minecraft:gravel"),"blocked headroom accepted");
+            set(level,restore,roadCell.above(2),Blocks.AIR.defaultBlockState());
             List<BlockPos> route = new ArrayList<>();
             for (int x = 0; x <= 23; x++) route.add(origin.offset(x, 0, 0));
             var masonry = Blocks.STONE_BRICKS.defaultBlockState();
@@ -43,6 +60,28 @@ final class VillageTerrainFinishingSelfTest {
                     -2, 2, -2, 2, Set.of(), List.of(), origin.getY(), masonry, stairs, null, 1);
             require(plan.cells().size() == 48, "three-high, sixteen-column retaining border follows terrain");
             for (var cell : plan.cells()) require(!cell.after().equals("minecraft:air"), "wall is grounded solid masonry");
+            var polished = Blocks.POLISHED_ANDESITE.defaultBlockState();
+            var cliffOrigin = origin.offset(10, 0, 9);
+            var interior = cliffOrigin.offset(0, 0, 0);
+            var frozenInterior = new SitePreparationPlan.Cell(interior.asLong(), "minecraft:stone", "minecraft:polished_andesite");
+            var stoneWall = VillageTerrainFinishing.finish(level, new SitePreparationPlan(List.of(frozenInterior)),
+                    cliffOrigin, -2, 2, -2, 2, Set.of(interior), List.of(), origin.getY(), polished, stairs, null, 1);
+            require(stoneWall.cells().size() == 49, "stone retaining wall keeps all 48 grounded courses");
+            for (var cell : stoneWall.cells()) require(cell.position() == interior.asLong()
+                    ? cell.equals(frozenInterior) : cell.after().equals("minecraft:stone"),
+                    "only newly generated exterior polished retaining courses become stone");
+            require(SitePreparationPlan.decode(stoneWall.encode()).equals(stoneWall), "stone wall receipt survives restart");
+            require(SitePreparationPlan.decode(new SitePreparationPlan(List.of(frozenInterior)).encode())
+                    .cells().getFirst().equals(frozenInterior), "older polished receipt is not rewritten");
+            var polishedRoad = VillageTerrainFinishing.road(level, route, origin.getY(), Set.of(), polished, stairs, null, 1);
+            require(polishedRoad != null && polishedRoad.values().stream()
+                    .anyMatch(c -> c.after().equals("minecraft:polished_andesite")), "road backing keeps its separate palette");
+            try (var veto = VillageDevelopmentProtection.register(context -> false)) {
+                var protectedWall = VillageTerrainFinishing.finish(level, new SitePreparationPlan(List.of()),
+                        cliffOrigin, -2, 2, -2, 2, Set.of(), List.of(), origin.getY(), polished, stairs, null, 1);
+                require(protectedWall.cells().isEmpty(), "stone substitution cannot bypass claims");
+            }
+            require(level.getBlockState(interior).is(Blocks.STONE), "wall survey never writes building/interior cells");
             var ordered = new ArrayList<>(road.values());
             ordered.sort(Comparator.<SitePreparationPlan.Cell>comparingInt(c -> c.after().equals("minecraft:air") ? 0 : 1)
                     .thenComparingInt(c -> c.after().equals("minecraft:air") ? -BlockPos.of(c.position()).getY()
@@ -70,7 +109,7 @@ final class VillageTerrainFinishingSelfTest {
                 VillageWalkingSelfTest.walk(level, walker, origin.offset(23, 0, 0), "graded neighboring street outbound");
                 VillageWalkingSelfTest.walk(level, walker, origin, "graded neighboring street return");
             } finally { walker.discard(); }
-            System.out.println("PASS VillageTerrainFinishingSelfTest: slopes, crater supports, retaining courses, claims, storage, paced restart");
+            System.out.println("PASS VillageTerrainFinishingSelfTest: slopes, crater supports, stone-only exterior polished retaining courses, unchanged interiors/roads/old receipts, claims, storage, paced restart");
         } finally {
             restore.forEach((pos, state) -> level.setBlock(pos, state, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE));
         }

@@ -41,7 +41,7 @@ public final class BiomeArchitecturePreview {
                     samples.add(PlainsLegacyArchitecturePreview.plan(role).sample());
                 continue;
             }
-            int roofMargin=style==BiomeDialect.TAIGA?2:0;
+            int roofMargin=style==BiomeDialect.TAIGA||style==BiomeDialect.SNOWY?2:0;
             samples.add(new Sample(style, "HOUSE", style.id() + "_hearth_home", 13+roofMargin, 13+roofMargin));
             samples.add(new Sample(style, "BANK", style.id() + "_village_bank", 17+roofMargin, 17+roofMargin));
             if (style == BiomeDialect.PLAINS || style == BiomeDialect.DESERT)
@@ -52,11 +52,15 @@ public final class BiomeArchitecturePreview {
         return List.copyOf(samples);
     }
     public static Plan plan(Sample sample) {
-        if(sample.id().startsWith("compact_")) return PreviewCompactBuildings.plan(sample);
-        if(sample.id().startsWith("catalog_")) return BiomeArchitectureCatalogPreview.plan(sample);
-        if (sample.style()==BiomeDialect.PLAINS) return PlainsLegacyArchitecturePreview.plan(sample.role());
+        if(sample.id().startsWith("compact_")) {
+            Plan compact=PreviewBankChimney.apply(PreviewPlainsOverhang.apply(PreviewCompactBuildings.plan(sample)));
+            return PreviewSnowyOverhang.apply(compact);
+        }
+        if(sample.id().startsWith("catalog_")) return PreviewSnowyOverhang.apply(PreviewBankChimney.apply(PreviewPlainsOverhang.apply(BiomeArchitectureCatalogPreview.plan(sample))));
+        if (sample.style()==BiomeDialect.PLAINS) return PreviewBankChimney.apply(PreviewPlainsOverhang.apply(PlainsLegacyArchitecturePreview.plan(sample.role())));
         boolean taiga=sample.style()==BiomeDialect.TAIGA;
-        Builder b = new Builder(taiga?new Sample(sample.style(),sample.role(),sample.id(),sample.width()-2,sample.depth()-2):sample);
+        boolean roofMargin=taiga||sample.style()==BiomeDialect.SNOWY;
+        Builder b = new Builder(roofMargin?new Sample(sample.style(),sample.role(),sample.id(),sample.width()-2,sample.depth()-2):sample);
         switch (sample.role()) {
             case "BANK" -> bank(b);
             case "INN" -> inn(b);
@@ -74,6 +78,10 @@ public final class BiomeArchitecturePreview {
             shell=new Plan(sample,Map.copyOf(cells),Set.copyOf(access),shell.entrance().offset(1,0,1),shell.height());
         }
         Plan plan = PreviewFacadePrograms.apply(PreviewRoomLayout.apply(PreviewDoorwayAudit.correct(shell)));
+        if(sample.style()==BiomeDialect.SNOWY) {
+            plan=PreviewPlanTranslation.apply(plan,sample,1,1);
+        }
+        plan=PreviewSnowyOverhang.apply(PreviewBankChimney.apply(plan));
         validate(plan);
         return plan;
     }

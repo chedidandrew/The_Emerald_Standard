@@ -9,7 +9,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.Leashable;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
@@ -82,9 +85,9 @@ final class VillageConstructionOccupancy {
                 wait.moved = now;
                 moveAside(level, pos, entity);
             }
-            // Ten seconds at this particular work cell; no permission carries over to another cell/entity.
-            // Do not explicitly damage or delete entities. Normal block collision handles the fallback.
-            if (now - wait.first < 200) clear = false;
+            // Time waiting never authorizes suffocation or removing occupied footing.
+            // A successful safe move may clear this cell immediately; otherwise keep waiting.
+            if (!mayChange(level, pos, before, after)) clear = false;
         }
         return clear;
     }
@@ -98,27 +101,75 @@ final class VillageConstructionOccupancy {
 
     private static void moveAside(ServerLevel level, BlockPos work, LivingEntity entity) {
         // Moving a ridden/leashed group blindly risks dragging another entity into the work area.
-        if (entity.isPassenger() || entity.isVehicle()) return;
+        if (entity.isPassenger() || entity.isVehicle()
+                || entity instanceof Leashable leash && leash.isLeashed()) return;
+        // Dry ground is not a safe rescue destination for water-dependent creatures.
+        if(entity instanceof net.minecraft.world.entity.animal.fish.WaterAnimal
+                ||entity instanceof net.minecraft.world.entity.animal.AgeableWaterCreature
+                ||entity instanceof net.minecraft.world.entity.animal.axolotl.Axolotl)return;
         for (double distance : new double[]{1.25, 2.25, 3.25}) {
             for (int i = 0; i < 8; i++) {
                 double angle = i * Math.PI / 4;
                 double x = entity.getX() + Math.cos(angle) * distance;
                 double z = entity.getZ() + Math.sin(angle) * distance;
-                AABB destination = entity.getBoundingBox().move(x - entity.getX(), 0, z - entity.getZ());
-                if (destination.intersects(new AABB(work).inflate(0.1, 1, 0.1))) continue;
-                BlockPos feet = BlockPos.containing(x, entity.getY(), z);
-                if (!level.hasChunksAt(BlockPos.containing(destination.minX, destination.minY - 1, destination.minZ),
-                        BlockPos.containing(destination.maxX, destination.maxY, destination.maxZ))) continue;
-                if (!level.getBlockState(feet.below()).isSolidRender()
-                        || level.getBlockState(feet.below()).is(net.minecraft.world.level.block.Blocks.MAGMA_BLOCK)
-                        || !level.getFluidState(feet).isEmpty()
-                        || !level.getBlockState(feet).isAir()
-                        || !level.getBlockState(feet.above()).isAir()
-                        || !level.noCollision(entity, destination)) continue;
-                entity.setPos(x, entity.getY(), z);
-                return;
+                if (land(level, work, entity, x, entity.getY(), z)) return;
             }
         }
+        // A creature can be trapped in a sunken unfinished floor: horizontal-only moves
+        // cannot find the surrounding ground. Bounded, loaded-only fallback, nearest first.
+        // Still called at most once per second per unchanged occupied work cell.
+        for (int distance : new int[]{4, 6, 8, 12, 16, 24}) for (int i=0; i<8; i++) {
+            double angle=i*Math.PI/4;
+            double x=Math.floor(entity.getX()+Math.cos(angle)*distance)+0.5;
+            double z=Math.floor(entity.getZ()+Math.sin(angle)*distance)+0.5;
+            int baseY=(int)Math.floor(entity.getY());
+            for (int step=0; step<=12; step++) {
+                int dy=step==0?0:(step%2==1?(step+1)/2:-step/2);
+                if (land(level,work,entity,x,baseY+dy,z)) return;
+            }
+        }
+    }
+
+    private static boolean land(ServerLevel level, BlockPos work, LivingEntity entity,
+                                double x, double y, double z) {
+        AABB destination=entity.getBoundingBox().move(x-entity.getX(),y-entity.getY(),z-entity.getZ());
+        if(destination.intersects(new AABB(work).inflate(0.1,1,0.1)))return false;
+        // Check the complete footprint and body, not only a center block. Never load a chunk.
+        int minX=(int)Math.floor(destination.minX+EPSILON),maxX=(int)Math.floor(destination.maxX-EPSILON);
+        int minZ=(int)Math.floor(destination.minZ+EPSILON),maxZ=(int)Math.floor(destination.maxZ-EPSILON);
+        int floorY=(int)Math.floor(destination.minY-EPSILON),topY=(int)Math.floor(destination.maxY-EPSILON);
+        for(int cx=minX>>4;cx<=maxX>>4;cx++)for(int cz=minZ>>4;cz<=maxZ>>4;cz++)
+            if(level.getChunkSource().getChunkNow(cx,cz)==null)return false;
+        for(int bx=minX;bx<=maxX;bx++)for(int bz=minZ;bz<=maxZ;bz++) {
+            BlockPos floor=new BlockPos(bx,floorY,bz);
+            if(!level.isInWorldBounds(floor)||!level.getWorldBorder().isWithinBounds(floor)
+                    ||!level.getBlockState(floor).isSolidRender()||hazard(level.getBlockState(floor))
+                    ||ConstructionOwnership.reserved(level,floor))return false;
+            // A partially supported large mob must not be left hanging over a pit.
+            if(Math.abs(destination.minY-(floorY+1))>EPSILON)return false;
+            for(int by=floorY+1;by<=topY;by++) {
+                BlockPos body=new BlockPos(bx,by,bz);
+                if(!level.isInWorldBounds(body)||!level.getWorldBorder().isWithinBounds(body)
+                        ||!level.getFluidState(body).isEmpty()||hazard(level.getBlockState(body))
+                        ||ConstructionOwnership.reserved(level,body))return false;
+            }
+        }
+        if(!level.noCollision(entity,destination)
+                ||!level.getEntitiesOfClass(LivingEntity.class,destination,e->e!=entity&&e.isAlive()&&!e.isSpectator()).isEmpty()
+                ||level.players().stream().anyMatch(p->p!=entity&&p.isAlive()&&!p.isSpectator()
+                        &&destination.intersects(p.getBoundingBox())))return false;
+        if(entity instanceof Mob mob)mob.getNavigation().stop();
+        entity.setPos(x,y,z);
+        entity.setDeltaMovement(0,0,0);
+        entity.resetFallDistance();
+        return true;
+    }
+
+    private static boolean hazard(BlockState state) {
+        return !state.getFluidState().isEmpty()||state.is(Blocks.MAGMA_BLOCK)||state.is(Blocks.CACTUS)
+                ||state.is(Blocks.FIRE)||state.is(Blocks.SOUL_FIRE)||state.is(Blocks.CAMPFIRE)
+                ||state.is(Blocks.SOUL_CAMPFIRE)||state.is(Blocks.SWEET_BERRY_BUSH)
+                ||state.is(Blocks.POWDER_SNOW)||state.is(Blocks.WITHER_ROSE);
     }
 
     private static boolean supports(AABB block, AABB body) {

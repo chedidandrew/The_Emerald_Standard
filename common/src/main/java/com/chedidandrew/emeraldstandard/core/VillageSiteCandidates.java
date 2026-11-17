@@ -30,7 +30,7 @@ public final class VillageSiteCandidates {
     }
 
     public static synchronized Order order(EconomyState.VillageRecord village, int frontierDepth) {
-        frontierDepth = Math.max(1, Math.min(4, frontierDepth));
+        frontierDepth = Math.max(1, Math.min(ArchitectureSiteFit.MAX_FRONTIER_DEPTH, frontierDepth));
         Set<Long> anchors = new TreeSet<>();
         anchors.add(VillageTerritory.parcel(village.centerPos));
         if (village.bankAnchorPos != 0) anchors.add(VillageTerritory.parcel(village.bankAnchorPos));
@@ -67,10 +67,12 @@ public final class VillageSiteCandidates {
             this.frontierDepth = frontierDepth;
             Set<Long> frontier = new HashSet<>();
             Set<Long> edge = held;
-            for (int depth = 0; depth < frontierDepth; depth++) {
-                Set<Long> nextEdge = new HashSet<>();
-                for (long cell : edge) for (long next : VillageTerritory.neighbors(cell))
+            expansion: for (int depth = 0; depth < frontierDepth; depth++) {
+                Set<Long> nextEdge = new TreeSet<>();
+                for (long cell : new TreeSet<>(edge)) for (long next : VillageTerritory.neighbors(cell)) {
                     if (!held.contains(next) && frontier.add(next)) nextEdge.add(next);
+                    if(frontier.size()>=MAX_CANDIDATES/SITES_PER_PARCEL-held.size()) break expansion;
+                }
                 edge = nextEdge;
             }
             long seed = mix(village.villageId.getMostSignificantBits() ^ village.villageId.getLeastSignificantBits());
